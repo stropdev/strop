@@ -1,8 +1,8 @@
-//! Editor-side LSP event handling and asynchronous navigation. Local
-//! and remote documents share the request/server/incarnation/revision
-//! ownership; a remote workspace adds the endpoint to every identity —
-//! diagnostics, bindings and navigation never alias a remote path onto
-//! the local disk (0036 RW8).
+//! Editor-side LSP event handling and asynchronous navigation. Local,
+//! SSH and container documents share request/server/incarnation/revision
+//! ownership; every non-local workspace keeps its namespace in every
+//! identity — diagnostics, bindings and navigation never alias its paths
+//! onto the local disk (0036 RW8, 0037 DC1b).
 
 use super::{trace, Editor};
 use std::path::{Path, PathBuf};
@@ -288,15 +288,27 @@ impl Editor {
                             col,
                         },
                     }),
-                    // Unreachable in DC1a (no container bindings); if one
-                    // ever arrives it is dropped with a trace, never
-                    // aliased to a local path.
-                    Filesystem::Container(_) => {
-                        trace::services::rejected(
-                            "lsp",
-                            "diagnostic in a container namespace (unwired)",
-                        );
-                    }
+                    Filesystem::Container(container) => items.push(Item {
+                        badge: None,
+                        text: format!(
+                            "container:{}{}:{} {} {}",
+                            &container.as_str()[..12],
+                            doc.path.display(),
+                            line,
+                            d.severity_char(),
+                            d.message
+                        ),
+                        payload: Payload::Grep {
+                            location: ResourceLocation {
+                                filesystem: Filesystem::Container(container.clone()),
+                                path: doc.path.clone(),
+                            },
+                            line,
+                            col,
+                            match_len: 1,
+                            line_text: d.message.clone().into(),
+                        },
+                    }),
                 }
             }
         }

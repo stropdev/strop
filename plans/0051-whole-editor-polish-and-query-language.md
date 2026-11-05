@@ -14,6 +14,12 @@ The other implementation session owns those changes. Reconcile its current
 branch before starting; reuse work already landed instead of implementing it
 twice. Code completion has its own, explicitly later release in **0059**.
 
+**0081 amendment:** R05's editable-multibuffer requirement is superseded by a
+read-only source-backed inspection collection. Its navigation, syntax, context,
+source refresh and dirty-source preservation guarantees remain; write-through,
+collection-scoped undo and collection saves do not. R04's guarded change review
+is the single deliberate multi-file mutation workflow.
+
 ## 1. Release contract — scope is not optional
 
 **R01–R11 are all required for the next release.** They are not a ranked menu

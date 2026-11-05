@@ -32,7 +32,7 @@ impl Editor {
             .prefix
             .as_ref()
             .filter(|prefix| prefix.session == session)?;
-        Some("ctrl-\\ ctrl-n normal · F2 direct · any other key sends to child")
+        Some("ctrl-\\ ctrl-n inspect · any other key sends to child")
     }
     pub fn terminal_has_new_output(&self, document: DocumentId) -> bool {
         let Some(source) = self.terminal_document(document) else {
@@ -47,6 +47,30 @@ impl Editor {
             .and_then(|entry| entry.live.as_ref())
             .is_some_and(|live| live.revision > shown.revision)
     }
+    pub fn terminal_paste_held(&self, document: DocumentId) -> bool {
+        let Some(source) = self.terminal_document(document) else {
+            return false;
+        };
+        self.terminals
+            .entries
+            .get(&source.session)
+            .is_some_and(|entry| entry.paste.is_some())
+    }
+    pub fn terminal_attention(&self, document: DocumentId) -> Option<String> {
+        let mut attention = Vec::new();
+        if self.terminal_paste_held(document) {
+            attention.push("paste held");
+        }
+        if self
+            .panes
+            .iter()
+            .any(|pane| pane.doc == document && !pane.terminal_input)
+            && self.terminal_has_new_output(document)
+        {
+            attention.push("new output");
+        }
+        (!attention.is_empty()).then(|| attention.join(" + "))
+    }
     pub fn terminal_status(&self, document: DocumentId) -> Option<serde_json::Value> {
         let source = self.terminal_document(document)?;
         let entry = self.terminals.entries.get(&source.session)?;
@@ -59,6 +83,10 @@ impl Editor {
         };
         Some(serde_json::json!({
             "session":source.session, "phase":phase, "exit_code":code, "signal":signal,
+            "namespace":entry.launch.filesystem.label(),
+            "launch":&entry.launch,
+            "launch_location":entry.launch.label(),
+            "launch_directory":strop_workspace::directory::display_path(&entry.launch.path),
             "paste_held":entry.paste.is_some(), "capture":self.terminals.capture,
             "keyboard_flags":entry.keyboard,
             "geometry":entry.live.as_ref().map(|frame| frame.geometry),

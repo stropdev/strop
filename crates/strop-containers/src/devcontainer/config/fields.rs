@@ -1,0 +1,37 @@
+pub(super) fn known_fields() -> std::collections::BTreeSet<&'static str> {
+    [
+        "name",
+        "image",
+        "dockerFile",
+        "build",
+        "dockerComposeFile",
+        "service",
+        "runServices",
+        "workspaceFolder",
+        "workspaceMount",
+        "containerUser",
+        "remoteUser",
+        "initializeCommand",
+        "onCreateCommand",
+        "updateContentCommand",
+        "postCreateCommand",
+        "postStartCommand",
+        "postAttachCommand",
+        "waitFor",
+        "mounts",
+        "containerEnv",
+        "remoteEnv",
+        "privileged",
+        "capAdd",
+        "securityOpt",
+        "devices",
+        "networkMode",
+        "runArgs",
+        "forwardPorts",
+        "appPort",
+        "features",
+        "shutdownAction",
+    ]
+    .into_iter()
+    .collect()
+}

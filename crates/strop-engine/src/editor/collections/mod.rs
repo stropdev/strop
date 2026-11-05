@@ -1,9 +1,7 @@
-//! Source-backed editable collections. Journal edits publish immediately;
-//! generated chrome is protected and source undo groups commit at action boundaries.
+//! Read-only source-backed collections. Source edits refresh their projections;
+//! generated chrome and excerpt bodies are inspected here and edited in sources.
 
 mod context;
-mod editing;
-mod history;
 mod journal;
 mod navigation;
 mod projection;
@@ -14,7 +12,7 @@ mod view_positions;
 
 use projection::render;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::document::Document;
 use super::Editor;
@@ -51,7 +49,7 @@ pub(crate) struct Excerpt {
     pub view_line: usize,
     /// Source line count as rendered.
     pub view_lines: usize,
-    /// Editable source body byte span in the view, excluding synthetic newline.
+    /// Projected source body byte span in the view, excluding synthetic newline.
     pub view_start: usize,
     pub view_end: usize,
     /// Query hit spans in SOURCE bytes within this excerpt (the picker's
@@ -64,10 +62,6 @@ pub(crate) struct Collection {
     pub title: String,
     pub excerpts: Vec<Excerpt>,
     pub skipped: usize,
-    /// Source saves in flight from a collection `:w`/`:wq`; the view
-    /// closes only when every one confirms (0049 §5).
-    pub pending_saves: HashSet<DocumentId>,
-    pub close_when_saved: bool,
     /// Query provenance: matches are counted independently of merged excerpts.
     pub match_count: usize,
     /// The buffer revision at last sync — the cheap no-change check that
@@ -75,7 +69,6 @@ pub(crate) struct Collection {
     pub revision: BufferRevision,
     /// Row roles parallel to the view text (0049 §6), rebuilt at render.
     pub rows: Vec<CollectionRow>,
-    pub pending_commit: Vec<(DocumentId, BufferRevision)>,
 }
 
 /// A source location plus the exact search witness when this came from Search.
@@ -136,7 +129,7 @@ impl Editor {
         sources
     }
 
-    /// `ctrl-o` in a result picker: open the listed hits as an editable
+    /// `ctrl-o` in a result picker: open the listed hits as a read-only
     /// collection. Unopened sources load in their captured filesystem namespace.
     pub(crate) fn open_collection_from_picker(&mut self) {
         let Some(glue) = &self.picker else {
@@ -371,6 +364,9 @@ impl Editor {
         let title_for_trace = title.clone();
         // The modeline names the collection, never [scratch] (0049 §6).
         let mut document = Document::output(Buffer::from_text(""));
+        // Output starts readonly already; name the projection as its owner
+        // without briefly granting write authority.
+        document.buf.readonly_reason = Some(strop_core::ReadonlyReason::Collection);
         document.buf.name = Some(format!("collection: {title}"));
         let Ok(id) = self.docs.try_insert(document) else {
             self.message = "document identity space exhausted".into();
@@ -379,10 +375,7 @@ impl Editor {
         let mut collection = Collection {
             title,
             excerpts,
-            pending_saves: HashSet::new(),
-            close_when_saved: false,
             rows: Vec::new(),
-            pending_commit: Vec::new(),
             match_count,
             skipped,
             revision: BufferRevision::new(0),
@@ -393,9 +386,6 @@ impl Editor {
         let Some(revision) = self.docs.get(id).map(|document| document.buf.revision()) else {
             return; // the id was minted above; a miss is impossible
         };
-        if let Some(document) = self.docs.get_mut(id) {
-            document.buf.clear_readonly();
-        }
         if let Some(collection) = self.collections.get_mut(&id) {
             collection.revision = revision;
         }

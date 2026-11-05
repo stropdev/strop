@@ -18,14 +18,18 @@ pub struct RemoteChoices {
 
 impl Editor {
     pub(crate) fn open_remote_picker(&mut self) {
+        let workspace_root = self.directory_context();
         let mut picker = Picker::new(
             Kind::RemoteHosts,
-            vec![new_host_item(), containers_item()],
+            vec![
+                workspace_root_item(workspace_root.clone()),
+                new_host_item(),
+                containers_item(),
+            ],
             true,
         );
-        // Keep "Add a host…" and "Containers…" visible under filtering;
-        // they are the pinned actions for destinations not already listed.
-        picker.pinned_tail = 2;
+        // Keep project/environment actions visible under filtering.
+        picker.pinned_tail = 3;
         self.set_picker(PickerGlue::diagnostics(picker));
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return;
@@ -127,6 +131,7 @@ impl Editor {
                             .into(),
                     );
                 }
+                items.push(workspace_root_item(workspace_root));
                 items.push(new_host_item());
                 items.push(containers_item());
                 Outcome::Success(RemoteChoices {
@@ -225,6 +230,13 @@ impl Editor {
     }
 }
 
+fn workspace_root_item(root: strop_workspace::ResourceLocation) -> Item {
+    Item {
+        badge: None,
+        text: format!("Select project root here · {}", root.label()),
+        payload: Payload::WorkspaceRoot(root),
+    }
+}
 fn new_host_item() -> Item {
     Item {
         badge: None,

@@ -10,6 +10,10 @@ to the child.
 
 `Space w` owns pane commands in Normal mode:
 
+**0081 amendment:** F2 inspection and `i` input are the primary short cues at
+48 columns and tiny fallbacks. Namespace/launch identity is retained beside
+them; legacy Ctrl-4 is explanatory decoder history, not another mode concept.
+
 - `-` horizontal split and `v` vertical split;
 - `1` through `9` focus the numbered pane;
 - `h/j/k/l/w` retain directional/cyclic movement and `q` closes the pane.

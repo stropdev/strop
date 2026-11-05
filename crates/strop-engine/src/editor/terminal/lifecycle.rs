@@ -42,7 +42,7 @@ impl Editor {
         let location = if local {
             strop_workspace::ResourceLocation::local(self.cwd.clone())
         } else {
-            self.directory_context()
+            self.current_workspace_root()
         };
         self.launch_terminal_at(location, command);
     }
@@ -85,7 +85,7 @@ impl Editor {
             rows: (self.view_rows.max(1).min(MAX_ROWS as usize)) as u16,
             revision: 1,
         };
-        let directory = location.path;
+        let directory = location.path.clone();
         let mut buffer = Buffer::from_text("");
         buffer.name = Some(format!("terminal #{}", session.get()));
         let mut document = Document::output(buffer);
@@ -94,6 +94,7 @@ impl Editor {
         document.set_return_point(self.jump_record());
         document.source = DocumentSource::Terminal(Box::new(TerminalDocument {
             session,
+            launch: location.clone(),
             frame: None,
         }));
         let Ok(id) = self.docs.try_insert(document) else {
@@ -107,7 +108,7 @@ impl Editor {
                 phase: Phase::Starting,
                 live: None,
                 service: None,
-                directory: directory.clone(),
+                launch: location.clone(),
                 title: None,
                 geometry,
                 paste: None,
@@ -122,7 +123,7 @@ impl Editor {
         let tape = self.tape.clone();
         let result: Result<(), String> = match tape.call(
             "terminal.start",
-            &(session, &directory, command, geometry, keyboard),
+            &(session, &location, command, geometry, keyboard),
             || {
                 let launch = match &location.filesystem {
                     strop_workspace::Filesystem::Local => Launch::shell(
@@ -165,6 +166,7 @@ impl Editor {
             }
             self.view_mut().terminal_input = false;
             self.message = error;
+            self.sync_terminal_feedback(id, false);
         } else {
             self.message.clear();
         }
@@ -216,12 +218,24 @@ impl Editor {
         if entry.phase != Phase::Closing || update.phase != Phase::Running {
             entry.phase = update.phase;
         }
+        let denied = update.effects.iter().any(|effect| {
+            matches!(
+                effect,
+                Effect::ClipboardWriteDenied | Effect::HostControlDenied
+            )
+        });
         for effect in update.effects {
             match effect {
                 Effect::Title(title) => entry.title = Some(title),
-                Effect::PasteConfirmationRequested { ticket } => entry.paste = Some(ticket),
+                Effect::PasteConfirmationRequested { ticket } => {
+                    entry.paste = Some(HeldPaste { ticket });
+                }
                 Effect::PasteConfirmationCleared { ticket } => {
-                    if entry.paste == Some(ticket) {
+                    if entry
+                        .paste
+                        .as_ref()
+                        .is_some_and(|paste| paste.ticket == ticket)
+                    {
                         entry.paste = None;
                     }
                 }
@@ -281,6 +295,7 @@ impl Editor {
                 self.message = warning;
             }
         }
+        self.sync_terminal_feedback(document, denied);
     }
 
     pub(super) fn install_terminal_frame(&mut self, document: DocumentId) {
@@ -356,6 +371,7 @@ impl Editor {
         } else {
             "terminal view already shows the latest output".into()
         };
+        self.sync_terminal_feedback(document, false);
     }
 
     pub fn prepare_terminal_geometry(&mut self, document: DocumentId, columns: u16, rows: u16) {
@@ -418,7 +434,7 @@ impl Editor {
             self.message = "current buffer is not a terminal".into();
         }
     }
-    fn stop_terminal_session(&mut self, session: SessionId) {
+    pub(crate) fn stop_terminal_session(&mut self, session: SessionId) {
         let tape = self.tape.clone();
         if let Some(entry) = self.terminals.entries.get_mut(&session) {
             if !entry.phase.live() {
@@ -451,6 +467,7 @@ impl Editor {
                 .entries
                 .get(&session)
                 .is_some_and(|entry| entry.phase.live()));
+            self.resolve_terminal_session_feedback(session);
             self.terminals.entries.remove(&session);
         }
     }
@@ -474,9 +491,9 @@ impl Editor {
 /// rides the session's local worker lease; an SSH workspace rides its
 /// already-admitted endpoint lease (deploy is consent-gated and
 /// blocking, so a terminal never triggers it from the input path — an
-/// endpoint without a live lease is a typed refusal); container
-/// namespaces have no admitted worker-lease mechanism in the editor
-/// yet, so they refuse honestly rather than fall back to docker-exec.
+/// endpoint without a live lease is a typed refusal). An attached container
+/// rides its incarnation-pinned admitted lease the same way; no path falls
+/// back to the host or an implicit docker-exec.
 fn terminal_worker(
     editor: &Editor,
     location: &strop_workspace::ResourceLocation,
@@ -495,10 +512,24 @@ fn terminal_worker(
                      use :terminal-local for an explicit local shell"
                 )
             }),
-        strop_workspace::Filesystem::Container(id) => Err(format!(
-            "no admitted worker in container {}: interactive container terminals are not \
-             admitted yet; use :terminal-local for an explicit local shell",
-            &id.as_str()[..12]
-        )),
+        strop_workspace::Filesystem::Container(id) => {
+            let identity = editor.containers.attached.get(id.as_str()).ok_or_else(|| {
+                format!(
+                    "interactive terminal refused in container {}: attach its current incarnation first",
+                    &id.as_str()[..12]
+                )
+            })?;
+            editor
+                .containers
+                .workers
+                .get(identity)
+                .map(|lease| lease.worker().clone())
+                .ok_or_else(|| {
+                    format!(
+                        "interactive terminal refused in container {}: :container-worker admits this incarnation's worker; use :terminal-local for an explicit local shell",
+                        &id.as_str()[..12]
+                    )
+                })
+        }
     }
 }

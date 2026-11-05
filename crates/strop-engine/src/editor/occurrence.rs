@@ -47,7 +47,7 @@ impl Editor {
     /// seed the literal visual selection); otherwise add the next
     /// unselected match in document order, wrapping at most once.
     pub fn occurrence_next_pub(&mut self) {
-        if self.buf().readonly {
+        if self.buf().readonly && !self.collections.contains_key(&self.current()) {
             self.message = "readonly buffer".into();
             return;
         }
@@ -77,7 +77,7 @@ impl Editor {
     /// seed stays the primary; ranges passed over by skip stay
     /// unselected.
     pub fn occurrence_all_pub(&mut self) {
-        if self.buf().readonly {
+        if self.buf().readonly && !self.collections.contains_key(&self.current()) {
             self.message = "readonly buffer".into();
             return;
         }
@@ -124,7 +124,7 @@ impl Editor {
     /// `:select-skip`: advance the candidate without selecting it — the
     /// passed-over match is never offered again this session.
     pub fn occurrence_skip_pub(&mut self) {
-        if self.buf().readonly {
+        if self.buf().readonly && !self.collections.contains_key(&self.current()) {
             self.message = "readonly buffer".into();
             return;
         }
@@ -243,15 +243,15 @@ impl Editor {
             return;
         }
         let range = (range.start.get(), range.end.get());
-        // 0049 §7.2: in a collection the seed must land in an editable
-        // excerpt body — chrome rows can't seed a selection.
+        // 0049 §7.2: in a collection the seed must land in a source
+        // excerpt body — generated chrome rows can't seed a selection.
         if let Some(collection) = self.collections.get(&self.current()) {
             let inside = collection
                 .excerpts
                 .iter()
                 .any(|e| range.0 >= e.view_start && range.1 <= e.view_end);
             if !inside {
-                self.message = "not on an editable excerpt".into();
+                self.message = "not on a source excerpt".into();
                 return;
             }
         }

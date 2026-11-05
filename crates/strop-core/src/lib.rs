@@ -14,7 +14,6 @@ pub mod layout;
 pub mod mutguard;
 pub mod path_serde;
 pub mod process;
-pub mod projectguard;
 mod range;
 pub mod searchguard;
 pub mod selection;

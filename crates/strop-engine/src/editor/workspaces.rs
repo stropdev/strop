@@ -1,74 +1,154 @@
-//! Workspace registry (0042 slice 2): the editor's bound workspace
-//! contexts — one per filesystem namespace in use — with stable
-//! generational identity and an incarnation counter that bumps when an
-//! endpoint disconnects and later reconnects, so results from before a
-//! break are never mistaken for the new session's.
-//!
-//! Jobs keep capturing the concrete targets they already capture; this
-//! registry is the identity hub the explain surface reads and later
-//! capability scoping (execution bindings, container contexts) builds on.
+//! Durable project bindings (0081 §6.2): a workspace is an exact
+//! filesystem-namespace/absolute-root pair, not one mutable root per endpoint.
+//! Generational IDs keep stale owners from aliasing a later binding, while the
+//! incarnation counter advances for every root on a disconnected endpoint.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use strop_core::id::{Arena, WorkspaceId, WorkspaceKind};
-use strop_workspace::Filesystem;
+use strop_workspace::{Filesystem, ResourceLocation};
 
-/// One bound context: which filesystem, anchored where, which incarnation.
+/// The durable identity of one selected project root.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceKey {
+    pub filesystem: Filesystem,
+    #[serde(with = "strop_core::path_serde")]
+    pub root: PathBuf,
+}
+
+impl WorkspaceKey {
+    pub fn new(location: ResourceLocation) -> Result<Self, WorkspaceRootError> {
+        if !location.path.is_absolute() {
+            return Err(WorkspaceRootError::RelativePath);
+        }
+        Ok(Self {
+            filesystem: location.filesystem,
+            root: location.path,
+        })
+    }
+
+    pub fn location(&self) -> ResourceLocation {
+        ResourceLocation {
+            filesystem: self.filesystem.clone(),
+            path: self.root.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum WorkspaceRootError {
+    #[error("workspace root must be an absolute native path")]
+    RelativePath,
+    #[error(transparent)]
+    Exhausted(#[from] strop_core::id::ArenaExhausted),
+}
+
+/// One bound project: which filesystem, anchored where, which incarnation.
 pub struct WorkspaceContext {
     pub filesystem: Filesystem,
-    /// Local: the process cwd. Remote: no project-root concept yet — the
-    /// endpoint is the context; real roots arrive with container and
-    /// worktree bindings (0037).
-    pub root: Option<PathBuf>,
-    /// Bumps on disconnect; a reconnect binds a fresh incarnation.
+    /// Always absolute. Directory browsing and container WorkingDir hints do
+    /// not mutate this selected identity.
+    pub root: PathBuf,
+    /// Bumps on disconnect; reconnecting the same exact root reuses its ID.
     pub incarnation: u64,
+}
+
+impl WorkspaceContext {
+    pub fn key(&self) -> WorkspaceKey {
+        WorkspaceKey {
+            filesystem: self.filesystem.clone(),
+            root: self.root.clone(),
+        }
+    }
+
+    pub fn location(&self) -> ResourceLocation {
+        ResourceLocation {
+            filesystem: self.filesystem.clone(),
+            path: self.root.clone(),
+        }
+    }
 }
 
 #[derive(Default)]
 pub struct WorkspaceRegistry {
     arena: Arena<WorkspaceKind, WorkspaceContext>,
-    by_filesystem: HashMap<Filesystem, WorkspaceId>,
+    by_root: HashMap<WorkspaceKey, WorkspaceId>,
 }
 
 impl WorkspaceRegistry {
-    /// The context for a filesystem, binding it on first use. Idempotent:
-    /// an already-bound filesystem keeps its identity and incarnation.
-    /// Checked (0056 AR13): an exhausted identity space refuses without
-    /// touching existing bindings.
-    pub fn bind(
+    /// Deliberately select/open an exact project root. Selection is idempotent:
+    /// another root on the same endpoint gets an independent durable ID.
+    pub fn select_root(
         &mut self,
-        filesystem: Filesystem,
-        root: Option<PathBuf>,
-    ) -> Result<WorkspaceId, strop_core::id::ArenaExhausted> {
-        if let Some(id) = self.by_filesystem.get(&filesystem) {
+        root: ResourceLocation,
+    ) -> Result<WorkspaceId, WorkspaceRootError> {
+        let key = WorkspaceKey::new(root)?;
+        if let Some(id) = self.by_root.get(&key) {
             return Ok(*id);
         }
         let id = self.arena.try_insert(WorkspaceContext {
-            filesystem: filesystem.clone(),
-            root,
+            filesystem: key.filesystem.clone(),
+            root: key.root.clone(),
             incarnation: 0,
         })?;
-        self.by_filesystem.insert(filesystem, id);
+        self.by_root.insert(key, id);
         Ok(id)
     }
 
-    /// A disconnect ends the incarnation: the next bind/reconnect observes
-    /// a bumped counter rather than silently continuing the old session.
-    /// If the counter itself is exhausted the identity is retired instead —
-    /// a reconnect binds a fresh one (0056 AR13).
+    /// Resolve a resource to the longest selected root that covers it in the
+    /// same namespace. In particular, `/work/a` does not cover `/work/ab`, and
+    /// an unselected container WorkingDir is never promoted to repository proof.
+    pub fn resolve(&self, resource: &ResourceLocation) -> Option<(WorkspaceId, &WorkspaceContext)> {
+        self.resolve_path(&resource.filesystem, &resource.path)
+    }
+
+    /// Borrowed hot-path form: no path/location allocation for labels.
+    pub fn resolve_path(
+        &self,
+        filesystem: &Filesystem,
+        path: &std::path::Path,
+    ) -> Option<(WorkspaceId, &WorkspaceContext)> {
+        if !path.is_absolute() {
+            return None;
+        }
+        self.arena
+            .iter()
+            .filter(|(_, context)| {
+                context.filesystem == *filesystem && path.starts_with(&context.root)
+            })
+            .max_by_key(|(_, context)| context.root.components().count())
+    }
+
+    pub fn get(&self, id: WorkspaceId) -> Option<&WorkspaceContext> {
+        self.arena.get(id)
+    }
+
+    /// A disconnect ends every project incarnation on that endpoint. If one
+    /// counter is exhausted only that exact binding is retired; reconnect binds
+    /// a fresh generational ID without disturbing sibling projects.
     pub fn note_disconnect(&mut self, filesystem: &Filesystem) {
-        let Some(id) = self.by_filesystem.get(filesystem).copied() else {
-            return;
-        };
-        let Some(context) = self.arena.get_mut(id) else {
-            return;
-        };
-        match context.incarnation.checked_add(1) {
-            Some(next) => context.incarnation = next,
-            None => {
-                self.by_filesystem.remove(filesystem);
-                self.arena.remove(id);
+        let affected: Vec<_> = self
+            .arena
+            .iter()
+            .filter(|(_, context)| &context.filesystem == filesystem)
+            .map(|(id, _)| id)
+            .collect();
+        for id in affected {
+            let retire = match self.arena.get_mut(id) {
+                Some(context) => match context.incarnation.checked_add(1) {
+                    Some(next) => {
+                        context.incarnation = next;
+                        false
+                    }
+                    None => true,
+                },
+                None => continue,
+            };
+            if retire {
+                if let Some(context) = self.arena.remove(id) {
+                    self.by_root.remove(&context.key());
+                }
             }
         }
     }
@@ -78,42 +158,221 @@ impl WorkspaceRegistry {
     }
 }
 
+impl super::Editor {
+    /// Explicit project-open/root-selection boundary for UI, terminal and
+    /// container integration. This never changes process cwd or another root.
+    pub fn select_root(
+        &mut self,
+        root: ResourceLocation,
+    ) -> Result<WorkspaceId, WorkspaceRootError> {
+        let id = self.workspaces.select_root(root.clone())?;
+        if root.filesystem == Filesystem::Local {
+            let key = WorkspaceKey::new(root)?;
+            if let Err(error) = self.devcontainers.rediscover(key) {
+                self.message = error.to_string();
+            }
+        }
+        Ok(id)
+    }
+
+    pub fn workspace_root_for(&self, resource: &ResourceLocation) -> Option<ResourceLocation> {
+        self.workspaces
+            .resolve(resource)
+            .map(|(_, context)| context.location())
+    }
+
+    pub fn workspace_root_path(
+        &self,
+        filesystem: &Filesystem,
+        path: &std::path::Path,
+    ) -> Option<&std::path::Path> {
+        self.workspaces
+            .resolve_path(filesystem, path)
+            .map(|(_, context)| context.root.as_path())
+    }
+
+    /// Default scope for Files/Search: the focused file's parent or Directory
+    /// location, resolved through its selected longest covering project. An
+    /// unbound resource keeps its exact directory context as a non-durable
+    /// scope; browsing never binds a root or mutates process cwd implicitly.
+    pub fn current_workspace_root(&self) -> ResourceLocation {
+        if let Some(launch) = self.terminal_launch_location(self.current()) {
+            return self
+                .workspace_root_for(launch)
+                .unwrap_or_else(|| launch.clone());
+        }
+        let context = self.directory_context();
+        self.workspace_root_for(&context).unwrap_or(context)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use strop_workspace::RemoteEndpoint;
 
+    fn remote(endpoint: &RemoteEndpoint, root: &str) -> ResourceLocation {
+        ResourceLocation::remote(endpoint.clone(), PathBuf::from(root))
+    }
+
     #[test]
-    fn rebinding_keeps_identity_and_disconnect_bumps_incarnation() {
+    fn exact_roots_coexist_on_one_endpoint_and_resolve_longest_covering_root() {
+        let mut registry = WorkspaceRegistry::default();
+        let endpoint = RemoteEndpoint::parse("ssh://dev@example.com:2222").unwrap();
+        let first = registry
+            .select_root(remote(&endpoint, "/work/alpha"))
+            .unwrap();
+        let second = registry
+            .select_root(remote(&endpoint, "/work/beta"))
+            .unwrap();
+        assert_ne!(first, second);
+        assert_eq!(
+            registry
+                .select_root(remote(&endpoint, "/work/alpha"))
+                .unwrap(),
+            first
+        );
+        assert_eq!(registry.iter().count(), 2);
+
+        let nested = registry
+            .select_root(remote(&endpoint, "/work/alpha/nested"))
+            .unwrap();
+        let (_, resolved) = registry
+            .resolve(&remote(&endpoint, "/work/alpha/nested/src/lib.rs"))
+            .unwrap();
+        assert_eq!(resolved.root, PathBuf::from("/work/alpha/nested"));
+        let (resolved_id, _) = registry
+            .resolve(&remote(&endpoint, "/work/alpha/src/lib.rs"))
+            .unwrap();
+        assert_eq!(resolved_id, first);
+        assert!(registry
+            .resolve(&remote(&endpoint, "/work/alphabet/src/lib.rs"))
+            .is_none());
+        let (_, resolved) = registry
+            .resolve(&remote(&endpoint, "/work/beta/src/lib.rs"))
+            .unwrap();
+        assert_eq!(resolved.root, PathBuf::from("/work/beta"));
+        assert_eq!(registry.get(second).unwrap().incarnation, 0);
+        assert_eq!(registry.get(nested).unwrap().incarnation, 0);
+    }
+
+    #[test]
+    fn same_basename_across_namespaces_has_distinct_identity_and_labels() {
         let mut registry = WorkspaceRegistry::default();
         let local = registry
-            .bind(Filesystem::Local, Some(PathBuf::from("/work")))
+            .select_root(ResourceLocation::local("/work/app".into()))
             .unwrap();
+        let endpoint = RemoteEndpoint::parse("ssh://example.com").unwrap();
+        let remote_id = registry.select_root(remote(&endpoint, "/srv/app")).unwrap();
+        assert_ne!(local, remote_id);
         assert_eq!(
-            registry.bind(Filesystem::Local, None).unwrap(),
-            local,
-            "idempotent"
-        );
-        let endpoint = RemoteEndpoint::parse("ssh://dev@example.com:2222").unwrap();
-        let remote = registry
-            .bind(Filesystem::Remote(endpoint.clone()), None)
-            .unwrap();
-        let remote_fs = Filesystem::Remote(endpoint.clone());
-        let incarnation = |registry: &WorkspaceRegistry| {
             registry
-                .iter()
-                .find(|(_, context)| context.filesystem == remote_fs)
-                .map(|(_, context)| context.incarnation)
-        };
-        assert_eq!(incarnation(&registry), Some(0));
-        registry.note_disconnect(&remote_fs);
-        assert_eq!(incarnation(&registry), Some(1));
+                .resolve(&ResourceLocation::local("/work/app/src/lib.rs".into()))
+                .unwrap()
+                .0,
+            local
+        );
+        let (_, context) = registry
+            .resolve(&remote(&endpoint, "/srv/app/src/lib.rs"))
+            .unwrap();
+        assert_eq!(context.location().label(), "ssh://example.com/srv/app");
+        assert!(registry
+            .resolve(&ResourceLocation::local("/srv/app/src/lib.rs".into()))
+            .is_none());
+    }
+
+    #[test]
+    fn selection_requires_absolute_native_paths_without_mutating_registry() {
+        let mut registry = WorkspaceRegistry::default();
         assert_eq!(
-            registry.bind(Filesystem::Remote(endpoint), None).unwrap(),
-            remote,
-            "reconnect reuses the slot with the bumped incarnation"
+            registry.select_root(ResourceLocation::local("relative/app".into())),
+            Err(WorkspaceRootError::RelativePath)
+        );
+        assert_eq!(registry.iter().count(), 0);
+    }
+
+    #[test]
+    fn container_working_dir_is_only_a_hint_until_explicitly_selected() {
+        let mut registry = WorkspaceRegistry::default();
+        let container = strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap();
+        let working_dir = ResourceLocation {
+            filesystem: Filesystem::Container(container.clone()),
+            path: "/workdir".into(),
+        };
+        assert!(registry.resolve(&working_dir).is_none());
+        let project = ResourceLocation {
+            filesystem: Filesystem::Container(container),
+            path: "/workdir/project".into(),
+        };
+        let selected = registry.select_root(project.clone()).unwrap();
+        assert!(registry.resolve(&working_dir).is_none());
+        assert_eq!(
+            registry
+                .resolve(&ResourceLocation {
+                    filesystem: project.filesystem.clone(),
+                    path: project.path.join("src/lib.rs"),
+                })
+                .unwrap()
+                .0,
+            selected
+        );
+    }
+
+    #[test]
+    fn disconnect_bumps_all_endpoint_roots_and_reconnect_keeps_exact_ids() {
+        let mut registry = WorkspaceRegistry::default();
+        let endpoint = RemoteEndpoint::parse("ssh://dev@example.com").unwrap();
+        let filesystem = Filesystem::Remote(endpoint.clone());
+        let first = registry
+            .select_root(remote(&endpoint, "/work/alpha"))
+            .unwrap();
+        let second = registry
+            .select_root(remote(&endpoint, "/work/beta"))
+            .unwrap();
+        let local = registry
+            .select_root(ResourceLocation::local("/work/alpha".into()))
+            .unwrap();
+        registry.note_disconnect(&filesystem);
+        assert_eq!(registry.get(first).unwrap().incarnation, 1);
+        assert_eq!(registry.get(second).unwrap().incarnation, 1);
+        assert_eq!(registry.get(local).unwrap().incarnation, 0);
+        assert_eq!(
+            registry
+                .select_root(remote(&endpoint, "/work/alpha"))
+                .unwrap(),
+            first
+        );
+        assert_eq!(
+            registry
+                .select_root(remote(&endpoint, "/work/beta"))
+                .unwrap(),
+            second
         );
         let other = RemoteEndpoint::parse("ssh://other.example.com").unwrap();
         registry.note_disconnect(&Filesystem::Remote(other));
+        assert_eq!(registry.get(first).unwrap().incarnation, 1);
+    }
+
+    #[test]
+    fn exhausted_incarnation_retires_only_that_root_and_stale_id_stays_dead() {
+        let mut registry = WorkspaceRegistry::default();
+        let endpoint = RemoteEndpoint::parse("ssh://dev@example.com").unwrap();
+        let filesystem = Filesystem::Remote(endpoint.clone());
+        let retired = registry
+            .select_root(remote(&endpoint, "/work/alpha"))
+            .unwrap();
+        let sibling = registry
+            .select_root(remote(&endpoint, "/work/beta"))
+            .unwrap();
+        registry.arena.get_mut(retired).unwrap().incarnation = u64::MAX;
+        registry.note_disconnect(&filesystem);
+        assert!(registry.get(retired).is_none());
+        assert_eq!(registry.get(sibling).unwrap().incarnation, 1);
+        let fresh = registry
+            .select_root(remote(&endpoint, "/work/alpha"))
+            .unwrap();
+        assert_ne!(fresh, retired);
+        assert_eq!(registry.get(fresh).unwrap().incarnation, 0);
+        assert_eq!(registry.iter().count(), 2);
     }
 }

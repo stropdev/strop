@@ -125,7 +125,12 @@ arbitrary shell/filter commands remain unsupported.
 SFTP browsing and ranged reads need no remote worker or Python. Protected
 editing, Git, LSP and search run through a verified native worker in the
 selected namespace; worker admission may write a private executable cache
-on that host. A restricted/SFTP-only account remains read-only, with typed
+on that host. With that admission, **`:terminal`** and **Space a → Terminal
+here** also run an interactive PTY on the remote host, with the endpoint and
+launch directory retained in the modeline, pane title, buffer list and
+`:explain`. **`:terminal-local`** remains the explicit host-local alternative.
+Without a worker, terminal execution refuses rather than starting locally.
+A restricted/SFTP-only account remains read-only, with typed
 refusals instead of Python, shell, SFTP-write or local-path fallbacks. The
 worker artifact must match the target and protocol; a foreign-target
 artifact can be supplied with `STROP_WORKER_BINARY`. Git/LSP also need
@@ -153,8 +158,51 @@ into that user's private executable cache. For shell-less images, set
 `STROP_CONTAINER_WORKER_PATH` to an already installed matching binary; the
 worker is verified in place, without upload. Missing tools, wrong targets
 and recycled containers refuse typed rather than executing Git/LSP on the
-host or through an implicit `docker exec sh` fallback. Container files
-remain read-only.
+host or through an implicit `docker exec sh` fallback. Generic attachment
+starts at the inspected WorkingDir, falling back to `/`; an explicit path
+wins. WorkingDir is a navigation hint, not repository/mount proof.
+
+Worker admission enables Git/LSP, scoped Search and interactive terminals.
+Container definitions, references, diagnostics and document/workspace symbols
+open through the same canonical container identity and native root; picker
+previews use the admitted worker and never the analogous host path. Closing
+the last document in a container LSP workspace retires that workspace's
+server without affecting local, SSH or other container roots.
+**`:container-edit`** is the separate file-authority step: it verifies the
+displayed snapshot against that incarnation and then permits editing. Saves
+use the worker's conditional Store baseline, protected staging and atomic
+publication; conflicts and unconfirmed outcomes retain verification evidence
+and never become `docker cp` or blind rewrites. Worker admission alone leaves
+files read-only. Filesystem mutations and project replacement remain refused.
+
+## Dev Container configurations
+
+Selecting a project root performs bounded, read-only discovery of
+`.devcontainer/devcontainer.json`, `.devcontainer.json` and one-subfolder-deep
+`.devcontainer/<folder>/devcontainer.json`. JSONC and multiple configurations
+are supported. A single non-focusing **Dev container configuration found**
+offer has Review, Later and workspace-scoped suppression actions; changed
+configuration digests invalidate earlier decisions. Discovery never invokes
+Docker, the reference CLI, lifecycle hooks, builds, pulls or network
+authentication.
+
+**Space a → Review options** shows the selected configuration, provider,
+engine, users, workspace/mount mapping and redacted effects before consent.
+Host initialization, mounts/sockets, privileges/capabilities, devices, host
+networking, credential forwarding and ports are explicit trust inputs.
+Attach existing, create/start and rebuild are different actions. The optional
+reference Dev Container CLI versions 0.87–0.90.x are supported; Strop never
+installs it automatically and ordinary editing needs no such dependency.
+Image, Dockerfile and Compose main-service configurations are supported;
+unsupported shapes remain inspectable and refuse rather than becoming a
+generic `docker run`.
+
+Setup logs stream into a real read-only buffer, with cancellation and partial
+resources retained for inspection. Dirty local buffers require Save/Stay/Cancel
+before switching. Successful transitions verify the returned container and
+workspace mapping before opening it; rebuild retires the previous incarnation
+without deleting containers or volumes. Remote engines, automatic port
+forwarding and template/Feature marketplaces are outside this workflow.
 
 In a container without an init/reaper at PID 1, repeated Docker exec
 bootstrap processes can remain as zombies after they exit. Strop closes its

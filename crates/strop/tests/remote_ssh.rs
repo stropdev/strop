@@ -10,6 +10,8 @@ use std::process::{Command, Output};
 mod filesystem;
 #[path = "remote_ssh/search.rs"]
 mod search;
+#[path = "remote_ssh/terminal.rs"]
+mod terminal;
 #[path = "remote_ssh/writes.rs"]
 mod writes;
 

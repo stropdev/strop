@@ -277,8 +277,8 @@ impl CompletionContext {
                         .docs
                         .get(target.source)
                         .is_some_and(|document| document.buf.revision() == target.revision)
-                    && editor.source_edit_position(self.scope.view, selection.head)
-                        == Some((target.source, target.caret))
+                    && target.source == self.scope.view
+                    && selection.head == target.caret
             })
     }
 }
@@ -339,9 +339,8 @@ pub(super) fn capture(
     for selection in std::iter::once(editor.view().sels.primary())
         .chain(editor.view().sels.extra_heads().iter().copied())
     {
-        let (source, caret) = editor
-            .source_edit_position(editor.current(), selection.head)
-            .ok_or(ContextRefusal::UnsupportedSurface)?;
+        let source = editor.current();
+        let caret = selection.head;
         let document = editor
             .docs
             .get(source)
@@ -359,21 +358,8 @@ pub(super) fn capture(
             return Err(ContextRefusal::ReadOnly);
         }
         let (start, end) = keyword_span(document.buf.text(), caret)?;
-        let view_start = selection
-            .head
-            .checked_sub(caret - start)
-            .ok_or(ContextRefusal::UnsupportedSurface)?;
-        let view_end = selection
-            .head
-            .checked_add(end - caret)
-            .ok_or(ContextRefusal::InvalidPosition)?;
-        // Both ends must be in the same authoritative excerpt; a completion
-        // prefix must not reach backwards through generated collection chrome.
-        if editor.source_edit_position(editor.current(), view_start) != Some((source, start))
-            || editor.source_edit_position(editor.current(), view_end) != Some((source, end))
-        {
-            return Err(ContextRefusal::UnsupportedSurface);
-        }
+        let view_start = start;
+        let view_end = end;
         if let Some(primary) = targets.first() {
             let original = editor
                 .docs

@@ -30,7 +30,7 @@ pub(crate) struct RemoteState {
     choices: Option<Ticket<super::picker::PickerId>>,
     destination_write: Option<Ticket<RemoteFile>>,
     destination_queue: Vec<RemoteFile>,
-    writes: save::WriteState,
+    pub(crate) writes: save::WriteState,
 }
 impl Default for RemoteState {
     fn default() -> Self {
@@ -49,6 +49,10 @@ impl Default for RemoteState {
 }
 
 impl RemoteState {
+    pub(crate) fn control_pending(&self) -> bool {
+        !self.controls.is_empty()
+    }
+
     pub(super) fn worker_requested(&self, endpoint: &RemoteEndpoint) -> bool {
         self.controls.values().any(|key| {
             matches!(&key.operation, RemoteControl::AdmitWorker(selected) if selected == endpoint)

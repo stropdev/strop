@@ -60,6 +60,21 @@ fn fail(editor: &mut Editor, id: u64, reason: &str) {
 }
 
 #[test]
+fn modeline_relativizes_to_the_longest_selected_project_root() {
+    let mut editor = editor("fn main() {}\n", Some("/w/one/src/main.rs"));
+    editor
+        .select_root(strop_workspace::ResourceLocation::local("/w".into()))
+        .unwrap();
+    editor
+        .select_root(strop_workspace::ResourceLocation::local("/w/one".into()))
+        .unwrap();
+    let row = row(&editor, 80, 4);
+    assert!(row.contains("src/"), "{row:?}");
+    assert!(row.contains("main.rs"), "{row:?}");
+    assert!(!row.contains("one/src"), "{row:?}");
+}
+
+#[test]
 fn a_long_path_cannot_crowd_out_status_or_position() {
     let mut editor = editor(
         "alpha\nbeta\n",
@@ -363,6 +378,92 @@ fn historical_delta_names_its_revision_and_file_not_the_worktree() {
         !row.contains("main"),
         "history is not labelled as today's branch: {row}"
     );
+}
+
+#[test]
+fn terminal_modeline_names_its_launch_namespace_at_every_width() {
+    for (location, expected_namespace) in [
+        (
+            strop_workspace::ResourceLocation::local("/w/launch".into()),
+            "local",
+        ),
+        (
+            strop_workspace::ResourceLocation::remote(
+                strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+                "/srv/launch".into(),
+            ),
+            "ssh://fixture",
+        ),
+    ] {
+        let mut editor = editor("origin", None);
+        editor.terminal_fixture_at(
+            location,
+            &[("safe", strop_terminal::model::Style::default())],
+            strop_terminal::model::Phase::Running,
+        );
+        for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
+            let shown = row(&editor, columns, rows);
+            if columns >= 80 {
+                assert!(
+                    shown.contains(expected_namespace),
+                    "{columns}x{rows}: {shown}"
+                );
+                assert!(shown.contains("launch"), "{columns}x{rows}: {shown}");
+            } else if expected_namespace == "local" {
+                assert!(shown.contains("local"), "{columns}x{rows}: {shown}");
+            } else {
+                assert!(shown.contains("ssh://"), "{columns}x{rows}: {shown}");
+                assert!(!shown.contains("local"), "{columns}x{rows}: {shown}");
+            }
+        }
+    }
+}
+
+#[test]
+fn terminal_owner_actions_and_attention_survive_golden_cell_sizes() {
+    let mut editor = editor("origin", None);
+    let document = editor.terminal_fixture(
+        &[("safe", strop_terminal::model::Style::default())],
+        strop_terminal::model::Phase::Running,
+    );
+    editor.feed_text("i");
+    for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
+        let shown = row(&editor, columns, rows);
+        assert!(shown.contains("F2 inspect"), "{columns}x{rows}: {shown}");
+    }
+    editor.handle_app_event(strop_engine::editor::events::AppEvent::Input(
+        strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent::press(
+            strop_core::frontend_input::KeyCode::Function(2),
+        )),
+    ));
+    editor.terminal_fixture_publish(
+        document,
+        &[
+            ("safe", strop_terminal::model::Style::default()),
+            ("new", strop_terminal::model::Style::default()),
+        ],
+    );
+    editor.terminal_fixture_hold_paste(document, 7);
+    editor.feed_text("l");
+    assert!(editor.terminal_has_new_output(document));
+    assert!(editor.terminal_paste_held(document));
+    for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
+        let shown = row(&editor, columns, rows);
+        assert!(shown.contains("SNAPSHOT"), "{columns}x{rows}: {shown}");
+        assert!(shown.contains("i input"), "{columns}x{rows}: {shown}");
+        assert!(shown.contains("out+"), "{columns}x{rows}: {shown}");
+        if columns >= 80 {
+            assert!(shown.contains("Space a Refresh"), "{shown}");
+            assert!(shown.contains("paste+"), "{shown}");
+        }
+    }
+    for (columns, rows) in [(24, 8), (8, 2), (1, 1)] {
+        let shown = row(&editor, columns, rows);
+        assert!(
+            width(&shown) <= usize::from(columns),
+            "{columns}x{rows}: {shown}"
+        );
+    }
 }
 
 #[test]

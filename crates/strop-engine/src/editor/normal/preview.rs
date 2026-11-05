@@ -14,6 +14,18 @@ impl Editor {
     /// (the modeline shows them); no operator or no origin means no
     /// preview at all.
     pub fn preview(&self) -> Result<Option<(Vec<Range>, String)>, String> {
+        if let Some(state) = self.substitute_preview() {
+            return match state {
+                super::substitute::SubstitutePreviewState::Ready(preview) => {
+                    Ok(Some((preview.ranges().collect(), preview.summary())))
+                }
+                super::substitute::SubstitutePreviewState::Invalid(error)
+                | super::substitute::SubstitutePreviewState::Unavailable(error) => Err(error),
+                super::substitute::SubstitutePreviewState::Resolving
+                | super::substitute::SubstitutePreviewState::NoTarget
+                | super::substitute::SubstitutePreviewState::Incomplete(_) => Ok(None),
+            };
+        }
         let Some((command, cursors)) = self.preview_command()? else {
             return Ok(None);
         };
@@ -35,6 +47,15 @@ impl Editor {
         )))
     }
 
+    pub fn preview_is_resolving(&self) -> bool {
+        let Ok(Some((command, cursors))) = self.preview_command() else {
+            return false;
+        };
+        command.op.is_some()
+            && self.resolution_is_large(&command)
+            && !self.resolution_ready(&command, &cursors)
+    }
+
     pub(crate) fn prepare_resolution_preview(&mut self) {
         if self.resolution.blocked()
             || self
@@ -43,6 +64,25 @@ impl Editor {
                 .is_some_and(|prompt| prompt.search().is_some())
         {
             return;
+        }
+        if let Some(prompt) = self.pending.prompt() {
+            if let crate::editor::pending::PromptContext::Ex(origin) = prompt.context() {
+                if !self.pending_origin_valid(origin) {
+                    self.resolution.cancel_preview();
+                    return;
+                }
+                match super::substitute::parse(
+                    prompt.body(),
+                    self.buf(),
+                    origin.pane.sels.primary().head,
+                ) {
+                    Ok(Some(spec)) => {
+                        self.prepare_ex_substitute(spec, origin.pane.sels.heads());
+                    }
+                    Ok(None) | Err(_) => self.resolution.cancel_preview(),
+                }
+                return;
+            }
         }
         match self.preview_command() {
             Ok(Some((command, cursors))) => {

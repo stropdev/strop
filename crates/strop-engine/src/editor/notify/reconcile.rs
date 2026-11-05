@@ -194,6 +194,9 @@ impl Editor {
                         root.label()
                     );
                 }
+                if session.is_some() {
+                    self.note_remote_worker_recovered(&endpoint);
+                }
             }
             Outcome::Failed { failure, .. } => {
                 self.notify.remote.remove(&root);

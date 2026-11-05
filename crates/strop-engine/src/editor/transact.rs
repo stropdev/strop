@@ -84,20 +84,6 @@ impl super::Editor {
         map_active: bool,
         position: impl Fn(usize, &Change) -> usize,
     ) {
-        // A collection buffer's own edits write back to their sources
-        // through the journal — live, per keystroke (0051 R05). System
-        // regenerations (render/splice) and history moves never do.
-        if self.collections.contains_key(&id)
-            && self.docs.get(id).is_some_and(|doc| {
-                doc.buf
-                    .changes()
-                    .iter()
-                    .any(|c| c.origin == strop_core::ChangeOrigin::User)
-            })
-        {
-            self.sync_collection_write_back(id, map_active, &position);
-            return;
-        }
         self.sync_filename_draft(id);
         let change_count = self.docs.get(id).map_or(0, |doc| doc.buf.changes().len());
         if change_count == 0 {
@@ -109,8 +95,8 @@ impl super::Editor {
             let change = self.doc(id).buf.changes()[index];
             self.map_navigation_records(id, |offset| position(offset, &change));
         }
-        // Snapshot clean views before the mutable document borrow: a
-        // view with an unsynced user edit is never regenerated (0049 §5).
+        // Snapshot clean views before the mutable document borrow: source
+        // refreshes never overwrite an in-flight system projection update.
         let clean_views: std::collections::HashSet<DocumentId> = self
             .collections
             .iter()

@@ -32,7 +32,7 @@ fn real_f2_enters_terminal_inspection() {
     tui.send(b":terminal env PS1='STROP-PTY> ' /bin/sh -i\r");
     tui.until(|screen| screen.contains("TERMINAL") && screen.contains("STROP-PTY>"));
     tui.send(b"\x1bOQ");
-    tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
+    tui.until(|screen| screen.contains("SNAPSHOT"));
 }
 
 #[test]
@@ -55,10 +55,11 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"printf '\\033[?2004lPASTE-READY\\n'; read first; read second; printf 'PASTE:%s|%s\\n' \"$first\" \"$second\"\r");
     tui.until(|screen| line(screen, "PASTE-READY"));
     tui.send(b"\x1b[200~alpha\nbeta\n\x1b[201~");
-    let held = tui.until(|screen| screen.contains("paste held"));
+    let held = tui.until(|screen| screen.contains("paste+"));
     assert!(!line(&held, "alpha") && !line(&held, "beta"));
-    tui.send(b"\x1c\x0e");
-    tui.until(|screen| screen.contains("NORMAL") && screen.contains("snapshot"));
+    tui.send(b"\x1c");
+    tui.send(b"\x0e");
+    tui.until(|screen| screen.contains("SNAPSHOT"));
     tui.send(b":terminal-paste\r");
     tui.until(|screen| line(screen, "PASTE:alpha|beta") && screen.contains("TERMINAL"));
     tui.send(b"nvim --clean nested.txt\r");
@@ -161,7 +162,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| line(screen, "MODE-DONE"));
     // F2 enters inspection directly at a calm prompt.
     tui.send(b"\x1bOQ");
-    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
+    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
     tui.send(b"i");
     tui.until(|screen| screen.contains("TERMINAL"));
     // Sustained output (0055 §12): while a sixteen-KiB `yes` stream floods
@@ -173,13 +174,14 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     // travel as cell runs, so the flood cannot exhaust the capture bound
     // and degrade the trace.
     tui.send(b"printf 'FLOOD-START\\n'; yes | head -c 16384; printf '\\r\\nFLOOD-DONE\\n'\r");
-    tui.send(b"\x1c\x0e");
+    tui.send(b"\x1c");
+    tui.send(b"\x0e");
     // The capture's per-update frame records queue ahead of this escape on
     // slow runners; the escape still lands in order — the mid-flood input
     // contract. The pinned-view proof is the mode chip: the transient
     // "snapshot" message is cleared by the very next update while the
     // flood streams.
-    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
+    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
     tui.send(b"i");
     let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>"));
     assert!(
@@ -188,8 +190,9 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     );
     tui.send(b"mkfifo pause; (exec 3<>pause; printf '\\r\\nINSPECTION-READY\\n'; read go <&3; printf '\\r\\nASYNC-INSPECTION-OUTPUT\\n') &\r");
     tui.until(|screen| line(screen, "INSPECTION-READY"));
-    tui.send(b"\x1c\x0e");
-    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
+    tui.send(b"\x1c");
+    tui.send(b"\x0e");
+    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
     File::options()
         .write(true)
         .custom_flags(libc::O_NONBLOCK)
@@ -197,7 +200,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         .unwrap()
         .write_all(b"go\n")
         .unwrap();
-    let frozen = tui.until(|screen| screen.contains("new output"));
+    let frozen = tui.until(|screen| screen.contains("out+"));
     assert!(!line(&frozen, "ASYNC-INSPECTION-OUTPUT"));
     // The pinned view never drags to new output (0065): refresh installs
     // the latest published frame, and a search inside the pinned buffer
@@ -232,7 +235,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"p");
     tui.until(|screen| !screen.contains("terminal #") && numbered_line(screen, "INSPECTION-READY"));
     tui.send(b":q!\r");
-    tui.until(|screen| screen.contains("NORMAL") && screen.contains("terminal #"));
+    tui.until(|screen| screen.contains("SNAPSHOT") && screen.contains("terminal #"));
     tui.send(b":vs\ri");
     // 0064 §1 geometry: left pane cols 0..58, its track 58, divider 59,
     // right pane content 60..119, right track 119 — compare by range,
@@ -249,7 +252,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     // focus lands on the left editor pane (NORMAL), then returns to the
     // terminal pane and resumes live input with i.
     tui.send(b"\x1bOQ w l");
-    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("TERMINAL"));
+    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
     tui.send(b" w hi");
     tui.until(|screen| screen.contains("TERMINAL"));
     tui.send(b"printf 'SIZE:'; stty size\r");
@@ -271,12 +274,9 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
                 .any(|row| row.chars().take(119).any(|cell| cell == '\u{2502}'))
     });
     tui.send(b"\x1c\x0e:qa\r");
-    tui.until(|screen| screen.contains("terminal sessions are running"));
-    tui.send(b":terminal-stop\r");
-    tui.until(|screen| {
-        screen.contains("NORMAL")
-            && (screen.contains("terminal ended") || screen.contains("terminal exited"))
-    });
+    tui.until(|screen| screen.contains("Stop terminal session"));
+    tui.send(b"\x1b[B\r");
+    tui.until(|screen| screen.contains("SNAPSHOT") && screen.contains("exited"));
     tui.send(b":qa\r");
     assert!(tui.wait_exit().success());
     // The flood never degraded the capture: the file says so itself.

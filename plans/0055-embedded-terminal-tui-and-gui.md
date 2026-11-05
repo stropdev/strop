@@ -18,6 +18,12 @@ architecture, then 0057 verifies the pre-worker core. [0058](0058-unified-native
 unifies/requalifies native process/PTY integration afterward, before 0059 completion,
 0060 debugger and 0061 GUI. It preserves T01–T10; emulator/grammar/views stay in-engine.
 
+**0081 amendment:** terminal entries/documents retain their admitted
+`ResourceLocation`; SSH and admitted container PTYs label that namespace while
+`:terminal-local` stays visibly local. F2/`i` ownership cues survive narrow
+widths; Space a owns refresh/paste/session/stop/quit-review actions and live
+`:qa` no longer hides process choices behind one ephemeral refusal.
+
 ## 1. Recommendation
 
 **Reuse an emulator, own the editor integration. Do not build a VT emulator, embed
@@ -612,9 +618,10 @@ Do not substitute WSL, a mocked GPU renderer or dependency presence for evidence
 
 ## 13. Explicit follow-ons, not hidden milestone reductions
 
-- Remote interactive SSH terminals, container exec terminals and terminal service
-  forwarding need new transport/authority contracts. Existing remote read/write
-  helpers are not the missing terminal backend.
+- Remote interactive SSH terminals and container exec terminals now run through
+  the 0058/0081 admitted worker and incarnation contracts; terminal service
+  forwarding remains separate. Existing remote read/write helpers alone are not
+  authority to launch, and unadmitted launches never fall back locally.
 - Terminal graphics/image protocols, downloads, shell integration/command markers,
   automatic diagnostic linking, task recipes, session persistence/reattachment and
   cross-process TUI↔GUI session transfer are separate extensions.

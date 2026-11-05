@@ -393,6 +393,11 @@ impl Editor {
         let reestablish = !lost.is_empty();
         for root in lost {
             let path = root.path.clone();
+            let endpoint = self
+                .notify
+                .remote
+                .get(&root)
+                .map(|scope| scope.endpoint.clone());
             if let Some(scope) = self.notify.remote.get_mut(&root) {
                 scope.subscription = None;
                 scope.session = None;
@@ -401,6 +406,15 @@ impl Editor {
             self.message =
                 "remote filesystem notifications lost with the worker; reestablishing coverage"
                     .into();
+            if let Some(endpoint) = endpoint {
+                self.note_remote_connection_lost(
+                    &endpoint,
+                    format!(
+                        "remote filesystem notifications lost with the worker for {}; freshness is being reestablished",
+                        root.label()
+                    ),
+                );
+            }
         }
         if reestablish {
             self.start_remote_notifications();

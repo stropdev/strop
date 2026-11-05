@@ -22,6 +22,11 @@ runtime source hashes and method bindings are recorded under
 `verification/measurements/`; the native bundle is checked by
 `verification/native_evidence.py` and included in the candidate freeze.
 
+**0081 amendment:** admitted container leases now also drive scoped Search,
+interactive PTYs and separate per-document conditional Store authority. These
+are explicit contract extensions, not permission to bypass incarnation checks,
+write permits or the existing refusal paths.
+
 Platform amendment for 0.36.0 (explicit user approval): **Intel macOS
 is removed from the supported product and release matrix**. Retain
 GNU/musl Linux x86_64/aarch64 and Apple Silicon macOS. Remove its

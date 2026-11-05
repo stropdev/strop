@@ -71,7 +71,7 @@ impl Editor {
                     glue.picker.toggle_field();
                 }
             }
-            // ctrl-o: the listed hits become an editable collection (0044).
+            // ctrl-o: the listed hits become a read-only source collection (0081).
             Key::CtrlO => self.open_collection_from_picker(),
             Key::CtrlD if search => {
                 if glue.picker.toggle_file_excluded() {

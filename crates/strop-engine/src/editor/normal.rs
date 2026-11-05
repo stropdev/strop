@@ -9,6 +9,12 @@ mod motions;
 mod pending;
 mod preview;
 mod search;
+pub(crate) mod substitute;
+
+pub use substitute::{
+    PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
+    SubstitutionPreview,
+};
 
 use strop_grammar::{self as grammar, Parse};
 
@@ -19,7 +25,7 @@ use strop_core::frontend_input::Key;
 /// list — one table, no drift).
 pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("theme", "choose a built-in interface palette"),
-    ("terminal", "local interactive shell or explicit command"),
+    ("terminal", "interactive shell in the selected namespace"),
     (
         "terminal-local",
         "explicit local shell even from an SSH/container context",
@@ -79,6 +85,10 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "container-worker",
         "authorize a verified worker for the attached container",
     ),
+    (
+        "container-edit",
+        "verify this snapshot and enable editing in the attached container",
+    ),
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
     ("symbols", "open the document symbols picker"),
@@ -121,25 +131,11 @@ impl Editor {
         if self.buf().readonly {
             return self.feed_readonly(key);
         }
-        // 0051 R05: +/- in a collection grow/shrink excerpt context —
-        // a collection override of the vim line motions, named as such
-        if self.walker.is_ground() && self.collections.contains_key(&self.current()) {
-            match key {
-                Key::Char('+') => {
-                    self.collection_context_step(true);
-                    return;
-                }
-                Key::Char('-') => {
-                    self.collection_context_step(false);
-                    return;
-                }
-                _ => {}
-            }
-        }
         // Esc is a mode-level key: collapse to the primary cursor and
         // ground the machine (0013 §3) — it never walks the trie
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
+            self.cancel_container_write(self.current());
             self.collapse_cursors();
             self.walker.clear();
             return;
@@ -176,6 +172,8 @@ impl Editor {
     pub(crate) fn refuse_readonly(&mut self) {
         self.message = if self.terminal_document(self.current()).is_some() {
             "terminal snapshot — i/I/a/A enter input".into()
+        } else if self.collections.contains_key(&self.current()) {
+            "collection is read-only — g<Space> opens the source".into()
         } else {
             "readonly buffer".into()
         };
@@ -223,13 +221,19 @@ impl Editor {
                                 | "pane-nav"
                                 | "pane-split"
                                 | "pane-close"
-                                | "hunk-nav"
+                                | "hunk-next"
+                                | "hunk-prev"
                                 | "clip-yank"
                                 | "redraw"
                                 | "view-place"
                                 | "visible-jumps"
                                 | "scroll-pages"
                                 | "enter"
+                                | "collection-source"
+                                | "collection-file-next"
+                                | "collection-file-prev"
+                                | "collection-excerpt-next"
+                                | "collection-excerpt-prev"
                                 | "jumplist"
                                 | "jump-forward"
                                 | "goto-definition"
@@ -238,7 +242,8 @@ impl Editor {
                                 | "implementation"
                                 | "type-definition"
                                 | "declaration"
-                                | "diagnostic-jumps"
+                                | "diagnostic-next"
+                                | "diagnostic-prev"
                                 | "hover"
                                 | "remote-open"
                                 | "files"

@@ -241,7 +241,7 @@
         },
         {
           "id": "THEME-TERMINAL-OWNERSHIP",
-          "statement": "Idle and starting terminal sessions receive the latest theme through a bounded coalesced request; pinned inspection keeps its text while native palette overrides survive. Appearance changes do not consume input sequences, no-op focus settles, and input credit maps through resizes correctly.",
+          "statement": "Idle and starting terminal sessions receive the latest theme through a bounded coalesced request; pinned inspection keeps its text while native palette overrides survive. Appearance changes do not consume input sequences, no-op focus settles, and input credit maps through resizes correctly. Theme/status presentation preserves exact local/SSH/container launch identity using one attention-aware terminal_status_reserve shared by both fitting stages: 38 cells when attention is present at 80+ columns keep launch identity and the complete Space a Refresh attention action, while the 14-cell non-attention/narrow reserve keeps F2/i and out+ cues at 48 columns. At 80+ columns a pending prefix reserves the full status width, keeping the complete any-other-key-sends-to-child guidance visible.",
           "status": "native-tested",
           "evidence": [
             {
@@ -270,6 +270,31 @@
                 "theme_requests_coalesce_and_wake_even_when_child_input_is_full",
                 "startup_accepts_the_latest_theme_but_closed_services_reject_it"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/statusline/tests.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_modeline_names_its_launch_namespace_at_every_width",
+                "terminal_owner_actions_and_attention_survive_golden_cell_sizes"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/terminal_tests.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_input_and_inspection_present_distinct_states"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/explain.rs",
+              "gate": "test",
+              "tests": [
+                "explain_retains_remote_terminal_launch_identity"
+              ]
             }
           ],
           "migration": {
@@ -291,8 +316,8 @@
           "crates/strop-core/src/theme/nord.rs": "2c1ab4a609639b785dc44415e841e9adea35c7a206aa1f92e7b677650caa6c81",
           "crates/strop-core/src/theme/paper.rs": "c0e157c82621607f8110555746dd131b2cfbece82758fb33139d5b34c337365d",
           "crates/strop-engine/src/config.rs": "2b4226e870a8b33f6661434919e455b03eddb783fae062019bbedf9966bb5604",
-          "crates/strop-engine/src/editor/terminal/lifecycle.rs": "6dfc0aea30192d4c1850516a91c15ed5eebac2c051fd3ef442e24ffa54d6afcf",
-          "crates/strop-engine/src/editor/terminal/presentation.rs": "dd2f52fb001241e934a0a86ce46bd23b90344b9e5f18aad5c5e002c10d303d43",
+          "crates/strop-engine/src/editor/terminal/lifecycle.rs": "3d24477bbcd5639ba672f619aeec34bf17b4c05cd8c028a265a8ab2681949747",
+          "crates/strop-engine/src/editor/terminal/presentation.rs": "4c81ef1f50bf701a10cfd72917e330acb37f38f904d853d696ac1b73cf52331a",
           "crates/strop-engine/src/editor/theme.rs": "916402e01abd99ce3c36b42381ffee31b64b384c38dcba71291a9a714869de38",
           "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
           "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
@@ -312,11 +337,11 @@
           "crates/strop/src/render/picker/mod.rs": "e7bcabf69283bd089729743ea347eff9c02fb8906bfb2da7d5dd861e1cbad617",
           "crates/strop/src/render/picker/preview.rs": "7b99e1fbda4ee6b9a28652c3aafe95a369e122e0a2130effb07eef74e1eae9cf",
           "crates/strop/src/render/picker/rows.rs": "32902b37178a1c70ccfef53ca19d88019387652d9c3e7a6335c1fc133afb57c8",
-          "crates/strop/src/render/statusline.rs": "0a5d0762fde8f8120085daddf929264754f6eefeb0221942c4548fc35c1bfd9b",
+          "crates/strop/src/render/statusline.rs": "060398fcde96ab25708cafd20d194f766a3b745019b20f7bafb1f869b1eb15cb",
           "crates/strop/src/render/statusline/services.rs": "17f369238f75ec9c8ca96b048d2f454a24a01396ce504e78bf3785d23b952b02",
           "crates/strop/src/ui_stdio/mod.rs": "77aa880284354afa41ce58a22ead9824e22e808e52a4f3789d1ed4e8abd7757c"
         },
-        "evidence": "f89fee87b0a98c33b967e6c10187e3505d4f0adf7003794e6babe1360ff8bdc3"
+        "evidence": "681cd0be3bee11f7d8bb18cff9cd840962f782bfc09261c00895497b8db476bb"
       }
     },
     {
@@ -349,9 +374,51 @@
         "crates/strop-grammar/src/query/parse/atoms.rs",
         "crates/strop-engine/src/editor/visual.rs",
         "crates/strop-syntax/src/comments.rs",
-        "crates/strop-engine/src/editor/transact/capability.rs"
+        "crates/strop-engine/src/editor/transact/capability.rs",
+        "crates/strop-engine/src/editor/normal/ex.rs",
+        "crates/strop-engine/src/editor/normal/pending.rs",
+        "crates/strop-engine/src/editor/normal/substitute.rs",
+        "crates/strop-engine/src/editor/normal/preview.rs",
+        "crates/strop/src/render/cmd_card.rs"
       ],
       "claims": [
+        {
+          "id": "MUT-SUBSTITUTE-PREVIEW",
+          "statement": "Ex substitution preview and Enter consume one bounded buffer-search plan stamped to exact source/cursor/spec identity. Changed text, deletions, counts and offscreen extent are inspectable before apply; invalid/stale work cannot reuse a prior plan and composition has no mutation, register or undo effects.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/normal/substitute/tests.rs",
+              "gate": "test",
+              "tests": [
+                "preview_apply_and_cancel_share_one_plan_without_composition_effects",
+                "query_metacharacters_and_non_global_line_semantics_are_not_literal",
+                "delimiters_and_replacement_escaping_have_explicit_literal_rules",
+                "unicode_crlf_and_deletion_preview_keep_exact_apply_semantics",
+                "incomplete_invalid_and_stale_input_never_reuses_valid_output",
+                "cursor_identity_no_target_and_offscreen_counts_are_truthful",
+                "whole_buffer_offsets_are_invalid_instead_of_substituting_everything",
+                "large_preview_resolves_without_mutating_and_enter_waits_for_the_same_work",
+                "outer_operator_field_mode_and_next_escape_are_exposed_for_ex_and_search"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/cmd_card.rs",
+              "gate": "test",
+              "tests": [
+                "substitute_card_shows_real_before_after_cells_then_invalidates_them",
+                "substitute_card_reports_offscreen_extent_and_outer_field_mode"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 replaces the standalone literal executor with a shared pure substitution plan and actual before/after preview."
+          }
+        },
         {
           "id": "MUT-VISUAL-COMMENT-TRANSACTION",
           "statement": "Visual comment toggles publish one checked non-overlapping batch in one undo group, preserve the selected lines and caret column, and refuse unknown languages before mutation.",
@@ -407,7 +474,6 @@
                 "large_source_structural_enter_orders_typeahead_and_keeps_one_undo_unit",
                 "stale_indentation_delivery_cannot_edit_a_new_revision",
                 "readonly_transition_revokes_pending_indentation_without_moving_caret",
-                "collection_closer_resolves_opener_outside_excerpt_and_writes_back_once",
                 "changed_indent_settings_reject_a_pending_decision",
                 "unicode_backspace_stays_truthful_when_dot_replays_structural_enter",
                 "enter_splits_brackets_and_parentheses_with_intervening_whitespace",
@@ -421,7 +487,7 @@
           "migration": {
             "from": null,
             "classification": "new",
-            "basis": "0072 adds 29 smartindent regressions through the production insertion/resolution/transaction path. Existing mutation kernel theorems do not prove structural indentation decisions or replay semantics."
+            "basis": "0072 adds source-aware insertion/resolution/transaction regressions; 0081 removes only the retired collection write-through case, leaving source-buffer semantics covered."
           }
         },
         {
@@ -598,20 +664,25 @@
           "crates/strop-core/src/mutguard.rs": "81cd772ea21b5ca5e7e9e7755d0216b5313f900f0f85aa5279426bafcbea589c",
           "crates/strop-engine/src/editor/insert.rs": "f9e5e682e26de7a841f1b5e68969b9107b8101dfec16305d86dca3eed52ed968",
           "crates/strop-engine/src/editor/insert/replay.rs": "562d44b4542a7abcd6d5672bff6c7b71c832510c3d5a479bfdc831d08901ec47",
+          "crates/strop-engine/src/editor/normal/ex.rs": "2c790378830cff119d5c718c3bafed8d7cef303340c0ea7c9d6af789e22b02d7",
+          "crates/strop-engine/src/editor/normal/pending.rs": "301589d5d147fcd82c6eb72e6b8b9477421885003b8f8700fd30702add854549",
+          "crates/strop-engine/src/editor/normal/preview.rs": "7a956b3246d4ceb3e46cf8a0c107255a949f412dc3b0f5fbbacbdd5fc0adc58b",
+          "crates/strop-engine/src/editor/normal/substitute.rs": "b0e6f11fcca816539d39da4b646edf66e2eb1bf0a3edcd359e8a5cd87be9c12b",
           "crates/strop-engine/src/editor/resolution/indentation.rs": "84dd7de96f5ce1cfe924e6786d9d0f3a607b618cdbeb171c7cae4a03d075176f",
-          "crates/strop-engine/src/editor/resolution/mod.rs": "9759aea9bc78977cf9f96cbeed56d04e04554444bf04a9198c0b57de49d17643",
-          "crates/strop-engine/src/editor/resolution/worker.rs": "a631f8175306c0da5f3a3af7447918c3983e3e6d0926ef805dbb4bd8429a57e4",
+          "crates/strop-engine/src/editor/resolution/mod.rs": "75bdf588dd821307017424dd05aa5401b4a3cb0f4c87115abc9812f0db0d9035",
+          "crates/strop-engine/src/editor/resolution/worker.rs": "1f7004a110cde8a39999300f5fc63019b8aa0692e195abdb5fd502244e9c03b3",
           "crates/strop-engine/src/editor/structural_indent.rs": "5895efb474528992a65ee5b3db0e29a4130b151e68faaa9dc59b2faa1afb8d48",
-          "crates/strop-engine/src/editor/structural_indent/source.rs": "51839b61d2d87728598417c65dec63a068272632dde39934f9277058c88b7865",
-          "crates/strop-engine/src/editor/transact.rs": "8a34847feac5a8509fb79129430f702783d036c5270461dd8ac0526a05c6b438",
+          "crates/strop-engine/src/editor/structural_indent/source.rs": "f1643f5547ca22b05f5e5eead6c9a3bcb6b890585624642ee003f3a41a42bd0e",
+          "crates/strop-engine/src/editor/transact.rs": "75d09c50f092c0df474714653d1694952968d396a99a9fbbb6613af3e01a3f58",
           "crates/strop-engine/src/editor/transact/capability.rs": "a3aba86cdd865382b14a55f9e2ad6d675fd7f2c20a5a529fecea581efeec3772",
           "crates/strop-engine/src/editor/visual.rs": "59c8f32974ed5669c32ee1b47855205bb9f23d154f67a4dea9d9b4e023474db9",
           "crates/strop-grammar/src/query/parse.rs": "55ea7bf10ef9af7e2addb84e73eec9a948075af2bcbcaf72398a40b504684ea5",
           "crates/strop-grammar/src/query/parse/atoms.rs": "2e32f011a930d692c6c001b2327e93a4b2e212b580af564397e6bf49c249bca6",
           "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
-          "crates/strop-syntax/src/indentation.rs": "2e3ebd83b3ab28d26661e69a15398c814e256a633cc9019185f978780b9592c3"
+          "crates/strop-syntax/src/indentation.rs": "2e3ebd83b3ab28d26661e69a15398c814e256a633cc9019185f978780b9592c3",
+          "crates/strop/src/render/cmd_card.rs": "fb661e939b62ded61933f7f3f4527f1944e3b461875cf54f6c3e2a1f58972518"
         },
-        "evidence": "e360166c578cdf5d3f334fa633eb709c60b60937db68f3c7f0bc9c306b5c930e"
+        "evidence": "e107557fe8c6c36abb7540bd53c1ee69bd5f55c2f61050bd1adb91465a041468"
       }
     },
     {
@@ -619,8 +690,8 @@
       "kind": "admission",
       "title": "Admitted action/view boundary and readonly authority",
       "promise": "Consumers see the engine only through admitted accessors and PreparedView snapshots; mutation authority exists only inside the transaction gateway. Readonly sources carry a typed ReadonlyReason, the refusal and the :explain decision name the same actual owner, and stale/dead document identities never authorize an edit.",
-      "exclusions": "Generated-view (collection/review) write-through admission is the collection-projection boundary. The UI-stdio server admission (AR09) is tracked under ui-protocol.",
-      "authoritative_state": "Editor document arena plus per-document readonly reason; admission via Editor::admit_document and the transact capability path",
+      "exclusions": "Read-only collection inspection and canonical review mutation ownership are the collection-projection boundary. The UI-stdio server admission (AR09) is tracked under ui-protocol.",
+      "authoritative_state": "Editor document arena plus per-document readonly reason; admission via Editor::admit_document and the transact capability path; durable WorkspaceKey namespace+absolute-root bindings and capability decisions",
       "trusted": [
         "the Rust type system for pub(crate) field encapsulation"
       ],
@@ -631,6 +702,10 @@
         "crates/strop-engine/src/editor/prepare.rs",
         "crates/strop-engine/src/editor/prepare/geometry.rs",
         "crates/strop-engine/src/editor/picker/preview.rs",
+        "crates/strop-engine/src/editor/picker/accept.rs",
+        "crates/strop-engine/src/editor/remote/chooser.rs",
+        "crates/strop-engine/src/editor/workspaces.rs",
+        "crates/strop-engine/src/editor/namespace/capability.rs",
         "crates/strop-picker/src/catalog.rs"
       ],
       "claims": [
@@ -644,7 +719,6 @@
               "path": "crates/strop-engine/src/editor/explain.rs",
               "gate": "test",
               "tests": [
-                "readonly_explanation",
                 "explain_names_filesystem_readonly_source",
                 "explain_names_remote_readonly_source_and_ssh_target",
                 "explain_names_command_readonly_source",
@@ -699,6 +773,66 @@
             "from": "0058/ADM-STALE-KERNEL",
             "classification": "unchanged",
             "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
+          }
+        },
+        {
+          "id": "ADM-WORKSPACE-ROOTS",
+          "statement": "Workspaces are durable exact namespace+absolute-root bindings. Independent roots on one SSH host and same-basename local/remote/container roots never alias; longest covering root selection drives labels, Files/Search and default terminal launch without changing process cwd. Disconnect advances every root on that endpoint only, container WorkingDir is a hint until selected, and menu availability shares execution's worker/document capability decisions.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/workspaces.rs",
+              "gate": "test",
+              "tests": [
+                "exact_roots_coexist_on_one_endpoint_and_resolve_longest_covering_root",
+                "same_basename_across_namespaces_has_distinct_identity_and_labels",
+                "selection_requires_absolute_native_paths_without_mutating_registry",
+                "container_working_dir_is_only_a_hint_until_explicitly_selected",
+                "disconnect_bumps_all_endpoint_roots_and_reconnect_keeps_exact_ids",
+                "exhausted_incarnation_retires_only_that_root_and_stale_id_stays_dead"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/namespace/capability.rs",
+              "gate": "test",
+              "tests": [
+                "local_and_unadmitted_ssh_decisions_match_execution_owners"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/containers/tests.rs",
+              "gate": "test",
+              "tests": [
+                "browsing_requires_separate_worker_admission_before_edit_authority",
+                "container_files_refuse_writes_and_writable_flag_bypasses"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/statusline/tests.rs",
+              "gate": "test",
+              "tests": [
+                "modeline_relativizes_to_the_longest_selected_project_root"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/query_tests/selected_roots.rs",
+              "gate": "test",
+              "tests": [
+                "files_walk_and_accept_in_the_focused_documents_selected_root",
+                "selecting_another_root_cannot_retarget_an_open_files_surface",
+                "directory_browsing_uses_its_selected_parent_root_without_chdir"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 replaces endpoint-global mutable roots with durable namespace+root identities and one shared capability decision owner."
           }
         },
         {
@@ -760,56 +894,73 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-core/src/buffer.rs": "c5b0e49e08d9b79201f5cf3adb1d8a165ffda90cb72ca2b6c38daac5c8afa05c",
+          "crates/strop-core/src/buffer.rs": "4045f349d6509957368285856402511f1ceda4ac454e944456b729a62e019be3",
           "crates/strop-core/src/viewguard.rs": "b63dab8d76faf464ad78c2663fe3a317d60a24cf9c7a42e8217eb3887fdbb746",
-          "crates/strop-engine/src/editor/document/mod.rs": "e0878378ce110a4af69ee706db45279ede705614b31416757740cf4646a470ab",
-          "crates/strop-engine/src/editor/picker/preview.rs": "7ac3b60e0fee02496bde5e16fc9c99fef3e71b8d09aaec86f96cb19f7fc0408b",
+          "crates/strop-engine/src/editor/document/mod.rs": "d2560a6653782f83648bc0c12f247a5d73ff871f2ec99199170c38034b14cfb9",
+          "crates/strop-engine/src/editor/namespace/capability.rs": "77ed68b151559c16404acd43ab87bb9c3fc29700d4760eeddb0875ab80ebf34d",
+          "crates/strop-engine/src/editor/picker/accept.rs": "63d43a34fb8df1b476414edec5404f82e268e01acdec8b1fddbd95a58480dd8b",
+          "crates/strop-engine/src/editor/picker/preview.rs": "e55f64e1622206f5039d4c8e5681a5ab9ffa33d707631a83cf4204e4c38ad998",
           "crates/strop-engine/src/editor/prepare.rs": "207fc24c20b2de648e734a5c5e385248c517c7e9f657dd03784d613ec4ce6094",
           "crates/strop-engine/src/editor/prepare/geometry.rs": "f7a4fec0b347c512fdbe1fdd83ef242ae3baf67ccafce465f9f5db74cd317cc3",
+          "crates/strop-engine/src/editor/remote/chooser.rs": "b491fc649b8cc08372b81794ef6087d4d9aabb724d411927f3fe1e6c2187f5b5",
+          "crates/strop-engine/src/editor/workspaces.rs": "37c9bf92337a08a223134323851f704c8e010ae40e0951847911df2fde0253b1",
           "crates/strop-picker/src/catalog.rs": "a293fb7bb5ac03b97a1df83ee0982e80278fba036ea3e5bc8bd3f86dfb4feb22"
         },
-        "evidence": "5ed417ae0c5bed34d20d8fdc273d2cc82337e11ed5f492add5cf00912d266785"
+        "evidence": "cc1267314dd9af6df1e357fbee846269caee6a78e3a1cd5a2b5f160a59269a16"
       }
     },
     {
       "id": "collection-projection",
       "kind": "mutation",
-      "title": "Collections, generated views and grouped edits",
-      "promise": "A change review applies to exactly the planned sources and leaves a receipt; cancel mutates nothing and leaves a cancelled receipt; a source edited or closed since the proposal is refused by name; a partial outcome is identified per member.",
-      "exclusions": "Protected-span projection proofs (writable spans resolve to exactly their source) remain a VF04 proof obligation; today's evidence is correspondence through the real review/prepare/save path.",
+      "title": "Change reviews and read-only source collections",
+      "promise": "A change review applies to exactly the planned sources and leaves a receipt; cancel mutates nothing and leaves a cancelled receipt; a source edited or closed since the proposal is refused by name; a partial outcome is identified per member. Collections are read-only source-backed inspection views.",
+      "exclusions": "The retired writable projection/proof kernel is superseded explicitly; free-form source editing and canonical change review do not share a projection adapter.",
       "authoritative_state": "the plan/receipt in editor/changes; source documents remain the only writable text",
       "trusted": [
         "diff rendering is presentation, not authority"
       ],
       "files": [
-        "crates/strop-core/src/projectguard.rs",
         "crates/strop-engine/src/editor/changes/mod.rs",
         "crates/strop-engine/src/editor/changes/review.rs",
         "crates/strop-engine/src/editor/changes/review/prepare.rs",
         "crates/strop-engine/src/editor/changes/review/save.rs",
-        "crates/strop-engine/src/editor/collections/editing.rs",
+        "crates/strop-engine/src/editor/picker/replace.rs",
+        "crates/strop-engine/src/editor/filesystem/actions.rs",
         "crates/strop-engine/src/editor/collections/view_positions.rs",
+        "crates/strop-engine/src/editor/collections/projection.rs",
+        "crates/strop-engine/src/editor/collections/navigation.rs",
         "crates/strop-engine/src/editor/collections/mod.rs"
       ],
       "claims": [
         {
           "id": "COL-STRUCTURAL-INDENTATION",
-          "statement": "A collection closer resolves its matching source opener outside the visible excerpt, writes back once and restores the original source on undo.",
-          "status": "correspondence-tested",
+          "statement": "Writable collection indentation is retired: read-only collections refuse edits without touching source text, while source navigation and dirty-source preservation remain intact.",
+          "status": "superseded",
           "evidence": [
             {
               "kind": "test",
-              "path": "crates/strop-engine/src/editor/tests/smartindent_tests.rs",
+              "path": "crates/strop-engine/src/editor/collections/tests/mod.rs",
               "gate": "test",
               "tests": [
-                "collection_closer_resolves_opener_outside_excerpt_and_writes_back_once"
+                "collection_mutations_refuse_without_touching_sources",
+                "collection_close_keeps_dirty_sources"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/collections/tests/live.rs",
+              "gate": "test",
+              "tests": [
+                "indentation_controls_capture_the_excerpt_source_not_the_projection",
+                "closing_a_source_removes_only_its_excerpts_and_keeps_the_view_usable",
+                "source_edits_preserve_collection_carets_and_jump_anchors"
               ]
             }
           ],
           "migration": {
             "from": null,
             "classification": "new",
-            "basis": "0072 adds source-context indentation correspondence beyond excerpt bounds; existing projection kernel proofs do not establish indentation decisions."
+            "basis": "0081 deliberately retires collection write-through; ordinary source buffers own free-form editing and change reviews own bulk edits."
           }
         },
         {
@@ -825,7 +976,8 @@
                 "apply_mutates_exactly_the_planned_sources_and_leaves_a_receipt",
                 "cancel_mutates_nothing_and_leaves_a_cancelled_receipt",
                 "a_single_clean_document_applies_directly_with_the_existing_receipt",
-                "multi_target_plan_opens_a_diff_review_without_mutating"
+                "multi_target_plan_opens_a_diff_review_without_mutating",
+                "editing_a_review_cannot_apply_the_hidden_original_plan"
               ]
             }
           ],
@@ -833,6 +985,42 @@
             "from": "0058/COL-RECEIPT",
             "classification": "unchanged",
             "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
+          }
+        },
+        {
+          "id": "COL-REVIEW-APPLY-SAVE",
+          "statement": "Search replacement and machine edits use one Review→Apply→Save flow: review mutates nothing, Apply changes exactly the planned buffers without scheduling writes, and explicit Save persists only applied targets with per-file outcomes. Apply is not a save, unrelated dirty files are untouched, and change-scoped undo remains receipt-owned rather than excerpt-owned.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/replace.rs",
+              "gate": "test",
+              "tests": [
+                "replace_review_apply_and_save_change_flow"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/changes/review/tests.rs",
+              "gate": "test",
+              "tests": [
+                "save_change_retains_each_file_outcome_after_focus_moves"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/changes/tests.rs",
+              "gate": "test",
+              "tests": [
+                "grouped_undo_skips_buffers_edited_since_the_receipt"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 makes the existing guarded change plan the only multi-file editing workflow after excerpt write-through and collection-scoped undo are removed."
           }
         },
         {
@@ -857,61 +1045,62 @@
               "tests": [
                 "invalid_mutation_coordinates_do_not_clamp_into_valid_text"
               ]
-            },
-            {
-              "kind": "test",
-              "path": "crates/strop-engine/src/editor/completion/tests/sources.rs",
-              "gate": "test",
-              "tests": [
-                "collection_semantic_acceptance_maps_caret_and_undo_with_an_import_outside_the_excerpt"
-              ]
             }
           ],
           "migration": {
             "from": "0058/COL-STALE-SOURCE",
             "classification": "strengthened",
-            "basis": "0059 rejects invalid server mutation coordinates and carries represented completion imports through source projection and grouped undo, including imports outside the excerpt."
+            "basis": "Change review retains named stale-source refusals and invalid-coordinate rejection; retired collection projection evidence is removed rather than transferred."
           }
         },
         {
           "id": "COL-SPAN-KERNEL",
-          "statement": "Projection span ownership is a proved pure kernel: an edit owned by a span stays inside it, so protected headers/gaps and foreign sources cannot receive the mutation (VF18).",
-          "status": "proved-kernel",
+          "statement": "The writable projection kernel is retired with collection write-through; no hidden mutation adapter remains. Read-only views refuse edits and the canonical change-review path owns source mutations.",
+          "status": "superseded",
           "evidence": [
             {
-              "kind": "proof",
-              "path": "crates/strop-core/src/projectguard.rs",
-              "gate": "verify",
-              "symbols": [
-                "span_owns",
-                "span_owns_edit",
-                "owned_edit_stays_in_span"
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/collections/tests/mod.rs",
+              "gate": "test",
+              "tests": [
+                "collection_mutations_refuse_without_touching_sources",
+                "collection_write_commands_never_save_dirty_sources"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/changes/review/tests.rs",
+              "gate": "test",
+              "tests": [
+                "apply_mutates_exactly_the_planned_sources_and_leaves_a_receipt"
               ]
             }
           ],
           "migration": {
             "from": "0058/COL-SPAN-KERNEL",
-            "classification": "unchanged",
-            "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
+            "classification": "retired-implementation",
+            "successor": "COL-RECEIPT",
+            "basis": "0081 removes projectguard and every collection write-through/completion/save adapter; COL-RECEIPT is the surviving mutation boundary."
           }
         }
       ],
       "gates": [
-        "test",
-        "verify"
+        "test"
       ],
       "pins": {
         "sources": {
-          "crates/strop-core/src/projectguard.rs": "6dc7e5835cb5a3e2b90bc8dc03285e428aef07eb11c8219c1c7a538178d34298",
-          "crates/strop-engine/src/editor/changes/mod.rs": "b512b2f72fcc12d2be6f8916367102e931df454effb007bc66704cfe2558803e",
-          "crates/strop-engine/src/editor/changes/review.rs": "07d5e214cddb831e19d7adcb499112bab7b726352a4cac2bfa2cba14ccfb56c1",
+          "crates/strop-engine/src/editor/changes/mod.rs": "21b9f3c0ed23db24abe02f6faae672f32ee3b0244e09a8b7a08ca25cb8f89e3b",
+          "crates/strop-engine/src/editor/changes/review.rs": "36a69d62c6abae175144d3f283a68137ad4f54e29d1538df66f8ba765d21ce9b",
           "crates/strop-engine/src/editor/changes/review/prepare.rs": "f650cc4bd8df29e56246eecf7b095bb9331977d63d15256f0d4140fbc8a2eae1",
           "crates/strop-engine/src/editor/changes/review/save.rs": "2db93bb3f7b045c9529c4333be15545df5bd7c7aaf539b0849c16d112559f992",
-          "crates/strop-engine/src/editor/collections/editing.rs": "006c07ccb1418824e9828e46c08c3160ed7f66243f79baa7560679cd841b5ffd",
-          "crates/strop-engine/src/editor/collections/mod.rs": "4b081a3186bc8fb2f345fb91594ac49bc288e43f3f558f971db9a96124b7f6cd",
-          "crates/strop-engine/src/editor/collections/view_positions.rs": "5db62e2a2e37c63f69a02eac2bf6a14649b2fa5650559ed844854ab813d84c34"
+          "crates/strop-engine/src/editor/collections/mod.rs": "f88d48e78a37dca0254120bfb3f4e231a1d6c0a8962b98535f1cc7df0e3801a1",
+          "crates/strop-engine/src/editor/collections/navigation.rs": "6e2c6d60db89e196df76df56cb570b5b6107f5d7954c4214a2ad0f66bbda3954",
+          "crates/strop-engine/src/editor/collections/projection.rs": "ef6b466ef9ed58074da32e5409b23977bca625c7b187b9b2592fcae08193d7ce",
+          "crates/strop-engine/src/editor/collections/view_positions.rs": "5db62e2a2e37c63f69a02eac2bf6a14649b2fa5650559ed844854ab813d84c34",
+          "crates/strop-engine/src/editor/filesystem/actions.rs": "7ced8fe772ca71c4b73cb5f1eb3d08bb91909e1e97554664b45cc3403ee9ec55",
+          "crates/strop-engine/src/editor/picker/replace.rs": "6c7b8941e04aaf60217412cd6a77d07e83aa1e8a4b01a53a6662e21fd0d79073"
         },
-        "evidence": "1dab06e670782c33ef49f99201cbe0495744853bcd951e32385265370d0e9945"
+        "evidence": "804aafc5ec5cd5407d24b7786f7c6961f671293bbf048f1e2ec99e71a17746eb"
       }
     },
     {
@@ -1083,7 +1272,7 @@
         },
         {
           "id": "PRIV-TARGET",
-          "statement": "Effect decisions are pinned per family and target, and persistence admission is target-aware — one policy table, not per-call improvisation.",
+          "statement": "Effect decisions are pinned per family and target, and persistence admission is target-aware — one policy table, not per-call improvisation. Terminal capture classifies from its retained launch ResourceLocation, so SSH/container terminals never inherit local policy from shell metadata.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1092,7 +1281,8 @@
               "gate": "test",
               "tests": [
                 "decisions_pinned_per_family_and_target",
-                "persistence_admission_is_target_aware"
+                "persistence_admission_is_target_aware",
+                "terminal_target_comes_from_its_launch_namespace"
               ]
             }
           ],
@@ -1108,10 +1298,10 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/privacy.rs": "601116063568064d3b57c5723e6e2128f990e2acc38c2956150eb2f0bd8b368e",
+          "crates/strop-engine/src/editor/privacy.rs": "dab9031e1660f71cf48a424012400a6b6655859895fbcfdba6b0ca10db24869e",
           "crates/strop-trace/src/privacy.rs": "59a3e9e3117548870dae0c1889440f2b90468650363bfd351cc4c285850d6b0f"
         },
-        "evidence": "900afc1602a963faa91ae4571858c46f1f546700cee186c8dc0194271ee29c5a"
+        "evidence": "75a5401d71d0006d33e4c34a2906cb9909c710487162c4a689538e131ded836e"
       }
     },
     {
@@ -1127,6 +1317,9 @@
       "files": [
         "crates/strop-engine/src/editor/events.rs",
         "crates/strop-engine/src/editor/events/channel.rs",
+        "crates/strop-engine/src/editor/trace/drive.rs",
+        "crates/strop-engine/src/editor/devcontainers/model.rs",
+        "crates/strop-engine/src/editor/devcontainers/ui.rs",
         "crates/strop-trace/src/bounded.rs",
         "crates/strop-trace/src/chunk.rs",
         "crates/strop-trace/src/event.rs",
@@ -1137,7 +1330,7 @@
       "claims": [
         {
           "id": "EVT-BOUNDED",
-          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded, and forwarded job-channel events (one-shot facts such as completions and terminal stops) backpressure a full semantic lane instead of being dropped — a refused forwarder delivery must never strand editor pending state (0057 VF19 storm finding). Worker notify wakes coalesce into the bounded hint lane; trace-owned file hints cannot create a self-wake loop while other file changes still wake the editor. A physical picker-source thread may finish after its last semantic event; shutdown/jobs barriers recheck that silent completion on a bounded quiescence interval rather than parking until the entire failure deadline.",
+          "statement": "Bounded lanes with legal coalescing only: terminal wakes coalesce per session without losing sessions, resize/focus are latest-wins, paste bytes are bounded but a lone oversize paste is never stranded, and forwarded job-channel events (one-shot facts such as completions and terminal stops) backpressure a full semantic lane instead of being dropped — a refused forwarder delivery must never strand editor pending state (0057 VF19 storm finding). Worker notify wakes coalesce into the bounded hint lane; trace-owned file hints cannot create a self-wake loop while other file changes still wake the editor. A physical picker-source thread may finish after its last semantic event; shutdown/jobs barriers recheck that silent completion on a bounded quiescence interval rather than parking until the entire failure deadline. Passive Dev Container discovery/lifecycle settlement uses a coalesced hint wake whose owned channel retains the actual outcome; the hint itself carries no authority or payload. At the recording boundary that hint becomes a semantic DevcontainerSettled payload, while replay delivers the typed payload directly and never polls native jobs.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1152,7 +1345,13 @@
                 "paste_bytes_are_bounded_but_a_lone_oversize_paste_is_never_stranded",
                 "terminal_wakes_coalesce_per_session_without_losing_sessions",
                 "resize_and_focus_are_latest_wins",
-                "forwarded_semantic_event_survives_a_full_lane"
+                "forwarded_semantic_event_survives_a_full_lane",
+                "send_blocking_backpressures_the_reader_until_the_lane_drains",
+                "send_blocking_unblocks_when_the_receiver_closes",
+                "disconnect_is_observed_only_after_every_admitted_event_drains",
+                "recv_timeout_distinguishes_timeout_from_disconnect",
+                "refused_admission_is_surfaced_in_the_editor_message",
+                "shutdown_settles_owned_work_without_waiting_for_service_liveness"
               ]
             },
             {
@@ -1213,7 +1412,7 @@
         },
         {
           "id": "EVT-RECORD",
-          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field. Replay checkpoint errors identify only a schema-owned mismatching field, never a captured document/register/cell value. Editor-owned queued results are serialized at the same delivery boundary as their wake, and replay consumes their typed observation without reading the live queue; a hermetic recorder drains that owned queue rather than substituting an OS stub.",
+          "statement": "Trace lifecycle is exclusive/ordered/durable within the declared budget; readers reject sequence gaps, duplicates and trailing records; caps end with an explicit incomplete marker; metadata export removes every content-bearing field. Replay checkpoint errors identify only a schema-owned mismatching field, never a captured document/register/cell value. Editor-owned queued results are serialized at the same delivery boundary as their wake, and replay consumes their typed observation without reading the live queue; a hermetic recorder drains that owned queue rather than substituting an OS stub. Live Devcontainer wakes are settled before recording and replaced by DevcontainerSettled discovery/probe/read/lifecycle outcomes; serde round-trips those typed outcomes without unredacting process output, replay applies identical payloads without native polling, and SSH replay likewise needs no SSH peer.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1246,6 +1445,30 @@
                 "completion_payloads_obey_privacy_and_full_replay_needs_no_provider",
                 "asynchronous_completion_macros_keep_vim_order_in_native_free_replay"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/ui_tests.rs",
+              "gate": "test",
+              "tests": [
+                "recorded_discovery_completion_replays_without_native_work"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/tests.rs",
+              "gate": "test",
+              "tests": [
+                "settled_event_serde_round_trips_every_outcome_without_unredacting_output"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/remote_ssh.rs",
+              "gate": "test",
+              "tests": [
+                "openssh_reads_native_names_and_replay_needs_no_ssh"
+              ]
             }
           ],
           "migration": {
@@ -1261,8 +1484,11 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/events.rs": "af7a575787bd84ded905b7442dd245961baf81d0ffaf2d0f8eaab25570167c7a",
-          "crates/strop-engine/src/editor/events/channel.rs": "bd77a1f286dab1bb7ab1cfc56974025fa9a8da7b1bd2bca28e2f882dc51d8e94",
+          "crates/strop-engine/src/editor/devcontainers/model.rs": "5ca172a17db9ed77f3bb7e24bbe798fa177e2f2dff7d39a8a52ef124ebd50229",
+          "crates/strop-engine/src/editor/devcontainers/ui.rs": "b1c38f68bea33d8b95ad7b58e8ef7cf1c17d72c4cde9d5d834b22aee3f49cf24",
+          "crates/strop-engine/src/editor/events.rs": "7d9081df55f94b15bc94f3b3a98eda70629f3006c3e190cad4be62b93df2832c",
+          "crates/strop-engine/src/editor/events/channel.rs": "9f65d2f48f89b2e431a183d5b358b9e0fa813d90fe345600b4a114fa8c977e7b",
+          "crates/strop-engine/src/editor/trace/drive.rs": "5896c7ca6fbdb870a43122733dfbbeb7e8f84d9fc4087af6448f68fc5190a6dd",
           "crates/strop-trace/src/bounded.rs": "aec51bc89e91efd3bce0ba0a665016f7a1467a9236144610112b0a749c899bb7",
           "crates/strop-trace/src/chunk.rs": "95ece06533765279537105b8ce52e869ce0e1a73c6322fb9ba3b203e55c7ef49",
           "crates/strop-trace/src/event.rs": "8863ed01aa88c21609f137fd201a22e7db1be8b76adf6111f600f24399d9e963",
@@ -1270,7 +1496,7 @@
           "crates/strop-trace/src/replay.rs": "b106a0e4fe78e1e944e22f4aa1047e308eb16a3ea17d634ab5f81013943cfe37",
           "crates/strop-trace/src/writer.rs": "20ea24a24dcf8f88321e8d4cb2ef9fb40c6fb7ede89ed9ec69c0fdbab2923591"
         },
-        "evidence": "6d697f69afda1d57e21fac3061a94551f6c930c7f40ba4353299f697dbce9648"
+        "evidence": "f322d844f98be4a45e851192e5763bfce68303840c6ec8bec4ed6e3edf050621"
       }
     },
     {
@@ -1278,7 +1504,7 @@
       "kind": "transport",
       "title": "LSP client wire, synchronization and bounded queues",
       "promise": "Document identity is (document, revision, incarnation): epoch zero is valid, close/reopen changes incarnation, equal revisions in different documents share no ownership, and late replies never publish into a new owner. Unsent snapshots/requests are bounded by count and bytes; superseded snapshots coalesce only where no barrier separates them and reach the wire as the final version.",
-      "exclusions": "Completion query semantics are 0059 feature work. The server peer is trusted to be misbehaving-but-framed: malformed framing is rejected, semantic server bugs are not this boundary.",
+      "exclusions": "Completion query semantics are 0059 feature work. The server peer is trusted to be misbehaving-but-framed: malformed framing is rejected, semantic server bugs are not this boundary. Container LSP evidence is in-process namespace-routing and worker-admission correspondence, not a live container language-server journey.",
       "authoritative_state": "per-server client state (sync queue, pending requests, incarnation map) in strop-lsp and the editor's routing stamps",
       "trusted": [
         "the spawned server process speaks framed JSON-RPC (framing checked, semantics not)"
@@ -1298,8 +1524,14 @@
         "crates/strop-lsp/src/registry.rs",
         "crates/strop-engine/src/editor/lsp/attach.rs",
         "crates/strop-engine/src/editor/lsp/lifecycle/mod.rs",
+        "crates/strop-engine/src/editor/lsp/lifecycle/spawn.rs",
         "crates/strop-engine/src/editor/lsp/lifecycle/attach_outcomes.rs",
         "crates/strop-engine/src/editor/lsp/lifecycle/warm.rs",
+        "crates/strop-engine/src/editor/lsp/navigation.rs",
+        "crates/strop-engine/src/editor/lsp/remote.rs",
+        "crates/strop-engine/src/editor/containers.rs",
+        "crates/strop-engine/src/editor/document/mod.rs",
+        "crates/strop-engine/src/editor/picker/preview.rs",
         "crates/strop-engine/src/editor/lsp/status.rs",
         "crates/strop-engine/src/editor/api.rs",
         "crates/strop-engine/src/editor/help.rs",
@@ -1311,7 +1543,7 @@
       "claims": [
         {
           "id": "LSP-IDENTITY",
-          "statement": "Revision zero is valid but does not bypass edit rejection; equal-revision documents do not share reply ownership; close/reopen and binding replacement reject the old incarnation's replies; an older hover cannot overwrite a newer reply. Initial local discovery preserves the source path namespace: without a repository marker its file directory is the root, and an unrelated editor Git workdir is not reused. Explicit local trust resolves the same nearest project language layer before repository/file-directory fallback, including nested source files.",
+          "statement": "Revision zero is valid but does not bypass edit rejection; equal-revision documents do not share reply ownership; close/reopen and binding replacement reject the old incarnation's replies; an older hover cannot overwrite a newer reply. Symbol replies project against their owning server/binding root, deduplicate by filesystem+path identity and retain ResourceLocation through picker acceptance rather than flattening onto process cwd. Initial local discovery preserves the source path namespace: without a repository marker its file directory is the root, and an unrelated editor Git workdir is not reused. Explicit local trust resolves the same nearest project language layer before repository/file-directory fallback, including nested source files.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1336,6 +1568,15 @@
             },
             {
               "kind": "test",
+              "path": "crates/strop-engine/src/editor/lsp/tests/navigation.rs",
+              "gate": "test",
+              "tests": [
+                "document_symbols_open_a_picker_and_accepting_jumps",
+                "document_symbols_flat_qualifiers_narrow_like_file_find"
+              ]
+            },
+            {
+              "kind": "test",
               "path": "crates/strop-lsp/src/registry.rs",
               "gate": "test",
               "tests": [
@@ -1343,6 +1584,18 @@
                 "root_keeps_the_documents_symlink_namespace",
                 "root_walks_to_git"
               ]
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-refused-binding.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-stale-reply.cfg"
             },
             {
               "kind": "script",
@@ -1404,6 +1657,47 @@
             },
             {
               "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-barrier-coalesce.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-close-skips-cancel.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-unbounded.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-double-terminal.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/LspWire.tla",
+              "gate": "model",
+              "config": "specs/cfg/lsp-wire-coverage.cfg"
+            },
+            {
+              "kind": "script",
+              "path": "specs/lsp-gate.sh",
+              "gate": "model"
+            },
+            {
+              "kind": "model",
               "path": "specs/CompletionWire.tla",
               "config": "specs/cfg/completion-wire.cfg",
               "gate": "model"
@@ -1456,8 +1750,38 @@
           }
         },
         {
+          "id": "LSP-CONTAINER-NAMESPACE",
+          "statement": "Container goto, references, document/workspace symbols and diagnostics retain Filesystem::Container through rows and acceptance; same-path local/container symbols remain distinct, outside-root and jump context use container paths, and closing the last owning container document retires only that workspace server. Missing workers refuse without a sticky attachment refusal, worker readiness retries the focused document on the same incarnation, and container failure/Ready scopes stay isolated from local servers. These are replay-suppressed in-process routing/admission checks, not a live container LSP journey.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/lsp/tests/container.rs",
+              "gate": "test",
+              "tests": [
+                "container_goto_requests_the_container_target_not_a_host_path",
+                "container_reference_rows_accept_with_their_namespace_and_context",
+                "container_document_symbols_route_to_the_container_document",
+                "workspace_symbols_dedup_by_namespace_and_open_container_hits",
+                "container_diagnostics_remain_navigable_without_host_aliasing",
+                "container_jump_context_and_outside_root_use_container_paths",
+                "closing_the_last_container_workspace_document_retires_its_server",
+                "container_failure_does_not_clear_or_retire_a_local_server",
+                "container_attach_waits_for_worker_admission_without_sticky_refusal",
+                "worker_readiness_retries_the_same_container_incarnation",
+                "missing_container_server_names_worker_admission_not_an_unwired_feature"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 completes container namespace preservation and focused worker-admission retries with deterministic editor correspondence; no live container language-server execution is claimed."
+          }
+        },
+        {
           "id": "LSP-LIFECYCLE-PRESENTATION",
-          "statement": "Owned starting, ready, refused and failed states are scoped to server, language, workspace and filesystem target. Terminal failures retain their complete reason for :explain after unrelated messages, recovery clears only its own scope, and compact modeline badges preserve save/transient precedence and non-color problem cues under width pressure.",
+          "statement": "Owned starting, ready, refused and failed states are scoped to server, language, workspace and filesystem target. Terminal crash failures retain their complete reason for :explain after unrelated messages; starting a replacement does not erase the old failure, only that scope's Ready retires it, and an explicit request may reattach its exact failed root once without replaying the request. Recovery clears only its own scope, and compact modeline badges preserve save/transient precedence and non-color problem cues under width pressure. Service presentation does not displace terminal state: live input keeps paste+ immediately after F2 inspect, retained views use SNAPSHOT/out+/exited, and quit review exposes Stop terminal session explicitly.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -1479,12 +1803,28 @@
                 "narrow_failure_badge_survives_without_long_prose",
                 "save_failure_keeps_transient_precedence_over_service_detail"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/lsp/tests/navigation.rs",
+              "gate": "test",
+              "tests": [
+                "external_navigation_crash_reports_failure_and_reattaches_once"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor/journeys.rs",
+              "gate": "test",
+              "tests": [
+                "real_terminal_input_consent_quit_and_execution_free_replay"
+              ]
             }
           ],
           "migration": {
             "from": null,
             "classification": "new",
-            "basis": "0080 retains owner-scoped lifecycle failures and separates compact service badges from full :explain prose."
+            "basis": "0080 retains owner-scoped lifecycle failures and 0081 keeps crash reasons until the exact scope is Ready, distinguishes crashes from missing installations, and reattaches one explicit failed-root request without replaying it."
           }
         }
       ],
@@ -1496,16 +1836,22 @@
       "pins": {
         "sources": {
           "crates/strop-engine/src/editor/api.rs": "bf7158e135f2f73feeb46baeee2dedb75d38b08ff9193b2ee0fb549181c96187",
-          "crates/strop-engine/src/editor/help.rs": "3ef8c55a29738fa4039927510fc15a9fe716b612ce2880fffd1829dc118264bb",
+          "crates/strop-engine/src/editor/containers.rs": "a8066f5230fbd4f7f84842d31fd6dcb4766d6bdf2b51fdc5f67f2bc302af0e05",
+          "crates/strop-engine/src/editor/document/mod.rs": "d2560a6653782f83648bc0c12f247a5d73ff871f2ec99199170c38034b14cfb9",
+          "crates/strop-engine/src/editor/help.rs": "ab45696df53d4517f77f80388b5fd0f5bb664e0396b752fcfb1546c3292bd4d8",
           "crates/strop-engine/src/editor/io/native.rs": "7ffd02585a6a35f136a7ab1b4a507f739e8d39c342be28238e3fcc046021e716",
           "crates/strop-engine/src/editor/lsp/attach.rs": "761800acd8af8197d487cc581f937db5240758615c97d282e6b1b1e1788c5811",
-          "crates/strop-engine/src/editor/lsp/lifecycle/attach_outcomes.rs": "64a1f0a612bcd8285b99ed3a3186284da4ea1b33ab6a98e8bcf93e18b18500b1",
-          "crates/strop-engine/src/editor/lsp/lifecycle/mod.rs": "49ab1c64ad15c74e107626cae2e601cf99e70b5312cecd80f0edc3a7973f295e",
+          "crates/strop-engine/src/editor/lsp/lifecycle/attach_outcomes.rs": "3dc2d8c6e7e1dca89b0a7b9d7f2b8fb70074666f49ffa2a456b0550a9a276b01",
+          "crates/strop-engine/src/editor/lsp/lifecycle/mod.rs": "7518f4699ffe41e91c525222f12ecae71de19712f417a925018e52662bd783a6",
+          "crates/strop-engine/src/editor/lsp/lifecycle/spawn.rs": "8fd03abca3f22059a835e211d7ffdac35b7bf5399e41524bfa5e562600827c16",
           "crates/strop-engine/src/editor/lsp/lifecycle/warm.rs": "0d08cab9cc8fb8b576165e78e604e00930d151a5ff8fb50bda3cf15e043334aa",
-          "crates/strop-engine/src/editor/lsp/routing.rs": "1bb34d5bde570ebae46e3c11d2b85aefac5333d1911468331c0ce24bda34eb67",
-          "crates/strop-engine/src/editor/lsp/state.rs": "b0d9c6c719802593f0b5f8d01946fd6c7bf29602118bfb9cd7c97c76a4d477d2",
+          "crates/strop-engine/src/editor/lsp/navigation.rs": "099ca5ddd08e64cfc11a430db8f62fc378878e6bb79d6f7dca5199ec3330d406",
+          "crates/strop-engine/src/editor/lsp/remote.rs": "5334099ce5a446c1f7ce38dd6c0b5ff214bcac899eb234ab59a5d5d17f6288f6",
+          "crates/strop-engine/src/editor/lsp/routing.rs": "36968af358a0211679a2018d779df23200e0c6fa75b61c6ce3aa5291b0f0c6bf",
+          "crates/strop-engine/src/editor/lsp/state.rs": "3b52f6f0f44fc2894318e67e5d9b5d7b06d7e7095a2ac7996a01cbe40d8901a8",
           "crates/strop-engine/src/editor/lsp/status.rs": "ac5e9f7b6076402c6a761a6f97ade340735ddb12ea709ffff6ca8f618aed6591",
-          "crates/strop-engine/src/editor/normal.rs": "e4c3158875fe92203b43741efeaec585610b84cc0ba02d0facd751ce1f767296",
+          "crates/strop-engine/src/editor/normal.rs": "3b1ffb55530ea5a73adf1322ec9000b71764cd2c968c72e3735b7c24c0d305ba",
+          "crates/strop-engine/src/editor/picker/preview.rs": "e55f64e1622206f5039d4c8e5681a5ab9ffa33d707631a83cf4204e4c38ad998",
           "crates/strop-lsp/src/client/api.rs": "25cdc288aa379812d4f518369f0a0bbcaf7fdf88ccc1637f1147fc356e0218db",
           "crates/strop-lsp/src/client/queue.rs": "d5c1a708b3436f5a836e9ff4e0ace5a896cb1e3d3547ff5af08ae1c8967b0b9d",
           "crates/strop-lsp/src/client/spawn.rs": "a7fd290dd3fc34dc8889f5577cd662935b0b2e8fd6c8a312781b4422f249dbaa",
@@ -1517,9 +1863,9 @@
           "crates/strop-lsp/src/protocol.rs": "e9c6800b77404b1cd4bc8e3cc1b86ce7a0a7e708449f2b5658da9d4ac6782ca9",
           "crates/strop-lsp/src/registry.rs": "b1d36df4df39c46d5c4f0f04caa796062e79afa4a025bb87b5f45f77de577a87",
           "crates/strop/src/render/statusline/services.rs": "17f369238f75ec9c8ca96b048d2f454a24a01396ce504e78bf3785d23b952b02",
-          "crates/strop/src/render/statusline/transient.rs": "8014ce4dc4c147238b0601bccc66453e7eb5413cd5b62cad43fb716fe10468bd"
+          "crates/strop/src/render/statusline/transient.rs": "152a1b9d430c5e41dd92baaea29b71ae4f25ae8b4a2b1f5b9660f718e4c16910"
         },
-        "evidence": "f0ea6f5e4a006386c74e485e8df5e3a18f49d26fb18c38d3ba72f57b8a85db79"
+        "evidence": "eb58ec3dda235db7d1bb0c3e7f616301adf0c367ad3664af7d23249ec8813c34"
       }
     },
     {
@@ -1527,7 +1873,7 @@
       "kind": "authority",
       "title": "Container context/incarnation and exec admission (AR07)",
       "promise": "Accepted container work is bound to the selected engine/context, canonical container ID plus StartedAt incarnation and declared user/cwd; a restarted container or changed context cannot retarget it. Ordinary exec argv uses supervised stdio and marked status records; the verified native worker and its probe exec directly with stdin as their lease, and preinstalled mode cannot mutate the provider cache.",
-      "exclusions": "A setsid-ing descendant escapes the lease (documented honest limit); docker top's host PID is not an adapter-local PID. Docker Engine itself is trusted.",
+      "exclusions": "A setsid-ing descendant escapes the lease (documented honest limit); docker top's host PID is not an adapter-local PID. Docker Engine itself is trusted. Container LSP claims here are limited to in-process worker-admission and namespace-routing correspondence, not a live container language-server journey.",
       "authoritative_state": "the admitted ExecSpec/AdmittedExec token and the container identity record",
       "trusted": [
         "Docker Engine API truthfulness about id/StartedAt/state",
@@ -1540,7 +1886,11 @@
         "crates/strop-containers/src/identity.rs",
         "crates/strop-containers/src/read.rs",
         "crates/strop-containers/src/tar.rs",
-        "crates/strop-engine/src/editor/containers/container_worker.rs"
+        "crates/strop-engine/src/editor/containers.rs",
+        "crates/strop-engine/src/editor/containers/container_worker.rs",
+        "crates/strop-engine/src/editor/namespace/capability.rs",
+        "crates/strop-engine/src/editor/io/save/container.rs",
+        "crates/strop-engine/src/editor/io/save/container/store.rs"
       ],
       "claims": [
         {
@@ -1594,7 +1944,6 @@
               "gate": "container-test",
               "tests": [
                 "records_parse_only_this_sessions_marked_lines",
-                "foreign_key_records_empty",
                 "nonces_are_unique_per_session",
                 "retain_keeps_head_plus_tail_and_counts_the_middle"
               ]
@@ -1644,6 +1993,70 @@
             "classification": "unchanged",
             "basis": "0059 preserves this 0058 boundary and retains its named evidence for exact-candidate requalification; the archived 0058 ledger records its earlier migration."
           }
+        },
+        {
+          "id": "CON-DEVELOPMENT-AUTHORITY",
+          "statement": "Generic attachment selects an explicit path or inspected WorkingDir without silently choosing another namespace. Worker admission alone still grants no file writes; it enables the captured incarnation's scoped Search, worker-leased terminal and namespace-bound LSP routing/admission without host fallback. A separate per-document :container-edit permit verifies displayed bytes before editing, and conditional Store saves refuse moved baselines or recycled incarnations without local/docker-cp fallback.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "displayed_snapshot_permit_admits_real_edit_and_conditional_save",
+                "changed_stored_bytes_cannot_gain_an_edit_permit",
+                "worker_refuses_a_location_from_another_container",
+                "recycled_incarnation_cannot_borrow_document_permit",
+                "moved_baseline_conflicts_without_overwriting_foreign_bytes"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/remote.rs",
+              "gate": "test",
+              "tests": [
+                "container_search_uses_only_the_captured_worker_and_root"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/container_editor.rs",
+              "gate": "container-test",
+              "tests": [
+                "container_worker_requires_explicit_command_and_never_grants_file_writes",
+                "admitted_container_terminal_executes_in_its_namespace_and_retains_identity"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/containers/tests.rs",
+              "gate": "test",
+              "tests": [
+                "generic_attach_uses_verified_workdir_as_the_selected_root",
+                "browsing_requires_separate_worker_admission_before_edit_authority",
+                "recycled_container_cannot_replace_a_held_attachment",
+                "superseded_container_result_cannot_open_an_old_context",
+                "container_files_refuse_writes_and_writable_flag_bypasses",
+                "container_setup_failure_has_typed_retry_and_owner_scoped_recovery"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/lsp/tests/container.rs",
+              "gate": "test",
+              "tests": [
+                "container_attach_waits_for_worker_admission_without_sticky_refusal",
+                "worker_readiness_retries_the_same_container_incarnation",
+                "missing_container_server_names_worker_admission_not_an_unwired_feature"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 adds admitted container Search/terminal and a distinct verified document write permit while preserving the original worker-admission and incarnation guarantees."
+          }
         }
       ],
       "gates": [
@@ -1658,9 +2071,13 @@
           "crates/strop-containers/src/identity.rs": "74728fd8011a582416038907544d80e900edd98edc8ba597f5bfc2bbd236a826",
           "crates/strop-containers/src/read.rs": "0a3d7c1a0c482c4ed0d0c640edf14867438a167fe63abe0fb54b7156ea9ecf65",
           "crates/strop-containers/src/tar.rs": "f3893f14678db94d531c06ba92075bcf4dba12e6cdbc5d8667d989c4d371bad1",
-          "crates/strop-engine/src/editor/containers/container_worker.rs": "c4a44070ced71e7ee7272a4dda8c8be9de6736a14f10fb2912c0cc3a9f8adf5e"
+          "crates/strop-engine/src/editor/containers.rs": "a8066f5230fbd4f7f84842d31fd6dcb4766d6bdf2b51fdc5f67f2bc302af0e05",
+          "crates/strop-engine/src/editor/containers/container_worker.rs": "5762aa8785848a9fd8bed7a7d4f2fe68a6ad855cf888b43e36f4e7add748ca32",
+          "crates/strop-engine/src/editor/io/save/container.rs": "921026f91795219288288aef544a921ae3e89bd79ff968f804fb9d4fd8349951",
+          "crates/strop-engine/src/editor/io/save/container/store.rs": "78af377357f289a2ecb6808f77b5ab809ef01a4f65a660618f4f28dde3225d1e",
+          "crates/strop-engine/src/editor/namespace/capability.rs": "77ed68b151559c16404acd43ab87bb9c3fc29700d4760eeddb0875ab80ebf34d"
         },
-        "evidence": "921f7ea74da2aa80f5431777383b4e70900d34e494d9e5acd3d0bf52baabd232"
+        "evidence": "64ab4b3713865660c8487e4245c209bfe4e1e3d0986ac7ea742519697d993c21"
       }
     },
     {
@@ -1952,7 +2369,7 @@
       "id": "remote-save",
       "kind": "io",
       "title": "Protected Store and filesystem effects through the native worker (VF09/WK09/WK13)",
-      "promise": "Remote Store keeps exact content/object/xattr/mtime baselines, private staged publication, cooperative name locks and distinct committed/refused/unconfirmed outcomes; a lost reply retains frozen evidence for read-only verification in the same boot/mount/principal without retry. Closing the editor permanently revokes the admitted worker lease before an outstanding job can reconnect.",
+      "promise": "Remote Store keeps exact content/object/xattr/mtime baselines, private staged publication, cooperative name locks and distinct committed/refused/unconfirmed outcomes; a lost reply retains frozen evidence for read-only verification in the same boot/mount/principal without retry. Closing the editor permanently revokes the admitted worker lease before an outstanding job can reconnect. Admitted containers use the same native Store only after a separate per-document permit verifies the displayed snapshot and current StartedAt incarnation.",
       "exclusions": "The OS, OpenSSH, bounded xattr API and cooperating writers are premises; real process kills are not power-loss durability or universal compare-and-swap.",
       "authoritative_state": "the prepared Store/StepReceipt plus editor document permit, revision and frozen attempted bytes; actual disk names are reobserved by the selected native worker",
       "trusted": [
@@ -1961,7 +2378,12 @@
       ],
       "files": [
         "crates/strop-engine/src/editor/remote/save.rs",
+        "crates/strop-engine/src/editor/remote/save/editor.rs",
+        "crates/strop-engine/src/editor/remote/save/error.rs",
         "crates/strop-engine/src/editor/remote/save/store.rs",
+        "crates/strop-engine/src/editor/io/save/container.rs",
+        "crates/strop-engine/src/editor/io/save/container/store.rs",
+        "crates/strop-engine/src/editor/io/save/container/work.rs",
         "crates/strop-fs/src/local/store.rs",
         "crates/strop-fs/src/local/verify.rs",
         "crates/strop-fs/src/attributes.rs",
@@ -1972,7 +2394,7 @@
       "claims": [
         {
           "id": "RSAVE-MODEL",
-          "statement": "RemoteSave remains the abstract conditional file/lock/durability lifecycle; WorkerSession adds client/worker incarnation, lost-reply dirty state and read-only same-namespace recovery. Neither model proves OS sync or SHA collision resistance.",
+          "statement": "RemoteSave remains the abstract conditional file/lock/durability lifecycle; WorkerSession adds client/worker incarnation, lost-reply dirty state and read-only same-namespace recovery. The kept lock-namespace mutant violates SingleLockDomain, while the nonparticipant counterexample deliberately documents that advisory locks are not universal CAS. Neither model proves OS sync or SHA collision resistance.",
           "status": "bounded-model-checked",
           "evidence": [
             {
@@ -1995,6 +2417,18 @@
             },
             {
               "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save-lock-namespace.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/RemoteSave.tla",
+              "gate": "model",
+              "config": "specs/cfg/remote-save-nonparticipant.cfg"
+            },
+            {
+              "kind": "model",
               "path": "specs/WorkerSession.tla",
               "gate": "model",
               "config": "specs/cfg/worker-session.cfg"
@@ -2014,7 +2448,7 @@
         },
         {
           "id": "RSAVE-AUTHORITY",
-          "statement": "The native Store refuses symlink/hardlink targets, replaced inodes, same-size/same-time content drift and changed xattrs; real SSH edit/save preserves mode and mtime while a conflict leaves local edits dirty. Closing the editor invalidates a retained worker clone rather than admitting a new post-owner Store.",
+          "statement": "The native Store refuses symlink/hardlink targets, replaced inodes, same-size/same-time content drift and changed xattrs; real SSH edit/save preserves mode and mtime while a conflict leaves local edits dirty. Closing the editor invalidates a retained worker clone rather than admitting a new post-owner Store. Container snapshots gain write authority only from their own verified permit; moved bytes conflict without overwrite and a recycled StartedAt cannot borrow the old permit.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2051,6 +2485,17 @@
               "gate": "test",
               "tests": [
                 "namespace_write_policy_and_full_windows_are_independent_of_the_readonly_flag"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "displayed_snapshot_permit_admits_real_edit_and_conditional_save",
+                "changed_stored_bytes_cannot_gain_an_edit_permit",
+                "recycled_incarnation_cannot_borrow_document_permit",
+                "moved_baseline_conflicts_without_overwriting_foreign_bytes"
               ]
             }
           ],
@@ -2254,7 +2699,12 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/remote/save.rs": "27b7a5e7fd9c69670c1928d1d4bd5d5b474d7e4642ff4922556f2c64e6fa0caf",
+          "crates/strop-engine/src/editor/io/save/container.rs": "921026f91795219288288aef544a921ae3e89bd79ff968f804fb9d4fd8349951",
+          "crates/strop-engine/src/editor/io/save/container/store.rs": "78af377357f289a2ecb6808f77b5ab809ef01a4f65a660618f4f28dde3225d1e",
+          "crates/strop-engine/src/editor/io/save/container/work.rs": "fd9e78dc4a54048b833e388162d030831e64a7c6ffd710c950ed4e948890b61f",
+          "crates/strop-engine/src/editor/remote/save.rs": "0d0f772077ed9397d959f09886ffec7b9da2ebc2fc0b06e56e68db7b6a08b4b6",
+          "crates/strop-engine/src/editor/remote/save/editor.rs": "f3cfa06042c41268b55b65611c006ed243860aca7bf88ee43a6a875ab24d3dc5",
+          "crates/strop-engine/src/editor/remote/save/error.rs": "4e63ab47a5690ec0ed971d424a9d52fb632e041c29102a839b008ca0fba78abb",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/local/store.rs": "9d864432d233582bf5e84619966fa83df9e7702ca7d5e8221f75feb13f418981",
@@ -2263,7 +2713,7 @@
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4",
           "crates/strop-workspace/src/operation.rs": "24fc4391fb73d5ca824051d354e5e4a94d16cd38940633e05f657dcf9088cc7b"
         },
-        "evidence": "65fae51073503946e2e9058e945851fe79490022b44cb7453a561851c7fd50b0"
+        "evidence": "3a271b4316f89393a98591b37f10c2c7dac32b0fc9d0a14dd1cc81fdd387ab16"
       }
     },
     {
@@ -2708,7 +3158,7 @@
         },
         {
           "id": "FS-STORE",
-          "statement": "The shipped native Store atomically replaces/creates only a checked regular single-link destination; it guards baseline mtime, content, object identity and bounded xattrs, preserves owner/group/mode/mtime/xattrs and syncs publication. Receiptless verification distinguishes unchanged, committed and unknown without reviving a prepared write capability.",
+          "statement": "The shipped native Store atomically replaces/creates only a checked regular single-link destination; it guards baseline mtime, content, object identity and bounded xattrs, preserves owner/group/mode/mtime/xattrs and syncs publication. Receiptless verification distinguishes unchanged, committed and unknown without reviving a prepared write capability. The same kernel serves admitted-container conditional Stores; container permit and incarnation admission remain separate editor grants.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -2726,6 +3176,16 @@
                 "store_verify_distinguishes_unchanged_from_landed",
                 "recovered_store_can_be_observed_but_old_write_authority_stays_revoked"
               ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "displayed_snapshot_permit_admits_real_edit_and_conditional_save",
+                "moved_baseline_conflicts_without_overwriting_foreign_bytes",
+                "unconfirmed_save_verifies_frozen_receipt_instead_of_rewriting"
+              ]
             }
           ],
           "migration": {
@@ -2740,7 +3200,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "f1256ac916b34e9d98be4269c9f7cdd3ae11224615e3627f7f9dc54ada8c9170",
+          "crates/strop-fs/Cargo.toml": "8befe00786fed578c0506bd9b22f2e017b31c57c36d2f295b0e11ef1ab887c0e",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -2761,7 +3221,7 @@
           "crates/strop-fs/src/trash/restore.rs": "310585f58292dc95c3b8c8a87a3755c906f6524cfc87d37aff53a04c50158d4f",
           "crates/strop-fs/src/unsupported.rs": "c64aa3b6a10d85bdaf98745f1ea9b42e3fbc8297b192244cfabcd28f6f9d6b78"
         },
-        "evidence": "51a76b773d3ef05fb0ccc344098046f22c4a1da31c1fab64213fe0b4674f291c"
+        "evidence": "e0eebd5b677f0ee4891ba1cf750250667e076c7b2105e24af6175a95fe66edcd"
       }
     },
     {
@@ -3046,6 +3506,267 @@
       }
     },
     {
+      "id": "devcontainer-lifecycle",
+      "kind": "lifecycle",
+      "title": "Passive Dev Container discovery, trusted lifecycle and development namespace",
+      "promise": "Standard JSONC discovery is read-only and digest/workspace scoped; review is redacted and explicit; attach/start/rebuild are distinct, cancellation settles owned work, and only verified current environment mappings publish. Admitted containers use separate document write authority and conditional Store, scoped Search and worker-leased PTYs without host fallback.",
+      "exclusions": "Remote engines, automatic port forwarding, template/Feature marketplaces and unowned stop/remove/volume cleanup are unsupported. The optional reference CLI is version checked and never auto-installed. The STROP_DEVCONTAINER_CLI live journey is opt-in outside routine Compose container-test and is not qualified by this inventory review. Model bounds are not a proof of arbitrary Dockerfiles or live peers.",
+      "authoritative_state": "WorkspaceKey+ConfigIdentity discovery epochs, explicit trust/operation tickets, EnvironmentContext and OwnershipReceipt, attached container StartedAt and per-document conditional Store permits",
+      "trusted": [
+        "reference Dev Container CLI 0.87-0.90.x lifecycle semantics and result schema",
+        "Docker engine inspect/StartedAt identity and native worker Store/PTY protocol",
+        "redacted CLI process output and bounded model exploration"
+      ],
+      "files": [
+        "crates/strop-containers/src/devcontainer/mod.rs",
+        "crates/strop-containers/src/devcontainer/discovery.rs",
+        "crates/strop-containers/src/devcontainer/config.rs",
+        "crates/strop-containers/src/devcontainer/config/fields.rs",
+        "crates/strop-containers/src/devcontainer/jsonc.rs",
+        "crates/strop-containers/src/devcontainer/model.rs",
+        "crates/strop-containers/src/devcontainer/error.rs",
+        "crates/strop-containers/src/devcontainer/review.rs",
+        "crates/strop-containers/src/devcontainer/cli.rs",
+        "crates/strop-containers/src/devcontainer/job.rs",
+        "crates/strop-containers/src/devcontainer/process.rs",
+        "crates/strop-engine/src/editor/devcontainers/mod.rs",
+        "crates/strop-engine/src/editor/devcontainers/discovery.rs",
+        "crates/strop-engine/src/editor/devcontainers/lifecycle.rs",
+        "crates/strop-engine/src/editor/devcontainers/jobs.rs",
+        "crates/strop-engine/src/editor/devcontainers/model.rs",
+        "crates/strop-engine/src/editor/devcontainers/presentation.rs",
+        "crates/strop-engine/src/editor/trace/drive.rs",
+        "crates/strop-engine/src/editor/devcontainers/ui.rs",
+        "crates/strop-engine/src/editor/devcontainers/actions.rs",
+        "crates/strop-engine/src/editor/io/save/container.rs",
+        "crates/strop-engine/src/editor/io/save/container/store.rs",
+        "crates/strop-engine/src/editor/io/save/container/work.rs",
+        "crates/strop-engine/src/editor/namespace/capability.rs",
+        "crates/strop-engine/src/editor/terminal/lifecycle.rs",
+        "specs/DevContainerLifecycle.tla",
+        "specs/cfg/devcontainer-lifecycle.cfg",
+        "specs/cfg/devcontainer-lifecycle-omit-trust.cfg",
+        "specs/cfg/devcontainer-lifecycle-ignore-incarnation.cfg",
+        "specs/cfg/devcontainer-lifecycle-publish-before-hooks.cfg",
+        "specs/cfg/devcontainer-lifecycle-stop-unowned.cfg",
+        "specs/devcontainer-gate.sh",
+        "specs/gate.sh"
+      ],
+      "claims": [
+        {
+          "id": "DC-PASSIVE-TRUST",
+          "statement": "All three bounded JSONC layouts preserve precedence/multiple configs and stable digest identity. Discovery and review execute no hooks, Docker, CLI or network; redacted effects cover host/container privileges, sensitive command/environment values are redacted even from Debug/Display, and changed digests invalidate offers/actions. Missing/conflicting providers and unsupported fields remain typed and reviewable, never approximated into an implicit docker run.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-containers/src/devcontainer/tests.rs",
+              "gate": "test",
+              "tests": [
+                "discovery_is_bounded_ordered_and_digest_scoped",
+                "malicious_hooks_are_reviewed_without_execution_and_without_secrets",
+                "jsonc_and_provider_shapes_remain_typed_and_inspectable",
+                "cli_version_is_checked_before_any_other_operation"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/ui_tests.rs",
+              "gate": "test",
+              "tests": [
+                "offer_dismiss_is_stable_and_rediscovery_invalidates_actions",
+                "review_is_a_redacted_real_buffer_with_keyboard_actions_and_missing_cli_explanation"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 adds safe passive discovery and explicit redacted trust actions rather than reopen-on-configuration side effects."
+          }
+        },
+        {
+          "id": "DC-LIFECYCLE",
+          "statement": "Attach/start/rebuild require the correct trust, resource, receipt and incarnation; readiness honors waitFor, cancellation waits for settlement, partial resources reconcile, and same-name rebuild/recreation retires old publication and leases.",
+          "status": "bounded-model-checked",
+          "evidence": [
+            {
+              "kind": "model",
+              "path": "specs/DevContainerLifecycle.tla",
+              "gate": "model",
+              "config": "specs/cfg/devcontainer-lifecycle.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/DevContainerLifecycle.tla",
+              "gate": "model",
+              "config": "specs/cfg/devcontainer-lifecycle-omit-trust.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/DevContainerLifecycle.tla",
+              "gate": "model",
+              "config": "specs/cfg/devcontainer-lifecycle-ignore-incarnation.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/DevContainerLifecycle.tla",
+              "gate": "model",
+              "config": "specs/cfg/devcontainer-lifecycle-publish-before-hooks.cfg"
+            },
+            {
+              "kind": "model",
+              "path": "specs/DevContainerLifecycle.tla",
+              "gate": "model",
+              "config": "specs/cfg/devcontainer-lifecycle-stop-unowned.cfg"
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/tests/lifecycle.rs",
+              "gate": "test",
+              "tests": [
+                "attach_start_rebuild_are_distinct_and_rebuild_supersedes_environment",
+                "cancellation_is_requested_until_settlement_and_partial_resources_remain_visible",
+                "stale_lifecycle_success_never_publishes_to_changed_configuration",
+                "failed_up_retains_reconciliation_evidence_without_changing_root"
+              ]
+            },
+            {
+              "kind": "script",
+              "path": "specs/devcontainer-gate.sh",
+              "gate": "model"
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 adds clean lifecycle invariants and four executable trust/incarnation/readiness/ownership mutant kills plus deterministic worker transitions."
+          }
+        },
+        {
+          "id": "DC-HERMETIC-REPLAY",
+          "statement": "Live Devcontainer wake recording polls the owned queue first and records DevcontainerSettled payloads instead of a native polling hint. Publicly exported typed events cover discovery, probe, configuration-read and lifecycle outcomes with serde round-trips that never unredact output; replay applies identical payloads through the production handler without native polling or pending work.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/tests.rs",
+              "gate": "test",
+              "tests": [
+                "settled_event_serde_round_trips_every_outcome_without_unredacting_output"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/ui_tests.rs",
+              "gate": "test",
+              "tests": [
+                "recorded_discovery_completion_replays_without_native_work"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 makes Dev Container outcomes first-class recorded facts so native-free replay executes the same production publication path without an OS stub."
+          }
+        },
+        {
+          "id": "DC-DEVELOPMENT-LOOP",
+          "statement": "Worker admission and per-document edit authority are separate grants. Verified container snapshots allow real edits and conditional saves with conflict/unconfirmed verification; Search and terminal execution use only the captured admitted incarnation/root.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "displayed_snapshot_permit_admits_real_edit_and_conditional_save",
+                "changed_stored_bytes_cannot_gain_an_edit_permit",
+                "worker_refuses_a_location_from_another_container",
+                "recycled_incarnation_cannot_borrow_document_permit",
+                "moved_baseline_conflicts_without_overwriting_foreign_bytes",
+                "unconfirmed_save_verifies_frozen_receipt_instead_of_rewriting"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/remote.rs",
+              "gate": "test",
+              "tests": [
+                "container_search_uses_only_the_captured_worker_and_root"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/container_editor.rs",
+              "gate": "container-test",
+              "tests": [
+                "admitted_container_terminal_executes_in_its_namespace_and_retains_identity"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/ui_tests.rs",
+              "gate": "test",
+              "tests": [
+                "dirty_stay_and_save_failure_preserve_original_work",
+                "successful_save_enters_exact_verified_root_and_rebuild_retires_old_editor_binding"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 adds a real worker-backed edit/save/search/terminal authority loop without docker cp or local fallback."
+          }
+        }
+      ],
+      "gates": [
+        "test",
+        "model",
+        "container-test"
+      ],
+      "pins": {
+        "sources": {
+          "crates/strop-containers/src/devcontainer/cli.rs": "3aa0b8229e857efddc04eb6a59d6bb9982ee39d58631849f2f7a0f6fad987943",
+          "crates/strop-containers/src/devcontainer/config.rs": "2207919716d39ef14b416ed27acbf470f2ca61ae73b5fbcd00f44862559ebda0",
+          "crates/strop-containers/src/devcontainer/config/fields.rs": "83cc07af04e3c01b49c817e4ae545e371b03bf2d0960b36b98dbc05dc166644b",
+          "crates/strop-containers/src/devcontainer/discovery.rs": "2d12ef34a920aef3a1f3dca1cee65841c073a5909475d5ec6d5dfe319d8ad7a8",
+          "crates/strop-containers/src/devcontainer/error.rs": "abc375b4d5aa4d3504d3c1693c95598c228a56b84b17e4c6842f005292f9a2e8",
+          "crates/strop-containers/src/devcontainer/job.rs": "98188cdde4259aec4c86114aa3902e3e40a4af35d0096532c155efd29579383f",
+          "crates/strop-containers/src/devcontainer/jsonc.rs": "03731798d49d3f0c481f1c3d60bf0b7ef93bec20a39b1e5513a97c82314113b9",
+          "crates/strop-containers/src/devcontainer/mod.rs": "8f02a3c154f920407baa1f35f4e99105fd55b144c16198d218d4ecec10237a70",
+          "crates/strop-containers/src/devcontainer/model.rs": "abac96b0c8cc6ef14e97870cb2078734abcb261eff65c66ff6b4a746b735344e",
+          "crates/strop-containers/src/devcontainer/process.rs": "2ff919a0c40a139ade2ae015c415771a18f8077459cda2ef5997e5b41c503e25",
+          "crates/strop-containers/src/devcontainer/review.rs": "78de34ee72f1953b46d67a8f90af1ceb62273cbda022820e39497c75a6906497",
+          "crates/strop-engine/src/editor/devcontainers/actions.rs": "e8d96f664ceb69aa2842bba57fb96cefca7570a63f242896b2cce810043c91af",
+          "crates/strop-engine/src/editor/devcontainers/discovery.rs": "acdae8d6ef457cc2719567c04ae1f52c7f70b01e121f8e409f62ee6a6d630e41",
+          "crates/strop-engine/src/editor/devcontainers/jobs.rs": "21886d71a773d122bfa7fb2c430516451ca959fa356fc631de3ebfa53dca6be1",
+          "crates/strop-engine/src/editor/devcontainers/lifecycle.rs": "48cef6dce8577a55f83a6cb5a323abe9c7bc0e0cee595821e6553f9648890e90",
+          "crates/strop-engine/src/editor/devcontainers/mod.rs": "0e5f89bf4f0e4c10e40a626aeb0d4686792bb08821259cf0673accf02bd07d33",
+          "crates/strop-engine/src/editor/devcontainers/model.rs": "5ca172a17db9ed77f3bb7e24bbe798fa177e2f2dff7d39a8a52ef124ebd50229",
+          "crates/strop-engine/src/editor/devcontainers/presentation.rs": "9c24015e9a5b4e667e8a9bab0ce3df347ff2f9b07dc65bbd67a7acf7a92cd69c",
+          "crates/strop-engine/src/editor/devcontainers/ui.rs": "b1c38f68bea33d8b95ad7b58e8ef7cf1c17d72c4cde9d5d834b22aee3f49cf24",
+          "crates/strop-engine/src/editor/io/save/container.rs": "921026f91795219288288aef544a921ae3e89bd79ff968f804fb9d4fd8349951",
+          "crates/strop-engine/src/editor/io/save/container/store.rs": "78af377357f289a2ecb6808f77b5ab809ef01a4f65a660618f4f28dde3225d1e",
+          "crates/strop-engine/src/editor/io/save/container/work.rs": "fd9e78dc4a54048b833e388162d030831e64a7c6ffd710c950ed4e948890b61f",
+          "crates/strop-engine/src/editor/namespace/capability.rs": "77ed68b151559c16404acd43ab87bb9c3fc29700d4760eeddb0875ab80ebf34d",
+          "crates/strop-engine/src/editor/terminal/lifecycle.rs": "3d24477bbcd5639ba672f619aeec34bf17b4c05cd8c028a265a8ab2681949747",
+          "crates/strop-engine/src/editor/trace/drive.rs": "5896c7ca6fbdb870a43122733dfbbeb7e8f84d9fc4087af6448f68fc5190a6dd",
+          "specs/DevContainerLifecycle.tla": "3cb57c22e6bac6ab9103548e46d8335be50dc3df0800a2d1d6761e3039663c5c",
+          "specs/cfg/devcontainer-lifecycle-ignore-incarnation.cfg": "01781de84973bd301e6f59bfbe9fc364c821b94afa1ba5120f8e48b331472490",
+          "specs/cfg/devcontainer-lifecycle-omit-trust.cfg": "963c82dd6fc123d0209446d20d174cb837253c7596b5977948ead6816e190df1",
+          "specs/cfg/devcontainer-lifecycle-publish-before-hooks.cfg": "fbca163596698c8216c507810a0f2e37ff11ec7db1b8c2c53390cc691f6035ea",
+          "specs/cfg/devcontainer-lifecycle-stop-unowned.cfg": "fa5a9668182bdba911b84ef7990d63294031f305c2757086d25e6c606de9564e",
+          "specs/cfg/devcontainer-lifecycle.cfg": "6708902dcc1bb00cead88371ce28368d63cb68bbce3651f59ddcd0e75142c989",
+          "specs/devcontainer-gate.sh": "7f9a47ed531bf8b64d560510e47c6b06354171a7f1ce3f6c69b1cdc5f9cd6129",
+          "specs/gate.sh": "e7ca219a507263f2b4401b21ae59ad8a1b62b5ac66ddece1ad51f9ab43a8e93d"
+        },
+        "evidence": "d5cd99c74179e61beeb510ef4bc834b4553dbbcc72173cee94bfc4f454815a27"
+      }
+    },
+    {
       "id": "terminal-lifecycle",
       "kind": "lifecycle",
       "title": "Embedded terminal session/PTY/effect lifecycle (VF12)",
@@ -3058,7 +3779,14 @@
       ],
       "files": [
         "crates/strop-engine/src/editor/terminal/input.rs",
+        "crates/strop-engine/src/editor/terminal/lifecycle.rs",
+        "crates/strop-engine/src/editor/terminal/presentation.rs",
+        "crates/strop-engine/src/editor/terminal/actions.rs",
+        "crates/strop-engine/src/editor/terminal/privacy.rs",
         "crates/strop-engine/src/editor/terminal/mod.rs",
+        "crates/strop-engine/src/editor/document/mod.rs",
+        "crates/strop-engine/src/editor/explain/terminal.rs",
+        "crates/strop/src/render/statusline.rs",
         "crates/strop-terminal/src/client.rs",
         "crates/strop-terminal/src/model/mod.rs",
         "crates/strop-terminal/src/model/validation.rs",
@@ -3233,6 +3961,96 @@
           }
         },
         {
+          "id": "TERM-NAMESPACE-ACTIONS",
+          "statement": "Local, admitted SSH and admitted container terminals retain exact launch ResourceLocation through modeline, pane titles, buffer rows, state and traces; structured launch_directory reports the actual native launch path rather than the selected workspace root or host cwd. During live input paste+ follows F2 inspect immediately, before optional alternative-key prose; SNAPSHOT, out+ and exited distinguish retained states, and quit review offers an explicit Stop terminal session action. One attention-aware terminal_status_reserve is shared by both fitting stages and clips optional prose before launch context: 38 cells when attention is present at 80+ columns keep launch identity and the complete Space a Refresh attention action, while the 14-cell non-attention/narrow reserve keeps F2/i and out+ cues at 48 columns. At 80+ columns a pending prefix reserves the full status width, keeping the complete any-other-key-sends-to-child guidance visible. Delayed output, held paste and host-control denial remain durable session/ticket-scoped feedback with revalidated Space a actions and full :explain detail, and hidden live sessions offer Focus/Stop/Return without implicit termination or local fallback.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/tests/launch_identity.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_fixtures_retain_full_launch_identity_and_ignore_shell_metadata",
+                "terminal_start_trace_retains_location_and_terminal_local_stays_local",
+                "refused_container_terminal_never_falls_back_to_the_host"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/tests/context_controls.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_context_controls_and_denial_stay_owner_scoped"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/terminal/pty_tests.rs",
+              "gate": "test",
+              "tests": [
+                "real_pty_delayed_output_preserves_selection_yank_until_refresh_or_return",
+                "real_pty_paste_review_decisions_are_redacted_and_ticket_scoped",
+                "real_pty_hidden_session_quit_review_focus_stop_and_return_do_not_implicitly_kill",
+                "real_pty_nested_application_keys_stay_child_owned"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/statusline/tests.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_modeline_names_its_launch_namespace_at_every_width",
+                "terminal_owner_actions_and_attention_survive_golden_cell_sizes"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/remote_ssh/terminal.rs",
+              "gate": "test",
+              "tests": [
+                "admitted_ssh_terminal_executes_remotely_and_retains_launch_identity"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/container_editor.rs",
+              "gate": "container-test",
+              "tests": [
+                "admitted_container_terminal_executes_in_its_namespace_and_retains_identity"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/terminal_tests.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_input_and_inspection_present_distinct_states"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/explain.rs",
+              "gate": "test",
+              "tests": [
+                "explain_retains_remote_terminal_launch_identity"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/terminal_editor/journeys.rs",
+              "gate": "test",
+              "tests": [
+                "real_terminal_input_consent_quit_and_execution_free_replay"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 adds full launch identity, durable terminal decisions and real admitted SSH/container PTY journeys."
+          }
+        },
+        {
           "id": "TERM-OWNERSHIP",
           "statement": "Editor-owned inspection keys never leak to the child: F2 enters pinned inspection directly, Ctrl-W remains ordinary child input, focus loss cancels a pending escape prefix, and the modal baseline journey holds end to end. TUI finish keeps its absolute jobs deadline while rechecking a source thread that can settle silently after its final app event.",
           "status": "correspondence-tested",
@@ -3267,12 +4085,19 @@
       ],
       "gates": [
         "test",
-        "benchmark"
+        "benchmark",
+        "container-test"
       ],
       "pins": {
         "sources": {
-          "crates/strop-engine/src/editor/terminal/input.rs": "945b4396a40ea667a46a2dd70483f92678f386c01ae77f9b0dc701a24161bb1c",
-          "crates/strop-engine/src/editor/terminal/mod.rs": "7d977a4c8b8da0055d505a94b5dadfc2f681064ab7089eb8ee3f9b47351d67a1",
+          "crates/strop-engine/src/editor/document/mod.rs": "d2560a6653782f83648bc0c12f247a5d73ff871f2ec99199170c38034b14cfb9",
+          "crates/strop-engine/src/editor/explain/terminal.rs": "78a3f769c11c96af55df3de9116ab0d60ee4f5e595d58b867951bfcd81c231c3",
+          "crates/strop-engine/src/editor/terminal/actions.rs": "de3b9633a2da105e38c041ba06c6ba95f09a1ce1d7e2b3a646f18b03be97c87c",
+          "crates/strop-engine/src/editor/terminal/input.rs": "e33f43aa15968bac431501ee3d364abb08ecdd6ed6cf8b3cd1bda7018f06d30f",
+          "crates/strop-engine/src/editor/terminal/lifecycle.rs": "3d24477bbcd5639ba672f619aeec34bf17b4c05cd8c028a265a8ab2681949747",
+          "crates/strop-engine/src/editor/terminal/mod.rs": "b45951474e4d4d4fc9390cb6ebe5b665462b56a70fe24513feb80a0320977659",
+          "crates/strop-engine/src/editor/terminal/presentation.rs": "4c81ef1f50bf701a10cfd72917e330acb37f38f904d853d696ac1b73cf52331a",
+          "crates/strop-engine/src/editor/terminal/privacy.rs": "e9af25405346d712f45f5a40c20a89f1749a151d83b2af6705f38177c0fccb0d",
           "crates/strop-terminal/native/bridge.c": "093dd7baf411b8e647a52404144ed7e5088424ed370ccdfb6ee974da7fd250af",
           "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-terminal/src/launch.rs": "c0b3c6b9e1ad4a98ae6598786ebacd29698a5d14376a8aa92214a9f5bc3d8dc4",
@@ -3285,9 +4110,10 @@
           "crates/strop-terminal/src/vt/input.rs": "15bdef918d1fd1ac162d9be4b1b527f9bc33d45be241a88a54c99f35f7612bb2",
           "crates/strop-terminal/src/vt/mod.rs": "3d036a34bee5686fc0e44b9aafc34ba5741e54e78a8236669ad8ebb9e382e6c9",
           "crates/strop-worker-client/src/session.rs": "7714845c6890277892056fa0bee8e0211e7515b87d0202d7c2d7b2bfb0e863a5",
+          "crates/strop/src/render/statusline.rs": "060398fcde96ab25708cafd20d194f766a3b745019b20f7bafb1f869b1eb15cb",
           "crates/strop/src/terminal.rs": "e7b564f6c0938c703114aaaea4d2128796efe45cfe68ac105b1237e55faf4ca5"
         },
-        "evidence": "901cd0a7260281c2a5f40ee9c023adb7215381ccbae6a2e10ea5de266fe089ce"
+        "evidence": "27b5aea145b2d00f8accdccb36d7bacfba156e0af97b7ff3cd850ac4e00adaf3"
       }
     },
     {
@@ -3308,9 +4134,18 @@
         "crates/strop-picker/src/query/lexer.rs",
         "crates/strop-picker/src/query/parser.rs",
         "crates/strop-picker/src/query/plan.rs",
+        "crates/strop-picker/src/query/plan/boolean.rs",
+        "crates/strop-picker/src/query/plan/content.rs",
+        "crates/strop-picker/src/query/plan/file.rs",
         "crates/strop-picker/src/query/store.rs",
         "crates/strop-picker/src/query/properties.rs",
         "crates/strop-picker/src/source/selection.rs",
+        "crates/strop-picker/src/source/grep.rs",
+        "crates/strop-picker/src/source/remote.rs",
+        "crates/strop-picker/src/source/worker.rs",
+        "crates/strop-engine/src/editor/picker/query.rs",
+        "crates/strop-engine/src/editor/picker/search.rs",
+        "crates/strop-engine/src/editor/workspaces.rs",
         "crates/strop-engine/src/editor/picker/drain.rs",
         "crates/strop-engine/src/editor/analysis/mod.rs",
         "crates/strop-engine/src/editor/analysis/search.rs",
@@ -3319,7 +4154,7 @@
       "claims": [
         {
           "id": "SRCH-MODELINE-POSITION",
-          "statement": "The modeline presents the one-based current match and total from the revision-matched asynchronous summary, retaining global ordinals for visible hits and updating in both repeat directions without an input-path scan.",
+          "statement": "The modeline presents the one-based current match and total from the revision-matched asynchronous summary, retaining global ordinals for visible hits and updating in both repeat directions without an input-path scan. Terminal surfaces suppress this ordinary search-position segment and instead use one attention-aware terminal_status_reserve shared by both fitting stages: 38 cells when attention is present at 80+ columns retain the complete Space a Refresh attention action, while the 14-cell non-attention/narrow reserve preserves F2/i/out+ at 48 columns. At 80+ columns a pending prefix reserves full status width so any-other-key-sends-to-child remains visible. That presentation choice does not alter the underlying search summary.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -3328,7 +4163,17 @@
               "gate": "test",
               "tests": [
                 "modeline_search_position_follows_repeat_navigation",
-                "modeline_search_position_includes_zero_width_line_boundaries"
+                "modeline_search_position_includes_zero_width_line_boundaries",
+                "terminal_modeline_names_its_launch_namespace_at_every_width",
+                "terminal_owner_actions_and_attention_survive_golden_cell_sizes"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/src/render/terminal_tests.rs",
+              "gate": "test",
+              "tests": [
+                "terminal_input_and_inspection_present_distinct_states"
               ]
             }
           ],
@@ -3340,7 +4185,7 @@
         },
         {
           "id": "SRCH-CASE-AND-FPATH",
-          "statement": "Buffer search folds case by default while case:sensitive or \\C forces exact matching; case directives remain zero-width before anchors and persist through repeat and highlights. fpath: scopes the full workspace-relative path with smart-case fuzzy matching, supports exclusions and Boolean Search, preserves literal path: behavior and migrates older stored queries without reinterpretation.",
+          "statement": "Buffer search and every picker query surface fold case by default while case:sensitive or \\C forces exact matching; case:smart is an explicit opt-in. case:ignore and case:insensitive agree across parser, highlighting, local/remote content, fuzzy ranking, path:/fpath:, Boolean admission, replacements and retained lists. fpath: scopes the full workspace-relative path, supports exclusions and migrates older stored queries without reinterpretation.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -3366,7 +4211,26 @@
               "gate": "test",
               "tests": [
                 "fuzzy_path_scope_matches_parent_components_without_reinterpreting_path",
-                "fuzzy_path_is_the_same_predicate_in_boolean_content_search"
+                "fuzzy_path_is_the_same_predicate_in_boolean_content_search",
+                "path_scopes_default_to_insensitive_and_honor_sensitive_override",
+                "boolean_and_retained_path_scopes_share_the_selected_case",
+                "literal_is_escaped_and_case_insensitive_by_default"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/query_tests/case_defaults.rs",
+              "gate": "test",
+              "tests": [
+                "file_queries_are_insensitive_by_default_with_sensitive_override"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/query/parser/tests.rs",
+              "gate": "test",
+              "tests": [
+                "insensitive_alias_matches_ignore_and_changes_scope_identity"
               ]
             },
             {
@@ -3375,6 +4239,23 @@
               "gate": "test",
               "tests": [
                 "fuzzy_path_scope_filters_real_relative_paths"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/grep.rs",
+              "gate": "test",
+              "tests": [
+                "content_search_defaults_to_insensitive_and_sensitive_is_exact",
+                "smart_case_boolean_prefilter_preserves_each_atoms_admission"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/remote.rs",
+              "gate": "test",
+              "tests": [
+                "content_case_selects_the_remote_rg_flag"
               ]
             },
             {
@@ -3390,7 +4271,47 @@
           "migration": {
             "from": null,
             "classification": "new",
-            "basis": "0074 adds case-folding and fpath correspondence across the shared compiler, real picker, Boolean admission and stored-query migration; lifecycle theorems are unchanged."
+            "basis": "0081 makes insensitive the shared default and case:sensitive the exact override across picker execution, local/remote search, paths and retained surfaces; buffer-search semantics stay unchanged."
+          }
+        },
+        {
+          "id": "SRCH-WORKSPACE-SCOPE",
+          "statement": "Files and Search capture the selected longest covering namespace+root rather than process cwd or a later directory selection. Admitted container Search uses only that captured root and current incarnation's worker, merges dirty source snapshots explicitly, and refuses without a worker instead of falling back to local execution; SSH/container Search remains read-only and does not open replacement Review.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/remote.rs",
+              "gate": "test",
+              "tests": [
+                "container_search_uses_only_the_captured_worker_and_root",
+                "remote_search_refuses_absent_or_foreign_worker_authority"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/workspaces.rs",
+              "gate": "test",
+              "tests": [
+                "exact_roots_coexist_on_one_endpoint_and_resolve_longest_covering_root",
+                "same_basename_across_namespaces_has_distinct_identity_and_labels"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/picker/query_tests/selected_roots.rs",
+              "gate": "test",
+              "tests": [
+                "files_walk_and_accept_in_the_focused_documents_selected_root",
+                "selecting_another_root_cannot_retarget_an_open_files_surface",
+                "directory_browsing_uses_its_selected_parent_root_without_chdir"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 binds search to durable namespace+root workspaces and admits the existing native worker Search path for containers without adding write or local-fallback authority."
           }
         },
         {
@@ -3528,17 +4449,26 @@
           "crates/strop-engine/src/editor/analysis/search.rs": "c78c783aac9a41d3fcc8d9fe649ade490396d187f33bd6e5b1dbb84f6cd228c3",
           "crates/strop-engine/src/editor/normal/search.rs": "b34a841566e54e2e83241f2df095a8788e2173192058b5abde4751e28144ba43",
           "crates/strop-engine/src/editor/picker/drain.rs": "5e56ee5dcc5d181c3ccd024a1d68337ba17f0203bc8889e77d7760768a7717b3",
+          "crates/strop-engine/src/editor/picker/query.rs": "0b4569ef24201cb7dbe6eda91762d2c15997d066c93bfb50fa634506630c33d6",
+          "crates/strop-engine/src/editor/picker/search.rs": "ebbf8ce3e4665b48f18bfd1ef7308e80b7582553d3627ee52e0779e61cca8bf2",
+          "crates/strop-engine/src/editor/workspaces.rs": "37c9bf92337a08a223134323851f704c8e010ae40e0951847911df2fde0253b1",
           "crates/strop-grammar/src/query/parse.rs": "55ea7bf10ef9af7e2addb84e73eec9a948075af2bcbcaf72398a40b504684ea5",
           "crates/strop-grammar/src/query/parse/atoms.rs": "2e32f011a930d692c6c001b2327e93a4b2e212b580af564397e6bf49c249bca6",
           "crates/strop-picker/src/query/lexer.rs": "66c975fc51a2881f18dd64b9c1796132923f87ab2d22ec6f5cdf20d043efdcea",
-          "crates/strop-picker/src/query/parser.rs": "1354efb42b645cd889b76e085436cb4f4fc9032c3973fecf5bd16febb2274cac",
-          "crates/strop-picker/src/query/plan.rs": "942fecf428eb14758b9e97a6b1a3eaa31ed32403e949843284c84d97600d39bd",
+          "crates/strop-picker/src/query/parser.rs": "6a983359beae3a5eb489397f05068b1f380811248a16d06174b6ff10882e73da",
+          "crates/strop-picker/src/query/plan.rs": "056b3a07884158a5a673d22fc599028bed2b6e02424e8e46c8a8fd90a47d2c83",
+          "crates/strop-picker/src/query/plan/boolean.rs": "a68c3456828d6b90c7e404cf57262ac73e51f67f909a68b20fa57156ae43d672",
+          "crates/strop-picker/src/query/plan/content.rs": "fab348818517be0df20c290a571c82185dec84f29f7c046aa4e3f8708df70f5f",
+          "crates/strop-picker/src/query/plan/file.rs": "d083e66f2318273693aa979e9e77c2943f521764297944478b6cc99318935cf2",
           "crates/strop-picker/src/query/properties.rs": "95fa17d92f7522d80256dfd2f56a2f83f6634ec1781dd2963b6274d5ecfffa1f",
           "crates/strop-picker/src/query/store.rs": "80f5ec95470bf2ea2fd07e5448335c2bd3545daf46f316f7e25968af6945a09d",
+          "crates/strop-picker/src/source/grep.rs": "d0cacac950052d626daa9889a79642a03b14623b65f396fbb0efc5e16e510948",
+          "crates/strop-picker/src/source/remote.rs": "a17ebccf7e7725ca7efae117a242ebc8154e40e5abaa1ac7a7c7e7bdc446e4f2",
           "crates/strop-picker/src/source/selection.rs": "cb73bf25a40c389634fd9df8e3a3ff1c1815b369a5a0d8be2fca9ad8290fc3b7",
-          "crates/strop/src/render/statusline.rs": "0a5d0762fde8f8120085daddf929264754f6eefeb0221942c4548fc35c1bfd9b"
+          "crates/strop-picker/src/source/worker.rs": "fddcbbe838292e5b277e135758843dd840235c51af60aff3ed420cf2b316ae64",
+          "crates/strop/src/render/statusline.rs": "060398fcde96ab25708cafd20d194f766a3b745019b20f7bafb1f869b1eb15cb"
         },
-        "evidence": "1eb7b15d9a925b0785e0337f77356d2db67ad490b0585f4a11c54535a13a5e06"
+        "evidence": "bbb79c2731cb1ad108afa5436b6510afa9d8f8a569e5dc29acf32df4f88f0f4f"
       }
     },
     {
@@ -3558,6 +4488,7 @@
         "crates/strop/src/headless/directives.rs",
         "crates/strop/src/headless/driver.rs",
         "crates/strop/src/replay.rs",
+        "crates/strop-engine/src/editor/trace/drive.rs",
         "crates/strop/src/ui_stdio/serve.rs",
         "crates/strop-ui-protocol/src/message.rs",
         "crates/strop-ui-protocol/src/driver.rs",
@@ -3569,6 +4500,14 @@
         "crates/strop-engine/src/keymap/bindings_adapter.rs",
         "crates/strop-engine/src/editor/input.rs",
         "crates/strop-engine/src/editor/panes.rs",
+        "crates/strop-engine/src/editor/feedback/mod.rs",
+        "crates/strop-engine/src/editor/feedback/model.rs",
+        "crates/strop-engine/src/editor/feedback/store.rs",
+        "crates/strop-engine/src/editor/feedback/actions.rs",
+        "crates/strop-engine/src/editor/explain.rs",
+        "crates/strop-engine/src/editor/explain/terminal.rs",
+        "crates/strop-engine/src/editor/filesystem/actions.rs",
+        "crates/strop/src/render/statusline/transient.rs",
         "crates/strop-grammar/src/types.rs",
         "crates/strop-grammar/src/parse.rs",
         "crates/strop-grammar/src/resolve/mod.rs",
@@ -3709,6 +4648,48 @@
           }
         },
         {
+          "id": "UI-DURABLE-FEEDBACK",
+          "statement": "Failed/unconfirmed saves, remote/container admission failures, terminal decisions and Dev Container outcomes are owner-scoped records that survive unrelated keys and unrelated success. Space a exposes only currently revalidated recovery actions; dismissal hides presentation without cancelling work or clearing write barriers; :explain retains full detail and resolved history. Repeated records coalesce, resolved history is bounded, and unresolved records are never evicted at that bound.",
+          "status": "correspondence-tested",
+          "evidence": [
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/feedback/tests.rs",
+              "gate": "test",
+              "tests": [
+                "failed_save_survives_keys_unrelated_success_and_explain",
+                "concurrent_save_owners_resolve_independently",
+                "dismissal_is_presentation_only_and_completion_still_resolves",
+                "context_actions_drop_retry_after_revision_changes",
+                "stale_document_action_cannot_affect_replacement",
+                "remote_incarnation_change_stales_captured_recovery",
+                "repeats_coalesce_and_unresolved_history_is_never_evicted"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/remote/save/tests.rs",
+              "gate": "test",
+              "tests": [
+                "remote_unconfirmed_feedback_offers_verify_not_blind_retry"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/store_tests.rs",
+              "gate": "test",
+              "tests": [
+                "dismissed_unconfirmed_save_still_offers_verification_and_resolves"
+              ]
+            }
+          ],
+          "migration": {
+            "from": null,
+            "classification": "new",
+            "basis": "0081 replaces transient-only actionable outcomes with bounded durable owner-scoped feedback and revalidated contextual actions; no persistence-across-restart claim is made."
+          }
+        },
+        {
           "id": "UI-FRESHNESS",
           "statement": "No misapplied or wrong-document delivery: the bounded model passes both freshness invariants, and the mutant without delivery freshness violates exactly NoMisapply and NoWrongDocument — no structural accounting invariant. Worker notify records use a coalesced wake hint; a trace-owned write cannot loop back as an editor input event. The pipe backend publishes an acknowledged action's semantic effects before the acknowledgement itself, including state-only actions whose view generation does not move. Clipboard effect requests are suppressed unless the negotiated capability grants them, and action acknowledgements are honest: Applied, Partial (consuming exactly the acknowledged prefix) and Refused are reported as typed outcomes, never flattened.",
           "status": "bounded-model-checked",
@@ -3759,7 +4740,7 @@
         },
         {
           "id": "UI-REPLAY",
-          "statement": "Recorded journeys replay deterministically: duplicated completions apply once, reordered shell outputs keep both with newest focus, and replay undo restores the original bytes. An unsupported native filesystem watch remains a visible on-demand refusal after native-free replay, rather than losing the out-of-band queue result.",
+          "statement": "Recorded journeys replay deterministically: duplicated completions apply once, reordered shell outputs keep both with newest focus, and replay undo restores the original bytes. Live Devcontainer wakes are recorded as settled typed payloads and replayed through the same production handler without native polling; the original OpenSSH native-name journey also replays without an SSH peer. An unsupported native filesystem watch remains a visible on-demand refusal after native-free replay, rather than losing the out-of-band queue result.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -3796,6 +4777,22 @@
                 "quit_with_unconsumed_frame_and_state_is_an_error",
                 "buffer_directive_preserves_terminal_composition_settings",
                 "post_quit_settle_still_drains_cleanup"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/ui_tests.rs",
+              "gate": "test",
+              "tests": [
+                "recorded_discovery_completion_replays_without_native_work"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop/tests/remote_ssh.rs",
+              "gate": "test",
+              "tests": [
+                "openssh_reads_native_names_and_replay_needs_no_ssh"
               ]
             }
           ],
@@ -3857,17 +4854,25 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-core/src/commands/bindings.rs": "abbb714da195cc386d80518974fd305de29982e6dac2770d1f624e6c6f5c3047",
+          "crates/strop-core/src/commands/bindings.rs": "9e81032f4164983a370e5dc5c30a6953da47173620aefe952cd23b0780a05e92",
           "crates/strop-core/src/frontend_input.rs": "3e3a7995ea1cd3e9f96eb7aec7e38f9ed6fb735f66c1e1e16775f965c0bcce35",
-          "crates/strop-engine/src/editor/events.rs": "af7a575787bd84ded905b7442dd245961baf81d0ffaf2d0f8eaab25570167c7a",
+          "crates/strop-engine/src/editor/events.rs": "7d9081df55f94b15bc94f3b3a98eda70629f3006c3e190cad4be62b93df2832c",
+          "crates/strop-engine/src/editor/explain.rs": "be9b1a4d70fe2727284953b2b930f0e1979db5ea9ea787590af5132522639cd4",
+          "crates/strop-engine/src/editor/explain/terminal.rs": "78a3f769c11c96af55df3de9116ab0d60ee4f5e595d58b867951bfcd81c231c3",
+          "crates/strop-engine/src/editor/feedback/actions.rs": "2c01b97763639bb128a5ec1c6b67ff95de966b2c9d352310e119d1320ecfb855",
+          "crates/strop-engine/src/editor/feedback/mod.rs": "daa135e97d5db8e0bf7e4d61b805633973d33670fa2e83f6b5327d9aace5afb1",
+          "crates/strop-engine/src/editor/feedback/model.rs": "ff53ddc0d68f8231aec64d46afb77959fb7a0152f4881294b93cb3845f4c8015",
+          "crates/strop-engine/src/editor/feedback/store.rs": "10c252fa4b4a02d74b005ebebacabfef1bb89fb1fd576a929dacfce67e8e6c17",
           "crates/strop-engine/src/editor/field.rs": "b4c5550c16970bff0b4839c18739c64a6969a6531686697322bcebe0ac22e3cf",
+          "crates/strop-engine/src/editor/filesystem/actions.rs": "7ced8fe772ca71c4b73cb5f1eb3d08bb91909e1e97554664b45cc3403ee9ec55",
           "crates/strop-engine/src/editor/input.rs": "8761dc0c04b3ce0778f2684f126eced52a6fc82822d9babdcef6be00389bd50d",
           "crates/strop-engine/src/editor/input/frontend.rs": "1030c5283ad86e5560f84a75061a4a076e1ec84050c9ab257f7c06f8e8db42fc",
           "crates/strop-engine/src/editor/insert.rs": "f9e5e682e26de7a841f1b5e68969b9107b8101dfec16305d86dca3eed52ed968",
-          "crates/strop-engine/src/editor/panes.rs": "d3bab86a54e28868cca62cd0047e16411921ba1e156110c4a6b1104256485748",
+          "crates/strop-engine/src/editor/panes.rs": "9af42f4d093efd83b74ff31c1ab9aabc61ed9cbf56ee905e401a059b6394a6e0",
           "crates/strop-engine/src/editor/pending.rs": "1bbddb45a8a11c13b9666b8178dd2750192dfda4cf846b29d8c9528f8f07c641",
-          "crates/strop-engine/src/editor/picker/keys.rs": "5a01c4ddb6201cd9b16ded5a87b167a36b55a3a761aee501a86dc3897fbd812d",
-          "crates/strop-engine/src/keymap/bindings_adapter.rs": "d47dd35b9dce8a9baececee85e43fdb64a2fc2808eba2e82c07eed03c2c23231",
+          "crates/strop-engine/src/editor/picker/keys.rs": "943956d3ad48bf233654f74205d9bc634c689fe8fb98828c6f4c5e17a79961de",
+          "crates/strop-engine/src/editor/trace/drive.rs": "5896c7ca6fbdb870a43122733dfbbeb7e8f84d9fc4087af6448f68fc5190a6dd",
+          "crates/strop-engine/src/keymap/bindings_adapter.rs": "4def73debbcfade61800f9f40623b0b7ec9c449b02523491a9e8b99d711f2d57",
           "crates/strop-grammar/src/parse.rs": "d05b1771978b3f350adc9866b4ad20bc46318ab0c02b18c73170318b4b38bdda",
           "crates/strop-grammar/src/resolve/mod.rs": "28b3922b1524ffb875b0e499f638ae12709817f67f60a7528bc9ad131af86d78",
           "crates/strop-grammar/src/types.rs": "8ddd13087ae5a70cebbb5119d6cc2213c237e0e50a6a366cd8adc26e0ecc5290",
@@ -3875,12 +4880,13 @@
           "crates/strop-ui-protocol/src/message.rs": "0384cda6519a0f007ab1c2609f0ed1fc5e38adde336afe5669b119e0a8c59800",
           "crates/strop/src/headless/directives.rs": "fa1361af865ab34a4fd94b1c5bbe8d75ca58d8f268183663de2ca8363718919d",
           "crates/strop/src/headless/driver.rs": "556e4bb1c4b88cbb016f973b68a69f5a9a5c5174856ad08a616a4a4c7d3bcbc5",
-          "crates/strop/src/render/buffer.rs": "4c3018f11522e3304f490812d8449c6f869782a2fb5d256de9001664e3c2d72a",
+          "crates/strop/src/render/buffer.rs": "f57d167e3cbc639c59d1a57e1cd5470efe102901911d9d6807534551f895f2bd",
           "crates/strop/src/render/clip.rs": "0428a5cf4f76bb215d6757035e648cac3cf4fae04c51819c6cbca365c190c506",
+          "crates/strop/src/render/statusline/transient.rs": "152a1b9d430c5e41dd92baaea29b71ae4f25ae8b4a2b1f5b9660f718e4c16910",
           "crates/strop/src/replay.rs": "530665a536c98229a3505a23adc7376f5b6f26f4d065087c699f3deaab0a8840",
           "crates/strop/src/ui_stdio/serve.rs": "2e02823666231555c6cd5ebde08c81426cc9ee86ec5972df605fe1c433f7f9a4"
         },
-        "evidence": "9a306dcc122eb22be12fcd9ea927e6ec68b685c58c45f03ad906508c6a0eeaea"
+        "evidence": "98906fa27ae7bf424d4a15aad6d5acf36c3c38434ea9069a1585df95d18b5018"
       }
     },
     {
@@ -4152,6 +5158,8 @@
         "crates/strop-fs/src/batch.rs",
         "crates/strop-remote/src/worker_transport.rs",
         "crates/strop-engine/src/editor/namespace.rs",
+        "crates/strop-engine/src/editor/namespace/capability.rs",
+        "crates/strop-engine/src/editor/io/save/container/store.rs",
         "crates/strop-engine/src/editor/remote/save/store.rs",
         "crates/strop-engine/src/editor/filesystem/mod.rs",
         "crates/strop-worker/src/lib.rs",
@@ -4195,7 +5203,7 @@
         },
         {
           "id": "WS-CLIENT",
-          "statement": "Client lifecycle over the loopback: handshake grants session/capabilities, requests cancel typed before send, fs prepare/apply/verify and observe/list/read roundtrip, a ranged read closes its stream once and leaves the health route live, finite exec streams and exits, and shutdown-then-request spawns a fresh incarnation. An editor owner can instead close permanently: outstanding clones then fail Closed rather than spawning after editor exit.",
+          "statement": "Client lifecycle over the loopback: handshake grants session/capabilities, requests cancel typed before send, fs prepare/apply/verify and observe/list/read roundtrip, a ranged read closes its stream once and leaves the health route live, finite exec streams and exits, and shutdown-then-request spawns a fresh incarnation. An editor owner can instead close permanently: outstanding clones then fail Closed rather than spawning after editor exit. Admitted-container conditional Stores reuse this same client/session and native Store protocol; document permits and StartedAt checks remain editor-side grants, not new worker authority.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -4212,6 +5220,16 @@
                 "deployed_worker_binds_the_endpoint_target",
                 "store_save_round_trip_with_conflict_and_verify",
                 "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "displayed_snapshot_permit_admits_real_edit_and_conditional_save",
+                "recycled_incarnation_cannot_borrow_document_permit",
+                "unconfirmed_save_verifies_frozen_receipt_instead_of_rewriting"
               ]
             }
           ],
@@ -4586,9 +5604,11 @@
         "sources": {
           "crates/strop-core/src/worker/cache_record.rs": "3030cb87bc678044938ad67758f10d8d0ab06c7b59f0b05c329cf25cebc77292",
           "crates/strop-engine/src/editor/filesystem/mod.rs": "c43f52a39c9e252520b02bc600fb093e60ae46503c2229bb4566aa4b446c94ff",
-          "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
+          "crates/strop-engine/src/editor/io/save/container/store.rs": "78af377357f289a2ecb6808f77b5ab809ef01a4f65a660618f4f28dde3225d1e",
+          "crates/strop-engine/src/editor/namespace.rs": "66ecd1067572d9f5b74017288e66e7fcd27c54950d655c1d43b7b517f693c7b7",
+          "crates/strop-engine/src/editor/namespace/capability.rs": "77ed68b151559c16404acd43ab87bb9c3fc29700d4760eeddb0875ab80ebf34d",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "f1256ac916b34e9d98be4269c9f7cdd3ae11224615e3627f7f9dc54ada8c9170",
+          "crates/strop-fs/Cargo.toml": "8befe00786fed578c0506bd9b22f2e017b31c57c36d2f295b0e11ef1ab887c0e",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -4596,7 +5616,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "7d40843fecdeedea14abf2397fbf5ae369cbfda5109288bb11d88dad5ff5c7fa",
+          "crates/strop-worker/Cargo.toml": "a42ad64212c34d029512622d19f8fc9485c33063f2457532974d8ee4b1d47e43",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -4610,7 +5630,7 @@
           "verification/bench_worker.py": "5298cf87e04ac5cc9a0507ab42ebbd13b6efc31ded24e91a197f795f5693ff03",
           "verification/bench_worker_roundtrip.py": "865b647f42fe64cbcb51e34a87f86412d00cf2448dc5f214eb28017b660618f9"
         },
-        "evidence": "4239214c300c64eb335ce3e7dd78b29e3edf9b68f78bbcba065062a9e9639c33"
+        "evidence": "43627bdd270217c92f51b04644999086087b23c3bf1a9d69e28567f19bff9615"
       }
     },
     {
@@ -4618,7 +5638,7 @@
       "kind": "lifecycle",
       "title": "Filesystem notification service: subscriptions, hints, engine reload and picker invalidation (0058 S7)",
       "promise": "Hints are wake hints, never authority; stale generations never act; out-of-scope relocations are ambiguous, never guessed; a full pending queue latches overflow and rescans conservatively — never a silent drop; a hint reloads a clean buffer and preserves a dirty one with external-change state; worker loss reestablishes with a fresh generation; picker caches invalidate conservatively (rescan latch coalesces storms, losing coverage invalidates the baseline).",
-      "exclusions": "Remote and container scopes are typed refusals today. OS watcher facilities can lose hints; the overflow/rescan contract covers loss, it does not eliminate it. Hint ordering across independent roots is not promised.",
+      "exclusions": "Container notification scopes remain typed refusals; admitted container Search does not add a watch capability. SSH scopes use worker notifications as described below. OS watcher facilities can lose hints; the overflow/rescan contract covers loss, it does not eliminate it. Hint ordering across independent roots is not promised.",
       "authoritative_state": "per-subscription generation/baseline in the notify manager; the engine's external_change state; picker cache baselines keyed by root",
       "trusted": [
         "OS watcher facilities (inotify/FSEvents) deliver hints; loss is handled by overflow/rescan",
@@ -4628,6 +5648,7 @@
         "crates/strop-engine/src/editor/notify/mod.rs",
         "crates/strop-picker/src/source/cache.rs",
         "crates/strop-picker/src/source/worker.rs",
+        "crates/strop-picker/src/source/remote.rs",
         "crates/strop-worker/src/notify/manager.rs",
         "crates/strop-worker/src/notify/mod.rs",
         "crates/strop-worker/src/notify/sys.rs"
@@ -4786,7 +5807,7 @@
         },
         {
           "id": "NOTIFY-PICKER",
-          "statement": "Picker cache invalidation is conservative: an invalidation snapshot survives mid-scan arrivals, abandon restores it, the rescan latch coalesces storms and a full build clears it, losing coverage invalidates the baseline, and hints translate into deeper scopes only.",
+          "statement": "Picker cache invalidation is conservative: an invalidation snapshot survives mid-scan arrivals, abandon restores it, the rescan latch coalesces storms and a full build clears it, losing coverage invalidates the baseline, and hints translate into deeper scopes only. The same worker source now dispatches admitted container Search through its captured root/lease with no local fallback; this adds no notification subscription or freshness authority and leaves cache-invalidation semantics unchanged.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -4799,6 +5820,14 @@
                 "rescan_latch_coalesces_storms_and_full_build_clears_it",
                 "losing_coverage_invalidates_the_baseline",
                 "hints_translate_into_deeper_scopes_only"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-picker/src/source/remote.rs",
+              "gate": "test",
+              "tests": [
+                "container_search_uses_only_the_captured_worker_and_root"
               ]
             }
           ],
@@ -4817,12 +5846,13 @@
         "sources": {
           "crates/strop-engine/src/editor/notify/mod.rs": "a775e6797336fde3b4c3a560d29d69bc190f195641f1a398f1745d39a976746d",
           "crates/strop-picker/src/source/cache.rs": "a977b8438318c99a462f5dab90be94312f7a1bd6c61792d63d889a37b4e45156",
-          "crates/strop-picker/src/source/worker.rs": "c7654d562156b043f7db4b17eefe62efd13b67d58eade617b7f1ed00dcf6b7bf",
+          "crates/strop-picker/src/source/remote.rs": "a17ebccf7e7725ca7efae117a242ebc8154e40e5abaa1ac7a7c7e7bdc446e4f2",
+          "crates/strop-picker/src/source/worker.rs": "fddcbbe838292e5b277e135758843dd840235c51af60aff3ed420cf2b316ae64",
           "crates/strop-worker/src/notify/manager.rs": "e1cdaf0b57101dfb89e17504f06c18f03aee1093aa7d76b2ef06bca57f7ff041",
           "crates/strop-worker/src/notify/mod.rs": "cac01cbcc38194729293866ba678d3634c90c025f8e1141f6f01fae57b643838",
           "crates/strop-worker/src/notify/sys.rs": "14f5461b93eb5754aad6faabdaac646baff2b6b99e1cf3edf99520ef901fa98d"
         },
-        "evidence": "322d323ae7e63c830cd375c816f18b796e5dc5ea424ca4bc0adf2f3561714624"
+        "evidence": "0394efa70c324b688a3f199305c418446e1c6e39a9a4acc59ba28bcf53f7970f"
       }
     },
     {
@@ -4853,6 +5883,7 @@
         "crates/strop-containers/src/engine.rs",
         "crates/strop-engine/src/editor/remote/workers.rs",
         "crates/strop-engine/src/editor/namespace.rs",
+        "crates/strop-engine/src/editor/namespace/capability.rs",
         "crates/strop/Cargo.toml",
         "crates/strop-engine/src/editor/containers/container_worker.rs",
         "crates/strop-worker-deploy/src/provider.rs",
@@ -4945,7 +5976,7 @@
         },
         {
           "id": "WDEP-CONTEXT",
-          "statement": "Selected Docker engine/user/cwd and canonical id/StartedAt survive default-context changes, namespace-local execution and restart; the editor explicitly authorizes the worker without granting container file writes. Native verified-worker probes and editor sessions now exec directly under the same captured context without the extra generic sh/cat supervisor. Absent-shell preinstalled admission verifies read-only and refuses tar/cache mutations before staging bytes. The 100-column :explain view shows the digest on its own line, not clipped behind the container id. The editor now closes all captured leases and rejects a publication racing owner shutdown instead of leaving a worker to an outstanding clone.",
+          "statement": "Selected Docker engine/user/cwd and canonical id/StartedAt survive default-context changes, namespace-local execution and restart; the editor explicitly authorizes the worker without itself granting container file writes; Search and terminal share that admitted incarnation, while file writes additionally require the separate per-document :container-edit permit and conditional Store. Native verified-worker probes and editor sessions now exec directly under the same captured context without the extra generic sh/cat supervisor. Absent-shell preinstalled admission verifies read-only and refuses tar/cache mutations before staging bytes. The 100-column :explain view shows the digest on its own line, not clipped behind the container id. The editor now closes all captured leases and rejects a publication racing owner shutdown instead of leaving a worker to an outstanding clone.",
           "status": "native-tested",
           "evidence": [
             {
@@ -4964,6 +5995,23 @@
               "gate": "container-test",
               "tests": [
                 "container_worker_requires_explicit_command_and_never_grants_file_writes"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "displayed_snapshot_permit_admits_real_edit_and_conditional_save",
+                "recycled_incarnation_cannot_borrow_document_permit"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/devcontainers/ui_tests.rs",
+              "gate": "test",
+              "tests": [
+                "successful_save_enters_exact_verified_root_and_rebuild_retires_old_editor_binding"
               ]
             },
             {
@@ -5281,9 +6329,10 @@
           "crates/strop-containers/src/engine.rs": "3a34148eddf290a54bd738c87bf7293e5206cbad24fa0466672c985b128bc1e5",
           "crates/strop-core/src/worker/cache_record.rs": "3030cb87bc678044938ad67758f10d8d0ab06c7b59f0b05c329cf25cebc77292",
           "crates/strop-core/src/worker/deploy_policy.rs": "b07466797094af38dd676c242b4cd93754c2b4be64cead12190f6d666d5eaf63",
-          "crates/strop-engine/src/editor/containers/container_worker.rs": "c4a44070ced71e7ee7272a4dda8c8be9de6736a14f10fb2912c0cc3a9f8adf5e",
-          "crates/strop-engine/src/editor/explain.rs": "beda0a463e5b1d79e68d20eca18d1a1e22195d8f4248659abef538eb52939a68",
-          "crates/strop-engine/src/editor/namespace.rs": "1b5b363ac60d17507480b8f47b3310385e998865724d9eb754400cbd55e289dc",
+          "crates/strop-engine/src/editor/containers/container_worker.rs": "5762aa8785848a9fd8bed7a7d4f2fe68a6ad855cf888b43e36f4e7add748ca32",
+          "crates/strop-engine/src/editor/explain.rs": "be9b1a4d70fe2727284953b2b930f0e1979db5ea9ea787590af5132522639cd4",
+          "crates/strop-engine/src/editor/namespace.rs": "66ecd1067572d9f5b74017288e66e7fcd27c54950d655c1d43b7b517f693c7b7",
+          "crates/strop-engine/src/editor/namespace/capability.rs": "77ed68b151559c16404acd43ab87bb9c3fc29700d4760eeddb0875ab80ebf34d",
           "crates/strop-engine/src/editor/remote/workers.rs": "b887d7b9a7fcfccbdcacdd6a6cfd27c0f161f555207fec06e77fac741582b5a6",
           "crates/strop-remote/src/deploy_provider.rs": "8f47f3e3b11e3bb2aed7fe5c0a095c20e270fb461cf1d9a0d731cdb3d59a52a3",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
@@ -5293,13 +6342,13 @@
           "crates/strop-worker-deploy/src/lib.rs": "13870aae70d96f26582dd7d8ce963e91b48f99049afc0b3926733932e6750966",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "7d40843fecdeedea14abf2397fbf5ae369cbfda5109288bb11d88dad5ff5c7fa",
+          "crates/strop-worker/Cargo.toml": "a42ad64212c34d029512622d19f8fc9485c33063f2457532974d8ee4b1d47e43",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "6398c91821cc414b33011bc4dd6b9b17c0afa6e51baca5e945350e08e3571f71"
+          "crates/strop/Cargo.toml": "479b84f08dda7ec56fde5ed08cac0dcd484d465026eb589dbd79cb76a1093df1"
         },
-        "evidence": "a0011d2cea7c9a3426b8ea2321fbbe9f41e0ca0441838263760cd76db19ca402"
+        "evidence": "5801cb8307a55802406db50a05a1249a0cc3e549b4c18f0dc433f1ace919d9e8"
       }
     },
     {
@@ -5477,7 +6526,7 @@
           "crates/strop-worker/src/serve/schedule.rs": "20b7d148a9015c1f98eaf1dfc48c40e6c44939ce2ea585dd5744154a89ff961e",
           "crates/strop-worker/src/serve/stream_window.rs": "936970a38405549db074d27359e80f5e606c35de8256f0d20929558bca20df8a"
         },
-        "evidence": "ff46c9e5086604a88fa50810e7b3ecf4db5f9a0567160454bd55a3fb6300b3a6"
+        "evidence": "18859262533f50c260e7af8f36c36457f98336b699eac6625966f5f5a99dd0ea"
       }
     },
     {
@@ -5494,8 +6543,13 @@
       ],
       "files": [
         "crates/strop-engine/src/editor/remote/save.rs",
+        "crates/strop-engine/src/editor/remote/save/editor.rs",
+        "crates/strop-engine/src/editor/remote/save/error.rs",
         "crates/strop-engine/src/editor/remote/save/store.rs",
         "crates/strop-engine/src/editor/io/save.rs",
+        "crates/strop-engine/src/editor/io/save/container.rs",
+        "crates/strop-engine/src/editor/io/save/container/store.rs",
+        "crates/strop-engine/src/editor/io/save/container/work.rs",
         "crates/strop-fs/src/local/verify.rs",
         "crates/strop-core/src/worker/recovery_policy.rs",
         "crates/strop-worker/src/serve/fs.rs",
@@ -5560,7 +6614,7 @@
         },
         {
           "id": "WREC-EDITOR",
-          "statement": "A lost worker response never clears dirty text or retries the Store; explicit verification accepts a matching older revision once while newer edits remain dirty and file/permit ownership is rechecked. Editor owner close is terminal: unlike an explicitly still-owned shutdown, an old job clone cannot reconnect after the UI exits.",
+          "statement": "A lost worker response never clears dirty text or retries the Store; explicit verification accepts a matching older revision once while newer edits remain dirty and file/permit ownership is rechecked. Admitted-container saves retain the same frozen receipt and intended bytes for verification instead of rewriting. Editor owner close is terminal: unlike an explicitly still-owned shutdown, an old job clone cannot reconnect after the UI exits.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -5579,6 +6633,14 @@
               "gate": "test",
               "tests": [
                 "closing_an_owner_retires_its_live_session_and_prevents_clone_reconnect"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/io/save/container/tests.rs",
+              "gate": "test",
+              "tests": [
+                "unconfirmed_save_verifies_frozen_receipt_instead_of_rewriting"
               ]
             }
           ],
@@ -5687,14 +6749,19 @@
       "pins": {
         "sources": {
           "crates/strop-core/src/worker/recovery_policy.rs": "07f72ace1b5d56ca63fd95e7fee64b18aca23849a76efd6d7c90192c1574c7ba",
-          "crates/strop-engine/src/editor/io/save.rs": "c225d35cd7d7efc1a373f5b44d895fb6851482ec9a2b4f0f0483c92c5989d98b",
-          "crates/strop-engine/src/editor/remote/save.rs": "27b7a5e7fd9c69670c1928d1d4bd5d5b474d7e4642ff4922556f2c64e6fa0caf",
+          "crates/strop-engine/src/editor/io/save.rs": "2b873e202c5913bd11bc01ddd2a6dc08ef099483b9047c21f895f59696c2fbc9",
+          "crates/strop-engine/src/editor/io/save/container.rs": "921026f91795219288288aef544a921ae3e89bd79ff968f804fb9d4fd8349951",
+          "crates/strop-engine/src/editor/io/save/container/store.rs": "78af377357f289a2ecb6808f77b5ab809ef01a4f65a660618f4f28dde3225d1e",
+          "crates/strop-engine/src/editor/io/save/container/work.rs": "fd9e78dc4a54048b833e388162d030831e64a7c6ffd710c950ed4e948890b61f",
+          "crates/strop-engine/src/editor/remote/save.rs": "0d0f772077ed9397d959f09886ffec7b9da2ebc2fc0b06e56e68db7b6a08b4b6",
+          "crates/strop-engine/src/editor/remote/save/editor.rs": "f3cfa06042c41268b55b65611c006ed243860aca7bf88ee43a6a875ab24d3dc5",
+          "crates/strop-engine/src/editor/remote/save/error.rs": "4e63ab47a5690ec0ed971d424a9d52fb632e041c29102a839b008ca0fba78abb",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
           "crates/strop-fs/src/local/verify.rs": "7a40cb78d0203882accbb5bbfdfbffe16d055d6efeb468b1e2202ec20010c8fe",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker/src/serve/fs.rs": "62d37759cfbbdad0e53dcea368ba7518c6683f12908afb86e501afbdcb9a48f4"
         },
-        "evidence": "4f8378b6828cdcc0461d7700b816677655bb548b7f204fd628bd32b6f8b32aac"
+        "evidence": "2169e60695c8e541487fd3452b7befbdb9d87359d83967175d52c6ecd7e7cb93"
       }
     },
     {
@@ -5707,7 +6774,7 @@
       "trusted": [
         "Ropey storage and indexed UTF-8/UTF-16 coordinates",
         "OS scheduling and allocation within explicitly bounded work",
-        "Shared validated mutation/projectguard kernels and the existing language-service placement registry"
+        "Shared validated mutation kernels and the existing language-service placement registry"
       ],
       "files": [
         "crates/strop-engine/src/editor/completion/mod.rs",
@@ -5876,7 +6943,7 @@
         },
         {
           "id": "CMP-ACCEPTANCE",
-          "statement": "Primary edits and represented imports validate as one operation; invalid coordinates/overlap/unsupported effects refuse; source projection, service placement and selection remain authoritative; macro continuation cannot let Escape overtake asynchronous acceptance. Snippet items expand through the validated plan into a tabstop session (placeholder selection, linked stops, one undo unit); commit characters accept only a deliberately selected language item.",
+          "statement": "Primary edits and represented imports validate as one operation; invalid coordinates/overlap/unsupported effects refuse; direct current-source ownership, service placement and selection remain authoritative; macro continuation cannot let Escape overtake asynchronous acceptance. Read-only collection excerpts no longer capture or apply completion plans and have no hidden source-projection acceptance path. Snippet items expand through the validated plan into a tabstop session (placeholder selection, linked stops, one undo unit); commit characters accept only a deliberately selected language item.",
           "status": "correspondence-tested",
           "evidence": [
             {
@@ -5904,15 +6971,6 @@
             },
             {
               "kind": "test",
-              "path": "crates/strop-engine/src/editor/completion/tests/sources.rs",
-              "gate": "test",
-              "tests": [
-                "collection_semantic_acceptance_maps_caret_and_undo_with_an_import_outside_the_excerpt",
-                "collection_words_come_from_primary_source_and_apply_to_compatible_sources"
-              ]
-            },
-            {
-              "kind": "test",
               "path": "crates/strop-engine/src/editor/completion/tests.rs",
               "gate": "test",
               "tests": [
@@ -5927,6 +6985,14 @@
                 "a_snippet_expands_and_cycles_its_tabstops",
                 "linked_tabstops_mirror_the_replacement",
                 "a_malformed_snippet_refuses_without_inserting"
+              ]
+            },
+            {
+              "kind": "test",
+              "path": "crates/strop-engine/src/editor/collections/tests/mod.rs",
+              "gate": "test",
+              "tests": [
+                "collection_mutations_refuse_without_touching_sources"
               ]
             }
           ],
@@ -6160,11 +7226,11 @@
         "sources": {
           "crates/strop-engine/src/config.rs": "2b4226e870a8b33f6661434919e455b03eddb783fae062019bbedf9966bb5604",
           "crates/strop-engine/src/editor/completion/acceptance.rs": "24f0cf6c050b0845416df8a665bf5de10c04182eaac0a4618b4e515a3c012d2a",
-          "crates/strop-engine/src/editor/completion/admission.rs": "bade006a1ba8e0bb281901e7f174f3e399a03f53020113cd356f82db2ff2441c",
-          "crates/strop-engine/src/editor/completion/apply.rs": "badcd75c70c832fca910a74b469bdf3ff902f61636a328e7ee2a343d0e912d48",
-          "crates/strop-engine/src/editor/completion/context.rs": "237e44539330ae14e05cd1a280347a187d1ca377e4d53b5c6c433550348b65bc",
+          "crates/strop-engine/src/editor/completion/admission.rs": "1014aa564854fd6f21f054ba46d4ba5a6e1a85c5e21efb86d75fe14a978a25da",
+          "crates/strop-engine/src/editor/completion/apply.rs": "a291d10a13a18d7caa0dfda68aedd0f3464b9336149d4b0a68a820ff5287fab1",
+          "crates/strop-engine/src/editor/completion/context.rs": "384bbde8ba1b45bd0a871e2d273d89675a7fc77a526d6ddf406a524498f20619",
           "crates/strop-engine/src/editor/completion/delivery.rs": "74420901abcec03006ce2e7ec174bdad80994e577226dbc994a99b873d5e8b77",
-          "crates/strop-engine/src/editor/completion/interaction.rs": "842ab0f9923dd552f1656484fde733872b6a1a2d6e4b7a6210ed3d03a908a4d1",
+          "crates/strop-engine/src/editor/completion/interaction.rs": "8f1e6e44972c1bd0118b51c9579f8c98bf45cdd8aaa88a25ad0147ede31e8514",
           "crates/strop-engine/src/editor/completion/lifecycle.rs": "0f7c5b580414c66dfda4574dde0c3afab1fbb781dc319a58504ae3bc4c92af30",
           "crates/strop-engine/src/editor/completion/mailbox.rs": "2b1d2bcbbf651238ce4b1d25129a1594310bebc2629f48ab0f18693134dc4e28",
           "crates/strop-engine/src/editor/completion/mailbox/prepared.rs": "9683efa9cc77a41ae5cb1d1f731f6401bbe281b5d51767f3d7538d98afb9d599",
@@ -6181,13 +7247,13 @@
           "crates/strop-engine/src/editor/completion/worker/mod.rs": "edb377ec3a5022b0897d11851d13717ace9350dbd303e5592563eb43a84a6bd1",
           "crates/strop-engine/src/editor/completion/worker/work.rs": "0de0702c6e0112ea1659e3926733e32548005d3ca29ab3a78140724860d98566",
           "crates/strop-engine/src/editor/insert/replay.rs": "562d44b4542a7abcd6d5672bff6c7b71c832510c3d5a479bfdc831d08901ec47",
-          "crates/strop-engine/src/editor/resolution/mod.rs": "9759aea9bc78977cf9f96cbeed56d04e04554444bf04a9198c0b57de49d17643",
+          "crates/strop-engine/src/editor/resolution/mod.rs": "75bdf588dd821307017424dd05aa5401b4a3cb0f4c87115abc9812f0db0d9035",
           "crates/strop-engine/src/editor/snippet.rs": "466467432857ed3ef4c9323e958f7e1aa0518f6df49631d50fc25e462d2d8213",
           "crates/strop-engine/src/editor/trace/seed.rs": "d5df3e07410eccaa6a5d808cebf5fce268e84087b1e83f7821f8254e014f156f",
           "crates/strop-engine/src/editor/trace/snapshot.rs": "461722cf33377ddb25bf31eca352b52385d882f276f1fd7d3c9ed13e833efc76",
           "crates/strop/src/render/completion.rs": "b3d2778a79c7ae5a7ff148793a12f9c9b0da58401e788dba9f0897fada68cf28"
         },
-        "evidence": "256b60a7f4c39681c51fb3e455e420186530fbf63c359a8d40f2007c2f7e171a"
+        "evidence": "f2aed8b898c12a9f5cdd284a87e7dabbbe2f5eb7176714b4a9aafc1d2a4f3389"
       }
     },
     {

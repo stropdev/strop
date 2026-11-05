@@ -1,5 +1,6 @@
 use super::*;
-use crate::query::parser::SearchQuery;
+use crate::query::parser::{BooleanExpr, SearchQuery};
+use strop_syntax::symbols::SymbolKind;
 
 fn plan(input: &str) -> (SearchQuery, FileSelectionPlan) {
     let query = SearchQuery::parse(input);
@@ -21,6 +22,82 @@ fn path_substring_and_negation() {
     assert!(plan.allows("src/a.rs"));
     assert!(!plan.allows("src/generated/b.rs"));
     assert!(!plan.allows("tests/a.rs"));
+}
+
+#[test]
+fn path_scopes_default_to_insensitive_and_honor_sensitive_override() {
+    for input in [
+        "path:SRC/",
+        "case:ignore path:SRC/",
+        "case:insensitive path:SRC/",
+    ] {
+        let (_, plan) = plan(input);
+        assert!(plan.allows("src/lib.rs"), "{input}");
+        assert!(plan.allows("Src/lib.rs"), "{input}");
+        assert!(!plan.allows("tests/lib.rs"), "{input}");
+    }
+    let (_, sensitive) = plan("case:sensitive path:SRC/");
+    assert!(sensitive.allows("SRC/lib.rs"));
+    assert!(!sensitive.allows("src/lib.rs"));
+
+    for input in ["fpath:SRC/LIB", "case:insensitive fpath:SRC/LIB"] {
+        let (_, plan) = plan(input);
+        assert!(plan.allows("src/lib.rs"), "{input}");
+        assert!(plan.allows("Src/Lib.rs"), "{input}");
+        assert!(!plan.allows("src/main.rs"), "{input}");
+    }
+    let (_, sensitive) = plan("case:sensitive fpath:SRC/LIB");
+    assert!(sensitive.allows("SRC/LIB.rs"));
+    assert!(!sensitive.allows("src/lib.rs"));
+
+    let (_, excluded) = plan("-path:SRC/");
+    assert!(!excluded.allows("src/lib.rs"));
+    assert!(excluded.allows("tests/lib.rs"));
+    let (_, excluded) = plan("-fpath:SRC/LIB");
+    assert!(!excluded.allows("src/lib.rs"));
+    assert!(excluded.allows("src/main.rs"));
+}
+
+#[test]
+fn boolean_and_retained_path_scopes_share_the_selected_case() {
+    for input in [
+        "path:SRC/ AND needle",
+        "case:insensitive path:SRC/ AND needle",
+    ] {
+        let plan = content_plan(input);
+        assert!(admits_line(&plan, "src/lib.rs", "NEEDLE"), "{input}");
+        assert!(admits_line(&plan, "Src/lib.rs", "needle"), "{input}");
+        assert!(!admits_line(&plan, "tests/lib.rs", "needle"), "{input}");
+    }
+    let sensitive = content_plan("case:sensitive path:SRC/ AND NEEDLE");
+    assert!(admits_line(&sensitive, "SRC/lib.rs", "NEEDLE"));
+    assert!(!admits_line(&sensitive, "src/lib.rs", "NEEDLE"));
+    assert!(!admits_line(&sensitive, "SRC/lib.rs", "needle"));
+
+    for input in ["path:SRC/", "case:insensitive path:SRC/"] {
+        let query = SearchQuery::parse(input);
+        let retained = BooleanPlan::compile_retained(&query).unwrap().unwrap();
+        let evidence = |path| Evidence {
+            path: Some(path),
+            ..Evidence::default()
+        };
+        assert!(
+            retained.admits(&evidence("src/lib.rs"), "anything"),
+            "{input}"
+        );
+        assert!(
+            !retained.admits(&evidence("tests/lib.rs"), "anything"),
+            "{input}"
+        );
+    }
+    let query = SearchQuery::parse("case:sensitive path:SRC/");
+    let retained = BooleanPlan::compile_retained(&query).unwrap().unwrap();
+    let evidence = |path| Evidence {
+        path: Some(path),
+        ..Evidence::default()
+    };
+    assert!(retained.admits(&evidence("SRC/lib.rs"), "anything"));
+    assert!(!retained.admits(&evidence("src/lib.rs"), "anything"));
 }
 
 #[test]
@@ -149,14 +226,18 @@ fn filter_only_content_surface_needs_an_expression() {
 }
 
 #[test]
-fn literal_is_escaped_and_case_smart_default() {
-    let query = SearchQuery::parse("a.b");
-    let plan = ContentPlan::compile(&query).unwrap().unwrap();
-    let re = plan.regex;
-    assert!(re.is_match("a.b"));
-    assert!(!re.is_match("aXb"));
-    // smart case: lowercase needle matches either case
-    assert!(re.is_match("A.B"));
+fn literal_is_escaped_and_case_insensitive_by_default() {
+    for input in ["a.b", "A.B", "case:ignore a.b", "case:insensitive a.b"] {
+        let query = SearchQuery::parse(input);
+        let plan = ContentPlan::compile(&query).unwrap().unwrap();
+        let re = plan.regex;
+        assert!(re.is_match("a.b"), "{input}");
+        assert!(re.is_match("A.B"), "{input}");
+        assert!(!re.is_match("aXb"), "{input}");
+    }
+    let sensitive = content_plan("case:sensitive A.B");
+    assert!(sensitive.regex.is_match("A.B"));
+    assert!(!sensitive.regex.is_match("a.b"));
 }
 
 #[test]
@@ -506,11 +587,31 @@ fn plain_queries_never_build_the_symbol_index() {
 
 #[test]
 fn boolean_case_modes_apply_to_atoms() {
-    let smart = content_plan("text:Parser AND text:Request");
+    for input in [
+        "text:Parser AND text:Request",
+        "case:ignore text:Parser AND text:Request",
+        "case:insensitive text:Parser AND text:Request",
+    ] {
+        let insensitive = content_plan(input);
+        assert!(
+            admits_line(&insensitive, "x.rs", "Parser Request"),
+            "{input}"
+        );
+        assert!(
+            admits_line(&insensitive, "x.rs", "parser request"),
+            "{input}"
+        );
+        assert!(
+            admits_line(&insensitive, "x.rs", "PARSER REQUEST"),
+            "{input}"
+        );
+    }
+    let sensitive = content_plan("case:sensitive text:Parser AND text:Request");
+    assert!(admits_line(&sensitive, "x.rs", "Parser Request"));
+    assert!(!admits_line(&sensitive, "x.rs", "parser request"));
+    let smart = content_plan("case:smart text:Parser AND text:Request");
     assert!(admits_line(&smart, "x.rs", "Parser Request"));
     assert!(!admits_line(&smart, "x.rs", "parser request"));
-    let ignore = content_plan("case:ignore text:Parser AND text:Request");
-    assert!(admits_line(&ignore, "x.rs", "parser request"));
 }
 
 #[test]
@@ -579,6 +680,12 @@ fn replacement_targets_are_single_positive_atoms_only() {
     };
     assert!(re.is_match("needle"));
     assert!(!re.is_match("Needle"));
+    let ReplacementTarget::Single(re) = target("NEEDLE") else {
+        panic!("single");
+    };
+    assert!(re.is_match("needle"));
+    assert!(re.is_match("Needle"));
+    assert!(re.is_match("NEEDLE"));
 }
 
 #[test]

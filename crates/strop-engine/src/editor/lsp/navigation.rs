@@ -1,7 +1,7 @@
 //! Namespace-preserving LSP jumps and source-context inheritance.
 use super::{lsp_language, state};
 use crate::editor::{trace, Editor};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use strop_workspace::{Filesystem, ResourceLocation};
 
 impl Editor {
@@ -40,10 +40,13 @@ impl Editor {
                     }
                 }
             }
-            Filesystem::Container(_) => {
-                trace::services::rejected("lsp", "navigation into a container namespace (unwired)");
-                self.message = "lsp: container locations are not navigable yet".into();
-            }
+            Filesystem::Container(container) => self.request_target(
+                crate::files::FileTarget::Container {
+                    container,
+                    path: location.doc.path,
+                },
+                intent,
+            ),
         }
     }
 
@@ -69,6 +72,11 @@ impl Editor {
             // comparing against local paths.
             crate::editor::document::DocumentSource::Remote(file) => {
                 !file.file.path().starts_with(&binding.root)
+            }
+            // Container paths are native to the replying server's root;
+            // the editor's host cwd never participates in this decision.
+            crate::editor::document::DocumentSource::Container { path, .. } => {
+                !path.starts_with(&binding.root)
             }
             _ => target_doc
                 .buf
@@ -153,18 +161,18 @@ impl Editor {
         self.lsp_attach_document(self.current());
     }
 
-    /// A local picker hit with a live LSP request context: the server
-    /// that produced the list owns the target's filesystem.
+    /// A namespace-carrying picker hit with a live LSP request context:
+    /// the server that produced the list owns the target's filesystem.
     pub(crate) fn lsp_jump_from_picker(
         &mut self,
-        path: PathBuf,
+        location: ResourceLocation,
         line: usize,
         col: usize,
         context: strop_lsp::ReplyContext,
     ) {
         self.jump_to_location(
             strop_lsp::ServerLocation {
-                doc: ResourceLocation::local(path),
+                doc: location,
                 position: strop_lsp::ServerPosition {
                     line: strop_core::id::LineIndex::new(line.saturating_sub(1)),
                     column: strop_lsp::ServerColumn::new(col.saturating_sub(1)),

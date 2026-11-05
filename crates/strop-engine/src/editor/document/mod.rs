@@ -46,7 +46,13 @@ pub struct Document {
 
 impl Document {
     pub fn label(&self, cwd: &std::path::Path) -> String {
-        if let Some(remote) = self.remote_metadata() {
+        if let DocumentSource::Terminal(terminal) = &self.source {
+            format!(
+                "terminal #{} · launch {}",
+                terminal.session.get(),
+                terminal.launch.label()
+            )
+        } else if let Some(remote) = self.remote_metadata() {
             remote.file.to_string()
         } else if let DocumentSource::Container { container, path } = &self.source {
             strop_workspace::ResourceLocation {
@@ -132,8 +138,9 @@ impl Document {
         }
     }
 
-    /// A file read from a container (0037 DC1a/b): readonly derived from
-    /// the source; the path names container bytes, never a local file.
+    /// A file read from a container. Its source starts read-only; a separate
+    /// verified per-document permit may grant edit authority without ever
+    /// giving the path a local filesystem identity.
     pub fn container_file(
         mut buf: Buffer,
         container: strop_workspace::ContainerId,
@@ -510,9 +517,6 @@ impl Editor {
             collection
                 .excerpts
                 .retain(|excerpt| excerpt.source != closed);
-            collection
-                .pending_commit
-                .retain(|(source, _)| *source != closed);
             if collection.excerpts.len() != before {
                 collection.match_count = collection
                     .excerpts
@@ -523,6 +527,7 @@ impl Editor {
             }
         }
         self.revoke_remote_write(closed);
+        self.revoke_container_write(closed);
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
         self.stop_remote_follow(closed);
@@ -577,7 +582,7 @@ impl Editor {
         for collection in affected_collections {
             self.collection_render_view(collection);
         }
-        self.lsp_retire_remote_servers();
+        self.lsp_retire_workspace_servers();
         true
     }
     /// Any path-backed or scratch document holding unsaved content.

@@ -59,8 +59,6 @@ pub(crate) struct ChangeReceipt {
     pub applied_positions: Vec<usize>,
     /// (target, reason) for everything NOT applied.
     pub refused: Vec<(ResourceLocation, String)>,
-    /// Exact history nodes after undo, not tree size or nesting depth.
-    pub redo_positions: Option<Vec<usize>>,
 }
 
 /// A validated plan ready to apply. Building resolves server positions to
@@ -76,10 +74,6 @@ pub(crate) struct ChangePlan {
 pub(crate) struct ChangeState {
     /// Newest-last; grouped undo pops from the back.
     receipts: VecDeque<ChangeReceipt>,
-    /// Groups undone since the last apply — `collection redo` replays
-    /// them newest-first. A new receipt clears the redo branch, like
-    /// any history fork.
-    undone: VecDeque<ChangeReceipt>,
     /// Code actions offered by the open picker (0043); acceptance applies
     /// the chosen action's edits as a change plan.
     pub(crate) pending_actions: Vec<strop_lsp::ProtoAction>,
@@ -92,7 +86,6 @@ impl Default for ChangeState {
     fn default() -> Self {
         Self {
             receipts: VecDeque::new(),
-            undone: VecDeque::new(),
             pending_actions: Vec::new(),
             pending_encoding: strop_lsp::PositionEncoding::Utf16,
         }
@@ -104,43 +97,10 @@ impl ChangeState {
 
     pub(crate) fn record(&mut self, receipt: ChangeReceipt) {
         debug_assert_eq!(receipt.applied.len(), receipt.applied_positions.len());
-        self.undone.clear(); // a new change forks history — redo dies
         self.receipts.push_back(receipt);
         while self.receipts.len() > Self::RETAINED {
             self.receipts.pop_front();
         }
-    }
-
-    /// Take the newest receipt matching `pred` (0049 §5: a collection's
-    /// undo scopes to its own edit groups, never the global tail).
-    pub(crate) fn take_newest_matching(
-        &mut self,
-        pred: impl Fn(&ChangeReceipt) -> bool,
-    ) -> Option<(usize, ChangeReceipt)> {
-        let index = self.receipts.iter().rposition(pred)?;
-        self.receipts.remove(index).map(|receipt| (index, receipt))
-    }
-
-    /// Return a refused receipt to its exact place (preflight failure
-    /// must not consume it, 0049 §5).
-    pub(crate) fn restore(&mut self, index: usize, receipt: ChangeReceipt) {
-        self.receipts
-            .insert(index.min(self.receipts.len()), receipt);
-    }
-
-    /// Redo stack access for the scoped redo.
-    pub(crate) fn take_undone_matching(
-        &mut self,
-        pred: impl Fn(&ChangeReceipt) -> bool,
-    ) -> Option<ChangeReceipt> {
-        let index = self.undone.iter().rposition(pred)?;
-        self.undone.remove(index)
-    }
-    pub(crate) fn push_undone(&mut self, receipt: ChangeReceipt) {
-        self.undone.push_back(receipt);
-    }
-    pub(crate) fn push_receipt_back(&mut self, receipt: ChangeReceipt) {
-        self.receipts.push_back(receipt);
     }
 }
 
@@ -278,7 +238,6 @@ impl Editor {
             applied: Vec::new(),
             applied_positions: Vec::new(),
             refused: plan.refused,
-            redo_positions: None,
         };
         for target in plan.documents {
             let changes = super::transact::ChangeSet {

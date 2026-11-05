@@ -67,6 +67,13 @@ fn inject_unconfirmed(
         },
     };
     editor.io.store_attempts.insert(document, attempt);
+    let revision = editor.buf().revision();
+    editor.note_unconfirmed_save(
+        document,
+        false,
+        revision,
+        "simulated lost receipt; verify before any rewrite".into(),
+    );
     operation
 }
 
@@ -162,12 +169,19 @@ fn save_conflict_on_a_moved_baseline_and_force_overwrites() {
         editor.message
     );
     assert!(editor.buf().dirty);
+    assert!(editor.feedback()[0]
+        .detail()
+        .contains("file changed on disk"));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "theirs\n");
     // :w! overwrites the moved baseline.
     assert!(editor.request_save_document(document, None, true, false));
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine\nbefore\n");
     assert!(!editor.buf().dirty);
+    assert_eq!(
+        editor.feedback()[0].lifecycle(),
+        crate::editor::feedback::FeedbackLifecycle::Resolved
+    );
 }
 
 #[test]
@@ -261,6 +275,50 @@ fn unconfirmed_save_verifies_before_any_rewrite() {
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine\nbefore\n");
     assert!(!editor.buf().dirty);
+}
+
+#[test]
+fn dismissed_unconfirmed_save_still_offers_verification_and_resolves() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("note.txt");
+    std::fs::write(&path, "before\n").unwrap();
+    let mut editor = Editor::new(Buffer::from_text(""));
+    let document = editor.open_fixture(&path).unwrap();
+    editor.feed_text("Omine<esc>");
+    let _ = inject_unconfirmed(&mut editor, document, &path);
+    let id = editor.feedback()[0].id();
+    editor.invoke_feedback_action(id, 1);
+    assert_eq!(
+        editor.feedback()[0].lifecycle(),
+        crate::editor::feedback::FeedbackLifecycle::Dismissed
+    );
+    assert!(editor.io.store_attempt(document).is_some());
+
+    editor.feed_text("gg/unrelated<esc>");
+    editor.context_actions();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert!(picker
+        .items
+        .iter()
+        .any(|item| item.text.contains("Verify the unconfirmed save")));
+    assert!(!picker
+        .items
+        .iter()
+        .any(|item| item.text.contains("Retry the failed save")));
+    let picker = editor.picker.as_ref().unwrap().id;
+    editor.accept_filesystem_action(picker, 0);
+    editor.wait_io().unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");
+    assert!(editor.buf().dirty);
+    assert_eq!(
+        editor.feedback()[0].lifecycle(),
+        crate::editor::feedback::FeedbackLifecycle::Resolved
+    );
+    editor.open_explain();
+    let text = editor.buf().text().to_string();
+    assert!(text.contains("simulated lost receipt"), "{text}");
+    assert!(text.contains("local StoreAttempt"), "{text}");
 }
 
 #[test]

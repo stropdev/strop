@@ -277,8 +277,8 @@ impl Editor {
         {
             self.close_picker();
         }
-        // Closing the last owning remote workspace retires its server.
-        self.lsp_retire_remote_servers();
+        // Closing the last owning non-local workspace retires its server.
+        self.lsp_retire_workspace_servers();
     }
 
     pub(crate) fn lsp_reply_fresh(&self, context: &ReplyContext) -> bool {
@@ -361,6 +361,38 @@ impl Editor {
         let Some((server, _)) =
             self.lsp_server_for(self.current(), &doc.path, &language, &doc.filesystem)
         else {
+            // A terminal server failure removes the placement, but it does
+            // not make an installed server disappear. Retry only the exact
+            // language/target workspace containing this document; other
+            // failed roots and out-of-context external files stay isolated.
+            let failed = self
+                .lsp_state
+                .failures
+                .iter()
+                .filter(|failure| {
+                    failure.language == language
+                        && failure.target == doc.filesystem
+                        && doc.path.starts_with(&failure.root)
+                })
+                .max_by_key(|failure| failure.root.as_os_str().len())
+                .map(|failure| failure.name.clone());
+            if let Some(name) = failed {
+                self.message = if self.lsp_state.attach.enabled {
+                    format!(
+                        "lsp: {name} failed — reattaching; repeat {} after ready — :explain for details",
+                        kind.label()
+                    )
+                } else {
+                    format!("lsp: {name} failed — :explain for details")
+                };
+                if self.lsp_state.attach.enabled {
+                    // The ordinary pending/refusal/transport admission path
+                    // bounds this to one discovery attempt per explicit
+                    // request. The request itself is not replayed at Ready.
+                    self.lsp_attach_document(self.current());
+                }
+                return;
+            }
             self.message = match doc.filesystem {
                 strop_workspace::Filesystem::Local => {
                     // 0049 §4.6: a server that simply doesn't cover this
@@ -384,8 +416,11 @@ impl Editor {
                         "no language server on {endpoint} — install it there or fix languages.toml"
                     )
                 }
-                strop_workspace::Filesystem::Container(_) => {
-                    "language services in containers are not wired yet".into()
+                strop_workspace::Filesystem::Container(id) => {
+                    format!(
+                        "no language server in container {} — run :container-worker and install it there or fix languages.toml",
+                        &id.as_str()[..12]
+                    )
                 }
             };
             return;

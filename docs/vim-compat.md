@@ -48,7 +48,7 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ ; ,` — repeat find, same / reversed
 - `✓ |` — column motion (vim); pipe moved to space |
 - `✓ Q` — toggle cursor at point (multicursor)
-- `✓ d y c > <` — operators + motion/object (live preview)
+- `✓ d y c > <` — operators + motion/object; completed chords execute immediately, Visual selections inspect first
 - `✓ dd yy cc` — line delete/yank/change
 - `✓ D` — delete to line end
 - `✓ C` — change to line end
@@ -135,7 +135,7 @@ Generated from the command table (`strop --dump-compat`).
 ## ex+panes
 
 - `✓ :w :q :q! :wq :w {file} :trust` — write / quit (force) / write-quit / write-as
-- `✓ :[range]s/a/b/[g] :N :% :N,Md :N,My` — substitute (literal) / goto line / ranged delete+yank
+- `✓ :[range]s/a/b/[g] :N :% :N,Md :N,My` — substitute (buffer-search grammar + live preview) / goto line / ranged delete+yank
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ :e` — edit file
 - `✓ :help` — help buffer (this text — / searches it)
@@ -145,7 +145,7 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ :format :rename` — format buffer / rename symbol: :rename NEW
 - `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
 - `✓ :qa :qall` — quit all (fails on unsaved; bang discards)
-- `✓ :collection` — source, expand or contract the excerpt at the caret
+- `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
 - `✓ :container-worker` — authorize a verified worker for the attached container; may write its private cache
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :vs :sp` — split vertical / horizontal

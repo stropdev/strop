@@ -70,7 +70,7 @@ impl Editor {
     pub(crate) fn request_containers(&mut self) {
         self.start_container_job(ContainerJob::Discover);
     }
-    fn start_container_job(&mut self, job: ContainerJob) {
+    pub(crate) fn start_container_job(&mut self, job: ContainerJob) {
         if self.docs.is_empty() {
             return;
         }
@@ -82,7 +82,8 @@ impl Editor {
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
-                self.message = error.message;
+                self.message = error.message.clone();
+                self.note_container_failure(&job, error.message);
                 return;
             }
         };
@@ -147,7 +148,9 @@ impl Editor {
     pub(crate) fn attach_container(&mut self, id: String) {
         self.start_container_job(ContainerJob::Attach {
             id,
-            path: "/".into(),
+            // Empty means choose only after inspect: verified WorkingDir,
+            // then explicit `/` fallback. An explicit target never uses this.
+            path: std::path::PathBuf::new(),
             intent: OpenIntent::Browse,
         });
     }
@@ -191,10 +194,14 @@ impl Editor {
             || self.current() != key.document
             || self.buf().revision() != key.revision
         {
+            if let Outcome::Failed { failure, .. } = &event.outcome {
+                self.note_container_failure(&key.job, failure.message.clone());
+            }
             return;
         }
         match event.outcome {
             Outcome::Success(ContainerResult::Containers(list)) => {
+                self.note_container_recovered(&key.job);
                 if list.is_empty() {
                     self.message = "no running containers on the local engine".into();
                     return;
@@ -205,6 +212,7 @@ impl Editor {
                         Ok(reference) => reference,
                         Err(error) => {
                             self.message = error.to_string();
+                            self.note_container_failure(&key.job, self.message.clone());
                             return;
                         }
                     };
@@ -228,6 +236,7 @@ impl Editor {
                     Ok(reference) => reference,
                     Err(error) => {
                         self.message = error.to_string();
+                        self.note_container_failure(&key.job, self.message.clone());
                         return;
                     }
                 };
@@ -245,27 +254,37 @@ impl Editor {
                             "container {} was recycled (incarnation {} → {}); refusing to rebind a stale attachment",
                             identity.name, held.started_at, identity.started_at
                         );
+                        self.note_container_failure(&key.job, self.message.clone());
                         return;
                     }
                 }
-                let ContainerJob::Attach { path, intent, .. } = key.job else {
+                let ContainerJob::Attach {
+                    mut path, intent, ..
+                } = key.job.clone()
+                else {
                     self.message = "unexpected container attachment result".into();
+                    self.note_container_failure(&key.job, self.message.clone());
                     return;
                 };
-                if self
-                    .workspaces
-                    .bind(
-                        strop_workspace::Filesystem::Container(reference.id().clone()),
-                        None,
-                    )
-                    .is_err()
-                {
+                if path.as_os_str().is_empty() {
+                    path = std::path::PathBuf::from(&identity.workdir);
+                    if path.as_os_str().is_empty() || !path.is_absolute() {
+                        path = "/".into();
+                    }
+                }
+                let root = strop_workspace::ResourceLocation {
+                    filesystem: strop_workspace::Filesystem::Container(reference.id().clone()),
+                    path: path.clone(),
+                };
+                if self.workspaces.select_root(root).is_err() {
                     self.message = "workspace identity space exhausted".into();
+                    self.note_container_failure(&key.job, self.message.clone());
                     return;
                 }
                 self.containers
                     .attached
                     .insert(identity.id.clone(), identity);
+                self.note_container_recovered(&key.job);
                 self.request_target(
                     crate::files::FileTarget::Container {
                         container: reference.id().clone(),
@@ -278,6 +297,7 @@ impl Editor {
                 if !matches!(&key.job, ContainerJob::EnableWorker { id: requested } if requested == &id)
                 {
                     self.message = "container worker result belongs to another request".into();
+                    self.note_container_failure(&key.job, self.message.clone());
                     return;
                 }
                 let lease = self
@@ -287,16 +307,25 @@ impl Editor {
                     .and_then(|identity| self.containers.workers.get(identity));
                 let Some(lease) = lease.filter(|lease| lease.target() == target) else {
                     self.message = "container worker result belongs to a stale incarnation".into();
+                    self.note_container_failure(&key.job, self.message.clone());
                     return;
                 };
+                self.note_container_recovered(&key.job);
                 self.message = format!(
                     "container worker {} ready for {} at {}",
                     env!("CARGO_PKG_VERSION"),
                     target,
                     strop_core::layout::printable_text(lease.artifact_path())
                 );
+                // A pre-admission attach attempt waits without a sticky
+                // refusal. Retry the focused document now, using the lease
+                // whose incarnation was just revalidated above.
+                self.lsp_attach_document(self.current());
             }
-            Outcome::Failed { failure, .. } => self.message = failure.message,
+            Outcome::Failed { failure, .. } => {
+                self.message = failure.message.clone();
+                self.note_container_failure(&key.job, failure.message);
+            }
             Outcome::Cancelled(_) => {}
         }
     }

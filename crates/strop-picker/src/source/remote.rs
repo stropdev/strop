@@ -1,4 +1,4 @@
-//! Read-only SSH search: select native paths first, then search bounded argv batches.
+//! Read-only worker search: select native paths first, then search bounded argv batches.
 use super::{
     flow::StreamSender,
     query::{parse_json_match_with, scoped_path, RECORD_LIMIT},
@@ -9,7 +9,16 @@ use std::io::Read;
 use std::{ffi::OsString, path::PathBuf, sync::Arc};
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 use strop_remote::worker_transport::RemoteWorker;
-use strop_workspace::{RemoteEndpoint, ResourceLocation};
+use strop_worker_client::Worker;
+use strop_workspace::ResourceLocation;
+
+fn case_flag(case: CaseMode) -> &'static str {
+    match case {
+        CaseMode::Smart => "--smart-case",
+        CaseMode::Sensitive => "--case-sensitive",
+        CaseMode::Ignore => "--ignore-case",
+    }
+}
 
 pub(super) fn run_search(
     query: Arc<SearchQuery>,
@@ -23,16 +32,49 @@ pub(super) fn run_search(
     let Some(worker) = lease else {
         return Outcome::failed(
             FailureKind::Unavailable,
-            "SSH search requires an admitted worker; SFTP-only hosts remain read-only",
+            "worker search requires an admitted worker; SFTP-only hosts remain read-only",
         );
     };
     let strop_workspace::Filesystem::Remote(endpoint) = &root.filesystem else {
-        return Outcome::failed(FailureKind::Protocol, "SSH search requires an SSH scope");
+        return Outcome::failed(FailureKind::Protocol, "worker search requires an SSH scope");
     };
     if worker.endpoint() != endpoint {
         return Outcome::failed(
             FailureKind::Protocol,
-            format!("SSH search scope {endpoint} does not match the admitted worker"),
+            format!("worker search scope {endpoint} does not match the admitted worker"),
+        );
+    }
+    let result = search(
+        &query,
+        policy,
+        &root,
+        snapshots,
+        worker.worker(),
+        tx,
+        &token,
+    );
+    if token.is_cancelled() {
+        return Outcome::Cancelled(CancelReason::Superseded);
+    }
+    match result {
+        Ok(()) => Outcome::Success(()),
+        Err(error) => Outcome::failed(FailureKind::Io, error),
+    }
+}
+
+pub(super) fn run_container_search(
+    query: Arc<SearchQuery>,
+    policy: SelectionPolicy,
+    root: ResourceLocation,
+    snapshots: Vec<SourceSnapshot>,
+    worker: Worker,
+    tx: &StreamSender,
+    token: CancelToken,
+) -> Outcome<()> {
+    if !matches!(root.filesystem, strop_workspace::Filesystem::Container(_)) {
+        return Outcome::failed(
+            FailureKind::Protocol,
+            "container search requires a container scope",
         );
     }
     let result = search(&query, policy, &root, snapshots, &worker, tx, &token);
@@ -50,11 +92,14 @@ fn search(
     policy: SelectionPolicy,
     root: &ResourceLocation,
     snapshots: Vec<SourceSnapshot>,
-    worker: &RemoteWorker,
+    worker: &Worker,
     tx: &StreamSender,
     token: &CancelToken,
 ) -> Result<(), String> {
-    let endpoint = worker.endpoint();
+    let backend = match &root.filesystem {
+        strop_workspace::Filesystem::Remote(endpoint) => endpoint.to_string(),
+        _ => root.label(),
+    };
     let selection = FileSelectionPlan::compile(query).map_err(|error| error.message)?;
     let content = ContentPlan::compile(query)
         .map_err(|error| error.message)?
@@ -73,20 +118,20 @@ fn search(
     let mut records = Records::new(0);
     let mut paths = Vec::new();
     let mut bytes = 0usize;
-    run(endpoint, worker, root, arguments, token, tx, |chunk| {
+    run(&backend, worker, root, arguments, token, tx, |chunk| {
         records.feed(chunk, |record| {
             let location = scoped_path(root, record.to_vec())?;
             let relative = location
                 .path
                 .strip_prefix(&root.path)
-                .map_err(|_| "SSH file escaped scope")?;
+                .map_err(|_| "worker file escaped scope")?;
             if !selection.allows(&super::display_path(relative)) {
                 return Ok(());
             }
             bytes = bytes.saturating_add(relative.as_os_str().as_encoded_bytes().len());
             if paths.len() >= super::selection::PATH_LIMIT || bytes > super::selection::PATH_BYTES {
                 return Err(
-                    "SSH search file selection exceeds 100000 paths or 16 MiB; narrow the scope"
+                    "worker search file selection exceeds 100000 paths or 16 MiB; narrow the scope"
                         .into(),
                 );
             }
@@ -112,14 +157,7 @@ fn search(
     )?;
     let pattern: std::ffi::OsString = content.provider_pattern().into();
     common.extend(["--json".into(), "-e".into(), pattern]);
-    common.push(
-        match content.case {
-            CaseMode::Smart => "--smart-case",
-            CaseMode::Sensitive => "--case-sensitive",
-            CaseMode::Ignore => "--ignore-case",
-        }
-        .into(),
-    );
+    common.push(case_flag(content.provider_case()).into());
     if content.is_literal() {
         common.push("--fixed-strings".into());
     }
@@ -131,7 +169,7 @@ fn search(
     let mut paths = paths.into_iter().peekable();
     while paths.peek().is_some() {
         if token.is_cancelled() {
-            return Err("SSH search cancelled".into());
+            return Err("worker search cancelled".into());
         }
         let mut args = common.clone();
         let mut bytes = base;
@@ -142,7 +180,7 @@ fn search(
                 break;
             }
             if bytes + size > 64 * 1024 {
-                return Err("SSH search path or expression exceeds the argv bound".into());
+                return Err("worker search path or expression exceeds the argv bound".into());
             }
             bytes += size;
             count += 1;
@@ -164,7 +202,7 @@ fn search(
                 )
             }
         };
-        run(endpoint, worker, root, args, token, tx, |chunk| {
+        run(&backend, worker, root, args, token, tx, |chunk| {
             records.feed(chunk, |record| {
                 let items = parse_json_match_with(record, root, Some(&admits))?;
                 tx.batch(items, token)
@@ -177,8 +215,8 @@ fn search(
 }
 
 fn run(
-    endpoint: &RemoteEndpoint,
-    worker: &RemoteWorker,
+    backend: &str,
+    worker: &Worker,
     root: &ResourceLocation,
     args: Vec<OsString>,
     token: &CancelToken,
@@ -197,11 +235,10 @@ fn run(
         pty: None,
     };
     let handle = worker
-        .worker()
         .exec(token, spec)
-        .map_err(|error| format!("SSH search on {endpoint}: {error}"))?;
+        .map_err(|error| format!("worker search on {backend}: {error}"))?;
     let (exec, stdin, mut stdout, stderr, exit) = handle.into_parts();
-    let control = stdin.control(worker.worker().clone(), exec);
+    let control = stdin.control(worker.clone(), exec);
     // Both pipes drain concurrently: stderr cannot stall a large rg
     // stdout stream, and noisy diagnostics stay bounded.
     let stderr_pump = std::thread::spawn(move || capture_stderr(stderr));
@@ -209,7 +246,7 @@ fn run(
     let consumed: Result<(), String> = (|| loop {
         let count = stdout
             .read(&mut buffer)
-            .map_err(|error| format!("SSH rg output on {endpoint}: {error}"))?;
+            .map_err(|error| format!("rg output on {backend}: {error}"))?;
         if count == 0 {
             return Ok(());
         }
@@ -222,11 +259,11 @@ fn run(
     drop(stdout);
     let stderr_result = stderr_pump
         .join()
-        .map_err(|_| "SSH rg stderr reader panicked".to_owned())?;
+        .map_err(|_| "rg stderr reader panicked".to_owned())?;
     let status = exit.wait();
     consumed?;
     let (stderr_bytes, dropped) =
-        stderr_result.map_err(|error| format!("SSH rg stderr on {endpoint}: {error}"))?;
+        stderr_result.map_err(|error| format!("rg stderr on {backend}: {error}"))?;
     let mut stderr = String::from_utf8_lossy(&stderr_bytes);
     if dropped > 0 {
         stderr
@@ -236,23 +273,22 @@ fn run(
     match status {
         strop_worker_protocol::ExitStatus::Exit(0 | 1) => {
             if !stderr.trim().is_empty() {
-                let _ = tx.control(PickerMsg::Warning(format!("{endpoint}: {}", stderr.trim())));
+                let _ = tx.control(PickerMsg::Warning(format!("{backend}: {}", stderr.trim())));
             }
             Ok(())
         }
         strop_worker_protocol::ExitStatus::Exit(127) => Err(format!(
-            "SSH Search here requires rg installed on {endpoint}: {}",
+            "Search here requires rg installed on {backend}: {}",
             stderr.trim()
         )),
-        strop_worker_protocol::ExitStatus::Exit(code) => Err(format!(
-            "SSH rg on {endpoint} exited {code}: {}",
-            stderr.trim()
-        )),
+        strop_worker_protocol::ExitStatus::Exit(code) => {
+            Err(format!("rg on {backend} exited {code}: {}", stderr.trim()))
+        }
         strop_worker_protocol::ExitStatus::Signal(signal) => {
-            Err(format!("SSH rg on {endpoint} ended by signal {signal}"))
+            Err(format!("rg on {backend} ended by signal {signal}"))
         }
         strop_worker_protocol::ExitStatus::Lost => {
-            Err(format!("SSH rg on {endpoint}: worker exit not attested"))
+            Err(format!("rg on {backend}: worker exit not attested"))
         }
     }
 }
@@ -297,7 +333,7 @@ impl Records {
                 part
             };
             if self.pending.len().saturating_add(data.len()) > RECORD_LIMIT {
-                return Err("SSH rg record exceeds the 1 MiB bound".into());
+                return Err("rg record exceeds the 1 MiB bound".into());
             }
             self.pending.extend_from_slice(data);
             if complete {
@@ -311,7 +347,7 @@ impl Records {
         if self.pending.is_empty() {
             Ok(())
         } else {
-            Err("SSH rg output ended in an incomplete record".into())
+            Err("rg output ended in an incomplete record".into())
         }
     }
 }
@@ -320,6 +356,24 @@ impl Records {
 mod tests {
     use super::*;
     use crate::SearchWorker;
+    use strop_workspace::RemoteEndpoint;
+    #[test]
+    fn content_case_selects_the_remote_rg_flag() {
+        for (input, expected) in [
+            ("needle", "--ignore-case"),
+            ("NEEDLE", "--ignore-case"),
+            ("case:ignore NEEDLE", "--ignore-case"),
+            ("case:insensitive NEEDLE", "--ignore-case"),
+            ("case:sensitive NEEDLE", "--case-sensitive"),
+            ("case:smart NEEDLE", "--smart-case"),
+            ("case:smart text:foo OR text:Bar", "--ignore-case"),
+        ] {
+            let query = SearchQuery::parse(input);
+            let plan = ContentPlan::compile(&query).unwrap().unwrap();
+            assert_eq!(case_flag(plan.provider_case()), expected, "{input}");
+        }
+    }
+
     #[test]
     fn record_framing_bounds_split_native_names_and_rejects_truncation() {
         let mut records = Records::new(0);
@@ -412,6 +466,95 @@ mod tests {
         }
         assert!(found, "worker search did not deliver the native-byte hit");
         lease.worker().shutdown().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn container_search_uses_only_the_captured_worker_and_root() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("hit.txt"), b"needle\n").unwrap();
+        let container = strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap();
+        let root = ResourceLocation {
+            filesystem: strop_workspace::Filesystem::Container(container.clone()),
+            path: directory.path().to_path_buf(),
+        };
+        let worker = Worker::connect_with(|| {
+            let (client_read, worker_write) = std::io::pipe()?;
+            let (worker_read, client_write) = std::io::pipe()?;
+            std::thread::spawn(move || {
+                strop_worker::serve::run(worker_read, worker_write).unwrap();
+            });
+            Ok(strop_worker_client::Transport {
+                reader: Box::new(client_read),
+                writer: Box::new(client_write),
+                child: None,
+                stderr: None,
+            })
+        });
+        let (tx, rx) = std::sync::mpsc::channel();
+        let source = super::super::SourceWorker::new().unwrap();
+        let _handle = source.search(
+            Arc::new(SearchQuery::parse("needle")),
+            SelectionPolicy {
+                hidden: true,
+                respect_ignore: true,
+            },
+            root.clone(),
+            vec![SourceSnapshot {
+                path: directory.path().join("hit.txt"),
+                text: ropey::Rope::from_str("needle from the dirty buffer\n"),
+            }],
+            Some(SearchWorker::Container(worker.clone())),
+            tx,
+        );
+        let mut found = false;
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap() {
+                PickerMsg::Items(batch) => {
+                    for item in batch.into_items() {
+                        if let crate::Payload::Grep {
+                            location,
+                            line_text,
+                            ..
+                        } = item.payload
+                        {
+                            assert_eq!(location.filesystem, root.filesystem);
+                            assert_eq!(location.path, directory.path().join("hit.txt"));
+                            assert_eq!(&*line_text, "needle from the dirty buffer");
+                            found = true;
+                        }
+                    }
+                }
+                PickerMsg::Finished(outcome) => {
+                    assert_eq!(outcome, Outcome::Success(()));
+                    break;
+                }
+                PickerMsg::Warning(_) => {}
+                other => panic!("unexpected container search event {other:?}"),
+            }
+        }
+        assert!(found);
+        worker.shutdown().unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _handle = source.search(
+            Arc::new(SearchQuery::parse("needle")),
+            SelectionPolicy {
+                hidden: true,
+                respect_ignore: true,
+            },
+            root,
+            Vec::new(),
+            None,
+            tx,
+        );
+        match rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap() {
+            PickerMsg::Finished(Outcome::Failed { failure, .. }) => {
+                assert_eq!(failure.kind, FailureKind::Unavailable);
+                assert!(failure.message.contains("no local fallback"));
+            }
+            other => panic!("unadmitted container search fell back or streamed: {other:?}"),
+        }
     }
 
     /// A read-only SFTP account has no worker execution capability;

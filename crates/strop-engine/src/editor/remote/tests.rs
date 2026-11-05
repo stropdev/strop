@@ -9,7 +9,6 @@ fn remote_picker_containers_action_delegates_to_container_discovery() {
     e.open_remote_picker();
     {
         let picker = &e.picker.as_ref().unwrap().picker;
-        assert_eq!(picker.pinned_tail, 2);
         assert!(picker.items.iter().any(|item| {
             item.text == "Containers…"
                 && matches!(&item.payload, strop_picker::Payload::ContainerDiscover)
@@ -38,6 +37,28 @@ fn remote_picker_containers_action_delegates_to_container_discovery() {
         &e.containers.pending.as_ref().unwrap().key.job,
         crate::editor::containers::ContainerJob::Discover
     ));
+}
+
+#[test]
+fn workspace_picker_selects_the_exact_remote_project_root() {
+    let mut e = editor("remote\n");
+    e.open_remote_picker();
+    let root = e
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .items
+        .iter()
+        .find_map(|item| match &item.payload {
+            strop_picker::Payload::WorkspaceRoot(root) => Some(root.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(root.path, std::path::Path::new("/repo"));
+    e.accept_picker(strop_picker::Payload::WorkspaceRoot(root.clone()), None);
+    assert!(e.workspaces.resolve(&root).is_some());
+    assert_eq!(e.message, "project root selected");
 }
 
 #[test]
@@ -70,7 +91,10 @@ fn remote_worker_consent_does_not_grant_a_file_write_permit() {
     assert!(e.cur().remote_metadata().unwrap().write.is_none());
     assert!(e.buf().readonly);
     e.workspaces
-        .bind(strop_workspace::Filesystem::Remote(endpoint), None)
+        .select_root(strop_workspace::ResourceLocation::remote(
+            endpoint,
+            "/repo".into(),
+        ))
         .unwrap();
     e.open_explain();
     assert!(e

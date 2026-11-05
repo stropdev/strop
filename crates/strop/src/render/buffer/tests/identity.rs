@@ -13,7 +13,7 @@ fn grid_text(grid: &ratatui::buffer::Buffer) -> String {
         .join("\n")
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum OpenRoute {
     Cli,
     Picker,
@@ -42,7 +42,12 @@ fn open_through(route: OpenRoute, root: &std::path::Path, path: &std::path::Path
             editor
         }
     };
-    assert_eq!(editor.buf().path.as_deref(), Some(path));
+    assert_eq!(
+        editor.buf().path.as_deref(),
+        Some(path),
+        "route {route:?}, message: {}",
+        editor.message()
+    );
     editor
 }
 

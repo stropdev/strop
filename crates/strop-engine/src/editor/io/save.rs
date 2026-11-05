@@ -1,9 +1,14 @@
 //! Save admission, optional formatting and owned source writes.
 use super::*;
+use strop_core::worker::{self, FailureKind};
+
+pub(super) mod container;
 
 impl Editor {
     pub(crate) fn local_write_pending(&self) -> bool {
         !self.io.saves.is_empty()
+            || self.io.container_writes.pending()
+            || self.io.container_writes.unconfirmed() > 0
             // An unconfirmed store holds its binding until verified.
             || !self.io.store_attempts.is_empty()
             || matches!(self.lsp_state.after_format.as_ref(),
@@ -92,6 +97,14 @@ impl Editor {
         if self.docs.get(document).is_some_and(|doc| {
             matches!(
                 doc.source,
+                crate::editor::document::DocumentSource::Container { .. }
+            )
+        }) {
+            return self.request_container_save(document, target, force, close);
+        }
+        if self.docs.get(document).is_some_and(|doc| {
+            matches!(
+                doc.source,
                 crate::editor::document::DocumentSource::Remote(_)
             )
         }) {
@@ -131,14 +144,28 @@ impl Editor {
         let work = match buffer.prepare_save(target.clone(), force) {
             Ok(work) => work,
             Err(error) => {
-                self.message = format!("write failed: {error}");
+                let detail = format!("write failed: {error}");
+                self.message = detail.clone();
+                self.note_save_failure(
+                    document, false, revision, target, force, close, true, detail,
+                );
                 return false;
             }
         };
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
-                self.message = error.message;
+                self.message = error.message.clone();
+                self.note_save_failure(
+                    document,
+                    false,
+                    revision,
+                    target,
+                    force,
+                    close,
+                    true,
+                    error.message,
+                );
                 return false;
             }
         };
@@ -200,7 +227,7 @@ impl Editor {
     /// WK09): the next `:w` after an unconfirmed outcome reconciles
     /// first. Verification never writes; after `Unchanged` an explicit
     /// fresh `:w` is the user's retry.
-    fn request_store_verification(&mut self, document: DocumentId) -> bool {
+    pub(crate) fn request_store_verification(&mut self, document: DocumentId) -> bool {
         let Some(attempt) = self.io.store_attempts.get(&document).cloned() else {
             return false;
         };
@@ -269,10 +296,10 @@ impl Editor {
     /// A committed store receipt — direct or proven by verification —
     /// retires exactly like the in-process writer's (0058 WK09).
     pub(super) fn accept_store_receipt(&mut self, key: &SaveKey, receipt: SaveReceipt) {
+        self.resolve_save_feedback(key.document, false);
         let Some(document) = self.docs.get_mut(key.document) else {
             self.message = "snapshot written; source buffer closed".into();
             self.finish_save_feedback(key.document);
-            self.collection_save_progress(key.document, false);
             return;
         };
         let previous_path = document.buf.path.clone();
@@ -298,7 +325,6 @@ impl Editor {
         .into();
         self.request_session_save();
         self.recovery_note_saved();
-        self.collection_save_progress(key.document, saved);
         if saved
             && key.close
             && !self.docs.is_empty()
@@ -342,13 +368,18 @@ impl Editor {
             }
             VerifiedOutcome::Unchanged => {
                 self.io.store_attempts.remove(&key.document);
-                self.collection_save_progress(key.document, false);
+                self.resolve_save_feedback(key.document, false);
                 self.message = "the original is unchanged on disk; :w writes again".into();
             }
             VerifiedOutcome::Unknown { detail } => {
-                self.collection_save_progress(key.document, false);
                 self.message =
                     format!("write outcome still unconfirmed: {detail}; :w verifies again");
+                self.note_unconfirmed_save(
+                    key.document,
+                    false,
+                    attempt.revision,
+                    format!("write outcome still unconfirmed: {detail}; :w verifies again"),
+                );
             }
         }
     }

@@ -1,10 +1,13 @@
 //! Editor ownership of terminal sessions. PTY handles live on the namespace's
 //! admitted worker (0058 WK12); this state holds bounded service handles and
 //! immutable publications, and emulation/presentation stay engine-owned.
+pub(crate) mod actions;
 mod input;
 mod lifecycle;
 mod presentation;
 mod privacy;
+#[cfg(test)]
+mod pty_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -12,7 +15,6 @@ mod theme_tests;
 use super::{Editor, Pane};
 use std::{
     collections::HashMap,
-    path::PathBuf,
     sync::{mpsc, Arc},
 };
 use strop_core::id::DocumentId;
@@ -24,18 +26,29 @@ use strop_terminal::{
 #[derive(Debug, Clone)]
 pub struct TerminalDocument {
     pub session: SessionId,
+    /// Immutable admitted launch identity. Shell titles and reported cwd never mutate it.
+    pub launch: strop_workspace::ResourceLocation,
     /// The buffer and all Normal inspection views use this same generation.
     pub frame: Option<Arc<Frame>>,
+}
+#[derive(Debug, Clone)]
+pub(super) struct HeldPaste {
+    pub ticket: u64,
+}
+impl HeldPaste {
+    pub fn review(&self) -> String {
+        "held paste (content redacted) · multiline/control input · ticket scoped".into()
+    }
 }
 struct Entry {
     document: DocumentId,
     phase: Phase,
     live: Option<Arc<Frame>>,
     service: Option<Service>,
-    directory: PathBuf,
+    launch: strop_workspace::ResourceLocation,
     title: Option<String>,
     geometry: Geometry,
-    paste: Option<u64>,
+    paste: Option<HeldPaste>,
     keyboard: u8,
 }
 struct Prefix {
@@ -111,9 +124,16 @@ impl Editor {
         let terminal = self.terminal_document(document)?;
         Some(&self.terminals.entries.get(&terminal.session)?.phase)
     }
-    pub fn terminal_launch_directory(&self, document: DocumentId) -> Option<&std::path::Path> {
+    pub fn terminal_launch_location(
+        &self,
+        document: DocumentId,
+    ) -> Option<&strop_workspace::ResourceLocation> {
         let terminal = self.terminal_document(document)?;
-        Some(&self.terminals.entries.get(&terminal.session)?.directory)
+        Some(&self.terminals.entries.get(&terminal.session)?.launch)
+    }
+    pub fn terminal_launch_directory(&self, document: DocumentId) -> Option<&std::path::Path> {
+        self.terminal_launch_location(document)
+            .map(|location| location.path.as_path())
     }
 }
 
@@ -220,6 +240,20 @@ impl Editor {
         rows: &[(&str, strop_terminal::model::Style)],
         phase: Phase,
     ) -> DocumentId {
+        self.terminal_fixture_at(
+            strop_workspace::ResourceLocation::local(self.cwd.clone()),
+            rows,
+            phase,
+        )
+    }
+
+    /// A synthetic terminal with an explicit immutable launch identity.
+    pub fn terminal_fixture_at(
+        &mut self,
+        launch: strop_workspace::ResourceLocation,
+        rows: &[(&str, strop_terminal::model::Style)],
+        phase: Phase,
+    ) -> DocumentId {
         let session = SessionId::from_request(self.worker_ids.allocate().unwrap());
         let frame = fixture_frame(session, rows, 1, 0);
         let geometry = frame.geometry;
@@ -227,6 +261,7 @@ impl Editor {
             super::Document::output(strop_core::Buffer::from_snapshot(frame.projection.clone()));
         document.source = super::DocumentSource::Terminal(Box::new(TerminalDocument {
             session,
+            launch: launch.clone(),
             frame: Some(frame.clone()),
         }));
         let id = self.docs.try_insert(document).unwrap();
@@ -237,7 +272,7 @@ impl Editor {
                 phase,
                 live: Some(frame),
                 service: None,
-                directory: self.cwd.clone(),
+                launch,
                 title: None,
                 geometry,
                 paste: None,
@@ -246,5 +281,56 @@ impl Editor {
         );
         self.switch_to(id);
         id
+    }
+
+    pub fn terminal_fixture_publish(
+        &mut self,
+        document: DocumentId,
+        rows: &[(&str, strop_terminal::model::Style)],
+    ) {
+        let Some(source) = self.terminal_document(document) else {
+            return;
+        };
+        let session = source.session;
+        let Some((revision, origin, phase)) =
+            self.terminals.entries.get(&session).and_then(|entry| {
+                entry.live.as_ref().map(|live| {
+                    (
+                        live.revision.saturating_add(1),
+                        live.origin,
+                        entry.phase.clone(),
+                    )
+                })
+            })
+        else {
+            return;
+        };
+        self.apply_terminal_update(strop_terminal::model::Update {
+            session,
+            phase,
+            frame: Some(fixture_frame(session, rows, revision, origin)),
+            effects: Vec::new(),
+            acknowledged_input: 0,
+            warning: None,
+        });
+    }
+
+    pub fn terminal_fixture_hold_paste(&mut self, document: DocumentId, ticket: u64) {
+        let Some((session, phase)) = self.terminal_document(document).and_then(|source| {
+            self.terminals
+                .entries
+                .get(&source.session)
+                .map(|entry| (source.session, entry.phase.clone()))
+        }) else {
+            return;
+        };
+        self.apply_terminal_update(strop_terminal::model::Update {
+            session,
+            phase,
+            frame: None,
+            effects: vec![strop_terminal::model::Effect::PasteConfirmationRequested { ticket }],
+            acknowledged_input: 0,
+            warning: None,
+        });
     }
 }

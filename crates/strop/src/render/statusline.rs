@@ -39,6 +39,10 @@ const GAP: usize = 1;
 const MIN_GROUP: usize = 4;
 /// A transient status shorter than this is noise, not information.
 const MIN_STATUS: usize = 3;
+/// Terminal input/return and attention cues survive optional status prose.
+const TERMINAL_STATUS_MIN: usize = 14;
+/// Wide rows retain the complete pinned-output Refresh action as well.
+const TERMINAL_STATUS_WIDE: usize = 38;
 
 pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
@@ -87,8 +91,11 @@ struct Modeline {
     percent: Option<usize>,
     search: Option<(usize, usize)>, // current and total matches
     indent: String,                 // "Spaces:4" — the effective setting (0051 R08)
-    bare: bool,                     // degenerate layout: mode accent · position only
-    bare_chip: usize,               // cells the chip may occupy in that layout
+    terminal: bool,
+    terminal_attention: bool,
+    terminal_prefix: bool,
+    bare: bool,       // degenerate layout: mode accent · position only
+    bare_chip: usize, // cells the chip may occupy in that layout
 }
 
 impl Modeline {
@@ -97,6 +104,9 @@ impl Modeline {
         let (dir, name) = file_display(editor);
         let terminal_input = editor.terminal_input_active();
         let terminal = editor.terminal_document(editor.current()).is_some();
+        let terminal_attention = terminal
+            && (editor.terminal_has_new_output(editor.current())
+                || editor.terminal_paste_held(editor.current()));
         let (line, col) = if terminal_input {
             editor
                 .terminal_frame(editor.current(), true)
@@ -124,8 +134,8 @@ impl Modeline {
         let (errors, warnings) = editor.diag_counts(editor.current());
         let cursors = editor.sels().count();
         let commit = historical_commit(editor);
-        let namespace = if terminal {
-            "local".to_owned()
+        let namespace = if let Some(terminal) = editor.terminal_document(editor.current()) {
+            terminal.launch.filesystem.label()
         } else {
             editor
                 .remote_endpoint()
@@ -159,6 +169,12 @@ impl Modeline {
                 } else {
                     " TERMINAL ".into()
                 }
+            } else if terminal {
+                if editor.terminal_capture_enabled() {
+                    " SNAPSHOT REC ".into()
+                } else {
+                    " SNAPSHOT ".into()
+                }
             } else {
                 format!(
                     " {}{} ",
@@ -184,7 +200,7 @@ impl Modeline {
             dir: printable(dir),
             name: printable(name),
             dirty: buf.dirty || editor.collection_unsaved(editor.current()),
-            readonly: buf.readonly && !terminal_input,
+            readonly: buf.readonly && !terminal_input && !terminal,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
             status: printable(transient::transient(editor)),
             services: services::Services::gather(editor),
@@ -200,6 +216,9 @@ impl Modeline {
             } else {
                 editor.indent_label()
             },
+            terminal,
+            terminal_attention,
+            terminal_prefix: editor.terminal_prefix_hint().is_some(),
             bare: false,
             bare_chip: 0,
         }
@@ -213,6 +232,15 @@ impl Modeline {
             return;
         }
         self.staged_mark = false;
+        if self.terminal && self.used() > cells {
+            let overflow = self.used() - cells;
+            let essential = self.terminal_status_reserve(cells);
+            let budget = width(&self.status).saturating_sub(overflow).max(essential);
+            self.status = clip_end(&self.status, budget).into_owned();
+            if self.used() <= cells {
+                return;
+            }
+        }
         if self.used() <= cells {
             return;
         }
@@ -261,6 +289,18 @@ impl Modeline {
         self.elastic(cells);
     }
 
+    fn terminal_status_reserve(&self, cells: usize) -> usize {
+        if cells >= 80 && self.terminal_prefix {
+            return width(&self.status);
+        }
+        let reserve = if cells >= 80 && self.terminal_attention {
+            TERMINAL_STATUS_WIDE
+        } else {
+            TERMINAL_STATUS_MIN
+        };
+        reserve.min(width(&self.status))
+    }
+
     /// The incompressible ends are the mode accent and the position;
     /// everything optional is already gone. What is left is shared
     /// between the filename and the transient status — the filename
@@ -288,6 +328,12 @@ impl Modeline {
                 .file_w()
                 .min(room)
                 .min((room * 2 / 3).max(MIN_GROUP))
+                .min(if self.terminal {
+                    room.saturating_sub(self.terminal_status_reserve(cells))
+                        .max(MIN_GROUP.min(room))
+                } else {
+                    room
+                })
                 .min(room);
             self.fit_file(file_budget);
             let status_budget = room - file_budget;
@@ -638,20 +684,23 @@ fn historical_commit(editor: &Editor) -> Option<&str> {
 
 /// The file group's text: the workspace-relative native path, split so
 /// the filename — the part that must survive truncation — can be
-/// emphasized over its directory. `io` opens paths under the editor's
-/// cwd, so `strip_prefix` relativizes; anything outside keeps its
-/// absolute form. Virtual buffers keep their display name; a pathless,
-/// nameless buffer is the scratch.
+/// emphasized over its directory. Paths are relativized against their selected
+/// project root; anything outside keeps its absolute form. Virtual buffers keep
+/// their display name; a pathless, nameless buffer is the scratch.
 fn file_display(editor: &Editor) -> (String, String) {
     if let Some(terminal) = editor.terminal_document(editor.current()) {
         let directory = editor
-            .terminal_launch_directory(editor.current())
-            .map_or_else(String::new, |path| {
-                let mut label = strop_workspace::directory::display_path(path);
+            .terminal_launch_location(editor.current())
+            .map_or_else(String::new, |location| {
+                let mut label = if location.filesystem == strop_workspace::Filesystem::Local {
+                    location.label()
+                } else {
+                    strop_workspace::directory::display_path(&location.path)
+                };
                 if !label.ends_with('/') {
                     label.push('/');
                 }
-                label
+                format!("launch {label}")
             });
         return (directory, format!("terminal #{}", terminal.session.get()));
     }
@@ -722,8 +771,11 @@ fn file_display(editor: &Editor) -> (String, String) {
             buf.name.as_deref().unwrap_or("[scratch]").to_owned(),
         );
     };
+    let root = editor
+        .workspace_root_path(&strop_workspace::Filesystem::Local, path)
+        .unwrap_or(editor.cwd());
     let relative = path
-        .strip_prefix(editor.cwd())
+        .strip_prefix(root)
         .ok()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(path);

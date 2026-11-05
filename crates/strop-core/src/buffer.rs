@@ -40,6 +40,8 @@ pub enum ReadonlyReason {
     DirectoryListing,
     /// A directory operation is applying or reloading.
     DirectoryOperation,
+    /// A healthy source-backed collection inspection view.
+    Collection,
     /// A stale collection whose projection failed.
     CollectionProjection,
     /// The recovery checkpoint surface.
@@ -87,8 +89,8 @@ impl Buffer {
         self.readonly = true;
     }
 
-    /// Explicit write authority (`:set noro`, a granted `:remote edit`, a
-    /// successful collection projection) clears the flag and its reason.
+    /// Explicit write authority (`:set noro` or a granted `:remote edit`)
+    /// clears the flag and its reason.
     pub fn clear_readonly(&mut self) {
         self.readonly = false;
         self.readonly_reason = None;

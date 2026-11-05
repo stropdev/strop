@@ -1,6 +1,9 @@
 use super::*;
 use strop_core::{frontend_input::Key, Buffer};
 
+mod case_defaults;
+mod selected_roots;
+
 #[test]
 fn filter_only_files_and_literal_content_share_scope() {
     let dir = tempfile::tempdir().unwrap();

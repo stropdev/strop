@@ -6,6 +6,12 @@ definition of remote/workspace identity, every consumer migrated, superseded
 definitions deleted. No capability snapshots, no execution routing changes, no
 container work — those are later slices with their own plans.
 
+**0081 amendment:** a workspace is now an exact `WorkspaceKey` of filesystem
+namespace plus absolute project root, not one mutable context per endpoint.
+Multiple projects on one SSH host coexist; Files/Search/labels/default terminal
+launch resolve the longest selected covering root. Directory browsing does not
+change process cwd or implicitly retarget projects.
+
 ## 1. Why this slice first
 
 The 0.19.1 field report demonstrated the cost of per-consumer path semantics:

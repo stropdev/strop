@@ -43,6 +43,7 @@ sh specs/recovery-gate.sh
 sh specs/lsp-gate.sh
 sh specs/completion-gate.sh
 sh specs/terminal-gate.sh
+sh specs/devcontainer-gate.sh
 sh specs/install-gate.sh
 sh specs/notify-gate.sh
 # 0057 VF14: the UI-stdio session model (UiSession.tla).

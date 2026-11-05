@@ -222,6 +222,58 @@ fn find_cell(buffer: &CellGrid, needle: &str) -> Option<(u16, u16)> {
         })
     })
 }
+#[test]
+fn terminal_pane_titles_show_immutable_launch_identity() {
+    for (location, namespace) in [
+        (
+            strop_workspace::ResourceLocation::local("/host/launch".into()),
+            "local",
+        ),
+        (
+            strop_workspace::ResourceLocation::remote(
+                strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+                "/srv/launch".into(),
+            ),
+            "ssh://fixture",
+        ),
+    ] {
+        let mut editor = Editor::new_in(Buffer::from_text("origin"), "/host".into());
+        editor.terminal_fixture_at(
+            location,
+            &[("safe", strop_terminal::model::Style::default())],
+            strop_terminal::model::Phase::Running,
+        );
+        let terminal_name = format!(
+            "terminal #{}",
+            editor
+                .terminal_document(editor.current())
+                .unwrap()
+                .session
+                .get()
+        );
+        editor.split(false, None);
+        for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
+            let mut terminal = Terminal::new(TestBackend::new(columns, rows)).unwrap();
+            terminal
+                .draw(|frame| crate::render::paint(&mut editor, frame))
+                .unwrap();
+            let titles = row_text(terminal.backend().buffer(), 0);
+            assert!(titles.contains(&terminal_name), "{titles}");
+            if columns >= 80 {
+                assert!(titles.contains("launch"), "{titles}");
+                if namespace == "local" {
+                    assert!(titles.contains("/host/launch"), "{titles}");
+                } else {
+                    assert!(titles.contains("ssh://fixture/srv/launch"), "{titles}");
+                    assert!(!titles.contains("local"), "{titles}");
+                }
+            } else if namespace != "local" {
+                assert!(titles.contains("ssh://"), "{titles}");
+            }
+        }
+    }
+}
+
 /// 0065 S1: terminal-input and inspection are glanceably distinct,
 /// honest states — chip text, chip hue and the transient hint all say
 /// which side of the glass the keys are on.
@@ -252,7 +304,7 @@ fn terminal_input_and_inspection_present_distinct_states() {
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
     assert!(row.contains(" TERMINAL "), "{row}");
-    assert!(row.contains("F2 normal"), "{row}");
+    assert!(row.contains("F2 inspect"), "{row}");
     assert!(row.contains("ctrl-\\ ctrl-n alternative"), "{row}");
     let (x, _) = find_cell(&buffer, " TERMINAL ").unwrap();
     assert_eq!(buffer[(x, statusline_y)].bg, super::terminal_chip());
@@ -281,8 +333,8 @@ fn terminal_input_and_inspection_present_distinct_states() {
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
-    assert!(row.contains(" NORMAL "), "{row}");
-    let (x, _) = find_cell(&buffer, " NORMAL ").unwrap();
+    assert!(row.contains(" SNAPSHOT "), "{row}");
+    let (x, _) = find_cell(&buffer, " SNAPSHOT ").unwrap();
     assert_eq!(buffer[(x, statusline_y)].bg, super::accent());
 }
 

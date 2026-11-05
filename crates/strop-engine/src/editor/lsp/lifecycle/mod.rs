@@ -54,6 +54,21 @@ impl Editor {
             self.lsp_did_open_document(document);
             return;
         }
+        if let Filesystem::Container(id) = &doc.filesystem {
+            let admitted = self
+                .containers
+                .attached
+                .get(id.as_str())
+                .and_then(|identity| self.containers.workers.get(identity))
+                .is_some();
+            if !admitted {
+                // Admission is recoverable and must not become a sticky
+                // spawn refusal: :container-worker can enable this exact
+                // incarnation without restarting the editor.
+                self.message = "lsp: container language services need :container-worker".into();
+                return;
+            }
+        }
         // Discovery runs only for an unambiguous extension — never
         // rediscover project commands from /usr/include (0049 §4.7).
         let Some(ext) = doc
@@ -155,36 +170,44 @@ impl Editor {
         layer_suffix(&self.lsp_state.attach.layer_diagnostics)
     }
 
-    /// Retire remote servers whose workspace no longer has a document:
-    /// closing the last owning remote workspace retires its server
-    /// (0036 RW8) — no orphan ssh, no orphan remote process. Local
-    /// servers keep their session-long lifetime.
-    pub(crate) fn lsp_retire_remote_servers(&mut self) {
+    /// Retire non-local servers whose owning workspace no longer has a
+    /// document: no orphan SSH/container process or live placement.
+    /// Local servers keep their session-long lifetime.
+    pub(crate) fn lsp_retire_workspace_servers(&mut self) {
         let retired: Vec<ServerId> = self
             .lsp_state
             .attach
             .attached
             .iter()
-            .filter(|a| a.target.is_remote())
-            .filter(|a| {
-                let endpoint = match &a.target {
-                    Filesystem::Remote(endpoint) => endpoint,
-                    _ => return false,
-                };
-                !self.docs.iter().any(|(id, document)| {
+            .filter(|a| match &a.target {
+                Filesystem::Local => false,
+                Filesystem::Remote(endpoint) => !self.docs.iter().any(|(id, document)| {
                     document.remote_metadata().is_some_and(|source| {
                         source.file.endpoint() == endpoint
                             && source.file.path().starts_with(&a.root)
-                            && lsp_language(source.file.path()) == Some(a.language.as_str())
+                            && self.lsp_doc_language(id, source.file.path()).as_deref()
+                                == Some(a.language.as_str())
                             && source.window.is_complete()
                             && !self.remote_following(id)
                     })
-                })
+                }),
+                Filesystem::Container(container) => !self.docs.iter().any(|(id, document)| {
+                    matches!(
+                        &document.source,
+                        crate::editor::document::DocumentSource::Container {
+                            container: expected,
+                            path,
+                        } if expected == container
+                            && path.starts_with(&a.root)
+                            && self.lsp_doc_language(id, path).as_deref()
+                                == Some(a.language.as_str())
+                    )
+                }),
             })
             .map(|a| a.server)
             .collect();
         for server in retired {
-            self.lsp_retire_server(server, "remote workspace closed");
+            self.lsp_retire_server(server, "owning workspace closed");
         }
     }
 

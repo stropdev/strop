@@ -20,11 +20,22 @@ Sleep 1.2s
 Type "["
 Sleep 700ms
 
-# ci[ — the change; flash marks what fell
+# ci[ executes at [, the completing key; flash marks what fell
 Type "ci"
 Sleep 900ms
 Type "["
 Sleep 700ms
+Type "Cut"
+Escape
+Sleep 900ms
+
+# Undo, then inspect the same object in Visual before committing c
+Type "u"
+Sleep 700ms
+Type "vi["
+Sleep 1.4s
+Type "c"
+Sleep 500ms
 Type "Cut"
 Escape
 Sleep 900ms

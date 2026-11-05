@@ -313,6 +313,8 @@ fn resolved_diag_round_trips_serde() {
 
 mod remote;
 
+mod container;
+
 mod navigation;
 
 mod diagnostics;

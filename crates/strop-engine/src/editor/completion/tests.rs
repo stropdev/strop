@@ -5,7 +5,6 @@ use strop_core::Buffer;
 mod language;
 mod preview;
 mod snippet;
-mod sources;
 
 fn fixture(text: &str, caret: usize) -> (Editor, events::EventReceiver) {
     let mut editor = Editor::new_in(Buffer::from_text(text), "/completion-fixture".into());

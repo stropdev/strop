@@ -17,6 +17,18 @@ search, git surfaces and operator previews. Composition windows such as
 step. Operator previews and execution consume the same resolver — the
 preview cannot lie.
 
+| Interaction | Inspection contract |
+| --- | --- |
+| `dw`, `ci[`, `dfx`, `.` | Execute at the completing key; there is no guaranteed inspection interval. |
+| `vi[` then `c`, other Visual selections | Inspect the selection before applying the operator. |
+| `d/pattern` while composing | Live affected range and motion semantics before Enter; Esc once enters field Normal, Esc again cancels. |
+| `:s` while composing | Live before/after text, replacement count and scope before Enter. |
+| Project replace, filesystem and machine edits | Review exact targets before Apply; saving is a separate action. |
+| Macros and arbitrary child/shell execution | No general effect preview. |
+
+The tagline covers these explicit inspection boundaries, not a post-edit flash
+for every completed Vim chord.
+
 ## Install
 
 ```sh

@@ -53,6 +53,7 @@
 //! zombie reaping belongs to the container's init; distroless images
 //! without a shell get a typed refusal).
 
+pub mod devcontainer;
 mod engine;
 mod error;
 mod exec;

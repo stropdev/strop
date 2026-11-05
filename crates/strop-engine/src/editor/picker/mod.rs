@@ -43,7 +43,8 @@ mod tests;
 pub struct PickerId(pub WorkerId);
 
 /// What one streaming picker request owns: which instance, against
-/// which working directory.
+/// which captured project-root path. Namespace-qualified Search scopes also
+/// ride in the source request; request + picker identity reject stale replies.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PickerKey {
     pub picker: PickerId,
@@ -101,6 +102,8 @@ pub struct PickerGlue {
     pub query_summary: String,
     pub(crate) query: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
     file_scope: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
+    /// Exact namespace/root captured when a Files surface opens.
+    pub(crate) file_root: Option<strop_workspace::ResourceLocation>,
     pub(crate) indent_target: Option<strop_core::id::DocumentId>,
     pub(crate) search: Option<search::SearchContext>,
     preview_witness: Option<preview::WitnessCheck>,
@@ -151,6 +154,7 @@ impl PickerGlue {
             query_summary: String::new(),
             project_statuses: Vec::new(),
             file_scope: None,
+            file_root: None,
             query: None,
             indent_target: None,
             search: None,
@@ -195,9 +199,12 @@ impl Editor {
         };
         glue.preview_witness = None;
         glue.id = PickerId(id);
+        if glue.picker.kind == Kind::Files && glue.file_root.is_none() {
+            glue.file_root = Some(self.current_workspace_root());
+        }
         if glue.picker.kind == Kind::Search && glue.search.is_none() {
             match self.new_search_context(SearchScope {
-                root: strop_workspace::ResourceLocation::local(self.cwd.clone()),
+                root: self.current_workspace_root(),
             }) {
                 Ok(context) => glue.search = Some(context),
                 Err(error) => {
@@ -430,6 +437,22 @@ impl Editor {
         };
         if glue.picker.kind == Kind::Search {
             self.open_search_hit(payload);
+            return;
+        }
+        if glue.picker.kind == Kind::Files {
+            let Payload::File(path) = payload else {
+                self.message = "no matching files".into();
+                return;
+            };
+            let target = match self.picker_file_target(&path) {
+                Ok(target) => target,
+                Err(error) => {
+                    self.message = error;
+                    return;
+                }
+            };
+            self.close_picker();
+            self.request_target(target, super::io::OpenIntent::Switch { readonly: false });
             return;
         }
         let context = glue.lsp_context;

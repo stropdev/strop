@@ -13,6 +13,12 @@ The ChangePlan TLA+ model and worker-side preparation for very large plans
 remain open below.
 Prerequisite landed: 0042 shared resource identity.
 
+**0081 amendment:** Search replacement and machine-generated multi-file edits
+now converge on this review vocabulary and its Apply/Save/Cancel/Inspect
+actions. Collection write-through (0044) is retired rather than maintained as
+a second mutation route. Dirty buffers remain distinct from saved files;
+stale/refused/partial/unconfirmed outcomes retain their per-target identity.
+
 ## 1. What exists and what is new
 
 Exists: `Editor::apply(document, base, ChangeSet)` — the revision-checked

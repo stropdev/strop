@@ -91,22 +91,32 @@ pub(crate) fn render_panes(editor: &Editor, frame: &mut Frame, area: Rect) -> Re
             // local paths are workspace-relative, outside paths stay absolute,
             // and remote/container resources retain their authority. Never use
             // the active-document modeline projection for an inactive pane.
-            let name = document.label(editor.cwd());
+            let root = document
+                .buf
+                .path
+                .as_deref()
+                .and_then(|path| {
+                    editor.workspace_root_path(&strop_workspace::Filesystem::Local, path)
+                })
+                .unwrap_or(editor.cwd());
+            let name = document.label(root);
             let flags = format!(
                 "{}{}",
                 if document.buf.dirty { " *" } else { "" },
                 if document.buf.readonly { " [RO]" } else { "" }
             );
             let budget = w.saturating_sub(super::clip::width(&flags) + 4);
-            let outside_workspace =
-                document.buf.path.as_deref().is_some_and(|path| {
-                    path.is_absolute() && path.strip_prefix(editor.cwd()).is_err()
-                });
+            let outside_workspace = document
+                .buf
+                .path
+                .as_deref()
+                .is_some_and(|path| path.is_absolute() && path.strip_prefix(root).is_err());
             let retain_authority = outside_workspace
                 || document.remote_metadata().is_some()
                 || matches!(
                     &document.source,
                     strop_engine::editor::DocumentSource::Container { .. }
+                        | strop_engine::editor::DocumentSource::Terminal(_)
                 );
             let name = if retain_authority {
                 super::clip::clip_end(&name, budget)

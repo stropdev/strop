@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.48.0 — 2026-11-05
+
+### Added
+
+- **Live Ex substitution previews**: `:[range]s/pattern/replacement/g` now uses the buffer-search grammar and shows real removed/inserted lines, count, scope and offscreen extent before Enter. Preview and execution share one bounded, revision-stamped plan; invalid/stale work cannot reuse an earlier preview, and cancellation leaves bytes, registers and undo untouched. Immediate Vim chords still execute at the completing key; Visual selection is the inspect-first alternative, now taught in the demo and preview matrix.
+- **Workspace roots and Dev Containers**: Space o selects exact namespace+root projects, including independent roots on one SSH host. Passive JSONC discovery offers redacted review without hooks or Docker effects; explicit reference-CLI attach/start/rebuild, setup logs, cancellation, dirty-buffer choices and verified root transitions support image, Dockerfile and Compose configurations. Generic container attachment starts at inspected WorkingDir.
+- **Container development loop**: admitted container workers now support Git/LSP, scoped Search and interactive terminals. Definitions, references, diagnostics and symbols retain container namespace and workspace-root identity, open only container targets and retire their server with the last owning document; missing workers never fall back to the host. Separate `:container-edit` snapshot authority enables real editing and conditional worker-Store saves with conflict and unconfirmed verification; worker admission alone remains read-only and container filesystem mutations stay refused.
+- **Durable actionable feedback**: failed/unconfirmed saves, connection/admission failures, terminal decisions and Dev Container outcomes survive unrelated input and expose revalidated Space a recovery plus full `:explain` detail. Dismissal never cancels work or clears write barriers.
+- **Terminal completion**: admitted SSH/container launch identity reaches modeline, pane titles, buffer rows, state and traces. F2/i cues survive 48 columns; Space a handles refresh, ticket-bound paste review/Send/Discard, sessions, stop and quit Focus/Stop/Return while preserving child keys and pinned snapshots.
+
+### Changed
+
+- **Case-insensitive queries everywhere**: file finding, content Search/replace, symbols, jump lists, `path:` and `fpath:` now ignore case by default, locally and over SSH. `case:sensitive` opts into exact matching, `case:smart` retains the old behavior, and `case:insensitive` now parses consistently with highlighting and buffer search.
+- **One multi-file mutation workflow**: Search collections are read-only source-backed inspection views with navigation, syntax, search and yank. Excerpt write-through, collection saves and scoped collection undo are removed; ordinary source editing and Review → Apply → Save now own all multi-file changes.
+
+### Fixed
+
+- **LSP crashes are not missing installations**: after a server exits during external definition navigation, the next request names the retained failure and starts one scoped reattach instead of suggesting installation or `languages.toml` edits. Failures clear only on readiness and never leak across workspaces.
+- **Terminal capability truth**: Directory Terminal here and execution use the same worker-admission decision. SSH terminals execute remotely and never masquerade as local; container terminals use only the attached incarnation's admitted lease.
+
 ## 0.47.4 — 2026-11-04
 
 ### Changed

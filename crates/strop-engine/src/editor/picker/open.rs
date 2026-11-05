@@ -43,17 +43,18 @@ impl Editor {
                                     .terminal_phase(i)
                                     .map(terminal_phase_label)
                                     .unwrap_or_else(|| "unknown".into());
-                                let directory = self
-                                    .terminal_launch_directory(i)
-                                    .and_then(|path| {
-                                        path.file_name()
-                                            .map(|name| name.to_string_lossy().into_owned())
-                                    })
-                                    .unwrap_or_default();
+                                let launch = self
+                                    .terminal_launch_location(i)
+                                    .map_or_else(|| "unknown".into(), |location| location.label());
+                                let attention = self
+                                    .terminal_attention(i)
+                                    .map_or_else(String::new, |attention| {
+                                        format!(" · {attention}")
+                                    });
                                 (
                                     Some("!"),
                                     format!(
-                                        "terminal #{} · {directory} · {phase}",
+                                        "terminal #{} · launch {launch} · {phase}{attention}",
                                         terminal.session.get()
                                     ),
                                 )

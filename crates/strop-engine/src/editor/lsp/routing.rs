@@ -179,7 +179,13 @@ impl Editor {
                 // narrowing re-filters these candidates locally as the
                 // input changes. The fresh picker has no query yet —
                 // the initial rows are the unfiltered tree.
-                let items = document_symbol_items(&symbols, None, &self.cwd);
+                let root = self
+                    .lsp_state
+                    .bindings
+                    .get(&context.stamp.document)
+                    .map(|binding| binding.root.clone())
+                    .unwrap_or_else(|| self.cwd.clone());
+                let items = document_symbol_items(&symbols, None, &root);
                 self.open_picker(strop_picker::Kind::Symbols);
                 if let Some(glue) = self.picker.as_mut() {
                     glue.symbols_candidates = symbols;
@@ -191,10 +197,10 @@ impl Editor {
             }
 
             LspEvent::WorkspaceSymbols {
-                server: _,
+                server,
                 generation,
                 symbols,
-            } => self.merge_workspace_symbols(generation, symbols),
+            } => self.merge_workspace_symbols(server, generation, symbols),
             LspEvent::WorkspaceSymbolsFailed {
                 server: _,
                 generation,
@@ -271,7 +277,7 @@ impl Editor {
                         use strop_picker::{Item, Kind, Payload};
                         let items = items
                             .into_iter()
-                            .filter_map(|location| {
+                            .map(|location| {
                                 let line = location.position.line.get() + 1;
                                 let col = location.position.column.get() + 1;
                                 let text = format!("{}:{}:{}", location.doc.label(), line, col);
@@ -291,23 +297,22 @@ impl Editor {
                                         line,
                                         col,
                                     },
-                                    // DC1a wires no container LSP, so a container
-                                    // location cannot arrive; if one ever does, it
-                                    // is dropped with a trace, never aliased to a
-                                    // local path.
-                                    Filesystem::Container(_) => {
-                                        trace::services::rejected(
-                                            "lsp",
-                                            "location in a container namespace (unwired)",
-                                        );
-                                        return None;
-                                    }
+                                    Filesystem::Container(container) => Payload::Grep {
+                                        location: ResourceLocation {
+                                            filesystem: Filesystem::Container(container),
+                                            path: location.doc.path,
+                                        },
+                                        line,
+                                        col,
+                                        match_len: 1,
+                                        line_text: "".into(),
+                                    },
                                 };
-                                Some(Item {
+                                Item {
                                     badge: None,
                                     text,
                                     payload,
-                                })
+                                }
                             })
                             .collect();
                         let mut glue = crate::editor::PickerGlue::diagnostics(
@@ -372,7 +377,12 @@ impl Editor {
     /// Merge one server's workspace-symbol reply into the open picker
     /// (0063 §2): same row convention as the syntax tier, duplicates
     /// by (location, name) skipped, then a local re-rank.
-    fn merge_workspace_symbols(&mut self, generation: u64, symbols: Vec<strop_lsp::ProtoSymbol>) {
+    fn merge_workspace_symbols(
+        &mut self,
+        server: strop_lsp::ServerId,
+        generation: u64,
+        symbols: Vec<strop_lsp::ProtoSymbol>,
+    ) {
         // RowsCurrent (0063 §6.6): only the live generation's replies
         // merge — the verified kernel's decision.
         let picker_live = self
@@ -387,30 +397,44 @@ impl Editor {
             return;
         }
         use strop_picker::{Item, Payload};
-        let mut known: std::collections::HashSet<(String, usize, String)> = self
-            .picker
-            .as_ref()
-            .map(|glue| {
-                glue.picker
-                    .items
-                    .iter()
-                    .filter_map(|item| match &item.payload {
-                        Payload::Grep { location, line, .. } => Some((
-                            location.path.to_string_lossy().into_owned(),
-                            *line,
-                            item_symbol_name(item).to_owned(),
-                        )),
-                        Payload::Remote { path, line, .. } => Some((
-                            path.to_string_lossy().into_owned(),
-                            *line,
-                            item_symbol_name(item).to_owned(),
-                        )),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let cwd = self.cwd.clone();
+        let mut known: std::collections::HashSet<(Filesystem, std::path::PathBuf, usize, String)> =
+            self.picker
+                .as_ref()
+                .map(|glue| {
+                    glue.picker
+                        .items
+                        .iter()
+                        .filter_map(|item| match &item.payload {
+                            Payload::Grep { location, line, .. } => Some((
+                                location.filesystem.clone(),
+                                location.path.clone(),
+                                *line,
+                                item_symbol_name(item).to_owned(),
+                            )),
+                            Payload::Remote {
+                                endpoint,
+                                path,
+                                line,
+                                ..
+                            } => Some((
+                                Filesystem::Remote(endpoint.clone()),
+                                path.clone(),
+                                *line,
+                                item_symbol_name(item).to_owned(),
+                            )),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+        let root = self
+            .lsp_state
+            .attach
+            .attached
+            .iter()
+            .find(|attachment| attachment.server == server)
+            .map(|attachment| attachment.root.clone())
+            .unwrap_or_else(|| self.cwd.clone());
         // Local AST admission (0063 §4): the wire carried only bare
         // content text, so returned candidates are filtered against
         // the full query before merging — content atoms against the
@@ -449,7 +473,7 @@ impl Editor {
                         Some(format!("{}::{}", symbol.container, symbol.name))
                     };
                     let evidence = strop_picker::query::Evidence {
-                        path: path.strip_prefix(&cwd).ok().and_then(|path| path.to_str()),
+                        path: path.strip_prefix(&root).ok().and_then(|path| path.to_str()),
                         line: Some(line),
                         symbol: Some(strop_picker::query::SymbolEvidence {
                             kind: lsp_symbol_kind(&symbol.kind),
@@ -462,17 +486,21 @@ impl Editor {
                     }
                 }
                 if !known.insert((
-                    path.to_string_lossy().into_owned(),
+                    symbol.location.doc.filesystem.clone(),
+                    path.clone(),
                     line,
                     symbol.name.clone(),
                 )) {
                     return None;
                 }
-                let shown = path
-                    .strip_prefix(&cwd)
-                    .map(strop_picker::display_path)
-                    .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
-                    .into_owned();
+                let shown = match &symbol.location.doc.filesystem {
+                    Filesystem::Container(_) => symbol.location.doc.label(),
+                    _ => path
+                        .strip_prefix(&root)
+                        .map(strop_picker::display_path)
+                        .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
+                        .into_owned(),
+                };
                 let payload = match symbol.location.doc.filesystem {
                     Filesystem::Local => Payload::Grep {
                         location: strop_workspace::ResourceLocation::local(path),
@@ -487,10 +515,16 @@ impl Editor {
                         line,
                         col,
                     },
-                    Filesystem::Container(_) => {
-                        trace::services::rejected("lsp", "container symbol dropped");
-                        return None;
-                    }
+                    Filesystem::Container(container) => Payload::Grep {
+                        location: ResourceLocation {
+                            filesystem: Filesystem::Container(container),
+                            path,
+                        },
+                        line,
+                        col,
+                        match_len: 1,
+                        line_text: "".into(),
+                    },
                 };
                 Some(Item {
                     badge: Some(badge.into()),
@@ -523,7 +557,12 @@ impl Editor {
                     .ok()
                     .flatten()
             });
-        let cwd = self.cwd.clone();
+        let root = self
+            .lsp_state
+            .bindings
+            .get(&self.current())
+            .map(|binding| binding.root.clone())
+            .unwrap_or_else(|| self.cwd.clone());
         let Some(glue) = self
             .picker
             .as_mut()
@@ -531,7 +570,7 @@ impl Editor {
         else {
             return;
         };
-        let items = document_symbol_items(&glue.symbols_candidates, admission.as_ref(), &cwd);
+        let items = document_symbol_items(&glue.symbols_candidates, admission.as_ref(), &root);
         glue.picker.clear_items();
         glue.rank_pending = None;
         glue.ranked_query = None;
@@ -550,7 +589,7 @@ impl Editor {
 fn document_symbol_items(
     symbols: &[strop_lsp::ProtoSymbol],
     admission: Option<&strop_picker::query::BooleanPlan>,
-    cwd: &std::path::Path,
+    root: &std::path::Path,
 ) -> Vec<strop_picker::Item> {
     use strop_picker::{Item, Payload};
     symbols
@@ -567,7 +606,7 @@ fn document_symbol_items(
                     Some(format!("{}::{}", symbol.container, symbol.name))
                 };
                 let evidence = strop_picker::query::Evidence {
-                    path: path.strip_prefix(cwd).ok().and_then(|path| path.to_str()),
+                    path: path.strip_prefix(root).ok().and_then(|path| path.to_str()),
                     line: Some(line),
                     symbol: Some(strop_picker::query::SymbolEvidence {
                         kind: lsp_symbol_kind(&symbol.kind),
@@ -593,12 +632,16 @@ fn document_symbol_items(
                     line,
                     col,
                 },
-                // No container LSP is wired (DC1a); drop with a
-                // trace rather than aliasing a local path.
-                Filesystem::Container(_) => {
-                    trace::services::rejected("lsp", "container symbol dropped");
-                    return None;
-                }
+                Filesystem::Container(container) => Payload::Grep {
+                    location: ResourceLocation {
+                        filesystem: Filesystem::Container(container.clone()),
+                        path,
+                    },
+                    line,
+                    col,
+                    match_len: 1,
+                    line_text: "".into(),
+                },
             };
             // The kind moves into the chip; the row text is
             // name, container path, line.

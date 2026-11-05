@@ -417,62 +417,6 @@ fn readonly_transition_revokes_pending_indentation_without_moving_caret() {
 }
 
 #[test]
-fn collection_closer_resolves_opener_outside_excerpt_and_writes_back_once() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("source.rs");
-    let original = format!(
-        "fn f() {{\n{}            \n}}\n",
-        "    // padding\n".repeat(20)
-    );
-    std::fs::write(&path, &original).unwrap();
-    let mut editor = Editor::new_in(Buffer::from_text(""), directory.path().to_owned());
-    editor.open_fixture(&path).unwrap();
-    let source = editor.current();
-    let at = original.rfind("\n            \n").unwrap() + 13;
-    let line = editor.buf().line_of(at) + 1;
-    editor.open_picker(strop_picker::Kind::Search);
-    editor.picker_items_fixture(vec![strop_picker::Item {
-        badge: None,
-        text: "source.rs: whitespace".into(),
-        payload: strop_picker::Payload::Grep {
-            location: strop_workspace::ResourceLocation::local(path),
-            line,
-            col: 1,
-            match_len: 1,
-            line_text: "            ".into(),
-        },
-    }]);
-    editor.feed(strop_core::frontend_input::Key::CtrlO);
-    let collection = editor.current();
-    let excerpt = editor.collections[&collection]
-        .excerpts
-        .iter()
-        .find(|excerpt| excerpt.source == source && at >= excerpt.start && at <= excerpt.end)
-        .unwrap();
-    assert!(
-        excerpt.start > 0,
-        "the matching opener is deliberately outside the excerpt"
-    );
-    let view = excerpt.view_start + at - excerpt.start;
-    editor.set_head(view);
-    editor.feed_text("i}<esc>");
-    settle_indentation(&mut editor);
-    assert!(editor
-        .docs
-        .get(source)
-        .unwrap()
-        .buf
-        .text()
-        .to_string()
-        .ends_with("// padding\n}\n}\n"));
-    editor.feed_text("u");
-    assert_eq!(
-        editor.docs.get(source).unwrap().buf.text().to_string(),
-        original
-    );
-}
-
-#[test]
 fn changed_indent_settings_reject_a_pending_decision() {
     let text = format!("{}fn main() {{}}\n", "// padding\n".repeat(600));
     let mut editor = code_editor(&text, "large.rs");

@@ -25,6 +25,30 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         return;
     }
     let pending = editor.pending().text();
+    let substitution = if kind == ':' {
+        editor.substitute_preview()
+    } else {
+        None
+    };
+    let changed_row_count = match &substitution {
+        Some(crate::editor::SubstitutePreviewState::Ready(preview)) => preview
+            .diff_rows()
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row,
+                    crate::editor::ReviewRow::Removed | crate::editor::ReviewRow::Added
+                )
+            })
+            .count(),
+        _ => 0,
+    };
+    let changed_rows = if changed_row_count > 8 {
+        9 // first four, an elision, and the last four (offscreen included)
+    } else {
+        changed_row_count
+    };
+    let substitution_height = usize::from(substitution.is_some()) + changed_rows;
 
     let area = frame.area();
     // ex completion rides along: candidates under the input (0003 §1)
@@ -36,7 +60,8 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     let width = ((u32::from(area.width) * 50 / 100) as u16)
         .max(30)
         .min(area.width.saturating_sub(4));
-    let height = (3 + candidates.len().min(6) as u16).min(area.height.saturating_sub(1));
+    let height = (3 + candidates.len().min(6) as u16 + substitution_height as u16)
+        .min(area.height.saturating_sub(1));
     let card = Rect {
         x: (area.width.saturating_sub(width)) / 2,
         y: 1,
@@ -45,10 +70,21 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     };
     frame.render_widget(Clear, card);
     let title = match kind {
-        ':' => " command ",
-        '|' => " pipe ",
-        _ => " search ",
+        ':' => " command ".to_owned(),
+        '|' => " pipe ".to_owned(),
+        _ => " search ".to_owned(),
     };
+    let title = editor
+        .pending_field_state()
+        .filter(|state| {
+            state.mode == crate::editor::PendingFieldMode::Normal && state.outer_operator.is_some()
+        })
+        .map_or(title, |state| {
+            format!(
+                " {} · field NORMAL · Esc cancels ",
+                state.outer_operator.expect("filtered operator").key()
+            )
+        });
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -162,6 +198,89 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         );
     }
 
+    if let Some(state) = &substitution {
+        let y = text_area.y + 1 + shown.len() as u16;
+        if y < inner.y + inner.height {
+            let (label, color) = match state {
+                crate::editor::SubstitutePreviewState::Ready(preview) => {
+                    (preview.summary(), muted())
+                }
+                crate::editor::SubstitutePreviewState::Resolving => {
+                    ("resolving substitution…".into(), muted())
+                }
+                crate::editor::SubstitutePreviewState::NoTarget => {
+                    ("0 substitutions · pattern not found".into(), muted())
+                }
+                crate::editor::SubstitutePreviewState::Incomplete(error) => {
+                    (error.clone(), muted())
+                }
+                crate::editor::SubstitutePreviewState::Invalid(error) => {
+                    (format!("invalid · {error}"), super::diff::del_fg())
+                }
+                crate::editor::SubstitutePreviewState::Unavailable(error) => {
+                    (format!("unavailable · {error}"), super::diff::del_fg())
+                }
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(label, Style::default().fg(color)))),
+                Rect {
+                    y,
+                    height: 1,
+                    ..text_area
+                },
+            );
+        }
+        if let crate::editor::SubstitutePreviewState::Ready(preview) = state {
+            let changed = preview
+                .diff_text()
+                .lines()
+                .zip(preview.diff_rows())
+                .filter(|(_, row)| {
+                    matches!(
+                        row,
+                        crate::editor::ReviewRow::Removed | crate::editor::ReviewRow::Added
+                    )
+                })
+                .enumerate()
+                .filter(|(index, _)| {
+                    changed_row_count <= 8
+                        || *index < 4
+                        || index.saturating_add(4) >= changed_row_count
+                })
+                .take(8);
+            for (index, (_, (line, row))) in changed.enumerate() {
+                let elided = changed_row_count > 8 && index >= 4;
+                let y = y + 1 + index as u16 + u16::from(elided);
+                if changed_row_count > 8 && index == 4 && y - 1 < inner.y + inner.height {
+                    frame.render_widget(
+                        Paragraph::new(Line::from(Span::styled("…", Style::default().fg(muted())))),
+                        Rect {
+                            y: y - 1,
+                            height: 1,
+                            ..text_area
+                        },
+                    );
+                }
+                if y >= inner.y + inner.height {
+                    break;
+                }
+                let color = match row {
+                    crate::editor::ReviewRow::Removed => super::diff::del_fg(),
+                    crate::editor::ReviewRow::Added => super::diff::add_fg(),
+                    _ => unreachable!("filtered changed rows"),
+                };
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(line, Style::default().fg(color)))),
+                    Rect {
+                        y,
+                        height: 1,
+                        ..text_area
+                    },
+                );
+            }
+        }
+    }
+
     if let Some(column) = caret {
         if column < text_area.width && text_area.height != 0 {
             crate::render::frame_capture::place_cursor(frame, (text_area.x + column, text_area.y));
@@ -242,5 +361,71 @@ mod tests {
             assert_eq!(grid[(x, 2)].fg, text());
             assert!(!grid[(x, 2)].modifier.contains(Modifier::BOLD));
         }
+    }
+
+    fn draw_ex(editor: &Editor, rows: u16) -> ratatui::buffer::Buffer {
+        let backend = ratatui::backend::TestBackend::new(100, rows);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_cmd_card(editor, frame))
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn row_text(buffer: &ratatui::buffer::Buffer, row: u16) -> String {
+        (0..buffer.area.width)
+            .map(|x| buffer[(x, row)].symbol())
+            .collect()
+    }
+
+    #[test]
+    fn substitute_card_shows_real_before_after_cells_then_invalidates_them() {
+        let original = "alpha one\nalpha two alpha\n";
+        let mut editor = Editor::new(Buffer::from_text(original));
+        editor.feed_text(":%s/alpha/omega/g");
+        let grid = draw_ex(&editor, 14);
+        assert!(row_text(&grid, 3).contains("3 substitutions"));
+        assert!(row_text(&grid, 3).contains("2 changed lines"));
+        assert!(row_text(&grid, 4).contains("-alpha one"));
+        assert!(row_text(&grid, 5).contains("+omega one"));
+        assert!(row_text(&grid, 6).contains("-alpha two alpha"));
+        assert!(row_text(&grid, 7).contains("+omega two omega"));
+        assert_eq!(editor.buf().text().to_string(), original);
+
+        editor.feed_text("x");
+        let grid = draw_ex(&editor, 14);
+        assert!(row_text(&grid, 3).contains("invalid · unsupported substitute flags"));
+        assert!(!row_text(&grid, 4).contains("+omega"));
+        assert_eq!(editor.buf().text().to_string(), original);
+    }
+
+    #[test]
+    fn substitute_card_reports_offscreen_extent_and_outer_field_mode() {
+        let original = (0..30)
+            .map(|line| format!("alpha {line}\n"))
+            .collect::<String>();
+        let mut editor = Editor::new(Buffer::from_text(&original));
+        editor.feed_text(":%s/alpha/omega/g");
+        let grid = draw_ex(&editor, 14);
+        assert!(row_text(&grid, 3).contains("30 substitutions"));
+        assert!(row_text(&grid, 3).contains("6 offscreen"));
+        assert!(row_text(&grid, 8).contains('…'));
+        assert!(row_text(&grid, 12).contains("+omega 29"));
+
+        let mut editor = Editor::new(Buffer::from_text("alpha\n"));
+        editor.feed_text("d/alpha");
+        assert!(!editor.input_normal());
+        editor.feed(strop_core::frontend_input::Key::Esc);
+        assert_eq!(editor.pending_sigil(), Some('/'));
+        assert!(editor.pending().is_active());
+        assert!(!editor.picker_open());
+        let grid = draw_ex(&editor, 10);
+        let status = row_text(&grid, 1);
+        assert!(
+            status.contains("d · field NORMAL · Esc cancels"),
+            "{status}"
+        );
+        editor.feed(strop_core::frontend_input::Key::Esc);
+        assert_eq!(editor.buf().text().to_string(), "alpha\n");
     }
 }

@@ -153,9 +153,7 @@ impl Editor {
         }
         if self.terminals.live() {
             if !force {
-                self.message =
-                    "terminal sessions are running; stop them first, or :qa! to stop and quit"
-                        .into();
+                self.open_terminal_quit_review();
                 return;
             }
             self.stop_all_terminals();

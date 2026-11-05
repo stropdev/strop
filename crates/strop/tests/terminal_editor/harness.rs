@@ -282,6 +282,9 @@ impl Tui {
             if predicate(&screen) {
                 return screen;
             }
+            if let Some(status) = self.child.try_wait().unwrap() {
+                panic!("terminal editor exited early ({status}): {screen}");
+            }
             assert!(
                 Instant::now() < deadline,
                 "terminal condition timed out: {screen}"

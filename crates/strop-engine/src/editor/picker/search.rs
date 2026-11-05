@@ -84,10 +84,47 @@ impl Editor {
             .map(|context| &context.scope)
     }
 
+    fn captured_picker_root(&self) -> Option<&ResourceLocation> {
+        self.picker.as_ref().and_then(|glue| {
+            glue.search
+                .as_ref()
+                .map(|context| &context.scope.root)
+                .or(glue.file_root.as_ref())
+        })
+    }
+
     pub fn picker_path(&self, path: &std::path::Path) -> PathBuf {
-        self.search_scope()
-            .map_or(&self.cwd, |scope| &scope.root.path)
+        self.captured_picker_root()
+            .map_or(&self.cwd, |root| &root.path)
             .join(path)
+    }
+
+    pub(crate) fn picker_file_target(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<crate::files::FileTarget, String> {
+        let Some(root) = self.captured_picker_root() else {
+            return Err("Files has no captured workspace scope".into());
+        };
+        if path
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+        {
+            return Err("Files result escaped its captured namespace/root".into());
+        }
+        let path = if path.is_absolute() {
+            if !path.starts_with(&root.path) {
+                return Err("Files result escaped its captured namespace/root".into());
+            }
+            path.to_path_buf()
+        } else {
+            root.path.join(path)
+        };
+        crate::files::FileTarget::from_location(&ResourceLocation {
+            filesystem: root.filesystem.clone(),
+            path,
+        })
+        .map_err(|error| error.to_string())
     }
 
     pub(crate) fn search_stamp(&self, session: WorkerId) -> Option<SearchStamp> {
@@ -168,22 +205,29 @@ impl Editor {
             .chain(self.retained_search.iter())
             .find_map(|glue| glue.search.as_ref().map(|context| context.scope.clone()))
             .unwrap_or_else(|| SearchScope {
-                root: ResourceLocation::local(self.cwd.clone()),
+                root: self.current_workspace_root(),
             });
         self.open_search_in(scope, replacement);
     }
 
     pub fn open_search_in(&mut self, scope: SearchScope, replacement: bool) {
-        if matches!(scope.root.filesystem, Filesystem::Container(_))
-            || !scope.root.path.is_absolute()
+        if !scope.root.path.is_absolute() {
+            self.message = "Search requires an absolute workspace root".into();
+            return;
+        }
+        if let super::super::namespace::CapabilityDecision::Unavailable { reason, next_step } = self
+            .namespace_capability_for(
+                &scope.root,
+                super::super::namespace::WorkspaceCapability::Search,
+                None,
+            )
         {
-            self.message =
-                "Search requires an absolute local or capable SSH scope; no filesystem fallback"
-                    .into();
+            self.message = format!("{reason}; {next_step}");
             return;
         }
         if replacement && scope.root.filesystem != Filesystem::Local {
-            self.message = "SSH Search is read-only; With and Review are unavailable".into();
+            self.message =
+                "SSH/container Search is read-only; With and Review are unavailable".into();
             return;
         }
         self.cancel_open(CancelReason::Superseded);
@@ -336,7 +380,8 @@ impl Editor {
                 .as_ref()
                 .is_some_and(|context| context.scope.root.filesystem != Filesystem::Local)
             {
-                self.message = "SSH Search is read-only; With and Review are unavailable".into();
+                self.message =
+                    "SSH/container Search is read-only; With and Review are unavailable".into();
                 return;
             }
             glue.picker.toggle_replacement();

@@ -1,8 +1,12 @@
 # 0044 — Editable source collections
 
-Status: implemented in 0.20/0.21 and extended by 0051 for 0.29.0. The live
-journal-based protocol below supersedes the original commit-only/LCS design.
-A collection is a real buffer; its editable bodies refer to real source documents.
+Status: implemented in 0.20/0.21 and extended by 0051 for 0.29.0. **Amended by
+[0081](0081-product-coherence-and-workspace-experience-handoff.md): live
+write-through, collection-scoped undo and collection saves are retired.**
+Collections remain real read-only source-backed buffers for inspection,
+navigation, search and yank; free-form edits use the real source and deliberate
+multi-file edits use 0043 Review/Apply/Save. The journal protocol below is
+historical design evidence, not a hidden compatibility mode.
 
 ## 1. Source and view identity
 

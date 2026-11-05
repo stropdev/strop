@@ -244,7 +244,7 @@ impl Editor {
                 }
             }
         }
-        self.lsp_retire_remote_servers();
+        self.lsp_retire_workspace_servers();
         let documents: Vec<_> = affected.iter().map(|(document, _, _)| *document).collect();
         self.invalidate_filesystem_text_review(&documents);
         let collections: Vec<_> = self

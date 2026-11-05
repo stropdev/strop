@@ -1,6 +1,7 @@
 //! One CPU owner for expensive pure grammar resolution. No thread per key and
 //! no join on the editor thread; a frozen rope is the complete read input.
 use super::{Operation, ResolutionData, ResolutionEvent, ResolutionKey};
+use crate::editor::normal::substitute;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc,
@@ -40,6 +41,20 @@ impl ResolutionWorker {
                         Outcome::Cancelled(CancelReason::Superseded)
                     } else {
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            if let Operation::Substitute(mut spec) =
+                                work.ticket.key.operation.clone()
+                            {
+                                spec.query = spec.query.cancellable(work.cancel.clone());
+                                let buffer = strop_core::Buffer::from_snapshot(work.rope);
+                                let substitution = substitute::plan(&buffer, &spec)?;
+                                return Ok(ResolutionData {
+                                    resolved: Vec::new(),
+                                    plan: None,
+                                    layouts: Vec::new(),
+                                    indentation: None,
+                                    substitution: Some(substitution),
+                                });
+                            }
                             if let Operation::Indentation(request) = &work.ticket.key.operation {
                                 let edits =
                                     indentation.resolve(request, &work.source_ropes, || {
@@ -50,6 +65,7 @@ impl ResolutionWorker {
                                     plan: None,
                                     layouts: Vec::new(),
                                     indentation: Some(edits),
+                                    substitution: None,
                                 });
                             }
                             let buffer = strop_core::Buffer::from_snapshot(work.rope);
@@ -107,6 +123,7 @@ impl ResolutionWorker {
                                 plan,
                                 layouts,
                                 indentation: None,
+                                substitution: None,
                             })
                         }));
                         match result {

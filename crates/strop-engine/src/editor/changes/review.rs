@@ -18,7 +18,7 @@ use super::{ChangePlan, ChangeReceipt};
 use crate::editor::transact::ChangeSet;
 use crate::editor::Editor;
 pub(crate) mod prepare;
-mod render;
+pub(crate) mod render;
 mod save;
 use render::ReviewBuffer;
 
@@ -138,7 +138,6 @@ impl Editor {
             applied: Vec::new(),
             applied_positions: Vec::new(),
             refused: proposal.plan.refused.clone(),
-            redo_positions: None,
         };
         let mut lines: Vec<String> = proposal
             .plan

@@ -189,3 +189,47 @@ fn container_worker_requires_explicit_command_and_never_grants_file_writes() {
     assert!(provider.lstat(&layout.object(&old_sha)).unwrap().is_none());
     assert!(provider.lstat(&layout.receipt(&old_sha)).unwrap().is_none());
 }
+
+#[test]
+fn admitted_container_terminal_executes_in_its_namespace_and_retains_identity() {
+    if !required() {
+        eprintln!("skipping container terminal journey: STROP_CONTAINER_TESTS is not 1");
+        return;
+    }
+    let fixture = Fixture::new();
+    let steps = fixture.script(&format!(
+        "settle\nkeys :e container:{}/etc/hostname<cr>\nsettle\nkeys :container-worker<cr>\nsettle\nkeys :terminal /bin/sh<cr>\nsettle\nkeys echo CONTAINER_TERMINAL<cr>\nwait 1000\nsettle\nkeys <f2>\nstate\nframe\nkeys :qa!<cr>\nsettle\n",
+        fixture.id
+    ));
+    let output = Command::new(env!("CARGO_BIN_EXE_strop"))
+        .arg("--headless")
+        .arg(steps)
+        .arg(fixture.directory.path())
+        .env("STROP_WORKER_BINARY", &fixture.artifact)
+        .env("HOME", fixture.directory.path().join("home"))
+        .env("XDG_STATE_HOME", fixture.directory.path().join("state"))
+        .env("XDG_CONFIG_HOME", fixture.directory.path().join("config"))
+        .current_dir(fixture.directory.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "headless container terminal: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = String::from_utf8(output.stdout).unwrap();
+    let terminal = states(&output).last().unwrap()["terminal"].clone();
+    assert!(
+        terminal["namespace"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("container:"),
+        "{output}"
+    );
+    assert!(output.contains("CONTAINER_TERMINAL"), "{output}");
+    assert_eq!(
+        terminal["launch_directory"].as_str().unwrap_or_default(),
+        "/etc",
+        "{output}"
+    );
+}

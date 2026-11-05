@@ -6,6 +6,8 @@
 
 use std::fmt::Write;
 
+mod terminal;
+
 use super::lsp::attach::AttachDecision;
 use super::Editor;
 
@@ -18,17 +20,12 @@ impl Editor {
 
         text.push_str("\n[workspaces]\n");
         for (id, context) in self.workspaces.iter() {
-            let root = context
-                .root
-                .as_ref()
-                .map(|root| root.display().to_string())
-                .unwrap_or_else(|| "no project root".into());
             let _ = writeln!(
                 text,
                 "  {} #{}  {}  (incarnation {})",
                 context.filesystem.label(),
                 id.index(),
-                root,
+                context.root.display(),
                 context.incarnation
             );
         }
@@ -127,6 +124,7 @@ impl Editor {
         if self.buf().readonly {
             let _ = writeln!(text, "  readonly  yes — {}", self.readonly_explanation());
         }
+        self.explain_terminal(&mut text);
         match self.lsp_state.bindings.get(&self.current()) {
             Some(binding) => {
                 let _ = writeln!(
@@ -198,6 +196,44 @@ impl Editor {
                 failure.root.display(),
                 failure.target.label()
             );
+        }
+
+        text.push_str("\n[feedback]\n");
+        if self.feedback().is_empty() {
+            text.push_str("  no retained failures or decisions\n");
+        }
+        if self.feedback_saturated() {
+            text.push_str(
+                "  history saturated: all unresolved records retained; resolved history is bounded\n",
+            );
+        }
+        for record in self.feedback() {
+            let _ = writeln!(
+                text,
+                "  #{} {} {}  {}  owner {}",
+                record.id().get(),
+                record.severity().label(),
+                record.lifecycle().label(),
+                Self::feedback_kind_label(record.kind),
+                record.owner().label()
+            );
+            let _ = writeln!(
+                text,
+                "    summary: {} (occurrences {})",
+                record.summary(),
+                record.occurrences()
+            );
+            let _ = writeln!(text, "    detail: {}", record.detail());
+            if let Some(reference) = record.reference() {
+                let _ = writeln!(text, "    evidence: {}", reference.label());
+            }
+            for action in &record.actions {
+                let _ = writeln!(
+                    text,
+                    "    action: {}",
+                    self.explain_feedback_action(record, action)
+                );
+            }
         }
 
         text.push_str("\n[configuration]\n");
@@ -414,6 +450,9 @@ impl Editor {
             Some(strop_core::ReadonlyReason::DirectoryOperation) => {
                 "directory operation in flight — editing resumes when it lands"
             }
+            Some(strop_core::ReadonlyReason::Collection) => {
+                "source-backed collection — read-only inspection; edit the source buffer instead"
+            }
             Some(strop_core::ReadonlyReason::CollectionProjection) => {
                 "collection projection failed — this stale view refuses edits"
             }
@@ -517,6 +556,24 @@ mod tests {
         assert!(!text.contains(":remote edit grants"), "{text}");
     }
 
+    #[test]
+    fn explain_retains_remote_terminal_launch_identity() {
+        let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture.example").unwrap();
+        let launch = strop_workspace::ResourceLocation::remote(endpoint, "/srv/app".into());
+        let mut e = Editor::new(Buffer::from_text("origin\n"));
+        e.terminal_fixture_at(
+            launch,
+            &[("remote", strop_terminal::model::Style::default())],
+            strop_terminal::model::Phase::Running,
+        );
+        e.open_explain();
+        let text = e.buf().text().to_string();
+        assert!(text.contains("[terminal]"), "{text}");
+        assert!(text.contains("ssh://fixture.example/srv/app"), "{text}");
+        assert!(text.contains("shell cd/title cannot retarget"), "{text}");
+        assert!(text.contains("phase     running"), "{text}");
+    }
+
     /// 0056 AR14: a remote snapshot names its authority source; AR08:
     /// the effects section follows the document's ssh target.
     #[test]
@@ -544,7 +601,10 @@ mod tests {
             ))
             .unwrap();
         e.workspaces
-            .bind(strop_workspace::Filesystem::Remote(endpoint), None)
+            .select_root(strop_workspace::ResourceLocation::remote(
+                endpoint,
+                "/work".into(),
+            ))
             .unwrap();
         e.switch_to(document);
         e.open_explain();

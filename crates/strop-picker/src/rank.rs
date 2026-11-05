@@ -65,7 +65,7 @@ pub enum MatchMode {
 
 impl Default for MatchMode {
     fn default() -> Self {
-        Self::Fuzzy(crate::query::CaseMode::Smart)
+        Self::Fuzzy(crate::query::CaseMode::Ignore)
     }
 }
 
@@ -100,7 +100,8 @@ pub fn rank(
     let case = match request.mode {
         MatchMode::Fuzzy(crate::query::CaseMode::Sensitive) => CaseMatching::Respect,
         MatchMode::Fuzzy(crate::query::CaseMode::Ignore) => CaseMatching::Ignore,
-        _ => CaseMatching::Smart,
+        MatchMode::Fuzzy(crate::query::CaseMode::Smart) => CaseMatching::Smart,
+        MatchMode::Exact(_, _) => CaseMatching::Ignore,
     };
     let mut fuzzy = None;
     let mut unicode = Vec::new();

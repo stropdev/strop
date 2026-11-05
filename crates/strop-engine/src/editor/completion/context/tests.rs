@@ -102,43 +102,6 @@ fn prefix_capture_is_unicode_exact_and_refuses_oversized_tokens() {
 }
 
 #[test]
-fn collection_completion_uses_real_source_and_rejects_chrome() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("source.txt");
-    std::fs::write(&path, "alpha al\n").unwrap();
-    let mut editor = Editor::new_in(Buffer::from_text(""), directory.path().to_owned());
-    editor.open_fixture(&path).unwrap();
-    let source = editor.current();
-    editor.open_picker(strop_picker::Kind::Search);
-    editor.picker_items_fixture(vec![strop_picker::Item {
-        badge: None,
-        text: "source.txt:1: alpha al".into(),
-        payload: strop_picker::Payload::Grep {
-            location: strop_workspace::ResourceLocation::local(path),
-            line: 1,
-            col: 7,
-            match_len: 2,
-            line_text: "alpha al".into(),
-        },
-    }]);
-    editor.feed(strop_core::frontend_input::Key::CtrlO);
-    let view = editor.current();
-    let excerpt = editor.collections[&view].excerpts[0].clone();
-    editor.set_head(excerpt.view_start + 7);
-    editor.feed_text("a");
-    let context = capture(&editor, Invocation::ManualWords, 0, None).unwrap();
-    assert_eq!(context.primary().unwrap().source, source);
-    assert!(context.still_owns(&editor, 0));
-    editor.feed_text("p");
-    assert!(!context.still_owns(&editor, 0));
-    assert_eq!(editor.doc(source).buf.text().to_string(), "alpha alp\n");
-    editor.feed(strop_core::frontend_input::Key::Esc);
-    editor.set_head(editor.buf().line_start(excerpt.view_line));
-    editor.feed_text("i");
-    assert!(capture(&editor, Invocation::ManualWords, 0, None).is_err());
-}
-
-#[test]
 fn namespace_write_policy_and_full_windows_are_independent_of_the_readonly_flag() {
     use crate::editor::document::RemoteDocument;
     use strop_remote::{ReadLimit, ReadSelection, RemoteSize, RemoteWindow};

@@ -20,6 +20,7 @@ pub mod collections;
 pub mod completion;
 mod containers;
 mod cursor;
+mod devcontainers;
 mod diagnostics;
 mod directory;
 mod dispatch;
@@ -30,6 +31,7 @@ mod dive;
 mod document;
 pub mod events;
 mod explain;
+pub mod feedback;
 pub(crate) mod field;
 mod git;
 pub mod git_memory;
@@ -81,6 +83,7 @@ pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
+pub use namespace::{CapabilityDecision, NamespaceCapabilities, WorkspaceCapability};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{
     checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews,
@@ -92,6 +95,10 @@ pub use shell::{ShellIntent, ShellKey, ShellResult};
 pub use containers::{ContainerKey, ContainerResult};
 pub use lsp::attach::{AttachDecision, AttachRecord};
 pub use lsp::{LspPhase, LspServer, LspStatus};
+pub use normal::{
+    PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
+    SubstitutionPreview,
+};
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
 pub use remote::{RemoteEvent, RemoteView};
@@ -100,7 +107,7 @@ pub use resolution::{ResolutionEvent, ResolutionState};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-pub use workspaces::WorkspaceRegistry;
+pub use workspaces::{WorkspaceKey, WorkspaceRegistry, WorkspaceRootError};
 
 use strop_core::frontend_input::Key;
 use strop_core::{Buffer, Range};
@@ -206,6 +213,7 @@ pub struct Editor {
     /// jump detection across recorded actions.
     pub(crate) fade_track: Option<(usize, strop_core::id::DocumentId, usize)>,
     pub(crate) message: String,
+    pub(crate) feedback: feedback::FeedbackStore,
     pub(crate) should_quit: bool,
     /// Last visual range for `gv` (recorded per visual-mode key).
     pub(crate) last_visual: Option<(usize, usize)>,
@@ -239,17 +247,19 @@ pub struct Editor {
     pub(crate) terminals: terminal::State,
     pub(crate) resolution: resolution::ResolutionState,
     pub(crate) cwd: PathBuf,
-    /// Bound workspace contexts (0042 slice 2): one per filesystem in use.
+    /// Selected project contexts, keyed by exact filesystem namespace and root.
     pub(crate) workspaces: workspaces::WorkspaceRegistry,
     /// Applied change plans and their receipts (0043); grouped undo reads it.
     pub(crate) changes: changes::ChangeState,
     pub(crate) review: changes::review::ReviewState,
-    /// Open editable code collections by their buffer document (0044).
+    /// Open read-only source-backed collections by their buffer document (0044/0081).
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
     /// A build waiting on background source loads (0044 v2).
     pub(crate) collection_build: Option<collections::CollectionBuild>,
     /// Container attach/browse state (0037 DC1a).
     pub(crate) containers: containers::ContainerState,
+    /// Dev Container discovery, review and owned lifecycle work.
+    pub(crate) devcontainers: devcontainers::DevcontainerState,
     /// MRU document order (most recent first); drives `Space b`.
     pub(crate) mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
@@ -438,6 +448,7 @@ impl Editor {
             shell_requests: HashMap::new(),
             shell_focus: None,
             containers: containers::ContainerState::default(),
+            devcontainers: devcontainers::DevcontainerState::default(),
             mru: vec![current],
             changes: changes::ChangeState::default(),
             review: changes::review::ReviewState::default(),
@@ -456,6 +467,7 @@ impl Editor {
             cursor_fade: None,
             fade_track: None,
             message: String::new(),
+            feedback: feedback::FeedbackStore::default(),
             should_quit: false,
             last_visual: None,
             last_insert_pos: None,
@@ -482,7 +494,8 @@ impl Editor {
             picker_source: None,
             workspaces: {
                 let mut registry = workspaces::WorkspaceRegistry::default();
-                let Ok(_) = registry.bind(strop_workspace::Filesystem::Local, Some(cwd.clone()))
+                let Ok(_) =
+                    registry.select_root(strop_workspace::ResourceLocation::local(cwd.clone()))
                 else {
                     unreachable!("a fresh workspace registry cannot exhaust its identity space")
                 };

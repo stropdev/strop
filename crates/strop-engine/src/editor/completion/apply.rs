@@ -1,4 +1,4 @@
-use super::acceptance::{AcceptanceRefusal, AcceptanceTarget};
+use super::acceptance::AcceptanceTarget;
 use super::model::{CompletionDelivery, CompletionPayload, DeliveryScope};
 use super::session::{Acceptance, ActivePreview, Candidate, Selection};
 use super::worker::{Preparation, PreparationOperation, WorkRefusal};
@@ -311,32 +311,6 @@ impl Editor {
         if preview {
             return self.completion_apply_preview(plan, context);
         }
-        let collection = match plan.target {
-            AcceptanceTarget::Source { document, .. } if document != context.scope.view => {
-                let Some(collection) = self.collections.get(&context.scope.view) else {
-                    self.completion_close(CancelReason::Superseded);
-                    self.message = AcceptanceRefusal::MissingSource.to_string();
-                    return;
-                };
-                let mut excerpts = Vec::with_capacity(context.targets.len());
-                for target in &context.targets {
-                    let index = collection
-                        .excerpts
-                        .partition_point(|excerpt| excerpt.view_start <= target.selection.head)
-                        .checked_sub(1);
-                    let Some(index) =
-                        index.filter(|index| collection.excerpts[*index].source == target.source)
-                    else {
-                        self.completion_close(CancelReason::Superseded);
-                        self.message = AcceptanceRefusal::MissingSource.to_string();
-                        return;
-                    };
-                    excerpts.push(index);
-                }
-                Some(excerpts)
-            }
-            _ => None,
-        };
         let document = plan.target.document();
         let revision = plan.target.revision();
         let outcome = self.apply(
@@ -359,30 +333,10 @@ impl Editor {
             return;
         }
         let accepted_end = plan.caret_bytes.first().copied();
-        let mut carets = plan.caret_bytes;
-        if let Some(indices) = collection {
-            let Some(collection) = self.collections.get_mut(&context.scope.view) else {
-                unreachable!("source publication retains its owning collection");
-            };
-            if !collection
-                .pending_commit
-                .iter()
-                .any(|(source, _)| *source == document)
-            {
-                collection.pending_commit.push((document, revision));
-            }
-            for (caret, index) in carets.iter_mut().zip(indices) {
-                let excerpt = &collection.excerpts[index];
-                debug_assert!(
-                    excerpt.source == document && *caret >= excerpt.start && *caret <= excerpt.end,
-                    "accepted source carets remain in their remapped excerpts"
-                );
-                *caret = excerpt.view_start + (*caret - excerpt.start);
-            }
-        }
-        if let Some(primary) = carets.first().copied() {
+        if let Some(primary) = plan.caret_bytes.first().copied() {
             self.sels_mut().collapse_primary(primary);
-            self.sels_mut().set_extras(carets.into_iter().skip(1));
+            self.sels_mut()
+                .set_extras(plan.caret_bytes.into_iter().skip(1));
         }
         if let Some(recording) = &mut self.recording_insert {
             for _ in 0..plan.recording.remove_chars {
@@ -420,10 +374,9 @@ impl Editor {
 
     /// Tab live preview commit (0059 §6.1): apply the validated plan inside
     /// the current insert undo unit with no acceptance side effects — no
-    /// recording update, no pending_commit, no session close. The exact
-    /// inverse rides along so the revert replays inside the same unit.
-    /// Collection excerpt (source) targets stay acceptance-only; the
-    /// highlight remains.
+    /// recording update or session close. The exact inverse rides along so
+    /// the revert replays inside the same unit. Only direct view targets can
+    /// preview; source targets remain acceptance-only.
     fn completion_apply_preview(
         &mut self,
         plan: super::acceptance::CompletionAcceptancePlan,

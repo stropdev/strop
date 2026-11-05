@@ -10,7 +10,15 @@
 /// (0022 §2 — the bench: 49.6ms → 11.85ms on a 100k-item refilter,
 /// identical hit sets, match columns for the accent render).
 pub fn fuzzy_score(query: &str, text: &str) -> Option<(i32, Vec<u32>)> {
-    MATCHER.with(|m| fuzzy_with(&mut m.borrow_mut(), query, text))
+    fuzzy_score_with_case(query, text, crate::query::CaseMode::default())
+}
+
+pub(crate) fn fuzzy_score_with_case(
+    query: &str,
+    text: &str,
+    case: crate::query::CaseMode,
+) -> Option<(i32, Vec<u32>)> {
+    MATCHER.with(|m| fuzzy_with(&mut m.borrow_mut(), query, text, case))
 }
 
 thread_local! {
@@ -24,6 +32,7 @@ pub fn fuzzy_with(
     matcher: &mut nucleo_matcher::Matcher,
     query: &str,
     text: &str,
+    case: crate::query::CaseMode,
 ) -> Option<(i32, Vec<u32>)> {
     if query.is_empty() {
         return Some((0, vec![]));
@@ -35,9 +44,14 @@ pub fn fuzzy_with(
     } else {
         nucleo_matcher::Utf32Str::Unicode(&text.chars().collect::<Vec<_>>())
     };
+    let case = match case {
+        crate::query::CaseMode::Smart => nucleo_matcher::pattern::CaseMatching::Smart,
+        crate::query::CaseMode::Sensitive => nucleo_matcher::pattern::CaseMatching::Respect,
+        crate::query::CaseMode::Ignore => nucleo_matcher::pattern::CaseMatching::Ignore,
+    };
     let pat = nucleo_matcher::pattern::Pattern::parse(
         query,
-        nucleo_matcher::pattern::CaseMatching::Smart,
+        case,
         nucleo_matcher::pattern::Normalization::Smart,
     );
     let mut cols_u32: Vec<u32> = Vec::new();
@@ -56,6 +70,44 @@ mod tests {
     fn subsequence_required() {
         assert!(fuzzy_score("rd", "src/render.rs").is_some());
         assert!(fuzzy_score("xyz", "src/render.rs").is_none());
+    }
+
+    #[test]
+    fn case_is_insensitive_by_default_with_sensitive_and_smart_overrides() {
+        for needle in ["mixedcase", "MIXEDCASE", "MixedCase"] {
+            assert!(
+                fuzzy_score(needle, "src/MixedCase.rs").is_some(),
+                "{needle}"
+            );
+            assert!(
+                fuzzy_score(needle, "src/mixedcase.rs").is_some(),
+                "{needle}"
+            );
+        }
+        assert!(fuzzy_score_with_case(
+            "MIXEDCASE",
+            "src/mixedcase.rs",
+            crate::query::CaseMode::Sensitive
+        )
+        .is_none());
+        assert!(fuzzy_score_with_case(
+            "MIXEDCASE",
+            "src/MIXEDCASE.rs",
+            crate::query::CaseMode::Sensitive
+        )
+        .is_some());
+        assert!(fuzzy_score_with_case(
+            "MIXEDCASE",
+            "src/mixedcase.rs",
+            crate::query::CaseMode::Smart
+        )
+        .is_none());
+        assert!(fuzzy_score_with_case(
+            "mixedcase",
+            "src/MixedCase.rs",
+            crate::query::CaseMode::Smart
+        )
+        .is_some());
     }
 
     #[test]

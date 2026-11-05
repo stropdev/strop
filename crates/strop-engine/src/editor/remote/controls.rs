@@ -5,7 +5,7 @@ use crate::editor::io::IoEvent;
 use strop_core::worker::{self, FailureKind, Outcome};
 
 impl Editor {
-    pub(super) fn request_remote_control(&mut self, operation: RemoteControl) {
+    pub(crate) fn request_remote_control(&mut self, operation: RemoteControl) {
         if !self.remote.controls.is_empty() {
             self.message = "a remote connection command is still pending".into();
             return;
@@ -37,7 +37,8 @@ impl Editor {
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
-                self.message = error.message;
+                self.message = error.message.clone();
+                self.note_remote_failure(&operation, error.message);
                 return;
             }
         };
@@ -150,34 +151,32 @@ impl Editor {
             && !self.finishing;
         match completion.outcome {
             Outcome::Success(ControlResult::Connected { endpoint, lease }) => {
-                if self
-                    .workspaces
-                    .bind(strop_workspace::Filesystem::Remote(endpoint.clone()), None)
-                    .is_err()
-                {
-                    self.message = "workspace identity space exhausted".into();
-                    return;
-                }
                 if let Some(lease) = lease.filter(|_| !self.finishing) {
-                    self.remote.pins.insert(endpoint, lease);
+                    self.remote.pins.insert(endpoint.clone(), lease);
                 }
+                self.note_remote_recovered(&key.operation);
                 if focused {
                     self.message = "remote connection held".into();
                 }
             }
-            Outcome::Success(ControlResult::WorkerReady(endpoint)) if focused => {
-                self.message = match self.remote.workers.get_ready(&endpoint) {
-                    Some(ready) => format!(
-                        "verified remote worker {} ready for {} ({}) at {}",
-                        env!("CARGO_PKG_VERSION"),
-                        endpoint,
-                        ready.target,
-                        strop_core::layout::printable_text(&ready.artifact.path)
-                    ),
-                    None => format!("remote worker for {endpoint} retired before readiness"),
-                };
+            Outcome::Success(ControlResult::WorkerReady(endpoint)) => {
+                self.note_remote_recovered(&key.operation);
+                self.note_remote_worker_recovered(&endpoint);
+                if focused {
+                    self.message = match self.remote.workers.get_ready(&endpoint) {
+                        Some(ready) => format!(
+                            "verified remote worker {} ready for {} ({}) at {}",
+                            env!("CARGO_PKG_VERSION"),
+                            endpoint,
+                            ready.target,
+                            strop_core::layout::printable_text(&ready.artifact.path)
+                        ),
+                        None => format!("remote worker for {endpoint} retired before readiness"),
+                    };
+                }
             }
             Outcome::Success(ControlResult::Disconnected) => {
+                self.note_remote_recovered(&key.operation);
                 match &key.operation {
                     RemoteControl::Disconnect(endpoint) => self
                         .workspaces
@@ -215,7 +214,12 @@ impl Editor {
                 self.generation += 1;
                 self.message.clear();
             }
-            Outcome::Failed { failure, .. } if focused => self.message = failure.message,
+            Outcome::Failed { failure, .. } => {
+                self.note_remote_failure(&key.operation, failure.message.clone());
+                if focused {
+                    self.message = failure.message;
+                }
+            }
             _ => {}
         }
     }

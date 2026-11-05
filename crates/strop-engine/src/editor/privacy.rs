@@ -151,6 +151,11 @@ pub fn target_of(source: &DocumentSource) -> EffectTarget {
     match source {
         DocumentSource::Remote(_) => EffectTarget::Ssh,
         DocumentSource::Container { .. } => EffectTarget::Container,
+        DocumentSource::Terminal(terminal) => match &terminal.launch.filesystem {
+            strop_workspace::Filesystem::Local => EffectTarget::Local,
+            strop_workspace::Filesystem::Remote(_) => EffectTarget::Ssh,
+            strop_workspace::Filesystem::Container(_) => EffectTarget::Container,
+        },
         _ => EffectTarget::Local,
     }
 }
@@ -267,6 +272,20 @@ mod tests {
         assert!(persistence_admitted(&policy, EffectTarget::Local));
         assert!(!persistence_admitted(&policy, EffectTarget::Ssh));
         assert!(!persistence_admitted(&policy, EffectTarget::Container));
+    }
+
+    #[test]
+    fn terminal_target_comes_from_its_launch_namespace() {
+        let mut editor = Editor::new_in(strop_core::Buffer::from_text("origin"), "/host".into());
+        let document = editor.terminal_fixture_at(
+            strop_workspace::ResourceLocation::remote(
+                strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
+                "/srv".into(),
+            ),
+            &[("safe", strop_terminal::model::Style::default())],
+            strop_terminal::model::Phase::Running,
+        );
+        assert_eq!(target_of(&editor.doc(document).source), EffectTarget::Ssh);
     }
 
     /// 0057 VF15: the terminal capture opt-in is a SECOND grant — the

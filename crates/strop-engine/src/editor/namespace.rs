@@ -8,11 +8,10 @@
 //! machine's typed refusal, never an alternate write path. Browsing
 //! never deploys: read arms use only an already-admitted live lease,
 //! and [`RemoteWorkers::admit`] runs exclusively from mutation families.
-//! Containers stay read-only by policy. Document saves (`:w`) are the
-//! [`StoreDispatch`] path: the Store intent's protected save through the
-//! same kernel the worker serves. Transport selection lives here — never
-//! inside the kernel, which sees namespace identity and capabilities only
-//! as data.
+//! Containers stay read-only until an admitted incarnation worker and a
+//! separate per-document verified edit permit both exist. Their document
+//! saves use the same [`StoreDispatch`] protected Store protocol; Search and
+//! tools use only that admitted worker, never an analogous host path.
 //!
 //! The in-process strop-fs kernel remains directly usable by lower-level
 //! tests (strop-fs's own suite); engine tests cross the real codec
@@ -31,6 +30,67 @@ use strop_workspace::operation::{
 use strop_workspace::{EntryKind, Filesystem, ResourceLocation};
 
 use super::remote::workers::RemoteWorkers;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceCapability {
+    Read,
+    Tools,
+    Search,
+    Write,
+    Terminal,
+}
+
+/// The executable decision for one workspace action. Menus, explanations and
+/// launch paths consume this same admission/authority-derived value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapabilityDecision {
+    Available,
+    Unavailable { reason: String, next_step: String },
+}
+
+impl CapabilityDecision {
+    pub fn available(&self) -> bool {
+        matches!(self, Self::Available)
+    }
+
+    pub fn next_step(&self) -> Option<&str> {
+        match self {
+            Self::Available => None,
+            Self::Unavailable { next_step, .. } => Some(next_step),
+        }
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Available => None,
+            Self::Unavailable { reason, .. } => Some(reason),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamespaceCapabilities {
+    pub root: ResourceLocation,
+    pub read: CapabilityDecision,
+    pub tools: CapabilityDecision,
+    pub search: CapabilityDecision,
+    pub write: CapabilityDecision,
+    pub terminal: CapabilityDecision,
+}
+
+impl NamespaceCapabilities {
+    pub fn get(&self, capability: WorkspaceCapability) -> &CapabilityDecision {
+        match capability {
+            WorkspaceCapability::Read => &self.read,
+            WorkspaceCapability::Tools => &self.tools,
+            WorkspaceCapability::Search => &self.search,
+            WorkspaceCapability::Write => &self.write,
+            WorkspaceCapability::Terminal => &self.terminal,
+        }
+    }
+}
+
+mod capability;
 
 fn failure(kind: FsFailureKind, detail: impl Into<String>) -> FsFailure {
     FsFailure::new(kind, detail)
@@ -521,12 +581,14 @@ pub(crate) fn verify(
     }
 }
 
-/// One admitted Store dispatch target (0058 WK09): the local worker lease
-/// or the endpoint's deployed worker lease. Same protocol, same kernel —
-/// transport selection lives here, never in the kernel.
+/// One admitted Store dispatch target (0058 WK09): the local worker lease,
+/// the endpoint's deployed worker lease, or one incarnation-pinned container
+/// worker. Same protocol, same kernel — transport selection lives here,
+/// never in the kernel.
 pub(crate) enum StoreDispatch {
     Local(Worker),
     Remote(RemoteWorker),
+    Container(std::sync::Arc<BoundWorker>),
 }
 
 /// The exact worker session that observed one Store intent stays with
@@ -558,6 +620,22 @@ impl StoreDispatch {
             // not save policy, and a remote worker captures its own.
             Self::Local(worker) => worker.prepare(token, vec![intent], None),
             Self::Remote(worker) => worker.prepare(token, vec![intent]),
+            Self::Container(worker) => {
+                let mut native = intent;
+                native.source = native
+                    .source
+                    .as_ref()
+                    .map(|location| worker.location(location))
+                    .transpose()
+                    .map_err(map_client)?;
+                native.destination = native
+                    .destination
+                    .as_ref()
+                    .map(|location| worker.location(location))
+                    .transpose()
+                    .map_err(map_client)?;
+                worker.worker().prepare(token, vec![native], None)
+            }
         };
         let (mut steps, refused, session) = prepared.map_err(map_client)?;
         if let Some(refusal) = refused.into_iter().next() {
@@ -591,6 +669,11 @@ impl StoreDispatch {
             }
             Self::Remote(worker) => {
                 worker.apply(token, session, vec![operation.clone()], Some(content))
+            }
+            Self::Container(worker) => {
+                worker
+                    .worker()
+                    .apply(token, session, vec![operation.clone()], Some(content))
             }
         };
         match applied {
@@ -643,6 +726,9 @@ impl StoreDispatch {
             return match self {
                 Self::Local(worker) => worker.verify(token, receipt).map_err(map_client),
                 Self::Remote(worker) => worker.verify(token, receipt).map_err(map_client),
+                Self::Container(worker) => {
+                    worker.worker().verify(token, receipt).map_err(map_client)
+                }
             };
         }
         match self {
@@ -650,6 +736,10 @@ impl StoreDispatch {
                 .verify_recovered(token, receipt, namespace)
                 .map_err(map_client),
             Self::Remote(worker) => worker
+                .verify_recovered(token, receipt, namespace)
+                .map_err(map_client),
+            Self::Container(worker) => worker
+                .worker()
                 .verify_recovered(token, receipt, namespace)
                 .map_err(map_client),
         }

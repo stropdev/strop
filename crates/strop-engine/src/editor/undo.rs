@@ -124,15 +124,9 @@ impl Editor {
 }
 
 impl Editor {
-    /// `u`: undo one revision. Readonly buffers never record. In a
-    /// collection, `u` undoes the collection's own edit group across
-    /// its sources (0049 §5) — the view's presentation history is not
-    /// user history.
+    /// `u`: undo one revision. Readonly buffers never record and refuse
+    /// through the normal mutation boundary.
     pub(crate) fn undo(&mut self) {
-        if self.collections.contains_key(&self.current()) {
-            self.collection_undo();
-            return;
-        }
         let result = self.buf_mut().undo();
         match result {
             Ok(Some(moved)) => {
@@ -162,13 +156,9 @@ impl Editor {
         self.sels_mut().set_extra_selections(extras);
     }
 
-    /// `ctrl-r`: redo along the last-visited branch (the collection's
-    /// group redo in a collection, 0049 §5).
+    /// `ctrl-r`: redo along the last-visited branch. Readonly buffers
+    /// refuse through the normal mutation boundary.
     pub(crate) fn redo(&mut self) {
-        if self.collections.contains_key(&self.current()) {
-            self.collection_redo();
-            return;
-        }
         let result = self.buf_mut().redo();
         match result {
             Ok(Some(moved)) => {

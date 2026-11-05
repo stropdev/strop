@@ -53,7 +53,8 @@ impl Editor {
                 }
                 let Some(server) = server else { return };
                 self.lsp_state.attach.refused.remove(&key);
-                self.clear_lsp_failure_scope(&language, &root, &target);
+                // Discovery only spawned a replacement. Keep the old
+                // failure visible and explainable until this server Ready.
                 if self.lsp_state.attach.attached.iter().any(|attachment| {
                     attachment.language == language
                         && attachment.root == root

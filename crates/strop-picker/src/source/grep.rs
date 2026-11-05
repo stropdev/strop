@@ -164,8 +164,8 @@ pub(super) fn run(
     let symbols = symbols.map(std::sync::Arc::new);
     let mut matcher = RegexMatcherBuilder::new();
     matcher
-        .case_smart(content.case == crate::query::CaseMode::Smart)
-        .case_insensitive(content.case == crate::query::CaseMode::Ignore)
+        .case_smart(content.provider_case() == crate::query::CaseMode::Smart)
+        .case_insensitive(content.provider_case() == crate::query::CaseMode::Ignore)
         .fixed_strings(content.is_literal());
     let matcher = match matcher.build(&pattern) {
         Ok(matcher) => matcher,
@@ -331,6 +331,57 @@ mod tests {
                 event => panic!("expected rows, a warning, then success: {event:?}"),
             }
         }
+    }
+
+    #[test]
+    fn content_search_defaults_to_insensitive_and_sensitive_is_exact() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("MixedCase.txt"), "needle\nNEEDLE\n").unwrap();
+        let run = |query: &str| {
+            let (tx, rx) = channel();
+            let (_worker, _request) = spawn_query(query, directory.path(), tx);
+            let mut hits = 0;
+            loop {
+                match rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap() {
+                    PickerMsg::Items(batch) => hits += batch.len(),
+                    PickerMsg::Warning(_) | PickerMsg::ScopeProjects(_) => {}
+                    PickerMsg::Finished(Outcome::Success(())) => break hits,
+                    other => panic!("unexpected search event {other:?}"),
+                }
+            }
+        };
+        assert_eq!(run("needle"), 2);
+        assert_eq!(run("NEEDLE"), 2);
+        assert_eq!(run("case:insensitive NEEDLE"), 2);
+        assert_eq!(run("case:sensitive NEEDLE"), 1);
+        assert_eq!(run("case:sensitive path:MIXEDCASE.TXT NEEDLE"), 0);
+        assert_eq!(run("case:sensitive path:MixedCase.txt NEEDLE"), 1);
+        assert_eq!(run("path:MIXEDCASE.TXT needle"), 2);
+    }
+
+    #[test]
+    fn smart_case_boolean_prefilter_preserves_each_atoms_admission() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("cases.txt"), "foo\nFOO\nBar\nBAR\n").unwrap();
+        let (tx, rx) = channel();
+        let (_worker, _request) =
+            spawn_query("case:smart text:foo OR text:Bar", directory.path(), tx);
+        let mut lines = Vec::new();
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap() {
+                PickerMsg::Items(batch) => {
+                    lines.extend(batch.iter().map(|item| item.text.clone()));
+                }
+                PickerMsg::Warning(_) | PickerMsg::ScopeProjects(_) => {}
+                PickerMsg::Finished(Outcome::Success(())) => break,
+                other => panic!("unexpected search event {other:?}"),
+            }
+        }
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(lines.iter().any(|line| line.contains("foo")));
+        assert!(lines.iter().any(|line| line.contains("FOO")));
+        assert!(lines.iter().any(|line| line.contains("Bar")));
+        assert!(!lines.iter().any(|line| line.contains("BAR")));
     }
 
     #[test]

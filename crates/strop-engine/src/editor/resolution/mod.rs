@@ -3,6 +3,7 @@
 //! the same revision/cursor/command-stamped pure resolver result.
 mod indentation;
 mod worker;
+use super::normal::substitute::{self, SubstituteSpec, SubstitutionPlan};
 use super::structural_indent::{self, Batch as IndentRequest, Edit as IndentEdit, Trigger};
 use super::Editor;
 use std::collections::VecDeque;
@@ -20,6 +21,7 @@ use strop_grammar::{ActionPlan, Command, Resolved};
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum Operation {
     Grammar(Command),
+    Substitute(SubstituteSpec),
     Indentation(IndentRequest),
 }
 
@@ -38,6 +40,8 @@ pub struct ResolutionData {
     plan: Option<ActionPlan>,
     layouts: Vec<strop_core::layout::PreparedLineLayout>,
     indentation: Option<Vec<IndentEdit>>,
+    #[serde(default)]
+    substitution: Option<SubstitutionPlan>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum ResolutionEvent {
@@ -287,6 +291,106 @@ impl Editor {
         self.prepared_resolution(command, cursors).is_some()
     }
 
+    pub(crate) fn substitution_is_large(&self) -> bool {
+        const INLINE_BYTES: usize = 4096;
+        self.buf().len_bytes() > INLINE_BYTES
+    }
+
+    fn substitution_key(&self, spec: &SubstituteSpec, cursors: &[usize]) -> ResolutionKey {
+        ResolutionKey {
+            document: self.current(),
+            revision: self.buf().revision(),
+            pane: self.active_pane,
+            operation: Operation::Substitute(spec.clone()),
+            cursors: cursors.to_vec(),
+            tab: self.cur_indent().width.max(1),
+        }
+    }
+
+    pub(crate) fn prepared_substitution(
+        &self,
+        spec: &SubstituteSpec,
+        cursors: &[usize],
+    ) -> Option<Result<&SubstitutionPlan, &str>> {
+        let (key, ready) = self.resolution.ready.as_ref()?;
+        if !self.resolution_matches(key, &Operation::Substitute(spec.clone()), cursors) {
+            return None;
+        }
+        Some(ready.as_ref().map_err(String::as_str).and_then(|data| {
+            data.substitution
+                .as_ref()
+                .ok_or("substitution resolution returned no plan")
+        }))
+    }
+
+    pub(crate) fn substitution_ready(&self, spec: &SubstituteSpec, cursors: &[usize]) -> bool {
+        self.prepared_substitution(spec, cursors).is_some()
+    }
+
+    pub(crate) fn substitution_resolving(&self, spec: &SubstituteSpec, cursors: &[usize]) -> bool {
+        self.resolution.pending.as_ref().is_some_and(|pending| {
+            self.resolution_matches(
+                &pending.ticket.key,
+                &Operation::Substitute(spec.clone()),
+                cursors,
+            )
+        })
+    }
+
+    pub(crate) fn prepare_substitute_resolution(
+        &mut self,
+        spec: SubstituteSpec,
+        cursors: Vec<usize>,
+    ) {
+        if self.substitution_ready(&spec, &cursors) {
+            return;
+        }
+        if self.substitution_is_large() {
+            self.defer_substitute(spec, cursors, ResolutionPurpose::Preview);
+            return;
+        }
+        self.resolution.cancel_preview();
+        let key = self.substitution_key(&spec, &cursors);
+        let ready = substitute::plan(self.buf(), &spec).map(|substitution| ResolutionData {
+            resolved: Vec::new(),
+            plan: None,
+            layouts: Vec::new(),
+            indentation: None,
+            substitution: Some(substitution),
+        });
+        self.resolution.ready = Some((key, ready));
+    }
+
+    pub(crate) fn defer_substitute(
+        &mut self,
+        spec: SubstituteSpec,
+        cursors: Vec<usize>,
+        purpose: ResolutionPurpose,
+    ) -> bool {
+        if !self.substitution_is_large() || self.substitution_ready(&spec, &cursors) {
+            return false;
+        }
+        self.defer_operation(Operation::Substitute(spec), cursors, purpose)
+    }
+
+    pub(crate) fn take_substitution(
+        &mut self,
+        spec: &SubstituteSpec,
+        cursors: &[usize],
+    ) -> Option<Result<SubstitutionPlan, String>> {
+        let matches = self.resolution.ready.as_ref().is_some_and(|(key, _)| {
+            self.resolution_matches(key, &Operation::Substitute(spec.clone()), cursors)
+        });
+        if !matches {
+            return None;
+        }
+        let (_, ready) = self.resolution.ready.take().expect("matching ready plan");
+        Some(ready.and_then(|data| {
+            data.substitution
+                .ok_or_else(|| "substitution resolution returned no plan".into())
+        }))
+    }
+
     pub(crate) fn defer_resolution(
         &mut self,
         command: &Command,
@@ -371,7 +475,7 @@ impl Editor {
                 .iter()
                 .filter_map(|source| self.docs.get(source.document).map(|doc| doc.buf.snapshot()))
                 .collect(),
-            Operation::Grammar(_) => Vec::new(),
+            Operation::Grammar(_) | Operation::Substitute(_) => Vec::new(),
         };
         let work = worker::Work {
             ticket,
@@ -417,7 +521,7 @@ impl Editor {
             && self.buf().revision() == key.revision
             && (!pending.purpose.blocks_input() || self.all_cursors() == key.cursors)
             && match &key.operation {
-                Operation::Grammar(_) => true,
+                Operation::Grammar(_) | Operation::Substitute(_) => true,
                 Operation::Indentation(request) => {
                     self.indentation_request(request.trigger).as_ref() == Some(request)
                         && matches!(
@@ -472,6 +576,12 @@ impl Editor {
                         )
                     {
                         editor.finish_indentation(request.trigger);
+                    }
+                    return;
+                }
+                if let Operation::Substitute(spec) = &key.operation {
+                    if pending.purpose == ResolutionPurpose::Execute {
+                        editor.execute_prepared_substitution(spec.clone());
                     }
                     return;
                 }
@@ -559,11 +669,6 @@ impl Editor {
             }
             self.completion_after_action();
             self.schedule_deferred_input();
-            // Collections write back at normal-mode action boundaries
-            // (0044); the revision gate keeps this free for motions.
-            if self.mode == super::Mode::Normal {
-                self.commit_collection_sources();
-            }
         }
     }
     pub(crate) fn run_counted_leaf(

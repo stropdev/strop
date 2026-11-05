@@ -19,8 +19,10 @@ family's interaction and presentation, not those guarantees. It does not delay
 
 [0054](0054-unified-filesystem-workspace.md) supplies directory browsing and file
 operations. Files remains a quick recursive finder; Search remains a content
-workspace; a collection remains the durable, editable source-backed working set.
-Unifying search does not mean turning all three into one overloaded popup.
+workspace. **Under 0081, a collection is a durable read-only source-backed
+inspection workset, not an editable mutation route.** Bulk changes use S06's
+Review/Apply/Save path. Unifying search does not turn all three into one
+overloaded popup.
 
 ### Required delivery ledger
 

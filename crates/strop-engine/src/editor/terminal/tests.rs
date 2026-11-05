@@ -6,6 +6,9 @@ use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 use strop_terminal::model::{Color, Style, Update};
 
+mod context_controls;
+mod launch_identity;
+
 fn retained_terminal(editor: &mut Editor) -> DocumentId {
     editor.terminal_fixture(
         &[("safe", Style::default())],
@@ -385,11 +388,29 @@ fn modal_terminal_baseline_journey() {
     });
     assert!(editor.terminal_has_new_output(id));
     assert!(!editor.buf().text().to_string().contains("THIRD!"));
+    assert!(editor
+        .feedback()
+        .iter()
+        .any(|record| { record.summary().contains("new output") && record.unresolved() }));
+    editor.open_picker(strop_picker::Kind::Buffers);
+    assert!(editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .picker
+        .items
+        .iter()
+        .any(|item| item.text.contains("new output")));
+    editor.close_picker();
     // The explicit refresh reinstalls the latest frame; positions map by
     // stream byte, so the same-width revision keeps the line-1 cursor.
     editor.feed_text(":terminal-refresh\r");
     assert!(editor.buf().text().to_string().contains("THIRD!"));
     assert!(!editor.terminal_has_new_output(id));
+    assert!(editor.feedback().iter().any(|record| {
+        record.summary().contains("new output")
+            && record.lifecycle() == crate::editor::feedback::FeedbackLifecycle::Resolved
+    }));
     assert!(editor.message.contains("refreshed"), "{}", editor.message);
     assert_eq!(editor.buf().line_of(editor.head()), 1);
     // i returns to live input, following the child's cursor.

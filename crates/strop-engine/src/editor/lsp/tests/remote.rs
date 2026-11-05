@@ -210,7 +210,7 @@ fn closing_the_last_remote_document_retires_its_server() {
     // Another remote project on the same endpoint must not retain this server.
     e.lsp_close_document(remote);
     e.docs.remove(remote);
-    e.lsp_retire_remote_servers();
+    e.lsp_retire_workspace_servers();
     assert!(
         e.lsp_servers.is_empty(),
         "the last owning remote workspace retires its server"

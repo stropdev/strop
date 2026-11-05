@@ -2,6 +2,7 @@
 use super::*;
 use std::sync::Arc;
 use strop_picker::query::SearchQuery;
+use strop_workspace::ResourceLocation;
 
 impl Editor {
     fn source_worker(
@@ -46,10 +47,12 @@ impl Editor {
         } else {
             "literal"
         };
-        let namespace = glue.search.as_ref().map_or_else(
-            || "local".into(),
-            |context| context.scope.root.filesystem.label(),
-        );
+        let namespace = glue
+            .search
+            .as_ref()
+            .map(|context| &context.scope.root)
+            .or(glue.file_root.as_ref())
+            .map_or_else(|| "local".into(), ResourceLocation::label);
         glue.query_summary = format!(
             "{namespace} · {expression_mode} · hidden {} ({}) · ignored {} ({})",
             if hidden { "on" } else { "off" },
@@ -92,7 +95,7 @@ impl Editor {
             None => String::new(),
         };
         glue.picker.rank_query = Some(needle);
-        let case = query.case.unwrap_or(strop_picker::query::CaseMode::Smart);
+        let case = query.case_mode();
         glue.picker.rank_mode = match (
             &query.content,
             kind == Kind::Files && query.exact_file_expression,
@@ -110,9 +113,23 @@ impl Editor {
     /// reaches the model until the ticket is the active owner. Replay
     /// mode stops after registration (Main's service seam).
     fn launch_files_request(&mut self, parsed: Arc<SearchQuery>) {
-        let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
+        let Some((picker, root)) = self
+            .picker
+            .as_ref()
+            .and_then(|glue| Some((glue.id, glue.file_root.clone()?)))
+        else {
             return;
         };
+        if root.filesystem != strop_workspace::Filesystem::Local || !root.path.is_absolute() {
+            if let Some(glue) = self.picker.as_mut() {
+                glue.picker.error = Some(
+                    "Files requires an absolute local selected root; no filesystem fallback".into(),
+                );
+                glue.picker.streaming = false;
+                glue.file_scope = None;
+            }
+            return;
+        }
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
@@ -124,7 +141,7 @@ impl Editor {
             request,
             key: PickerKey {
                 picker,
-                cwd: self.cwd.clone(),
+                cwd: root.path.clone(),
             },
         };
         if let Some(glue) = self.picker.as_mut() {
@@ -134,13 +151,14 @@ impl Editor {
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"picker","source":"files","id":picker.0.get(),
-                "request":request.get(),"cwd":self.cwd.to_string_lossy(),
+                "request":request.get(),"cwd":root.path.to_string_lossy(),
+                "scope":root.label(),
             })
         });
-        match self
-            .tape
-            .request("picker-files", &serde_json::json!({"ticket":ticket}))
-        {
+        match self.tape.request(
+            "picker-files",
+            &serde_json::json!({"ticket":ticket,"scope":root}),
+        ) {
             Ok(false) => return,
             Ok(true) => {}
             Err(error) => {
@@ -156,9 +174,8 @@ impl Editor {
         }
         let policy = self.query_policy();
         let tx = self.picker_source_sink(ticket.clone());
-        let root = self.cwd.clone();
         let worker = match self.source_worker() {
-            Ok(source) => source.files(root, parsed, policy, tx),
+            Ok(source) => source.files(root.path, parsed, policy, tx),
             Err(failure) => {
                 let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
                     failure,
@@ -544,6 +561,12 @@ impl Editor {
                     }
                 })
             }
+            strop_workspace::Filesystem::Container(id) => self
+                .containers
+                .attached
+                .get(id.as_str())
+                .and_then(|identity| self.containers.workers.get(identity))
+                .map(|worker| strop_picker::SearchWorker::Container(worker.worker().clone())),
             _ => None,
         };
         let worker = match self.source_worker() {

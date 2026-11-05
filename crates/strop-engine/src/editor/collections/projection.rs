@@ -1,14 +1,13 @@
 //! Source-to-view rendering and incremental projection updates.
 use super::{Collection, CollectionRow, CollectionRowInfo, Document, Editor};
 use strop_core::id::{Arena, DocumentId, DocumentKind};
-use strop_core::Range;
 
 /// The canonical rendering (0049 §6): a title row with counts, then ONE
 /// CARD PER FILE — top border with path and badges, excerpt bodies with
 /// a "⋮ N source lines omitted" gap between disjoint spans, and a bottom
-/// border. Row roles are recorded in `collection.rows` for the renderer;
-/// chrome rows are protected (write-back refuses them) and keep the
-/// excerpt's `view_line` invariant: the row before the body.
+/// border. Row roles are recorded in `collection.rows` for the renderer.
+/// The read-only view keeps each excerpt's `view_line` invariant: the row
+/// before the body is its header.
 pub(super) fn render(
     docs: &Arena<DocumentKind, Document>,
     cwd: &std::path::Path,
@@ -138,88 +137,6 @@ impl Editor {
         // The view is a presentation: its dirty bit is never the story
         // (0049 §5 — the sources own unsaved state).
         self.docs.get_mut(id).unwrap().buf.dirty = false;
-    }
-
-    /// A source change strictly inside one excerpt (0049 §5): splice the
-    /// excerpt's view span with the new source body instead of
-    /// re-rendering the whole view. The caller gates on a clean view
-    /// (no unsynced user edit) — the spans assume shadow == view.
-    pub(crate) fn collection_splice_excerpt(&mut self, id: DocumentId, index: usize) {
-        let (source, view_start, view_end, view_lines) = {
-            let entry = &self.collections[&id];
-            let excerpt = &entry.excerpts[index];
-            (
-                excerpt.source,
-                excerpt.view_start,
-                excerpt.view_end,
-                excerpt.view_lines,
-            )
-        };
-        let Some(source_doc) = self.docs.get(source) else {
-            return;
-        };
-        let excerpt_span = {
-            let entry = &self.collections[&id];
-            let excerpt = &entry.excerpts[index];
-            (excerpt.start, excerpt.end)
-        };
-        let mut body = source_doc
-            .buf
-            .text()
-            .byte_slice(excerpt_span.0..excerpt_span.1)
-            .to_string();
-        if !body.ends_with('\n') {
-            body.push('\n');
-        }
-        let new_lines = body.lines().count().max(1);
-        // Splice the collection buffer at the excerpt's view span; the
-        // view is clean, so the spans index it directly.
-        {
-            let doc = self.docs.get_mut(id).unwrap();
-            let _ = doc
-                .buf
-                .system_edit()
-                .replace(Range::charwise(view_start, view_end), &body);
-        }
-        // The splice's own journal entry feeds the view analysis and is
-        // then consumed: the write-back diff must never see it.
-        {
-            let doc = self.docs.get_mut(id).unwrap();
-            self.analysis.edits(id, doc.buf.changes());
-            self.resolution.edits(id, doc.buf.changes());
-            if let Err(error) = self.completion.edits(
-                &self.tape,
-                id,
-                doc.buf.revision(),
-                doc.buf.text(),
-                doc.buf.changes(),
-            ) {
-                self.message = error;
-            }
-            doc.buf.clear_changes();
-        }
-        let byte_delta = body.len() as isize - (view_end - view_start) as isize;
-        let line_delta = new_lines as isize - view_lines as isize;
-        let entry = self.collections.get_mut(&id).unwrap();
-        let first_row = entry.excerpts[index].view_line + 1;
-        entry.rows.splice(
-            first_row..first_row + view_lines,
-            std::iter::repeat_n(CollectionRow::Body, new_lines),
-        );
-        let mut seen = false;
-        for excerpt in &mut entry.excerpts {
-            if seen {
-                excerpt.view_start = (excerpt.view_start as isize + byte_delta) as usize;
-                excerpt.view_end = (excerpt.view_end as isize + byte_delta) as usize;
-                excerpt.view_line = (excerpt.view_line as isize + line_delta) as usize;
-            } else if excerpt.view_start == view_start {
-                seen = true;
-                excerpt.view_lines = new_lines;
-                excerpt.view_end = view_start + body.len();
-            }
-        }
-        let revision = self.docs.get(id).unwrap().buf.revision();
-        self.collections.get_mut(&id).unwrap().revision = revision;
     }
 }
 
@@ -374,44 +291,5 @@ impl Editor {
                 .buf
                 .clamp_boundary(offset.min(source.buf.len_bytes())),
         ))
-    }
-
-    /// Strict insertion coordinates for source edits. Unlike navigation this
-    /// never clamps an invalid byte, and admits an excerpt's source EOF only
-    /// when the same verified write-back predicate owns that insertion.
-    pub(crate) fn source_edit_position(
-        &self,
-        document: DocumentId,
-        byte: usize,
-    ) -> Option<(DocumentId, usize)> {
-        let view = self.docs.get(document)?;
-        let character = view.buf.text().try_byte_to_char(byte).ok()?;
-        if view.buf.text().char_to_byte(character) != byte {
-            return None;
-        }
-        let Some(collection) = self.collections.get(&document) else {
-            return Some((document, byte));
-        };
-        if collection.revision != view.buf.revision() {
-            return None;
-        }
-        let after = collection
-            .excerpts
-            .partition_point(|excerpt| excerpt.view_start <= byte);
-        let excerpt = collection.excerpts.get(after.checked_sub(1)?)?;
-        let body_end = excerpt.view_start + excerpt.end - excerpt.start;
-        if !strop_core::projectguard::span_owns_edit(
-            byte,
-            byte,
-            excerpt.view_start,
-            body_end,
-            excerpt.view_end,
-        ) {
-            return None;
-        }
-        let source = self.docs.get(excerpt.source)?;
-        let offset = excerpt.start + byte - excerpt.view_start;
-        let character = source.buf.text().try_byte_to_char(offset).ok()?;
-        (source.buf.text().char_to_byte(character) == offset).then_some((excerpt.source, offset))
     }
 }

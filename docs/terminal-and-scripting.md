@@ -1,12 +1,17 @@
 # Local terminals
 
 `:terminal` opens the shell selected by `SHELL` (or `/bin/sh`) in a real
-local PTY. `:terminal COMMAND` runs an explicit command. Directory
-**Terminal here** (`Space a` / `:fs terminal`) uses the selected local
-directory without changing the editor's cwd. SSH/container contexts refuse
-interactive execution; the separately labelled **Open local terminal** /
-`:terminal-local` is a deliberate local choice, never a fallback against a
-remote-looking path.
+PTY. `:terminal COMMAND` runs an explicit command. In a local directory it
+uses the host; in an SSH directory with an admitted worker it runs on that
+remote host and retains the endpoint in the modeline, pane title and buffer
+list. Directory **Terminal here** (`Space a` / `:fs terminal`) uses the same
+admission decision without changing the editor's cwd. SSH without an admitted
+worker refuses. An attached container runs through its incarnation-pinned
+admitted worker; **`:container-worker`** enables tools/Search/terminal and the
+separate **`:container-edit`** verifies file authority. The separately labelled
+**Open local terminal** / `:terminal-local` is a deliberate local choice, never
+a fallback against a remote-looking path. The displayed launch directory is
+not an unverified live shell cwd and does not follow `cd`.
 
 - **Terminal input:** Esc, Ctrl-C, Ctrl-R, Ctrl-W, Alt and function keys go
   to the child. **F2** enters editor Normal mode directly, without an
@@ -17,19 +22,22 @@ remote-looking path.
   commands.
 - **Normal inspection:** ordinary motions, search, selection and yank use a
   pinned, read-only logical text snapshot. Output continues without moving
-  that snapshot; **i**, **I**, **a** or **A** follows live input again.
-  Other inspecting panes keep their snapshot. An exited session stays
-  readable and never restarts implicitly.
+  that snapshot and leaves a durable attention cue; **Space a → Refresh**
+  admits the new snapshot explicitly. **i**, **I**, **a** or **A** follows live
+  input again. Other inspecting panes keep their snapshot. An exited session
+  stays readable and never restarts implicitly; **Space a → New terminal** is
+  the explicit next session.
 - **Paste:** bracketed paste follows the child's negotiated mode.
   Otherwise, multiline/control input is held for explicit consent: enter
-  Normal mode, then `:terminal-paste` to confirm or
-  `:terminal-paste-cancel` to discard. Native paste encoding normalizes
-  terminal control bytes; no extra Enter is appended.
-- **Lifetime:** `:terminal-stop` stops the owned session and retains
+  Normal mode, then **Space a → Review held paste / Send / Discard**. The
+  decision is bound to the live session and ticket, shows only a bounded safe
+  representation and appends no extra Enter. `:terminal-paste` and
+  `:terminal-paste-cancel` remain Ex shortcuts.
+- **Lifetime:** **Space a → Stop** stops the owned session and retains
   output. Closing a split does not kill its process; hidden sessions remain
-  in `Space b`. `:qa` refuses live sessions; `:qa!` stops and drains them.
-  Deliberately detached processes outside the owned terminal session can
-  outlive it.
+  in `Space b`. `:qa` opens a Focus/Stop/Return review for live sessions;
+  `:qa!` stops and drains them. Deliberately detached processes outside the
+  owned terminal session can outlive it.
 - **Isolation:** child screen/clipboard/window commands cannot control the
   outer terminal. Clipboard reads/writes are denied; explicit user
   selection/yank is separate authority. `:w!` and `:set noro` cannot turn a

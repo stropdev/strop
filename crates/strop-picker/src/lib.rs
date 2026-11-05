@@ -47,6 +47,8 @@ pub enum Payload {
         line: usize,
         col: usize,
     },
+    /// Select an exact project root in its existing filesystem namespace.
+    WorkspaceRoot(strop_workspace::ResourceLocation),
     /// Explicitly chosen SSH directory, never an analogous local path.
     RemoteDirectory(strop_workspace::RemoteFile),
     /// Switch the same modal picker to its new-address field.
@@ -547,6 +549,77 @@ mod tests {
         p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
         assert_eq!(p.rows.len(), 1);
         assert_eq!(p.current().unwrap().text, "src/render.rs");
+    }
+
+    #[test]
+    fn ranking_defaults_to_insensitive_and_sensitive_restores_exact_case() {
+        let item = |text: &str| Item {
+            badge: None,
+            text: text.into(),
+            payload: Payload::File(text.into()),
+        };
+        for needle in ["mixedcase", "MIXEDCASE"] {
+            let mut picker = Picker::new(
+                Kind::Files,
+                vec![item("src/MixedCase.rs"), item("src/mixedcase.rs")],
+                false,
+            );
+            picker.paste(needle);
+            picker.install_ranking(
+                rank::rank(&picker.filter_request(), || false)
+                    .unwrap()
+                    .unwrap(),
+            );
+            assert_eq!(picker.rows.len(), 2, "{needle}");
+        }
+        let mut picker = Picker::new(
+            Kind::Files,
+            vec![item("src/MixedCase.rs"), item("src/mixedcase.rs")],
+            false,
+        );
+        picker.paste("MIXEDCASE");
+        picker.rank_mode = rank::MatchMode::Fuzzy(query::CaseMode::Sensitive);
+        picker.install_ranking(
+            rank::rank(&picker.filter_request(), || false)
+                .unwrap()
+                .unwrap(),
+        );
+        assert!(picker.rows.is_empty());
+        picker.rank_query = Some("MixedCase".into());
+        picker.install_ranking(
+            rank::rank(&picker.filter_request(), || false)
+                .unwrap()
+                .unwrap(),
+        );
+        assert_eq!(picker.rows.len(), 1);
+        assert_eq!(picker.current().unwrap().text, "src/MixedCase.rs");
+
+        let mut picker = Picker::new(
+            Kind::Files,
+            vec![item("src/MixedCase.rs"), item("src/mixedcase.rs")],
+            false,
+        );
+        picker.rank_query = Some("MIXEDCASE".into());
+        picker.rank_mode = rank::MatchMode::Exact(
+            std::sync::Arc::new(query::ContentExpr::Literal("MIXEDCASE".into())),
+            query::CaseMode::default(),
+        );
+        picker.install_ranking(
+            rank::rank(&picker.filter_request(), || false)
+                .unwrap()
+                .unwrap(),
+        );
+        assert_eq!(picker.rows.len(), 2);
+        picker.rank_mode = rank::MatchMode::Exact(
+            std::sync::Arc::new(query::ContentExpr::Literal("MIXEDCASE".into())),
+            query::CaseMode::Sensitive,
+        );
+        picker.install_ranking(
+            rank::rank(&picker.filter_request(), || false)
+                .unwrap()
+                .unwrap(),
+        );
+        assert!(picker.rows.is_empty());
     }
 
     #[test]

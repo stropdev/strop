@@ -148,7 +148,8 @@ impl Editor {
         if self.terminals.focused {
             self.send_terminal_focus(session, true);
         }
-        self.message = "terminal input — F2 Normal · Ctrl-\\ Ctrl-N alternative".into();
+        self.message = "terminal input — F2 inspect · Ctrl-\\ Ctrl-N alternative".into();
+        self.sync_terminal_feedback(document, false);
         true
     }
     pub(crate) fn terminal_paste_decision(&mut self, accept: bool) {
@@ -163,9 +164,53 @@ impl Editor {
             .terminals
             .entries
             .get(&session)
-            .and_then(|entry| entry.paste)
+            .and_then(|entry| entry.paste.as_ref())
+            .map(|paste| paste.ticket)
         else {
             self.message = "this terminal has no held paste".into();
+            return;
+        };
+        self.terminal_paste_decision_for(session, ticket, Some(accept));
+    }
+
+    pub(super) fn terminal_paste_decision_for(
+        &mut self,
+        session: SessionId,
+        ticket: u64,
+        decision: Option<bool>,
+    ) {
+        let valid = self
+            .terminal_document(self.current())
+            .is_some_and(|source| {
+                source.session == session
+                    && self.terminals.entries.get(&session).is_some_and(|entry| {
+                        (if decision.is_some() {
+                            matches!(entry.phase, Phase::Running)
+                        } else {
+                            entry.phase.live()
+                        }) && entry
+                            .paste
+                            .as_ref()
+                            .is_some_and(|paste| paste.ticket == ticket)
+                    })
+            });
+        if !valid {
+            self.message = "held paste is stale or its terminal session has ended".into();
+            return;
+        }
+        let Some(paste) = self
+            .terminals
+            .entries
+            .get(&session)
+            .and_then(|entry| entry.paste.clone())
+        else {
+            return;
+        };
+        let Some(accept) = decision else {
+            self.message = format!(
+                "{} · Space a offers Send or Discard; no Enter is added",
+                paste.review()
+            );
             return;
         };
         let tape = self.tape.clone();
@@ -185,11 +230,32 @@ impl Editor {
             Ok(result) => result,
             Err(error) => Err(error.to_string()),
         };
+        if result.is_ok() {
+            if let Some(entry) = self.terminals.entries.get_mut(&session) {
+                if entry
+                    .paste
+                    .as_ref()
+                    .is_some_and(|paste| paste.ticket == ticket)
+                {
+                    entry.paste = None;
+                }
+            }
+        }
         match result {
             Ok(()) if accept => {
+                self.feedback.resolve_terminal(
+                    session,
+                    crate::editor::feedback::FeedbackKind::TerminalPaste,
+                    None,
+                );
                 self.enter_terminal_input();
             }
             Ok(()) => {
+                self.feedback.resolve_terminal(
+                    session,
+                    crate::editor::feedback::FeedbackKind::TerminalPaste,
+                    None,
+                );
                 self.message = "discarding held terminal paste".into();
             }
             Err(error) => self.message = error,

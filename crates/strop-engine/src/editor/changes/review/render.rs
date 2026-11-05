@@ -5,7 +5,7 @@ use strop_core::id::BufferRevision;
 use strop_core::{Buffer, EditError, Replacement};
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
-pub(super) struct ReviewBuffer {
+pub(crate) struct ReviewBuffer {
     pub text: String,
     pub rows: Vec<ReviewRow>,
 }
@@ -34,7 +34,7 @@ struct ChangedLines {
     added: Vec<String>,
 }
 
-pub(super) fn file_diff(
+pub(crate) fn file_diff(
     label: &str,
     buffer: &Buffer,
     revision: BufferRevision,

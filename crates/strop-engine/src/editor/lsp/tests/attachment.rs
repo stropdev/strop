@@ -415,15 +415,27 @@ fn recovery_clears_only_its_owned_failure_scope() {
         .iter()
         .any(|failure| failure.reason == "first complete failure"));
 
-    // A new attachment for one root supersedes only that root's failure.
+    // A new attachment for one root starts recovery, but only Ready
+    // retires its retained failure. The unrelated root stays untouched.
     attach_at(&mut e, 32, 32, "rust", "rust-one-new", &one, Vec::new());
-    assert_eq!(e.lsp_state.failures.len(), 1);
-    assert_eq!(e.lsp_state.failures[0].root, two);
+    assert_eq!(e.lsp_state.failures.len(), 2);
+    assert!(e
+        .lsp_state
+        .failures
+        .iter()
+        .any(|failure| failure.root == one));
+    assert!(e
+        .lsp_state
+        .failures
+        .iter()
+        .any(|failure| failure.root == two));
     assert_eq!(e.lsp_state.attach.layer_diagnostics.len(), 1);
     e.handle_lsp_event(LspEvent::Ready {
         server: ServerId::new(32),
         name: "rust-one-new".into(),
     });
+    assert_eq!(e.lsp_state.failures.len(), 1);
+    assert_eq!(e.lsp_state.failures[0].root, two);
     assert!(e.lsp_statuses().any(|status| {
         status.phase == LspPhase::Ready
             && status.resource == one.as_path()
@@ -436,7 +448,7 @@ fn recovery_clears_only_its_owned_failure_scope() {
     }));
 
     // An owned Ready for the other scope clears its older server failure,
-    // independently of the attach-time cleanup exercised above.
+    // independently of the readiness cleanup exercised above.
     e.lsp_servers.push(LspServer {
         id: ServerId::new(33),
         name: "rust-two-new".into(),

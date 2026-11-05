@@ -332,14 +332,6 @@ impl Editor {
         {
             return;
         }
-        // Collection excerpt targets stay acceptance-only in this amendment.
-        let context = &session.query.context;
-        if context
-            .primary()
-            .is_some_and(|primary| primary.source != context.scope.view)
-        {
-            return;
-        }
         self.completion_preview_selected();
     }
 
@@ -508,9 +500,7 @@ impl Editor {
     }
 
     fn completion_declared_trigger(&mut self, character: char) -> bool {
-        let Some((source, _)) = self.source_edit_position(self.current(), self.head()) else {
-            return false;
-        };
+        let source = self.current();
         let Some(binding) = self.lsp_state.bindings.get(&source) else {
             return false;
         };

@@ -9,6 +9,10 @@ impl Editor {
         context: Option<strop_lsp::ReplyContext>,
     ) {
         match payload {
+            Payload::WorkspaceRoot(root) => match self.select_root(root) {
+                Ok(_) => self.message = "project root selected".into(),
+                Err(error) => self.message = error.to_string(),
+            },
             Payload::RemoteDirectory(directory) => self.request_target(
                 crate::files::FileTarget::Remote(directory.into()),
                 super::super::io::OpenIntent::Browse,
@@ -60,11 +64,8 @@ impl Editor {
             Payload::ProjectStatus(root) => {
                 self.request_open(root, super::super::io::OpenIntent::Browse);
             }
-            Payload::File(rel) => {
-                self.request_open(
-                    rel,
-                    super::super::io::OpenIntent::Switch { readonly: false },
-                );
+            Payload::File(_) => {
+                self.message = "file choice requires its captured project scope".into()
             }
             Payload::Buffer(i) => {
                 if self.docs.get(i).is_some() {
@@ -84,7 +85,7 @@ impl Editor {
                     return;
                 }
                 if let Some(context) = context {
-                    self.lsp_jump_from_picker(location.path, line, col, context);
+                    self.lsp_jump_from_picker(location, line, col, context);
                     return;
                 }
                 // Grep/symbol hits are jumps in vim's sense (quickfix

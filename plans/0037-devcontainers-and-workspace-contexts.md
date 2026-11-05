@@ -4,6 +4,13 @@ Status: researched, planned for later (P3). Requested explicitly during 0036. Th
 plan preserves the architectural insight; it is not a claim of implemented Dev
 Container support and does not expand the current release into provisioning.
 
+**0081 amendment:** DC1–DC4 now provide passive JSONC discovery/trust review,
+reference-CLI attach/start/rebuild, owned logs/cancellation/reconciliation,
+and an admitted-container edit/conditional-save/Search/tools/terminal loop.
+DC5 remote engines, automatic port forwarding and marketplaces remain out of
+scope. The lifecycle model and real engine/CLI evidence supplement this
+historical plan; no discovery-only completion claim is made.
+
 [0058](0058-unified-native-worker.md) subsequently unifies native worker deployment/
 execution for local, SSH and already-running containers after 0056/0057. It is not
 Dev Container provisioning: no image rebuild, container restart or elevation to
@@ -151,7 +158,8 @@ save contract (baseline check + protected staging + atomic rename) has no
 faithful docker-exec equivalent without an in-container helper. A helper
 like 0040's could run through `docker exec` later; until that exists with
 its own verification, `:w` on a container document refuses and the buffer
-says so. LSP/Git run inside via `docker exec` argv — never a shell.
+says so. LSP/Git run through the explicitly admitted, incarnation-pinned native
+worker (0058), never an implicit `docker exec` shell or a host fallback.
 
 Attach without provisioning. Resolve immutable engine/container/user/workspace
 identity; browse/read files and run the same LSP/Git paths in that context. Accept:

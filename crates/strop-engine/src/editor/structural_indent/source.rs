@@ -146,25 +146,17 @@ impl Editor {
         }
         let mut sources: Vec<Source> = Vec::new();
         for view in self.all_cursors() {
-            let (source, at) = self.source_edit_position(self.current(), view)?;
+            let source = self.current();
+            let at = view;
             let document = self.docs.get(source)?;
             if document.buf.readonly {
                 return None;
             }
-            let (first, last) = if let Some(collection) = self.collections.get(&self.current()) {
-                let index = collection
-                    .excerpts
-                    .partition_point(|excerpt| excerpt.view_start <= view);
-                let excerpt = collection.excerpts.get(index.checked_sub(1)?)?;
-                (excerpt.start, excerpt.end)
-            } else {
-                (0, document.buf.len_bytes())
-            };
             let mapping = Mapping {
                 source: ByteOffset::new(at),
                 view: ByteOffset::new(view),
-                first: ByteOffset::new(first),
-                last: ByteOffset::new(last),
+                first: ByteOffset::new(0),
+                last: ByteOffset::new(document.buf.len_bytes()),
             };
             if let Some(target) = sources.iter_mut().find(|target| target.document == source) {
                 target.mappings.push(mapping);

@@ -62,7 +62,9 @@ post-publication version: finding the same inode at a pathname is not
 sufficient ownership evidence. Receipts are in-memory, not crash recovery.
 Graceful global exit refuses unresolved outcomes; explicit `:qa!` reports
 them and exits unsuccessfully rather than claiming they were resolved or
-persisted.
+persisted. Container filesystem mutations remain refused through these
+actions; ordinary file editing/saving is a separate `:container-edit` and
+worker-Store authority path.
 
 Removing an otherwise empty directory may retire its validated, quiescent
 protocol locks. Active locks, unknown entries and other directory contents

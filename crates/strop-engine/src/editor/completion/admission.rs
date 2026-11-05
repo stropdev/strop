@@ -16,9 +16,7 @@ impl Editor {
         if self.completion.source.as_ref().is_some_and(|source| {
             !source.binding.matches(self)
                 || self.docs.is_empty()
-                || self
-                    .source_edit_position(self.current(), self.head())
-                    .is_none_or(|(document, _)| document != source.binding.document)
+                || self.current() != source.binding.document
         }) {
             if let Some(source) = self.completion.source.take() {
                 match self.tape.request(

@@ -18,6 +18,13 @@ feel like an unrelated, weaker entry path. Browsing is not permission to mutate;
 a read-only directory presentation is not proof that the backing filesystem is
 incapable of an explicitly requested operation.
 
+**0081 amendment:** action visibility and execution share one namespace
+capability decision. Admitted SSH/container Terminal here and container Search
+no longer drift from their launch paths. Container filesystem mutations remain
+refused; per-document conditional saves are separate. Search collections are
+read-only inspection views, with bulk edits consolidated on 0043 Review/Apply/
+Save rather than excerpt write-through.
+
 Borrow three concrete ideas:
 
 - **Dired:** an ordinary navigable directory buffer; marked entries; explicit

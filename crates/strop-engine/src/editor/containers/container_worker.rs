@@ -4,6 +4,7 @@
 //! an old worker. Browsing remains read-only without a lease.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use parking_lot::Mutex;
@@ -41,6 +42,7 @@ fn provider_failure(error: ProviderError) -> FsFailure {
 struct Entry {
     ready: OnceLock<Arc<BoundWorker>>,
     admitting: Mutex<()>,
+    retired: AtomicBool,
     /// Captured by the attach job, never re-probed in a later context.
     engine: Mutex<Option<EngineRef>>,
 }
@@ -94,7 +96,25 @@ impl BoundWorker {
         identity.id == self.id.as_str() && identity.started_at == self.started_at
     }
 
-    fn location(&self, location: &ResourceLocation) -> Result<ResourceLocation, ClientError> {
+    #[cfg(test)]
+    pub(crate) fn for_test(identity: &ContainerIdentity, worker: Worker) -> Arc<Self> {
+        Arc::new(Self {
+            id: ContainerId::canonical(identity.id.clone()).unwrap(),
+            started_at: identity.started_at.clone(),
+            worker,
+            target: "test-container".into(),
+            artifact: VerifiedObject {
+                path: "/test/strop-worker".into(),
+                sha256: "0".repeat(64),
+                bytes: 0,
+            },
+        })
+    }
+
+    pub(crate) fn location(
+        &self,
+        location: &ResourceLocation,
+    ) -> Result<ResourceLocation, ClientError> {
         if !matches!(&location.filesystem, Filesystem::Container(id) if id == &self.id) {
             return Err(ClientError::Protocol(
                 strop_worker_protocol::ProtocolError::Unexpected {
@@ -223,6 +243,23 @@ impl ContainerWorkers {
                 .then(|| slot.entry.ready.get().cloned())
                 .flatten()
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn install_test(
+        &self,
+        identity: &ContainerIdentity,
+        worker: Worker,
+    ) -> Arc<BoundWorker> {
+        let bound = BoundWorker::for_test(identity, worker);
+        let mut table = self.inner.lock();
+        let slot = table
+            .entries
+            .entry(identity.id.clone())
+            .or_insert_with(|| Incarnation::new(identity));
+        assert_eq!(slot.started_at, identity.started_at);
+        assert!(slot.entry.ready.set(Arc::clone(&bound)).is_ok());
+        bound
     }
 
     /// Only an explicit worker-using action may call this. A shellless
@@ -354,7 +391,7 @@ impl ContainerWorkers {
         });
         let published = {
             let table = self.inner.lock();
-            if table.closed {
+            if table.closed || entry.retired.load(Ordering::Acquire) {
                 false
             } else {
                 let published = entry.ready.set(Arc::clone(&worker));
@@ -370,6 +407,44 @@ impl ContainerWorkers {
             ));
         }
         Ok(worker)
+    }
+
+    /// Engines already pinned by explicit container inspection. Review can
+    /// select one without probing another engine or mutating global Docker
+    /// context.
+    pub(crate) fn engines(&self) -> Vec<EngineRef> {
+        let table = self.inner.lock();
+        let mut engines: Vec<EngineRef> = Vec::new();
+        for incarnation in table.entries.values() {
+            let engine = incarnation.entry.engine.lock().clone();
+            if let Some(engine) = engine {
+                if !engines.iter().any(|existing| {
+                    existing.server_version() == engine.server_version()
+                        && existing.same_connection(&engine)
+                }) {
+                    engines.push(engine);
+                }
+            }
+        }
+        engines
+    }
+
+    /// Close only the editor's services for a replaced container incarnation.
+    /// This never stops, removes or otherwise mutates the container itself.
+    pub(crate) fn close_container(&self, id: &str) {
+        let incarnation = {
+            let mut table = self.inner.lock();
+            let incarnation = table.entries.remove(id);
+            if let Some(incarnation) = &incarnation {
+                incarnation.entry.retired.store(true, Ordering::Release);
+            }
+            incarnation
+        };
+        if let Some(incarnation) = incarnation {
+            if let Some(worker) = incarnation.entry.ready.get() {
+                worker.worker().close();
+            }
+        }
     }
 
     /// Permanently close the editor's admitted incarnation leases.

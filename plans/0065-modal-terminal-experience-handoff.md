@@ -17,6 +17,11 @@ decision (Esc), (c) a strop-owned color palette for terminal content, and
 (d) inspection-mode polish and discoverability. Nothing below touches the VT
 engine, the PTY supervisor or the 0055 T01–T10 contracts.
 
+**0081 amendment:** pinned output attention and held pastes are durable
+owner/ticket-scoped decisions. Space a exposes refresh, redacted review,
+Send/Discard, sessions, stop and quit Focus/Stop/Return; `Space b` remains the
+only session list and child application keys remain child-owned.
+
 ## 1. What already exists today (verified by code reading)
 
 The terminal is further along than the request assumes. Grounded facts:

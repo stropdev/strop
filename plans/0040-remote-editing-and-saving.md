@@ -10,6 +10,12 @@ after the dispatched 0056 architecture/0057 verification baseline. The transacti
 metadata, authority and uncertain-outcome promises remain required. Do not skip
 baseline Python verification now; WK16–WK20 rebind and discharge its successors.
 
+**0081 amendment:** the same conditional Store authority now covers attached
+containers. `:container-worker` admits services; `:container-edit` separately
+verifies the displayed baseline and grants one document's edit permit. Container
+saves use protected staging/atomic publication and frozen unconfirmed evidence,
+never `docker cp`, shell fallback or blind rewrite.
+
 ## 1. Evidence and the concurrency boundary
 
 OpenSSH's [POSIX rename extension](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL)

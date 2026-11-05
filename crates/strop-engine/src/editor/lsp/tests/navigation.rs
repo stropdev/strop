@@ -503,3 +503,230 @@ fn navigation_changed_during_load_does_not_switch_or_consume_new_request() {
     assert_eq!((e.current(), e.head()), before);
     assert!(e.lsp_reply_fresh(&current));
 }
+
+#[test]
+fn external_navigation_crash_reports_failure_and_reattaches_once() {
+    use std::time::{Duration, Instant};
+
+    const SERVER: &str = r#"
+import json
+import pathlib
+import sys
+
+external = pathlib.Path(sys.argv[2]).as_uri()
+
+def record(line):
+    with open(sys.argv[1], "a", encoding="utf-8") as stream:
+        stream.write(line + "\n")
+
+def receive():
+    headers = {}
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        if line in (b"\r\n", b"\n"):
+            break
+        name, value = line.decode("ascii").split(":", 1)
+        headers[name.lower()] = value.strip()
+    return json.loads(sys.stdin.buffer.read(int(headers["content-length"])))
+
+def send(message):
+    body = json.dumps(message).encode("utf-8")
+    sys.stdout.buffer.write(
+        f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body
+    )
+    sys.stdout.buffer.flush()
+
+record("start")
+while True:
+    message = receive()
+    if message is None:
+        sys.exit(1)
+    method = message.get("method")
+    ident = message.get("id")
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": ident, "result": {
+            "capabilities": {
+                "definitionProvider": True,
+                "positionEncoding": "utf-8",
+            }
+        }})
+    elif method == "shutdown":
+        send({"jsonrpc": "2.0", "id": ident, "result": None})
+    elif method == "exit":
+        sys.exit(0)
+    elif method == "textDocument/didOpen":
+        if message["params"]["textDocument"]["uri"] == external:
+            record("external-open")
+    elif method == "textDocument/definition":
+        source = message["params"]["textDocument"]["uri"]
+        result = None
+        if source != external:
+            result = {"uri": external, "range": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 0, "character": 0},
+            }}
+        send({"jsonrpc": "2.0", "id": ident, "result": result})
+        if source == external:
+            record("external-request")
+            sys.exit(0)
+"#;
+
+    fn pump_until(editor: &mut Editor, what: &str, done: impl Fn(&Editor) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            editor.drain_lsp();
+            if done(editor) {
+                return;
+            }
+            if editor.io_pending() {
+                editor.wait_io().unwrap();
+                continue;
+            }
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    let external = directory.path().join("external.rs");
+    let script = directory.path().join("server.py");
+    let log = directory.path().join("server.log");
+    let state = directory.path().join("state");
+    std::fs::create_dir_all(root.join(".strop")).unwrap();
+    std::fs::write(root.join("main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(&external, "pub fn external() {}\n").unwrap();
+    std::fs::write(&script, SERVER).unwrap();
+    let quoted = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
+    std::fs::write(
+        root.join(".strop/languages.toml"),
+        format!(
+            "[language-server.rust-analyzer]\ncommand = \"python3\"\nargs = [{}, {}, {}]\n",
+            quoted(&script),
+            quoted(&log),
+            quoted(&external)
+        ),
+    )
+    .unwrap();
+    crate::session::trust(Some(&state), &root).unwrap();
+
+    let mut buffer = Buffer::from_text("fn main() {}\n");
+    buffer.path = Some(root.join("main.rs"));
+    let mut e = Editor::new_in(buffer, root.clone());
+    e.set_state_dir(Some(state));
+    let origin = e.current();
+    e.lsp_start_services();
+    pump_until(&mut e, "the first fake server to become ready", |e| {
+        e.lsp_servers.iter().any(|server| server.ready)
+    });
+
+    e.feed_text("gd");
+    pump_until(&mut e, "the out-of-root definition", |e| {
+        e.buf().path.as_deref() == Some(external.as_path())
+    });
+    let external_document = e.current();
+    assert!(
+        e.lsp_state.bindings.contains_key(&external_document),
+        "external didOpen creates the request-admission binding"
+    );
+
+    // A request from the external document uses that same server. The fake
+    // exits only after receiving it, so the regression crosses a real wire.
+    e.feed_text("gd");
+    pump_until(&mut e, "the fake server exit", |e| {
+        !e.lsp_state.failures.is_empty()
+    });
+    assert!(e.lsp_servers.is_empty());
+    assert!(!e.lsp_state.bindings.contains_key(&origin));
+    assert!(!e.lsp_state.bindings.contains_key(&external_document));
+    let retained = e
+        .lsp_state
+        .failures
+        .iter()
+        .find(|failure| failure.root == root)
+        .unwrap();
+    assert_eq!(retained.name, "rust-analyzer");
+    assert!(retained.reason.contains("Exit(0)"), "{}", retained.reason);
+
+    // An unrelated failed workspace must neither handle this request nor be
+    // cleared by this workspace's replacement becoming ready.
+    let unrelated_root = directory.path().join("unrelated");
+    let unrelated = ServerId::new(900);
+    e.lsp_servers.push(LspServer {
+        id: unrelated,
+        name: "other-server".into(),
+        language: "rust".into(),
+        root: unrelated_root.clone(),
+        target: strop_workspace::Filesystem::Local,
+        client: None,
+        rx: std::sync::mpsc::channel().1,
+        ready: true,
+    });
+    e.handle_lsp_event(LspEvent::Failed {
+        server: unrelated,
+        name: "other-server".into(),
+        hint: "unrelated failure".into(),
+    });
+
+    e.feed(Key::CtrlO);
+    assert_eq!(e.current(), origin);
+    assert!(
+        e.lsp_state.attach.pending.is_empty(),
+        "returning to the failed workspace does not itself restart a crashed server"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&log)
+            .unwrap()
+            .lines()
+            .filter(|line| *line == "start")
+            .count(),
+        1
+    );
+    e.feed_text("gd");
+    assert_eq!(e.lsp_state.attach.pending.len(), 1);
+    assert!(e.message.contains("rust-analyzer failed"), "{}", e.message);
+    assert!(e.message.contains("reattaching"), "{}", e.message);
+    assert!(
+        e.message.contains("repeat goto definition after ready"),
+        "{}",
+        e.message
+    );
+    assert!(e.message.contains(":explain"), "{}", e.message);
+    assert!(!e.message.contains("install"), "{}", e.message);
+    assert!(!e.message.contains("languages.toml"), "{}", e.message);
+
+    // Repetition while discovery is pending cannot spawn a background loop.
+    e.feed_text("gd");
+    assert_eq!(e.lsp_state.attach.pending.len(), 1);
+    pump_until(&mut e, "the replacement attachment", |e| {
+        e.lsp_servers.len() == 1
+    });
+    assert!(
+        e.lsp_state
+            .failures
+            .iter()
+            .any(|failure| failure.root == root),
+        "spawning alone does not erase the retained failure"
+    );
+    pump_until(&mut e, "the replacement server to become ready", |e| {
+        e.lsp_servers.iter().any(|server| server.ready)
+    });
+    assert_eq!(e.lsp_state.failures.len(), 1);
+    assert_eq!(e.lsp_state.failures[0].root, unrelated_root);
+    assert_eq!(e.lsp_state.failures[0].reason, "unrelated failure");
+
+    let log = std::fs::read_to_string(log).unwrap();
+    assert_eq!(log.lines().filter(|line| *line == "start").count(), 2);
+    assert_eq!(
+        log.lines().filter(|line| *line == "external-open").count(),
+        1
+    );
+    assert_eq!(
+        log.lines()
+            .filter(|line| *line == "external-request")
+            .count(),
+        1
+    );
+}

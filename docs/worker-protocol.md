@@ -73,10 +73,10 @@ fallback.
   engine and canonical id/StartedAt incarnation. `:container-worker`
   authorizes private-cache deployment (or a configured preinstalled
   artifact), without changing readonly browsing or granting writes.
-- `strop-terminal` owns VT interpretation and history; the local
-  worker owns the PTY, child and stream. SSH/container interactive
-  terminals remain disabled even when their worker transport could
-  technically carry PTY frames.
+- `strop-terminal` owns VT interpretation and history; the admitted local,
+  SSH or container worker owns the PTY, child and stream. Interactive
+  terminals require the matching admitted worker; container launches also
+  pin the attached incarnation and never retarget to the host.
 - The `strop --ui-stdio` presentation server remains a distinct,
   bounded editor presentation protocol; it is not a second executor.
 

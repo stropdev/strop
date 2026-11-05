@@ -125,6 +125,7 @@ fn value_suggestions(key: &str, prefix: &str, range: std::ops::Range<usize>) -> 
             push("smart".into(), "value");
             push("sensitive".into(), "value");
             push("ignore".into(), "value");
+            push("insensitive".into(), "value");
         }
         _ => {}
     }
@@ -163,6 +164,13 @@ mod tests {
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].insert, "smart");
         assert_eq!(suggestions[0].range, 5..7);
+        let suggestions = suggest(&super::super::SearchQuery::parse("case:ins"), 8);
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].insert, "insensitive");
+        let all = suggest(&super::super::SearchQuery::parse("case:"), 5);
+        assert!(all.iter().any(|s| s.insert == "ignore"));
+        assert!(all.iter().any(|s| s.insert == "insensitive"));
+        assert!(all.iter().any(|s| s.insert == "sensitive"));
     }
 
     #[test]

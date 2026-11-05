@@ -334,3 +334,132 @@ fn dirty_source_identity_survives_cwd_and_relative_display_spelling() {
         .payload;
     assert!(matches!(hit, Payload::Grep { line_text, .. } if line_text.starts_with("unsaved ")));
 }
+
+#[test]
+fn search_defaults_to_the_focused_documents_selected_root_not_cwd() {
+    let fixture = tempfile::tempdir().unwrap();
+    let one = fixture.path().join("one");
+    let two = fixture.path().join("two");
+    std::fs::create_dir_all(&one).unwrap();
+    std::fs::create_dir_all(two.join("nested")).unwrap();
+    std::fs::write(one.join("one.txt"), "needle one\n").unwrap();
+    let source = two.join("nested/two.txt");
+    std::fs::write(&source, "needle two\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), one.clone());
+    editor
+        .select_root(strop_workspace::ResourceLocation::local(two.clone()))
+        .unwrap();
+    editor.open_fixture(&source).unwrap();
+
+    editor.open_search(false);
+    assert_eq!(editor.search_scope().unwrap().root.path, two);
+    editor.paste_bracketed("needle");
+    editor.wait_picker();
+    let items = &editor.picker.as_ref().unwrap().picker.items;
+    assert_eq!(items.len(), 1);
+    assert!(matches!(
+        &items[0].payload,
+        Payload::Grep { location, .. } if location.path == source
+    ));
+    assert_eq!(editor.cwd, one);
+}
+
+#[test]
+fn remote_search_reentry_keeps_root_and_explicit_scope_stays_authoritative() {
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://dev@example.com").unwrap();
+    let first = strop_workspace::ResourceLocation::remote(endpoint.clone(), "/srv/app".into());
+    let second = strop_workspace::ResourceLocation::remote(endpoint, "/other/app".into());
+    let mut editor = Editor::new(Buffer::from_text(""));
+    editor.select_root(first.clone()).unwrap();
+    editor.select_root(second.clone()).unwrap();
+
+    // Empty queries never launch a remote job; this exercises captured scope
+    // and labels without requiring worker admission.
+    editor.open_search_in(
+        SearchScope {
+            root: first.clone(),
+        },
+        false,
+    );
+    assert_eq!(editor.search_scope().unwrap().root, first);
+    assert!(editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .query_summary
+        .contains("ssh://dev@example.com/srv/app"));
+    editor.close_picker();
+    editor.open_search(false);
+    assert_eq!(
+        editor.search_scope().unwrap().root,
+        first,
+        "ordinary re-entry resumes the retained investigation"
+    );
+
+    editor.open_search_in(
+        SearchScope {
+            root: second.clone(),
+        },
+        false,
+    );
+    assert_eq!(editor.search_scope().unwrap().root, second);
+    assert!(editor
+        .picker
+        .as_ref()
+        .unwrap()
+        .query_summary
+        .contains("ssh://dev@example.com/other/app"));
+}
+
+#[test]
+fn stale_search_results_cannot_publish_after_disconnect_and_new_query() {
+    let (root, mut editor) = fixture();
+    editor.open_search(false);
+    editor.paste_bracketed("needle");
+    let stale = editor.picker.as_ref().unwrap().active.clone().unwrap();
+    let workspace = editor
+        .workspaces
+        .resolve(&strop_workspace::ResourceLocation::local(
+            root.path().to_path_buf(),
+        ))
+        .unwrap()
+        .0;
+    editor
+        .workspaces
+        .note_disconnect(&strop_workspace::Filesystem::Local);
+    assert_eq!(editor.workspaces.get(workspace).unwrap().incarnation, 1);
+    assert_eq!(
+        editor
+            .select_root(strop_workspace::ResourceLocation::local(
+                root.path().to_path_buf(),
+            ))
+            .unwrap(),
+        workspace
+    );
+
+    editor.paste_bracketed("second");
+    let live = editor.picker.as_ref().unwrap().active.clone().unwrap();
+    assert_ne!(live, stale);
+    editor.wait_picker();
+    let item_count = editor.picker.as_ref().unwrap().picker.items.len();
+    editor.handle_picker_event(PickerEvent {
+        ticket: stale,
+        msg: PickerMsg::Items(
+            vec![Item {
+                badge: None,
+                text: "a.txt:1 · STALE".into(),
+                payload: Payload::Grep {
+                    location: strop_workspace::ResourceLocation::local(root.path().join("a.txt")),
+                    line: 1,
+                    col: 1,
+                    match_len: 5,
+                    line_text: "STALE".into(),
+                },
+            }]
+            .into(),
+        ),
+    });
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert_eq!(picker.items.len(), item_count);
+    assert!(!picker.items.iter().any(|item| item.text.contains("STALE")));
+}

@@ -93,15 +93,26 @@ The modeline presents owned LSP starting, ready, refused and failed states as
 compact badges. Long server prose does not displace mode and position. Use
 `:explain` to inspect the complete server, workspace/endpoint and failure
 reason in a real read-only buffer; recovered servers clear their old failure
-without erasing another workspace's problem or an independent warning.
+without erasing another workspace's problem or an independent warning. If a
+server exits during source navigation, the next language request names that
+failure and starts one scoped reattach instead of claiming the installed
+server is missing; repeat the request after it is ready.
+
+Failed or unconfirmed saves, connection/admission failures, terminal decisions
+and Dev Container outcomes use the same owner-scoped retained feedback. They
+survive motions, search and unrelated success messages. **Space a** exposes
+only currently valid recovery actions; **`:explain`** retains the complete
+owner, detail and evidence. Dismissing a notice changes only presentation—it
+never cancels work, clears a save barrier or marks an unconfirmed outcome as
+successful.
 
 ## Code completion
 
-Insert mode offers language-server candidates and incremental words from
-the current editable source. Word suggestions remain usable without a
-language server, and collections use their owning source rather than
-unrelated excerpt text. The menu shows kind, source and detail; selected
-language items can show documentation without changing the buffer.
+Insert mode offers language-server candidates and incremental words from the
+current editable source. Word suggestions remain usable without a language
+server. Read-only source collections do not open completion or gain edit
+authority; open the real source first. The menu shows kind, source and detail;
+selected language items can show documentation without changing the buffer.
 
 - `Ctrl-Space`: request both providers; `Ctrl-X Ctrl-O`: language completion.
 - `Ctrl-N` / `Ctrl-P`: choose a candidate; `Ctrl-Y`: accept it.

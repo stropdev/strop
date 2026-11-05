@@ -37,7 +37,13 @@ preview  = resolve() then render overlay
 
 One resolver, two consumers. The preview cannot lie; a lying preview is a motion bug, which makes the preview a dogfooding harness for the motion engine itself.
 
-Coverage matrix:
+Coverage matrix (original resolver-fidelity goals; amended by
+[0081](0081-product-coherence-and-workspace-experience-handoff.md)): “perfect”
+below means preview/execute resolver agreement, not a guaranteed human
+inspection interval. Immediate chords such as `dw`, `ci[`, `dfx` and `.`
+execute at the completing key. Visual selection, composed search,
+substitution and reviewed multi-file changes are the inspect-first paths.
+The original post-edit dot-repeat flash is not a cancellation opportunity.
 
 | Input class | Preview quality |
 |---|---|

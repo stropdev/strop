@@ -93,6 +93,41 @@ fn file(editor: &mut Editor, path: &str, text: &str) {
 }
 
 #[test]
+fn container_setup_failure_has_typed_retry_and_owner_scoped_recovery() {
+    let mut editor = editor();
+    editor.request_containers();
+    let ticket = editor.containers.pending.clone().unwrap();
+    editor.handle_container_event(Completion {
+        ticket,
+        outcome: Outcome::failed(
+            FailureKind::Unavailable,
+            "container engine refused inspection",
+        ),
+    });
+    assert!(editor.feedback()[0].detail().contains("refused inspection"));
+    editor.feed(Key::Char('j'));
+    assert!(editor.feedback()[0].unresolved());
+
+    editor.context_actions();
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    assert!(picker
+        .items
+        .iter()
+        .any(|item| item.text.contains("Retry container setup")));
+    let picker = editor.picker.as_ref().unwrap().id;
+    editor.accept_filesystem_action(picker, 0);
+    let ticket = editor.containers.pending.clone().unwrap();
+    editor.handle_container_event(Completion {
+        ticket,
+        outcome: Outcome::Success(ContainerResult::Containers(Vec::new())),
+    });
+    assert_eq!(
+        editor.feedback()[0].lifecycle(),
+        crate::editor::feedback::FeedbackLifecycle::Resolved
+    );
+}
+
+#[test]
 fn container_attach_names_the_service_command_once() {
     let mut editor = editor();
     editor.attach_container("a".repeat(64));
@@ -100,10 +135,23 @@ fn container_attach_names_the_service_command_once() {
     listing(&mut editor, "/", &[]);
     assert_eq!(
         editor.message,
-        "container is read-only — :container-worker for services"
+        "container is read-only — :container-worker, then :container-edit on the file"
     );
     editor.feed(Key::Char('j'));
     assert!(editor.message.is_empty());
+}
+
+#[test]
+fn generic_attach_uses_verified_workdir_as_the_selected_root() {
+    let mut editor = editor();
+    let mut inspected = identity('a');
+    inspected.workdir = "/workspace/service".into();
+    editor.attach_container("a".repeat(64));
+    deliver(&mut editor, ContainerResult::Attached(inspected));
+    listing(&mut editor, "/workspace/service", &[]);
+    let root = editor.current_workspace_root();
+    assert_eq!(root.path, std::path::Path::new("/workspace/service"));
+    assert!(matches!(root.filesystem, Filesystem::Container(_)));
 }
 
 #[test]
@@ -201,15 +249,21 @@ fn recycled_container_cannot_replace_a_held_attachment() {
 }
 
 #[test]
-fn browsing_stays_readonly_until_explicit_container_worker_consent() {
+fn browsing_requires_separate_worker_admission_before_edit_authority() {
     let mut editor = editor();
     let id = ContainerId::canonical("a".repeat(64)).unwrap();
+    let mut inspected = identity('a');
+    inspected.workdir = "/workspace".into();
     editor.attach_container_target(id.clone(), "/".into(), OpenIntent::Browse);
-    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    deliver(&mut editor, ContainerResult::Attached(inspected));
     listing(
         &mut editor,
         "/",
         &[("note.txt", strop_containers::DirEntryKind::File)],
+    );
+    assert_eq!(
+        editor.current_workspace_root().path,
+        std::path::Path::new("/")
     );
     assert!(editor
         .containers
@@ -224,6 +278,74 @@ fn browsing_stays_readonly_until_explicit_container_worker_consent() {
     assert!(editor
         .message
         .contains("admitting verified container worker"));
+}
+
+#[test]
+fn capability_owner_drives_container_search_and_editing_next_steps() {
+    let mut editor = editor();
+    let id = ContainerId::canonical("a".repeat(64)).unwrap();
+    editor.attach_container_target(id.clone(), "/workspace".into(), OpenIntent::Browse);
+    deliver(&mut editor, ContainerResult::Attached(identity('a')));
+    listing(&mut editor, "/workspace", &[]);
+    let root = editor.current_workspace_root();
+    let capabilities = editor.current_namespace_capabilities();
+    assert!(capabilities.read.available());
+    assert!(!capabilities.tools.available());
+    assert!(!capabilities.search.available());
+    assert_eq!(
+        capabilities.write.next_step(),
+        Some(":container-worker, then :container-edit on the file")
+    );
+    for capability in [
+        crate::editor::namespace::WorkspaceCapability::Read,
+        crate::editor::namespace::WorkspaceCapability::Tools,
+        crate::editor::namespace::WorkspaceCapability::Search,
+        crate::editor::namespace::WorkspaceCapability::Write,
+        crate::editor::namespace::WorkspaceCapability::Terminal,
+    ] {
+        let decision = editor.namespace_capability_for(&root, capability, Some(editor.current()));
+        assert_eq!(&decision, capabilities.get(capability));
+    }
+    editor.open_search_in(crate::editor::SearchScope { root: root.clone() }, false);
+    assert!(!editor.picker_open());
+    assert!(editor.message.contains(":container-worker"));
+
+    let worker = strop_worker_client::Worker::connect_with(|| {
+        let (client_read, worker_write) = std::io::pipe()?;
+        let (worker_read, client_write) = std::io::pipe()?;
+        std::thread::spawn(move || {
+            strop_worker::serve::run(worker_read, worker_write).unwrap();
+        });
+        Ok(strop_worker_client::Transport {
+            reader: Box::new(client_read),
+            writer: Box::new(client_write),
+            child: None,
+            stderr: None,
+        })
+    });
+    let attached = editor.containers.attached.get(id.as_str()).unwrap().clone();
+    editor
+        .containers
+        .workers
+        .install_test(&attached, worker.clone());
+    let capabilities = editor.current_namespace_capabilities();
+    assert!(capabilities.tools.available());
+    assert!(capabilities.search.available());
+    assert_eq!(
+        capabilities.write.next_step(),
+        Some(":container-edit verifies this snapshot and enables editing")
+    );
+    let mut recycled = attached.clone();
+    recycled.started_at = "2026-09-10T00:00:00Z".into();
+    editor
+        .containers
+        .attached
+        .insert(recycled.id.clone(), recycled);
+    assert!(!editor.current_namespace_capabilities().search.available());
+    editor.open_search_in(crate::editor::SearchScope { root }, false);
+    assert!(!editor.picker_open());
+    assert!(editor.message.contains(":container-worker"));
+    worker.shutdown().unwrap();
 }
 
 #[test]
