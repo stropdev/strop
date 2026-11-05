@@ -92,6 +92,9 @@ impl Editor {
                 strop_syntax::DelimiterKind::closing(character)
                     .map(super::structural_indent::Trigger::Closer)
             }
+            Key::Char(':') if self.label_needs_alignment() => {
+                Some(super::structural_indent::Trigger::Label)
+            }
             _ => None,
         };
         if let Some(trigger) = trigger {
@@ -99,22 +102,28 @@ impl Editor {
                 return;
             };
             let primary = edits.iter().find(|edit| edit.cursor.get() == self.head());
+            // The electric edit replaces buffer[start..cursor] with the
+            // planned span. Un-record exactly the bytes of that replaced
+            // span which this session typed (its longest recorded tail),
+            // then record the planned landing: replay re-runs the key
+            // through the same electric decision at the destination.
             let removed = primary.map_or(0, |edit| {
-                let count = edit.cursor.get().saturating_sub(edit.start.get());
-                self.recording_insert
-                    .as_ref()
-                    .filter(|recording| {
-                        recording.len() >= count
-                            && recording.as_bytes()[recording.len() - count..]
-                                .iter()
-                                .copied()
-                                .eq(self
-                                    .buf()
-                                    .text()
-                                    .byte_slice(edit.start.get()..edit.cursor.get())
-                                    .bytes())
+                let len = edit.cursor.get() - edit.start.get();
+                let replaced = self
+                    .buf()
+                    .text()
+                    .byte_slice(edit.start.get()..edit.cursor.get());
+                let Some(recording) = self.recording_insert.as_deref() else {
+                    return 0;
+                };
+                let recorded = recording.as_bytes();
+                (0..=len.min(recorded.len()))
+                    .rev()
+                    .find(|&k| {
+                        (0..k)
+                            .all(|i| recorded[recorded.len() - k + i] == replaced.byte(len - k + i))
                     })
-                    .map_or(0, |_| count)
+                    .unwrap_or(0)
             });
             if let (Some(recording), Some(edit)) = (&mut self.recording_insert, primary) {
                 recording.truncate(recording.len() - removed);

@@ -10,6 +10,7 @@ pub(crate) use source::Batch;
 pub(crate) enum Trigger {
     Enter,
     Closer(DelimiterKind),
+    Label,
     Below,
     Above,
 }
@@ -21,6 +22,10 @@ pub(crate) struct Request {
     /// Trailing-colon policy from the language registry (0072): one
     /// punctuation rule for Python blocks and C-family labels.
     pub colons: strop_syntax::ColonPolicy,
+    /// C++ electric access-specifier colon (0072): the registry marks
+    /// the one language whose `public:`/`protected:`/`private:` lines
+    /// re-indent to their class-body anchor when typed.
+    pub access_labels: bool,
     pub unit: String,
     pub newline: String,
 }
@@ -64,6 +69,18 @@ fn leading(buffer: &Buffer, at: usize) -> String {
     let start = buffer.line_start(buffer.line_of(at));
     let end = whitespace(buffer, start, at);
     buffer.text().byte_slice(start..end).to_string()
+}
+/// C++ access specifiers: vim's `'cinscopedecls'` defaults. The electric
+/// label applies when one of these words is the line's entire content.
+fn access_specifier(buffer: &Buffer, line_start: usize, at: usize) -> Option<&'static str> {
+    let word_start = whitespace(buffer, line_start, at);
+    ["public", "protected", "private"].into_iter().find(|word| {
+        buffer
+            .text()
+            .byte_slice(word_start..at)
+            .bytes()
+            .eq(word.as_bytes().iter().copied())
+    })
 }
 
 /// Tiny fast path: only lexically unambiguous prefixes. Quotes, comments,
@@ -178,6 +195,29 @@ pub(crate) fn plan(
                 text.push(close.closing_character());
                 landing = text.len();
             }
+            // The typed `:` completing a bare C++ access specifier
+            // re-indents the line to its class-body anchor (0072):
+            // the enclosing brace opener's line indentation plus one
+            // unit, vim's `cino-g` default. Everything else — other
+            // languages, non-keyword lines, no brace anchor, strings
+            // and comments — inserts the colon unchanged.
+            Trigger::Label => {
+                if code && request.access_labels {
+                    if let (Some(open), Some(word)) = (
+                        opener.filter(|open| open.kind == DelimiterKind::Brace),
+                        access_specifier(buffer, line_start, at),
+                    ) {
+                        base = leading(buffer, open.position.get());
+                        text.push_str(&base);
+                        text.push_str(&request.unit);
+                        text.push_str(word);
+                        start = line_start;
+                        end = at;
+                    }
+                }
+                text.push(':');
+                landing = text.len();
+            }
             Trigger::Above => {
                 start = line_start;
                 end = start;
@@ -251,6 +291,17 @@ impl Editor {
                 .bytes()
                 .take(4096)
                 .all(|byte| matches!(byte, b' ' | b'\t'))
+        })
+    }
+    /// Cheap input-path gate for the electric access-specifier colon:
+    /// some cursor's line content is exactly one specifier keyword.
+    /// plan() still decides per cursor with the registry's language
+    /// gate, so non-C++ buffers ride the machinery once and insert a
+    /// plain colon.
+    pub(crate) fn label_needs_alignment(&self) -> bool {
+        self.all_cursors().into_iter().any(|at| {
+            let start = self.buf().line_start(self.buf().line_of(at));
+            access_specifier(self.buf(), start, at).is_some()
         })
     }
     pub(crate) fn apply_indentation(&mut self, edits: &[Edit]) {

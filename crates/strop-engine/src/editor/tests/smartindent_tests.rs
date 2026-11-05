@@ -492,3 +492,142 @@ fn paired_enter_and_bracketed_literal_paste_repeat_without_reindenting_payload()
     editor.feed_text("u");
     assert_eq!(editor.buf().text().to_string(), original);
 }
+
+#[test]
+fn access_specifier_colon_dedents_to_its_class_body_anchor() {
+    // The typed `:` completing a bare C++ specifier snaps the line to
+    // the enclosing brace opener's line indent plus one unit (vim's
+    // `cino-g` default), whatever indentation it inherited.
+    let mut editor = code_editor(
+        "class F {\n    public:\n        int a();\n        int b();",
+        "a.cpp",
+    );
+    editor.set_head(editor.buf().len_bytes());
+    editor.feed_text("oprivate:");
+    settle_indentation(&mut editor);
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "class F {\n    public:\n        int a();\n        int b();\n    private:"
+    );
+    assert_eq!(
+        editor.head(),
+        editor.buf().line_start(4) + "    private:".len()
+    );
+    // The body keeps the Label rule: one unit deeper than the label.
+    editor.feed_text("<cr>int c();");
+    settle_indentation(&mut editor);
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "class F {\n    public:\n        int a();\n        int b();\n    private:\n        int c();"
+    );
+
+    // Brace on its own line anchors to that line's indentation.
+    for (text, expected) in [
+        ("class F\n{\n        private", "class F\n{\n    private:"),
+        (
+            "class O {\n    class I {\n            public",
+            "class O {\n    class I {\n        public:",
+        ),
+        // Already at the anchor: the colon changes nothing but itself.
+        ("class F {\n    private", "class F {\n    private:"),
+    ] {
+        let mut editor = code_editor(text, "a.cpp");
+        editor.set_head(text.len());
+        editor.feed_text("A:");
+        settle_indentation(&mut editor);
+        assert_eq!(editor.buf().text().to_string(), expected, "{text:?}");
+    }
+}
+
+#[test]
+fn access_specifier_colon_aligns_every_cursor_to_its_own_class() {
+    let text = "class A {\n            private\nclass B {\n                public\n";
+    let mut editor = code_editor(text, "a.cpp");
+    editor.set_head(text.find("private").unwrap() + "private".len());
+    editor.feed_text("i");
+    editor
+        .sels_mut()
+        .set_extras([text.find("public").unwrap() + "public".len()]);
+    editor.feed_text(":");
+    settle_indentation(&mut editor);
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "class A {\n    private:\nclass B {\n    public:\n"
+    );
+}
+
+#[test]
+fn access_specifier_colon_is_cpp_only() {
+    // Other Label-policy languages and plain C keep the user's
+    // whitespace: the registry marks C++ alone electric.
+    for path in ["a.rs", "a.c", "a.java"] {
+        let mut editor = code_editor("class F\n{\n        private", path);
+        editor.set_head(editor.buf().len_bytes());
+        editor.feed_text("A:");
+        settle_indentation(&mut editor);
+        assert_eq!(
+            editor.buf().text().to_string(),
+            "class F\n{\n        private:",
+            "{path}: no electric outdent outside C++"
+        );
+    }
+}
+
+#[test]
+fn access_specifier_colon_without_anchor_or_word_inserts_plainly() {
+    for (text, expected) in [
+        // No enclosing brace: never an invented outdent.
+        ("private", "private:"),
+        // Not exactly a specifier keyword: not electric at all.
+        (
+            "class F {\n        xprivate",
+            "class F {\n        xprivate:",
+        ),
+        (
+            "class F {\n        private x",
+            "class F {\n        private x:",
+        ),
+    ] {
+        let mut editor = code_editor(text, "a.cpp");
+        editor.set_head(text.len());
+        editor.feed_text("A:");
+        settle_indentation(&mut editor);
+        assert_eq!(editor.buf().text().to_string(), expected, "{text:?}");
+    }
+}
+
+#[test]
+fn large_source_access_specifier_uses_deferred_syntax() {
+    // Past the inline bound the same decision comes from the worker's
+    // tree, through ordered typeahead, as one undo unit.
+    let text = format!("{}class F {{\n        private", "// padding\n".repeat(600));
+    let mut editor = code_editor(&text, "large.cpp");
+    editor.set_head(text.len());
+    editor.feed_text("A:");
+    settle_indentation(&mut editor);
+    let expected = format!("{}class F {{\n    private:", "// padding\n".repeat(600));
+    assert_eq!(editor.buf().text().to_string(), expected);
+    editor.feed_text("<esc>u");
+    assert_eq!(editor.buf().text().to_string(), text);
+}
+
+#[test]
+fn dot_replays_the_electric_access_specifier_at_destination() {
+    let text = "class A {\n        int a();\nclass B {\n        int b();\n";
+    let mut editor = code_editor(text, "a.cpp");
+    editor.set_head(text.find("int a();").unwrap() + "int a();".len());
+    editor.feed_text("oprivate:<esc>");
+    settle_indentation(&mut editor);
+    let recorded = editor.buf().text().to_string();
+    assert_eq!(
+        recorded,
+        "class A {\n        int a();\n    private:\nclass B {\n        int b();\n"
+    );
+    editor.set_head(recorded.find("int b();").unwrap() + "int b();".len());
+    editor.feed_text(".");
+    settle_indentation(&mut editor);
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "class A {\n        int a();\n    private:\nclass B {\n        int b();\n    private:\n"
+    );
+}

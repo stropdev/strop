@@ -17,6 +17,17 @@ PHP: a trailing `:` opens a one-unit deeper body from anywhere in code —
 labels). Rust, JSON, CSS and prose stay `None`. The editor's `Request`
 carries the policy instead of a `python: bool`; the punctuation rule lives
 in the one shared `plan()`, never per-language editor code.
+Amendment (0.51.0): the access-specifier colon became electric, like a typed
+closing delimiter. In C++ — `public`, `protected`, `private`, vim's
+`'cinscopedecls'` defaults — typing the `:` that completes a line whose
+content is exactly the specifier re-indents that line to the innermost
+enclosing brace opener's line indentation plus one unit (vim's `cino-g`
+default) and then inserts the colon; the body opened by Enter keeps the
+existing one-unit-deeper Label rule (`cino-h`). Non-C++ languages,
+string/comment contexts, keyword-free lines, and lines without a brace
+anchor keep plain insertion — never an invented outdent. The decision rides
+the same per-cursor plan machinery as Enter and typed closers, including
+deferred worker resolution and ordered typeahead.
 
 
 ## Reference behavior

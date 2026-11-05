@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.51.0 — 2026-11-05
+
+### Added
+
+- **Electric C++ access specifiers**: typing the `:` that completes a bare `public`, `protected` or `private` line snaps it to one unit inside its enclosing class — vim's electric-label behavior (`cino-g` defaults) — whatever indentation the line inherited. The section body opened by Enter keeps its one-unit-deeper rule, every cursor anchors to its own class, dot repeat and macros replay the intent at the destination, and large files resolve on the existing deferred worker. Other languages, strings/comments, non-keyword lines and lines without a brace anchor insert the colon unchanged.
+
 ## 0.50.0 — 2026-11-05
 
 ### Changed

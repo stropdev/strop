@@ -230,6 +230,7 @@ impl Editor {
         match trigger {
             Trigger::Enter => self.feed_insert(Key::Enter),
             Trigger::Closer(kind) => self.feed_insert(Key::Char(kind.closing_character())),
+            Trigger::Label => self.feed_insert(Key::Char(':')),
             Trigger::Below => self.open_below(),
             Trigger::Above => self.open_above(),
         }
@@ -526,8 +527,10 @@ impl Editor {
                     self.indentation_request(request.trigger).as_ref() == Some(request)
                         && matches!(
                             (request.trigger, self.mode),
-                            (Trigger::Enter | Trigger::Closer(_), super::Mode::Insert)
-                                | (Trigger::Above | Trigger::Below, super::Mode::Normal)
+                            (
+                                Trigger::Enter | Trigger::Closer(_) | Trigger::Label,
+                                super::Mode::Insert
+                            ) | (Trigger::Above | Trigger::Below, super::Mode::Normal)
                         )
                 }
             };
@@ -571,8 +574,10 @@ impl Editor {
                     if editor.indentation_request(request.trigger).as_ref() == Some(request)
                         && matches!(
                             (request.trigger, editor.mode),
-                            (Trigger::Enter | Trigger::Closer(_), super::Mode::Insert)
-                                | (Trigger::Above | Trigger::Below, super::Mode::Normal)
+                            (
+                                Trigger::Enter | Trigger::Closer(_) | Trigger::Label,
+                                super::Mode::Insert
+                            ) | (Trigger::Above | Trigger::Below, super::Mode::Normal)
                         )
                     {
                         editor.finish_indentation(request.trigger);

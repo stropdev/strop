@@ -13,6 +13,11 @@ wrong. Each cursor uses its own source context, indentation unit and line
 endings. Undo, counted insertion and dot repeat preserve the operation
 rather than copying generated indentation from a different location.
 
+Typing the `:` that completes a bare C++ access specifier line — `private:`,
+`protected:`, `public:` — snaps that line to one unit inside its enclosing
+class, whatever indentation it inherited (vim's electric label). Other
+languages and non-keyword lines insert the colon unchanged.
+
 A trailing colon opens a one-unit deeper body where the language gives it
 that meaning — one punctuation rule decided by the language registry, not
 per-language editor code:
