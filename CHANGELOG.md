@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.49.0 — 2026-11-05
+
+### Added
+
+- **Persistent per-window jump history**: each pane owns a 100-entry jumplist, copied on split and then independent. Project sessions restore the active window's cross-file jump records, selections, viewports and traversal position alongside buffers and undo history. Quit-all captures one complete snapshot before closing any buffer, so the last close cannot discard earlier files from the session.
+
+### Changed
+
+- **Vim-native jump traversal**: jump commands retain their origins rather than behaving like undo/redo. File windows start with Neovim's initial line-1 origin. New jumps made while browsing older history preserve newer entries by default; only initial back traversal snapshots the current position, so small motions cannot invent extra history. Same-line entries deduplicate, edits remap every pane, and `Space j` continues to expose the same records with a synthetic current-position row.
+- **Quiet feedback at every width**: active warning/failure feedback retains a textual severity marker through the narrowest modeline layouts, alongside existing LSP and terminal cues. Confirmations remain inline and actionable outcomes remain in `Space a` / `:explain`; no floating notification cards or animation were added.
+
+### Fixed
+
+- **Complete jump population and motion boundaries**: `{` / `}`, `H` / `M` / `L`, successful substitutions, buffer switches, terminal launch and existing file/search/LSP dives now record successful origins consistently. Paragraphs no longer enter the trailing phantom EOF line, visible-line motions reveal the caret and choose Neovim's upper middle line, and substitutions land on the last affected line. Failed mark jumps leave history untouched, and dead documents cannot corrupt back/forward traversal.
+
 ## 0.48.0 — 2026-11-05
 
 ### Added

@@ -198,6 +198,7 @@ fn stale_hunk_surface_refuses() {
         view_top: 0,
         hscroll: strop_core::id::DisplayColumn::new(0),
         desired_column: None,
+        jumps: Default::default(),
     });
     pump_hunks(&mut e);
     e.doc_mut(e.first_doc())

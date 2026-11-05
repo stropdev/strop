@@ -83,6 +83,7 @@ pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
+pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
 pub use namespace::{CapabilityDecision, NamespaceCapabilities, WorkspaceCapability};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{
@@ -180,11 +181,6 @@ pub struct Editor {
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,
     pub(crate) git_mutations: std::collections::VecDeque<git_memory::GitMutation>,
     pub(crate) git_mutation: Option<strop_core::worker::Ticket<git_memory::MutationKey>>,
-    /// vim's jumplist (ctrl-o/ctrl-i): past/future stacks of named
-    /// navigation/view records — caret, selection, viewport and
-    /// horizontal origin (0051 §7, jumps.rs).
-    pub(crate) jumplist_past: Vec<jumps::JumpRecord>,
-    pub(crate) jumplist_future: Vec<jumps::JumpRecord>,
     pub(crate) mode: Mode,
     pub(crate) pending: pending::PendingInput,
     /// The input walker (0008 stage 2): typed parser state for
@@ -408,13 +404,29 @@ impl Editor {
         let (git_tx, git_rx) = git_channel();
         let mut docs = strop_core::id::Arena::default();
         // the source identity is set at construction, not by convention
-        let doc = if buf.path.is_some() {
+        let file_window = buf.path.is_some();
+        let doc = if file_window {
             Document::new(buf)
         } else {
             Document::scratch(buf)
         };
         let Ok(current) = docs.try_insert(doc) else {
             unreachable!("a fresh arena cannot exhaust its identity space")
+        };
+        let jumps = if file_window {
+            jumps::JumpList {
+                entries: vec![jumps::JumpRecord {
+                    document: current,
+                    offset: 0,
+                    view_top: 0,
+                    hscroll: strop_core::id::DisplayColumn::new(0),
+                    anchor: 0,
+                    extras: Vec::new(),
+                }],
+                position: None,
+            }
+        } else {
+            jumps::JumpList::default()
         };
         Self {
             docs,
@@ -525,8 +537,6 @@ impl Editor {
             preview_loads: HashMap::new(),
             preview_watchdog: picker::PreviewWatchdog::default(),
             preview_cache_order: std::collections::VecDeque::new(),
-            jumplist_past: Vec::new(),
-            jumplist_future: Vec::new(),
             lsp_servers: Vec::new(),
             clip_tx,
             clip_rx: Some(clip_rx),
@@ -541,6 +551,7 @@ impl Editor {
                 view_top: 0,
                 hscroll: strop_core::id::DisplayColumn::new(0),
                 desired_column: None,
+                jumps,
             }],
             active_pane: 0,
             layout: LayoutDir::Row,
@@ -682,24 +693,21 @@ impl Editor {
 
     /// `'{a}`: jump to mark a (switches buffer if the mark lives there).
     pub(crate) fn jump_mark(&mut self, mark: char) {
-        self.push_jump(); // mark jumps are jumplist entries
         match self.marks.get(&mark).copied() {
-            Some((buf, offset)) => {
-                if self.docs.get(buf).is_some() {
-                    if buf != self.current() {
-                        self.switch_to(buf);
-                        self.discover_git();
-                    }
-                    self.set_head(
-                        self.buf()
-                            .clamp_boundary(offset.min(self.buf().len_bytes())),
-                    );
-                    self.clamp_cursor();
-                    // mark jumps use the 0051 §7 landing placement:
-                    // center unless comfortably visible
-                    self.place_jump_target();
+            Some((buf, offset)) if self.docs.get(buf).is_some() => {
+                self.push_jump();
+                if buf != self.current() {
+                    self.switch_to(buf);
+                    self.discover_git();
                 }
+                self.set_head(
+                    self.buf()
+                        .clamp_boundary(offset.min(self.buf().len_bytes())),
+                );
+                self.clamp_cursor();
+                self.place_jump_target();
             }
+            Some(_) => self.message = format!("mark {mark} is no longer available"),
             None => self.message = format!("mark {mark} not set"),
         }
     }

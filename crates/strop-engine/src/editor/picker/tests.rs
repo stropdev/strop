@@ -169,9 +169,8 @@ mod picker_tests {
 
     #[test]
     fn jumps_picker_walks_history_and_ctrl_o_returns() {
-        // 0047 §2: the jumplist as a menu — past newest-first, the
-        // current position marked, accepting an entry lands there and
-        // records the spot so ctrl-o returns.
+        // Older entries are newest-first, the current position is marked,
+        // and accepting an entry records the spot so ctrl-o returns.
         let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\nfour\n"));
         e.feed_text("G"); // jump to line 4
         e.feed_text("gg"); // jump back to line 1
@@ -197,6 +196,28 @@ mod picker_tests {
             0,
             "ctrl-o returns to where the picker was opened"
         );
+    }
+
+    #[test]
+    fn jumps_picker_projects_older_selected_live_and_newer_rows() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\nfour\n"));
+        e.feed_text("G3Ggg");
+        e.feed(strop_core::frontend_input::Key::CtrlO);
+        e.feed_text("j");
+        e.open_picker(Kind::Jumps);
+        e.wait_picker();
+        let glue = e.picker.as_ref().unwrap();
+        let texts: Vec<&str> = glue
+            .picker
+            .items
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect();
+        assert_eq!(texts.len(), 4, "older + selected + live + newer: {texts:?}");
+        assert!(texts[0].contains(":4"));
+        assert!(!texts[1].starts_with("> ") && texts[1].contains(":3"));
+        assert!(texts[2].starts_with("> ") && texts[2].contains(":4"));
+        assert!(!texts[3].starts_with("> ") && texts[3].contains(":1"));
     }
 
     #[test]
@@ -240,6 +261,7 @@ mod picker_tests {
         let mut e = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
         e.open_fixture(&dir.path().join("lib.rs")).unwrap();
         e.feed_text("G");
+        std::fs::write(dir.path().join("app.py"), "print('one')\nprint('two')\n").unwrap();
         e.open_fixture(&dir.path().join("app.py")).unwrap();
         e.feed_text("G");
         e.open_fixture(&dir.path().join("tests/widget.rs")).unwrap();

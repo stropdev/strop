@@ -61,7 +61,7 @@ fn enter_uses_the_preview_origin_for_every_counted_cursor() {
     assert_eq!(e.last_search.as_ref().map(|s| s.query.source()), Some("hi"));
     assert!(!e.pending.is_active());
     e.feed(Key::CtrlO);
-    assert_eq!(e.head(), 0);
+    assert_eq!(e.head(), 8, "same-line dedup leaves the live position");
 }
 
 #[test]
@@ -297,8 +297,8 @@ fn backward_and_wrapping_search_keep_preview_commit_and_jump_agreeing() {
     assert_eq!(e.head(), 0);
     e.feed(Key::Enter);
     assert_eq!(e.head(), 0);
-    e.feed(Key::CtrlO);
-    assert_eq!(e.head(), 11);
+    e.jump_back();
+    assert_eq!(e.head(), 0, "the live same-line record replaces the origin");
     let mut e = Editor::new(Buffer::from_text("aa yy\nzz\n"));
     e.feed_text("G$");
     let origin = e.head();

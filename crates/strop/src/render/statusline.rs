@@ -7,23 +7,25 @@
 //! cell (`text`), never a character: under pressure the row yields the
 //! directory first, then the Git context, then the optional signals,
 //! and only then clips the filename and the transient status. Owned LSP
-//! failures retain a compact non-color badge through every degradation,
-//! including the mode-and-position-only fallback. Every gathered string
-//! passes the shared clipping helpers, so a control byte can never reach
-//! the terminal as protocol.
+//! failures and presented warning/failure feedback retain compact textual
+//! badges through every degradation, including the mode-and-position-only
+//! fallback. Every gathered string passes the shared clipping helpers, so a
+//! control byte can never reach the terminal as protocol.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
+use strop_engine::editor::feedback::FeedbackSeverity;
 use strop_lsp::Severity;
 
 use crate::editor::Editor;
 
-use super::clip::{clip_end, clip_start, width};
+use super::clip::{clip_end, width};
 use super::{base, mode_color, muted, secondary, severity_color, text};
 
+mod layout;
 mod services;
 #[cfg(test)]
 mod tests;
@@ -34,15 +36,6 @@ const SEP: &str = " │ ";
 const SEP_W: usize = 3;
 /// The halves never jam together while a spare cell exists.
 const GAP: usize = 1;
-/// Smallest fragment still worth its cells (a directory hint, a name,
-/// a position in the degenerate layout).
-const MIN_GROUP: usize = 4;
-/// A transient status shorter than this is noise, not information.
-const MIN_STATUS: usize = 3;
-/// Terminal input/return and attention cues survive optional status prose.
-const TERMINAL_STATUS_MIN: usize = 14;
-/// Wide rows retain the complete pinned-output Refresh action as well.
-const TERMINAL_STATUS_WIDE: usize = 38;
 
 pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
@@ -82,6 +75,8 @@ struct Modeline {
     readonly: bool,              // " [RO]"
     multicursor: Option<String>, // "3×", without its leading pad
     status: String,              // the transient right-side text
+    feedback: Option<FeedbackSeverity>,
+    compact_feedback: bool, // "!" replaces status prose under pressure
     services: services::Services,
     errors: usize,
     warnings: usize,
@@ -203,6 +198,8 @@ impl Modeline {
             readonly: buf.readonly && !terminal_input && !terminal,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
             status: printable(transient::transient(editor)),
+            feedback: editor.presented_feedback().map(|record| record.severity()),
+            compact_feedback: false,
             services: services::Services::gather(editor),
             errors,
             warnings,
@@ -222,265 +219,6 @@ impl Modeline {
             bare: false,
             bare_chip: 0,
         }
-    }
-
-    /// Narrow the row until it fits `cells`. Each step frees the least
-    /// essential thing still on screen; the first step that makes it
-    /// fit wins, so a wide terminal loses nothing.
-    fn fit(&mut self, cells: usize) {
-        if self.used() <= cells {
-            return;
-        }
-        self.staged_mark = false;
-        if self.terminal && self.used() > cells {
-            let overflow = self.used() - cells;
-            let essential = self.terminal_status_reserve(cells);
-            let budget = width(&self.status).saturating_sub(overflow).max(essential);
-            self.status = clip_end(&self.status, budget).into_owned();
-            if self.used() <= cells {
-                return;
-            }
-        }
-        if self.used() <= cells {
-            return;
-        }
-        // The directory yields before anything else — shrunk towards
-        // its tail (the parent closest to the file is the context
-        // worth keeping), but never below a smallest useful fragment.
-        // The filename is never the thing that gives way.
-        let overflow = self.used() - cells;
-        let budget = MIN_GROUP.max(width(&self.dir).saturating_sub(overflow));
-        if width(&self.dir) > budget {
-            self.dir = clip_start(&self.dir, budget).into_owned();
-        }
-        if self.used() <= cells {
-            return;
-        }
-        self.dir.clear();
-        if self.used() <= cells {
-            return;
-        }
-        self.git_context.clear();
-        if self.used() <= cells {
-            return;
-        }
-        self.services.drop_ready();
-        if self.used() <= cells {
-            return;
-        }
-        self.percent = None;
-        if self.used() <= cells {
-            return;
-        }
-        self.services.drop_starting();
-        if self.used() <= cells {
-            return;
-        }
-        self.show_diag = false;
-        if self.used() <= cells {
-            return;
-        }
-        // R06's essential tail is mode · indentation · position: the
-        // indent segment yields only to the incompressible ends.
-        self.indent.clear();
-        if self.used() <= cells {
-            return;
-        }
-        self.elastic(cells);
-    }
-
-    fn terminal_status_reserve(&self, cells: usize) -> usize {
-        if cells >= 80 && self.terminal_prefix {
-            return width(&self.status);
-        }
-        let reserve = if cells >= 80 && self.terminal_attention {
-            TERMINAL_STATUS_WIDE
-        } else {
-            TERMINAL_STATUS_MIN
-        };
-        reserve.min(width(&self.status))
-    }
-
-    /// The incompressible ends are the mode accent and the position;
-    /// everything optional is already gone. What is left is shared
-    /// between the filename and the transient status — the filename
-    /// first, but capped at two thirds so a huge name cannot starve
-    /// live activity (0032: a long path must not crowd out the
-    /// status).
-    fn elastic(&mut self, cells: usize) {
-        let chip_w = 1 + width(&self.chip);
-        let pos_w = self.position_width();
-        let services_w = if self.services.is_empty() {
-            0
-        } else {
-            SEP_W + self.services.width()
-        };
-        if !self.status.is_empty() {
-            let Some(room) = cells.checked_sub(chip_w + SEP_W + GAP + SEP_W + pos_w + services_w)
-            else {
-                if self.services.compact() {
-                    return self.elastic(cells);
-                }
-                self.status.clear(); // its separator is the next cell to free
-                return self.elastic(cells);
-            };
-            let file_budget = self
-                .file_w()
-                .min(room)
-                .min((room * 2 / 3).max(MIN_GROUP))
-                .min(if self.terminal {
-                    room.saturating_sub(self.terminal_status_reserve(cells))
-                        .max(MIN_GROUP.min(room))
-                } else {
-                    room
-                })
-                .min(room);
-            self.fit_file(file_budget);
-            let status_budget = room - file_budget;
-            if status_budget >= MIN_STATUS {
-                self.status = clip_end(&self.status, status_budget).into_owned();
-            } else {
-                self.status.clear();
-            }
-            return;
-        }
-        let Some(room) = cells.checked_sub(chip_w + SEP_W + GAP + pos_w + services_w) else {
-            if self.services.compact() {
-                return self.elastic(cells);
-            }
-            return self.ultra(cells);
-        };
-        self.fit_file(room);
-    }
-
-    /// Spend `budget` cells on the file group: the filename first
-    /// (clipped from the end, whole graphemes only), then whichever
-    /// signals still fit behind it.
-    fn fit_file(&mut self, budget: usize) {
-        let reserved = 2 * usize::from(self.dirty)
-            + 5 * usize::from(self.readonly)
-            + self.multicursor.as_ref().map_or(0, |mark| 1 + width(mark));
-        let name_budget = budget.saturating_sub(reserved);
-        if !self.namespace.is_empty() {
-            let namespace_budget = name_budget.saturating_sub(width(&self.name).min(MIN_GROUP) + 1);
-            self.namespace = clip_end(&self.namespace, namespace_budget).into_owned();
-        }
-        let name_budget = name_budget.saturating_sub(self.namespace_width());
-        self.name = clip_end(&self.name, name_budget).into_owned();
-    }
-
-    /// Degenerate widths: not even the accent, a separator and the
-    /// position fit. Show the accent and the position alone, splitting
-    /// the row between them — never an empty row.
-    fn ultra(&mut self, cells: usize) {
-        self.git_context.clear();
-        self.namespace.clear();
-        // Even at degenerate widths, put safety before decorative mode text.
-        let safety = format!(
-            "{}{}{}{}",
-            self.services.problem_mark(),
-            if self.dirty { "*" } else { "" },
-            if self.readonly { "RO" } else { "" },
-            self.multicursor.as_deref().unwrap_or("")
-        );
-        if !safety.is_empty() {
-            self.chip = format!("{safety} {}", self.chip.trim());
-        }
-        self.dir.clear();
-        self.name.clear();
-        self.status.clear();
-        self.dirty = false;
-        self.readonly = false;
-        self.multicursor = None;
-        self.percent = None;
-        self.show_diag = false;
-        self.indent.clear();
-        self.bare = true;
-        let pos_budget = self.position_width().min((cells / 2).max(MIN_GROUP));
-        self.bare_chip = cells.saturating_sub(pos_budget);
-    }
-
-    /// `current/total` search position, then `line:col` and, while there
-    /// is room, the content percentage (1-based line and byte column).
-    fn position(&self) -> String {
-        let search = self
-            .search
-            .map(|(current, total)| format!("{current}/{total} "))
-            .unwrap_or_default();
-        match self.percent {
-            Some(percent) => format!("{search}{}:{} {}%", self.line, self.col, percent),
-            None => format!("{search}{}:{}", self.line, self.col),
-        }
-    }
-
-    fn position_width(&self) -> usize {
-        self.search.map_or(0, |(current, total)| {
-            digits(current) + 1 + digits(total) + 1
-        }) + digits(self.line)
-            + 1
-            + digits(self.col)
-            + self.percent.map_or(0, |percent| 2 + digits(percent))
-    }
-
-    /// Measure the visible groups without building or allocating spans.
-    fn used(&self) -> usize {
-        let mut left = 1 + width(&self.chip);
-        if !self.git_context.is_empty() {
-            left += SEP_W
-                + width(&self.git_context)
-                + usize::from(self.worktree_dirty)
-                + usize::from(self.staged_mark);
-        }
-        if !self.dir.is_empty()
-            || !self.name.is_empty()
-            || self.dirty
-            || self.readonly
-            || self.multicursor.is_some()
-        {
-            left += SEP_W + self.file_w();
-        }
-        let mut right = self.position_width();
-        if !self.status.is_empty() {
-            right += width(&self.status) + SEP_W;
-        }
-        if !self.services.is_empty() {
-            right += self.services.width() + SEP_W;
-        }
-        if self.show_diag {
-            right += SEP_W
-                + if self.errors > 0 {
-                    1 + digits(self.errors)
-                } else {
-                    0
-                }
-                + if self.warnings > 0 {
-                    1 + digits(self.warnings)
-                } else {
-                    0
-                }
-                + usize::from(self.errors > 0 && self.warnings > 0);
-        }
-        if !self.indent.is_empty() {
-            right += SEP_W + width(&self.indent);
-        }
-        left + GAP + right
-    }
-
-    fn namespace_width(&self) -> usize {
-        if self.namespace.is_empty() {
-            0
-        } else {
-            width(&self.namespace) + 1
-        }
-    }
-
-    fn file_w(&self) -> usize {
-        self.namespace_width()
-            + width(&self.dir)
-            + width(&self.name)
-            + 2 * usize::from(self.dirty)
-            + 5 * usize::from(self.readonly)
-            + self.multicursor.as_ref().map_or(0, |mark| 1 + width(mark))
     }
 
     fn file_spans(&self) -> Vec<Span<'_>> {
@@ -570,7 +308,12 @@ impl Modeline {
             left.extend(self.file_spans());
         }
         let mut right = Vec::new();
-        if !self.status.is_empty() {
+        if self.compact_feedback {
+            right.push(Span::styled(
+                "!",
+                Style::default().fg(self.feedback_color()),
+            ));
+        } else if !self.status.is_empty() {
             right.push(Span::styled(
                 self.status.as_str(),
                 Style::default().fg(secondary()),
@@ -636,12 +379,20 @@ impl Modeline {
 
     fn bare_spans(&self, cells: usize) -> Vec<Span<'static>> {
         let mut spans = Vec::new();
-        if self.bare_chip >= 1 {
+        let mut chip_budget = self.bare_chip;
+        if self.compact_feedback && chip_budget >= 1 {
+            spans.push(Span::styled(
+                "!",
+                Style::default().fg(self.feedback_color()),
+            ));
+            chip_budget -= 1;
+        }
+        if chip_budget >= 1 {
             spans.push(Span::styled("▌", Style::default().fg(self.accent)));
         }
-        if self.bare_chip >= 2 {
+        if chip_budget >= 2 {
             spans.push(Span::styled(
-                clip_end(&self.chip, self.bare_chip - 1).into_owned(),
+                clip_end(&self.chip, chip_budget - 1).into_owned(),
                 Style::default()
                     .fg(base())
                     .bg(self.accent)
@@ -658,12 +409,6 @@ impl Modeline {
 
 fn span_width(spans: &[Span<'_>]) -> usize {
     spans.iter().map(|span| width(&span.content)).sum()
-}
-
-fn digits(value: usize) -> usize {
-    value
-        .checked_ilog10()
-        .map_or(1, |digits| digits as usize + 1)
 }
 
 fn printable(text: String) -> String {

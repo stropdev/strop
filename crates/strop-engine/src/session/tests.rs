@@ -35,6 +35,138 @@ fn roundtrip_restores_buffers_and_position() {
 }
 
 #[test]
+fn jump_history_roundtrips_across_documents_with_index_and_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let a_path = root.join("a.txt");
+    let b_path = root.join("b.txt");
+    let text = "zero\none\ntwo\nthree\nfour\n";
+    std::fs::write(&a_path, text).unwrap();
+    std::fs::write(&b_path, text).unwrap();
+    let mut e = Editor::new(Buffer::open(&a_path).unwrap());
+    e.cwd = root.to_owned();
+    e.state_dir = Some(root.join("state"));
+    e.set_head(e.buf().line_start(2) + 1);
+    let anchor = e.buf().line_start(2);
+    let head = e.head();
+    e.sels_mut().stretch_primary(anchor, head);
+    let extra = e.buf().line_start(3);
+    e.sels_mut()
+        .set_extra_selections(vec![strop_core::selection::Selection::cursor(extra)]);
+    e.view_mut().view_top = 1;
+    e.view_mut().hscroll = strop_core::id::DisplayColumn::new(4);
+    e.push_jump();
+    let b = e
+        .docs
+        .try_insert(Document::new(Buffer::open(&b_path).unwrap()))
+        .unwrap();
+    e.switch_to(b);
+    e.set_head(e.buf().line_start(1));
+    e.push_jump();
+    e.set_head(e.buf().line_start(3));
+    e.jump_back();
+    let selected = e.view().jumps.position;
+    assert!(save(&e).unwrap());
+
+    let mut restored = Editor::new(Buffer::from_text(""));
+    restored.cwd = root.to_owned();
+    restored.state_dir = Some(root.join("state"));
+    assert!(restore(&mut restored).unwrap());
+    assert_eq!(
+        restored.current(),
+        restored.view().jumps.entries[2].document
+    );
+    let path_of = |index: usize| {
+        restored
+            .doc(restored.view().jumps.entries[index].document)
+            .buf
+            .path
+            .clone()
+    };
+    assert_eq!(path_of(1).as_deref(), Some(a_path.as_path()));
+    assert_eq!(path_of(2).as_deref(), Some(b_path.as_path()));
+    assert_eq!(restored.view().jumps.entries.len(), 4);
+    assert_eq!(restored.view().jumps.position, selected);
+    restored.scroll_to_cursor(3);
+    restored.jump_back();
+    assert_eq!(restored.buf().path.as_deref(), Some(a_path.as_path()));
+    assert_eq!(restored.head(), restored.buf().line_start(2) + 1);
+    assert_eq!(
+        restored.sels().primary().anchor,
+        restored.buf().line_start(2)
+    );
+    assert_eq!(
+        restored.sels().extra_heads()[0].head,
+        restored.buf().line_start(3)
+    );
+    assert_eq!(restored.view_top(), 1);
+    assert_eq!(
+        restored.view().hscroll,
+        strop_core::id::DisplayColumn::new(4)
+    );
+}
+
+#[test]
+fn changed_files_clamp_restored_jump_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.txt");
+    std::fs::write(&path, "zero\none\ntwo\nthree\n").unwrap();
+    let mut e = Editor::new(Buffer::open(&path).unwrap());
+    e.cwd = dir.path().to_owned();
+    e.set_head(e.buf().line_start(3));
+    e.view_mut().view_top = 3;
+    e.push_jump();
+    let session = capture(&e).unwrap();
+    drop(e);
+    std::fs::write(&path, "x\n").unwrap();
+
+    let mut restored = Editor::new(Buffer::from_text(""));
+    restored.cwd = dir.path().to_owned();
+    session.restore(&mut restored).unwrap();
+    let record = &restored.view().jumps.entries[1];
+    assert_eq!(record.offset, restored.buf().len_bytes());
+    assert_eq!(record.anchor, 0);
+    assert_eq!(record.view_top, restored.buf().len_bytes());
+}
+
+#[test]
+fn quit_all_persists_every_buffer_and_the_complete_jump_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let a = root.join("a.txt");
+    let b = root.join("b.txt");
+    std::fs::write(&a, "a0\na1\n").unwrap();
+    std::fs::write(&b, "b0\nb1\n").unwrap();
+    let mut e = Editor::new(Buffer::open(&a).unwrap());
+    e.cwd = root.to_owned();
+    e.state_dir = Some(root.join("state"));
+    e.open_fixture(&b).unwrap();
+    e.feed_text("G");
+    e.quit_all(false);
+    e.wait_io().unwrap();
+
+    let session = load(e.state_dir.as_deref(), &e.cwd)
+        .unwrap()
+        .expect("quit-all captured a session");
+    assert_eq!(session.buffers.len(), 2);
+    assert!(session.buffers.iter().any(|buffer| buffer.path == a));
+    assert!(session.buffers.iter().any(|buffer| buffer.path == b));
+    assert!(session.jumps.entries.iter().any(|jump| jump.path == a));
+    assert!(session.jumps.entries.iter().any(|jump| jump.path == b));
+}
+
+#[test]
+fn old_sessions_default_to_empty_jump_history() {
+    let session: Session = serde_json::from_value(serde_json::json!({
+        "buffers": [{"path": "a.txt", "line": 0, "col": 0, "view_top": 0, "undo": null}],
+        "current": 0
+    }))
+    .unwrap();
+    assert!(session.jumps.entries.is_empty());
+    assert_eq!(session.jumps.position, None);
+}
+
+#[test]
 fn empty_or_readonly_never_persist() {
     let dir = tempfile::tempdir().unwrap();
     let mut e = Editor::new(Buffer::from_text(""));

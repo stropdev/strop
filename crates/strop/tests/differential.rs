@@ -86,6 +86,51 @@ const CASES: &[Case] = &[
         text: "fn f(x) { y }\n",
         keys: "%",
     },
+    Case {
+        name: "jumplist back and forward",
+        text: "a\nb\nc\nd\ne\n",
+        keys: "Ggg<c-o><c-i>",
+    },
+    Case {
+        name: "jumplist counted traversal",
+        text: "a\nb\nc\nd\ne\nf\n",
+        keys: "G3Ggg5G3<c-o>2<c-i>",
+    },
+    Case {
+        name: "jumplist branch preserves newer entries",
+        text: "a\nb\nc\nd\ne\nf\n",
+        keys: "G3Ggg<c-o>5G<c-o><c-o>",
+    },
+    Case {
+        name: "paragraph enters jumplist",
+        text: "one\n\ntwo\n\nthree\n",
+        keys: "}<c-o>",
+    },
+    Case {
+        name: "paragraph at EOF does not enter jumplist",
+        text: "one\n\ntwo\n\nthree\n",
+        keys: "G}<c-o>",
+    },
+    Case {
+        name: "visible line motions enter jumplist",
+        text: "01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n",
+        keys: "GHML2<c-o>",
+    },
+    Case {
+        name: "repeated visible line motion does not enter jumplist",
+        text: "01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n",
+        keys: "GMM<c-o>",
+    },
+    Case {
+        name: "substitute enters jumplist",
+        text: "a one\na two\na three\n",
+        keys: "j:%s/a/b/g\rG2<c-o>",
+    },
+    Case {
+        name: "jumplist same line deduplication",
+        text: "alpha\nb\nc\nd\ne\nf\n",
+        keys: "GggwG3<c-o>",
+    },
     // operators
     Case {
         name: "dw",
@@ -334,6 +379,8 @@ fn keys_to_bytes(keys: &str) -> Vec<u8> {
                 "esc" => out.push(0x1b),
                 "bs" => out.push(0x7f),
                 "tab" => out.push(b'\t'),
+                "c-o" => out.push(0x0f),
+                "c-i" => out.push(0x09),
                 "space" => out.push(b' '),
                 other => panic!("unknown token <{other}> in case"),
             }
@@ -399,7 +446,7 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
     let script = dir.join("script.strop");
     writeln!(
         std::fs::File::create(&script).unwrap(),
-        "keys {keys}\nkeys :w<cr>\nstate"
+        "resize 80 23\nkeys {keys}\nkeys :w<cr>\nstate"
     )
     .unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_strop"))

@@ -30,22 +30,23 @@ impl Editor {
                 grammar::Motion::Search(_) | grammar::Motion::SearchBackward(_)
             )
         );
-        if primary.is_some()
+        let head = primary
+            .map(|resolved| grammar::cursor_after(self.buf(), self.head(), command, resolved));
+        let search_jump = is_search && primary.is_some();
+        let moving_jump = head.is_some_and(|head| head != self.head())
             && matches!(
                 command.target,
                 grammar::Target::Motion(
                     grammar::Motion::FirstLine
                         | grammar::Motion::LastLine
+                        | grammar::Motion::ParagraphBackward
+                        | grammar::Motion::ParagraphForward
                         | grammar::Motion::MatchPair
-                        | grammar::Motion::Search(_)
-                        | grammar::Motion::SearchBackward(_)
                 )
-            )
-        {
+            );
+        if search_jump || moving_jump {
             self.push_jump();
         }
-        let head = primary
-            .map(|resolved| grammar::cursor_after(self.buf(), self.head(), command, resolved));
         let extras: Vec<_> = {
             let olds = self.extra_selections().to_vec();
             olds.iter()

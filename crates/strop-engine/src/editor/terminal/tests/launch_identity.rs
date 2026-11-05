@@ -142,6 +142,10 @@ fn terminal_start_trace_retains_location_and_terminal_local_stays_local() {
         start[1]["path"]["bytes"],
         serde_json::json!([47, 104, 111, 115, 116])
     );
+    assert_eq!(editor.view().jumps.entries.len(), 1);
+    assert_eq!(editor.view().jumps.entries[0].document, directory);
+    editor.jump_back();
+    assert_eq!(editor.current(), directory);
 }
 
 #[test]

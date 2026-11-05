@@ -150,7 +150,7 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :vs :sp` — split vertical / horizontal
 - `✓ space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` — pane move / cycle / focus 1-9
-- `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
+- `✓ ctrl-o / ctrl-i (tab)` — jump back / forward through the current pane's 100-entry jumplist; splits copy history, new jumps preserve newer entries, and project sessions restore it
 - `✓ space w v / -` — pane split (vertical / horizontal)
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ space w q` — close pane (last → buffer)

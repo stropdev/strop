@@ -102,8 +102,10 @@ Failed or unconfirmed saves, connection/admission failures, terminal decisions
 and Dev Container outcomes use the same owner-scoped retained feedback. They
 survive motions, search and unrelated success messages. **Space a** exposes
 only currently valid recovery actions; **`:explain`** retains the complete
-owner, detail and evidence. Dismissing a notice changes only presentation—it
-never cancels work, clears a save barrier or marks an unconfirmed outcome as
+owner, detail and evidence. A compact textual severity marker remains in the
+modeline even at ultra-narrow widths; there are no floating notification cards
+to dismiss or fade. Dismissing a notice changes only presentation—it never
+cancels work, clears a save barrier or marks an unconfirmed outcome as
 successful.
 
 ## Code completion
@@ -160,6 +162,11 @@ live status and position legible at narrow widths.
 
 File/native work runs on owned jobs rather than blocking keystrokes.
 Sessions use private atomic files and lossless native paths, including undo
-history. Per-project sessions restore; undo history crosses restarts with a
-`Space u` tree browser. Remote contents and write permits are never
-restored from persisted sessions.
+history and the active window's jump history. Per-project sessions restore cursor,
+viewport and jump positions across restarts; retained jump records also restore
+their selections. Each pane keeps an independent 100-entry jumplist, copied on
+split. Quit-all writes one complete project snapshot before closing any buffer.
+`Ctrl-O` / `Ctrl-I` traverse jump origins without discarding newer entries
+when a new jump branches from history. Undo history is available in the `Space u`
+tree browser. Remote contents and write permits are never restored from persisted
+sessions.

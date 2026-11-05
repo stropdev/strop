@@ -16,7 +16,8 @@ use crate::editor::{Document, Editor, LayoutDir, Pane};
 
 // Version 5 adds source-owned completion/control-key semantics. Older input
 // must never execute under a different command or acceptance contract.
-const SEMANTIC_VERSION: u32 = 5;
+// Version 6 adds indexed per-pane jump histories.
+const SEMANTIC_VERSION: u32 = 6;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
@@ -180,6 +181,31 @@ impl Seed {
                     return Err(io::Error::other("invalid initial selection"));
                 }
             }
+            if pane.jumps.entries.len() > super::super::jumps::JUMP_LIST_CAP
+                || pane
+                    .jumps
+                    .position
+                    .is_some_and(|position| position >= pane.jumps.entries.len())
+            {
+                return Err(io::Error::other("invalid initial jump list"));
+            }
+            for record in &pane.jumps.entries {
+                let Some(document) = docs.get(record.document) else {
+                    continue; // traversal skips dead documents without removing them
+                };
+                let buffer = &document.buf;
+                let valid = |offset| offset <= buffer.len_bytes() && buffer.is_boundary(offset);
+                if !valid(record.offset)
+                    || !valid(record.anchor)
+                    || !valid(record.view_top)
+                    || record
+                        .extras
+                        .iter()
+                        .any(|selection| !valid(selection.anchor) || !valid(selection.head))
+                {
+                    return Err(io::Error::other("invalid initial jump record"));
+                }
+            }
         }
         let mut editor = Editor::new_in(Buffer::from_text(""), self.cwd);
         editor.docs = docs;
@@ -213,6 +239,21 @@ impl Seed {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pane_jump_history_survives_seed_roundtrip() {
+        let mut editor = Editor::new_in(
+            Buffer::from_text("one\ntwo\nthree\n"),
+            PathBuf::from("/virtual"),
+        );
+        editor.feed_text("G");
+        editor.jump_back();
+        let expected = editor.view().jumps.clone();
+        let seed = Seed::capture(&editor).unwrap();
+        let tape = std::rc::Rc::new(strop_trace::replay::Tape::replay(Vec::new()));
+        let replayed = seed.into_editor(tape).unwrap();
+        assert_eq!(replayed.view().jumps, expected);
+    }
 
     #[test]
     fn legacy_input_capture_is_not_reinterpreted_as_the_new_query_language() {

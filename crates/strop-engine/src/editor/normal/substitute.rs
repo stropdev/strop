@@ -509,6 +509,8 @@ impl Editor {
         let delta = plan.edits.iter().fold(0isize, |delta, edit| {
             delta + edit.text.len() as isize - edit.range.len() as isize
         });
+        let previous_jumps = self.view().jumps.clone();
+        self.push_jump();
         if let Err(error) = self.apply(
             self.current(),
             self.buf().revision(),
@@ -517,14 +519,17 @@ impl Editor {
                 undo_open: false,
             },
         ) {
+            self.view_mut().jumps = previous_jumps;
             self.message = format!("substitution failed: {error}");
             return;
         }
-        self.set_head(self.buf().clamp_boundary(start));
-        self.clamp_cursor();
         let end = old_end
             .saturating_add_signed(delta)
             .min(self.buf().len_bytes());
+        let last_line = self.buf().line_of(end);
+        let last_start = self.buf().line_start(last_line);
+        self.set_head(self.buf().clamp_boundary(last_start));
+        self.clamp_cursor();
         self.flash(Range::charwise(start, end));
         self.message = format!("{hits} substitution{}", if hits == 1 { "" } else { "s" });
     }

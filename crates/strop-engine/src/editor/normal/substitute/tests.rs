@@ -74,6 +74,7 @@ fn preview_apply_and_cancel_share_one_plan_without_composition_effects() {
         editor.buf().text().to_string(),
         "omega one\nomega two omega\n"
     );
+    assert_eq!(editor.buf().line_of(editor.head()), 1);
     editor.feed_text("u");
     assert_eq!(editor.buf().text().to_string(), original);
 }

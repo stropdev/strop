@@ -343,6 +343,17 @@ mod cursor_moves {
     }
 
     #[test]
+    fn paragraph_forward_does_not_enter_the_trailing_phantom_line() {
+        let buf = Buffer::from_text("one\n\ntwo\n\nthree\n");
+        let c = contract::cmd("}");
+        let last = buf.line_start(buf.last_content_line());
+        let r = resolve(&buf, last, &c).unwrap().unwrap();
+        assert_eq!(cursor_after(&buf, last, &c, &r), last);
+        let r = resolve(&buf, 0, &c).unwrap().unwrap();
+        assert_eq!(cursor_after(&buf, 0, &c, &r), buf.line_start(1));
+    }
+
+    #[test]
     fn h_stops_at_line_start() {
         let buf = Buffer::from_text("ab\ncd\n");
         let c = contract::cmd("h");

@@ -326,7 +326,7 @@ fn resolve_controlled(
                 // vim: the first blank line strictly past the cursor, or
                 // the file edge when no blank remains
                 let forward = matches!(m, Motion::ParagraphForward);
-                let n = buf.len_lines();
+                let n = buf.last_content_line() + 1;
                 let mut line = buf.line_of(cursor);
                 for _ in 0..count {
                     check_cancel(cancel)?;

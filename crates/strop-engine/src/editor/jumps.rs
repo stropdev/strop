@@ -1,6 +1,6 @@
-//! vim's jumplist: `ctrl-o` back, `ctrl-i` forward (in a terminal
-//! ctrl-i *is* Tab — same as vim). past/future stacks: a new jump
-//! truncates the future, like vim.
+//! Vim's per-window jumplist: `ctrl-o` walks older origins and `ctrl-i`
+//! walks newer ones (in a terminal ctrl-i *is* Tab). New jumps preserve
+//! newer history; only the first backward traversal snapshots the live position.
 //!
 //! 0051 §7 (R07): entries are full navigation/view records, not bare
 //! positions — `ctrl-o`/`ctrl-i` put back the caret, the selection,
@@ -13,6 +13,15 @@
 use strop_core::id::{DisplayColumn, DocumentId};
 
 use super::Editor;
+
+pub const JUMP_LIST_CAP: usize = 100;
+
+/// One indexed history per window. `None` is below the newest entry.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JumpList {
+    pub entries: Vec<JumpRecord>,
+    pub position: Option<usize>,
+}
 
 /// One jumplist entry (0051 §7): the whole navigation/view record.
 ///
@@ -43,9 +52,9 @@ impl Editor {
         map: impl Fn(usize) -> usize,
     ) {
         for record in self
-            .jumplist_past
+            .panes
             .iter_mut()
-            .chain(self.jumplist_future.iter_mut())
+            .flat_map(|pane| pane.jumps.entries.iter_mut())
             .chain(
                 self.docs
                     .values_mut()
@@ -77,9 +86,8 @@ impl Editor {
         }
     }
 
-    /// The record `push_jump` stores and `jump_back`/`jump_forward`
-    /// swap between stacks: the live caret, selection, viewport and
-    /// horizontal origin, captured BEFORE the jump happens.
+    /// The live caret, selection, viewport and horizontal origin, captured
+    /// immediately before a successful jump.
     pub(crate) fn jump_record(&self) -> JumpRecord {
         let view = self.view();
         let top_line = view.view_top.min(self.buf().len_lines().saturating_sub(1));
@@ -93,58 +101,93 @@ impl Editor {
         }
     }
 
-    /// Record the current position before a jump-causing action
-    /// (gd, gg, G, %, /, n, marks, buffer switches, dives). Consecutive
-    /// duplicates don't pile up: re-recording the same spot refreshes
-    /// the view the entry carries instead of stacking a twin.
+    /// Append an origin without discarding newer entries. Vim retains one
+    /// record per document line and bounds each window's history at 100.
+    pub(crate) fn push_jump_record(&mut self, record: JumpRecord) {
+        let Some(document) = self.docs.get(record.document) else {
+            return;
+        };
+        let line = document
+            .buf
+            .line_of(record.offset.min(document.buf.len_bytes()));
+        let docs = &self.docs;
+        let jumps = &mut self.panes[self.active_pane].jumps;
+        jumps.entries.retain(|old| {
+            old.document != record.document
+                || docs.get(old.document).is_none_or(|old_doc| {
+                    old_doc.buf.line_of(old.offset.min(old_doc.buf.len_bytes())) != line
+                })
+        });
+        jumps.entries.push(record);
+        let excess = jumps.entries.len().saturating_sub(JUMP_LIST_CAP);
+        if excess > 0 {
+            jumps.entries.drain(..excess);
+        }
+        jumps.position = None;
+        debug_assert!(jumps.entries.len() <= JUMP_LIST_CAP);
+    }
+
     pub(crate) fn push_jump(&mut self) {
         if self.docs.is_empty() {
             return;
         }
         let record = self.jump_record();
-        match self.jumplist_past.last_mut() {
-            Some(last) if last.document == record.document && last.offset == record.offset => {
-                *last = record;
-            }
-            _ => self.jumplist_past.push(record),
-        }
-        self.jumplist_future.clear(); // a new jump truncates the forward path
-    }
-    /// `ctrl-o`: one jump back. Entries whose document was closed die
-    /// here, not in `jump_to` — skipping there would leave the current
-    /// position stranded on the future stack.
-    pub(crate) fn jump_back(&mut self) {
-        while let Some(record) = self.jumplist_past.pop() {
-            if self.docs.get(record.document).is_none() {
-                continue; // the document is closed; the entry dies quietly
-            }
-            let here = self.jump_record();
-            self.jumplist_future.push(here);
-            self.jump_to(record);
-            return;
-        }
-        self.message = "no jumps".into();
+        self.push_jump_record(record);
     }
 
-    /// `ctrl-i` (Tab in a terminal): one jump forward. Dead entries are
-    /// skipped the same way as `jump_back`.
-    pub(crate) fn jump_forward(&mut self) {
-        while let Some(record) = self.jumplist_future.pop() {
-            if self.docs.get(record.document).is_none() {
-                continue;
-            }
-            let here = self.jump_record();
-            self.jumplist_past.push(here);
-            self.jump_to(record);
+    /// `ctrl-o`: only the first backward step from below the newest entry
+    /// snapshots the live position. Traversal itself never records motions.
+    pub(crate) fn jump_back(&mut self) {
+        if self.view().jumps.entries.is_empty() {
+            self.message = "no jumps".into();
             return;
         }
+        if self.view().jumps.position.is_none() {
+            let here = self.jump_record();
+            self.push_jump_record(here);
+            let jumps = &mut self.view_mut().jumps;
+            jumps.position = Some(jumps.entries.len() - 1);
+        }
+        loop {
+            let index = self.view().jumps.position.unwrap();
+            let Some(next) = index.checked_sub(1) else {
+                self.message = "no jumps".into();
+                return;
+            };
+            self.view_mut().jumps.position = Some(next);
+            let record = self.view().jumps.entries[next].clone();
+            if self.docs.get(record.document).is_some() {
+                self.jump_to(record);
+                return;
+            }
+        }
+    }
+
+    /// `ctrl-i` (Tab in a terminal): advance only the index, restoring the
+    /// stored record and skipping dead documents in either direction.
+    pub(crate) fn jump_forward(&mut self) {
+        let Some(index) = self.view().jumps.position else {
+            self.message = "at newest jump".into();
+            return;
+        };
+        let mut next = index + 1;
+        while next < self.view().jumps.entries.len() {
+            self.view_mut().jumps.position = Some(next);
+            let record = self.view().jumps.entries[next].clone();
+            if self.docs.get(record.document).is_some() {
+                self.jump_to(record);
+                return;
+            }
+            next += 1;
+        }
+        self.view_mut().jumps.position = None;
         self.message = "at newest jump".into();
     }
 
     /// Land on a jumplist record: switch document when needed, then
     /// restore the recorded caret, selection, viewport and horizontal
-    /// origin. Callers (`jump_back`/`jump_forward`) have already
-    /// dropped entries whose document is gone.
+    /// origin. Callers (`jump_back`/`jump_forward`) have already selected a
+    /// live entry, skipping dead documents without changing list order.
     pub(crate) fn jump_to(&mut self, record: JumpRecord) {
         debug_assert!(
             self.docs.get(record.document).is_some(),
@@ -249,18 +292,39 @@ mod tests {
     }
 
     #[test]
-    fn new_jump_truncates_the_forward_path() {
-        let mut e = Editor::new(Buffer::from_text("a\nb\nc\nd\n"));
-        e.push_jump();
-        e.feed_text("jj");
-        e.push_jump();
-        e.feed_text("j"); // line 4
-        e.jump_back(); // line 3
-        e.push_jump();
-        e.feed_text("k"); // line 2 — new jump kills the future
-        assert!(e.jumplist_future.is_empty());
+    fn file_window_starts_with_its_initial_file_origin() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("initial.txt");
+        std::fs::write(&path, "one\ntwo\n").unwrap();
+        let mut e = Editor::new(Buffer::open(path).unwrap());
+        assert_eq!(e.view().jumps.entries.len(), 1);
+        e.feed_text("j");
+        e.jump_back();
+        assert_eq!(e.buf().line_of(e.head()), 0);
         e.jump_forward();
-        assert!(e.message.contains("newest"));
+        assert_eq!(e.buf().line_of(e.head()), 1);
+    }
+
+    #[test]
+    fn new_jump_preserves_the_forward_path() {
+        let mut e = Editor::new(Buffer::from_text("a\nb\nc\nd\ne\n"));
+        e.push_jump(); // line 1
+        e.feed_text("jj");
+        e.push_jump(); // line 3
+        e.feed_text("G"); // line 5
+        e.jump_back(); // line 3
+        e.set_head(e.buf().line_start(1));
+        e.push_jump(); // branch from line 2, retaining lines 3 and 5
+        e.feed_text("j"); // line 3
+        assert_eq!(e.view().jumps.entries.len(), 4);
+        assert!(e.view().jumps.entries.iter().any(|record| {
+            record.document == e.current() && e.buf().line_of(record.offset) == 4
+        }));
+        assert_eq!(e.view().jumps.position, None);
+        e.jump_back(); // line 2
+        assert_eq!(e.buf().line_of(e.head()), 1);
+        e.jump_forward(); // the synthetic line-3 destination
+        assert_eq!(e.buf().line_of(e.head()), 2);
     }
 
     #[test]
@@ -275,11 +339,201 @@ mod tests {
     }
 
     #[test]
+    fn paragraphs_visible_lines_and_substitutions_record_origins() {
+        let mut e = Editor::new(Buffer::from_text("one\n\ntwo\n\nthree\n"));
+        e.feed_text("}");
+        assert_eq!(e.view().jumps.entries.len(), 1);
+        assert_eq!(e.buf().line_of(e.view().jumps.entries[0].offset), 0);
+        e.feed_text("}{");
+        assert_eq!(e.view().jumps.entries.len(), 3);
+        e.feed_text("G");
+        let before = e.view().jumps.clone();
+        e.feed_text("}");
+        assert_eq!(e.view().jumps, before, "EOF paragraph does not move");
+
+        let mut e = Editor::new(Buffer::from_text("one\n\ntwo\n\nthree\n"));
+        e.scroll_to_cursor(3);
+        e.set_head(e.buf().line_start(4));
+        let before = e.view().jumps.entries.len();
+        e.feed_text("H");
+        assert_eq!(e.view().jumps.entries.len(), before + 1);
+        e.feed_text("M");
+        e.feed_text("L");
+        assert_eq!(e.view().jumps.entries.len(), before + 3);
+        let before = e.view().jumps.clone();
+        e.feed_text("L");
+        assert_eq!(e.view().jumps, before, "repeated L stays at the same line");
+
+        let mut e = Editor::new(Buffer::from_text("foo one\nfoo two\n"));
+        e.set_head(e.buf().line_start(1));
+        e.feed_text(":%s/foo/bar/g\r");
+        assert_eq!(e.buf().text().to_string(), "bar one\nbar two\n");
+        assert_eq!(e.view().jumps.entries.len(), 1);
+        assert_eq!(e.buf().line_of(e.view().jumps.entries[0].offset), 1);
+        let before = e.view().jumps.clone();
+        e.feed_text(":%s/missing/nope/g\r");
+        assert_eq!(e.view().jumps, before);
+        e.feed_text(":%s/[/nope/g\r");
+        assert_eq!(e.view().jumps, before);
+    }
+
+    #[test]
+    fn buffer_acceptance_and_alternate_buffer_record_return_journeys() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+        let source = e.current();
+        e.set_head(e.buf().line_start(1));
+        let b = e
+            .docs
+            .try_insert(Document::new(Buffer::from_text("other\n")))
+            .unwrap();
+        e.accept_picker(strop_picker::Payload::Buffer(b), None);
+        assert_eq!(e.current(), b);
+        assert_eq!(e.view().jumps.entries.len(), 1);
+        e.jump_back();
+        assert_eq!((e.current(), e.head()), (source, 4));
+
+        e.alternate_buffer();
+        assert_eq!(e.current(), b);
+        e.jump_back();
+        assert_eq!((e.current(), e.head()), (source, 4));
+    }
+
+    #[test]
+    fn visible_motions_reveal_the_caret_and_use_the_upper_middle() {
+        let text = (0..30).fold(String::new(), |mut text, line| {
+            text.push_str(&format!("{line:02}\n"));
+            text
+        });
+        let mut e = Editor::new(Buffer::from_text(&text));
+        e.scroll_to_cursor(22);
+        e.feed_text("GH");
+        assert_eq!(e.buf().line_of(e.head()), 8);
+        e.feed_text("M");
+        assert_eq!(e.buf().line_of(e.head()), 18);
+        e.feed_text("L");
+        assert_eq!(e.buf().line_of(e.head()), 29);
+        e.feed_text("2");
+        e.feed(strop_core::frontend_input::Key::CtrlO);
+        assert_eq!(e.buf().line_of(e.head()), 8);
+    }
+
+    #[test]
+    fn failed_marks_leave_history_untouched() {
+        let mut e = Editor::new(Buffer::from_text("one\ntwo\nthree\n"));
+        e.feed_text("G");
+        let before = e.view().jumps.clone();
+        e.feed_text("`z");
+        assert_eq!(e.view().jumps, before);
+        assert!(e.message.contains("mark z not set"));
+    }
+
+    #[test]
+    fn small_motions_during_traversal_do_not_invent_entries() {
+        let mut e = Editor::new(Buffer::from_text("a\nb\nc\nd\ne\n"));
+        e.feed_text("G");
+        e.jump_back();
+        let before = e.view().jumps.clone();
+        e.feed_text("jk");
+        assert_eq!(e.view().jumps, before);
+        e.jump_forward();
+        assert_eq!(e.view().jumps.entries.len(), before.entries.len());
+    }
+
+    #[test]
+    fn same_document_line_deduplicates_and_history_caps_at_one_hundred() {
+        let mut e = Editor::new(Buffer::from_text("alpha\nbeta\n"));
+        e.set_head(1);
+        e.push_jump();
+        e.set_head(3);
+        e.push_jump();
+        assert_eq!(e.view().jumps.entries.len(), 1);
+        assert_eq!(e.head(), 3);
+
+        let text = (0..120).fold(String::new(), |mut text, line| {
+            text.push_str(&format!("line {line}\n"));
+            text
+        });
+        let mut e = Editor::new(Buffer::from_text(&text));
+        for line in 0..120 {
+            e.set_head(e.buf().line_start(line));
+            e.push_jump();
+        }
+        assert_eq!(e.view().jumps.entries.len(), JUMP_LIST_CAP);
+        assert_eq!(e.buf().line_of(e.view().jumps.entries[0].offset), 20);
+        assert_eq!(e.buf().line_of(e.view().jumps.entries[99].offset), 119);
+    }
+
+    #[test]
+    fn split_copies_history_then_panes_evolve_independently() {
+        let mut e = Editor::new(Buffer::from_text("a\nb\nc\nd\n"));
+        e.feed_text("G");
+        let original = e.view().jumps.clone();
+        e.split_document(true, e.current());
+        assert_eq!(e.view().jumps, original);
+        e.feed_text("gg");
+        assert_ne!(e.view().jumps, original);
+        assert_eq!(e.panes[0].jumps, original);
+        e.active_pane = 0;
+        assert_eq!(e.view().jumps, original);
+    }
+
+    #[test]
+    fn edits_remap_history_in_nonactive_panes() {
+        let mut e = Editor::new(Buffer::from_text("a\nb\nc\n"));
+        e.feed_text("G");
+        e.split_document(true, e.current());
+        let original = e.view().jumps.entries[0].offset;
+        e.feed_text("ggOnew\u{1b}");
+        assert_eq!(e.panes[0].jumps.entries[0].offset, original + 4);
+        assert_eq!(e.panes[1].jumps.entries[0].offset, original + 4);
+    }
+
+    #[test]
+    fn initial_backward_snapshot_deduplicates_the_current_line() {
+        let mut e = Editor::new(Buffer::from_text("a\nb\nc\n"));
+        e.feed_text("Ggg");
+        e.jump_back();
+        assert_eq!(e.buf().line_of(e.head()), 2);
+        assert_eq!(e.view().jumps.entries.len(), 2);
+        assert_eq!(e.buf().line_of(e.view().jumps.entries[0].offset), 2);
+        assert_eq!(e.buf().line_of(e.view().jumps.entries[1].offset), 0);
+    }
+
+    #[test]
+    fn dead_newer_tail_restores_the_below_newest_boundary() {
+        let mut e = Editor::new(Buffer::from_text("a0\na1\na2\n"));
+        e.push_jump();
+        let b = e
+            .docs
+            .try_insert(Document::new(Buffer::from_text("b0\nb1\nb2\n")))
+            .unwrap();
+        e.switch_to(b);
+        e.push_jump();
+        e.feed_text("j");
+        e.push_jump();
+        e.feed_text("j");
+        e.jump_back();
+        e.jump_back();
+        e.jump_back();
+        assert_eq!(e.current(), e.view().jumps.entries[0].document);
+        e.feed_text("j");
+        e.docs.remove(b);
+
+        e.jump_forward();
+        assert_eq!(e.view().jumps.position, None);
+        assert_eq!(e.buf().line_of(e.head()), 1);
+        e.jump_back();
+        assert_eq!(e.buf().line_of(e.head()), 0);
+        e.jump_forward();
+        assert_eq!(e.buf().line_of(e.head()), 1);
+    }
+
+    #[test]
     fn search_lands_with_jump_recorded() {
         let mut e = Editor::new(Buffer::from_text("one\ntwo hone\nthree\n"));
         e.feed_text("/hone\r");
         assert_eq!(e.buf().line_of(e.head()), 1, "landed on the match");
-        assert_eq!(e.jumplist_past.len(), 1, "the jump was recorded");
+        assert_eq!(e.view().jumps.entries.len(), 1, "the jump was recorded");
     }
 
     #[test]
@@ -294,9 +548,14 @@ mod tests {
             .unwrap();
         e.switch_to(b);
         e.push_jump(); // (docB, 0) — dead after the close below
-        e.close_buffer(true); // back to docA, cursor on line 3
+        e.close_buffer(true); // back to docA, cursor at its default first line
+        assert_eq!(e.buf().line_of(e.head()), 0);
         e.jump_back();
         // the dead entry is skipped; the LIVE docA entry is the landing
+        assert_eq!(e.buf().line_of(e.head()), 1);
+        e.jump_forward();
+        assert_eq!(e.buf().line_of(e.head()), 0, "forward skips the dead entry");
+        e.jump_back();
         assert_eq!(e.buf().line_of(e.head()), 1);
         e.jump_back();
         assert_eq!(e.message, "no jumps");
@@ -391,7 +650,7 @@ mod tests {
         // insert two lines above the recorded position
         e.feed_text("ggOnew\nmore\u{1b}");
         // the entry rode the edit down: caret, anchor and viewport top
-        let record = e.jumplist_past[0].clone();
+        let record = e.view().jumps.entries[0].clone();
         assert_eq!(
             e.buf().line_of(record.offset),
             62,

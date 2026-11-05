@@ -597,7 +597,7 @@ mod warm_up {
             assert!(row.text.contains("web"), "{row:?}");
             assert!(row.text.contains('·'), "{row:?}");
         }
-        let jumps = editor.jumplist_past.len();
+        let jumps = editor.view().jumps.entries.len();
         editor.accept_current_picker();
         editor.wait_io().unwrap();
         assert_eq!(
@@ -606,7 +606,7 @@ mod warm_up {
             "Enter browses the project root"
         );
         assert_eq!(
-            editor.jumplist_past.len(),
+            editor.view().jumps.entries.len(),
             jumps,
             "a status row never lands as a symbol jump"
         );

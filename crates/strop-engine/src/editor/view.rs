@@ -54,6 +54,7 @@ impl Editor {
     /// `H`/`M`/`L`: jump to the top/middle/bottom VISIBLE line (vim:
     /// first non-blank of that line; a count on H/L offsets).
     pub(crate) fn jump_visible(&mut self, which: char, count: usize) {
+        self.scroll_to_cursor(self.view_rows());
         let rows = self.view_rows();
         let last = self.buf().last_content_line();
         let line = match which {
@@ -61,7 +62,7 @@ impl Editor {
             'L' => {
                 (self.view_top() + rows.saturating_sub(1)).saturating_sub(count.saturating_sub(1))
             }
-            _ => self.view_top() + rows.max(2) / 2,
+            _ => self.view_top() + rows.saturating_sub(1) / 2,
         }
         .min(last);
         let s = self.buf().line_start(line);
@@ -76,7 +77,11 @@ impl Editor {
         {
             p += 1;
         }
-        self.set_head(p.min(e));
+        let target = p.min(e);
+        if target != self.head() {
+            self.push_jump();
+        }
+        self.set_head(target);
         self.clamp_cursor();
     }
 
@@ -106,10 +111,15 @@ impl Editor {
     /// `Ctrl-^`: the alternate buffer (most-recently-used other doc).
     pub(crate) fn alternate_buffer(&mut self) {
         let cur = self.current();
-        let Some(&alt) = self.mru.iter().find(|&&id| id != cur) else {
+        let Some(&alt) = self
+            .mru
+            .iter()
+            .find(|&&id| id != cur && self.docs.get(id).is_some())
+        else {
             self.message = "no alternate buffer".into();
             return;
         };
+        self.push_jump();
         self.switch_to(alt);
         self.clamp_cursor();
     }

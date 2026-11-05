@@ -131,13 +131,14 @@ fn view_place_centers_and_edges() {
 #[test]
 fn visible_jumps_and_counts() {
     let mut e = tall_editor();
+    e.set_head(e.buf().line_start(30));
     e.view_mut().view_top = 30;
     e.feed_text("H");
     assert_eq!(e.buf().line_of(e.head()), 30);
     e.feed_text("3L");
     assert_eq!(e.buf().line_of(e.head()), 30 + 20 - 1 - 2);
     e.feed_text("M");
-    assert_eq!(e.buf().line_of(e.head()), 30 + 10);
+    assert_eq!(e.buf().line_of(e.head()), 30 + 9);
 }
 
 #[test]

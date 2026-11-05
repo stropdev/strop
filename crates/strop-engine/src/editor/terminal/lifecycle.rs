@@ -101,6 +101,7 @@ impl Editor {
             self.message = "document identity space exhausted".into();
             return;
         };
+        self.push_jump();
         self.terminals.entries.insert(
             session,
             Entry {

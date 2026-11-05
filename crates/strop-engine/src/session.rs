@@ -1,7 +1,7 @@
 //! Owned per-project snapshots and transactional restoration.
 //! Scratch and readonly documents never persist. Trust storage is independent.
 
-use crate::editor::{Document, Editor};
+use crate::editor::{Document, Editor, JumpList, JumpRecord};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use strop_core::{history::History, Buffer};
@@ -64,8 +64,27 @@ fn io(path: &Path, source: std::io::Error) -> SessionError {
 pub struct Session {
     buffers: Vec<BufferState>,
     current: usize,
+    #[serde(default)]
+    jumps: JumpListState,
     #[serde(skip)]
     captured: Vec<ropey::Rope>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct JumpListState {
+    entries: Vec<JumpState>,
+    position: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct JumpState {
+    #[serde(with = "strop_core::path_serde")]
+    path: PathBuf,
+    offset: usize,
+    view_top: usize,
+    hscroll: strop_core::id::DisplayColumn,
+    anchor: usize,
+    extras: Vec<strop_core::selection::Selection>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,11 +158,53 @@ pub fn capture(editor: &Editor) -> Option<Session> {
     if buffers.is_empty() {
         None
     } else {
+        let jumps = capture_jumps(editor, &buffers);
         Some(Session {
             buffers,
             current,
+            jumps,
             captured,
         })
+    }
+}
+
+fn capture_jumps(editor: &Editor, buffers: &[BufferState]) -> JumpListState {
+    let source = &editor.view().jumps;
+    let mut entries = Vec::new();
+    let mut position = None;
+    for (index, record) in source.entries.iter().enumerate() {
+        if source.position == Some(index) {
+            position = Some(entries.len());
+        }
+        let Some(document) = editor.docs.get(record.document) else {
+            continue;
+        };
+        if document.buf.readonly {
+            continue;
+        }
+        let Some(path) = document.buf.path.as_ref() else {
+            continue;
+        };
+        if !buffers.iter().any(|buffer| &buffer.path == path) {
+            continue;
+        }
+        entries.push(JumpState {
+            path: path.clone(),
+            offset: record.offset,
+            view_top: record.view_top,
+            hscroll: record.hscroll,
+            anchor: record.anchor,
+            extras: record.extras.clone(),
+        });
+    }
+    if source.position == Some(source.entries.len()) {
+        position = Some(entries.len());
+    }
+    JumpListState {
+        position: position
+            .filter(|_| !entries.is_empty())
+            .map(|p| p.min(entries.len() - 1)),
+        entries,
     }
 }
 
@@ -215,6 +276,9 @@ impl Session {
                 h.validate()?;
             }
         }
+        for jump in &self.jumps.entries {
+            strop_core::path_serde::validate(&jump.path)?;
+        }
         Ok(())
     }
 
@@ -276,12 +340,15 @@ impl Session {
             ids.push(id);
         }
         let current = ids[self.current];
+        let jumps = restore_jumps(&self.jumps, &self.buffers, &ids, &editor.docs);
         for pane in &mut editor.panes {
             pane.doc = current;
             pane.view_top = 0;
             pane.sels = Default::default();
+            pane.jumps = Default::default();
         }
         editor.view_mut().doc = current;
+        editor.view_mut().jumps = jumps;
         for id in old {
             editor.docs.remove(id);
         }
@@ -296,6 +363,62 @@ impl Session {
             editor.message = message;
         }
         Ok(())
+    }
+}
+
+fn restore_jumps(
+    source: &JumpListState,
+    buffers: &[BufferState],
+    ids: &[strop_core::id::DocumentId],
+    documents: &strop_core::id::Arena<strop_core::id::DocumentKind, Document>,
+) -> JumpList {
+    let mut entries = Vec::new();
+    let mut position = None;
+    for (index, record) in source.entries.iter().enumerate() {
+        if source.position == Some(index) {
+            position = Some(entries.len());
+        }
+        let Some(buffer_index) = buffers.iter().position(|buffer| buffer.path == record.path)
+        else {
+            continue;
+        };
+        let Some(id) = ids.get(buffer_index).copied() else {
+            continue;
+        };
+        let Some(document) = documents.get(id) else {
+            continue;
+        };
+        let buf = &document.buf;
+        let clamp = |offset: usize| buf.clamp_boundary(offset.min(buf.len_bytes()));
+        entries.push(JumpRecord {
+            document: id,
+            offset: clamp(record.offset),
+            view_top: clamp(record.view_top),
+            hscroll: record.hscroll,
+            anchor: clamp(record.anchor),
+            extras: record
+                .extras
+                .iter()
+                .map(|selection| strop_core::selection::Selection {
+                    anchor: clamp(selection.anchor),
+                    head: clamp(selection.head),
+                })
+                .collect(),
+        });
+    }
+    if source.position.is_some() && position.is_none() {
+        position = Some(entries.len());
+    }
+    let excess = entries.len().saturating_sub(crate::editor::JUMP_LIST_CAP);
+    if excess > 0 {
+        entries.drain(..excess);
+        position = position.map(|p| p.saturating_sub(excess));
+    }
+    JumpList {
+        position: position
+            .filter(|_| !entries.is_empty())
+            .map(|p| p.min(entries.len() - 1)),
+        entries,
     }
 }
 

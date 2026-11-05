@@ -143,8 +143,8 @@ impl Editor {
         )));
     }
 
-    /// The jumplist as a menu (0047 §2): past newest-first, the current
-    /// position marked, then the future; dead documents are filtered.
+    /// The jumplist as a menu: older records newest-first, the current
+    /// position marked, then newer records; dead documents are filtered.
     pub(crate) fn open_jumps_picker(&mut self) {
         let items = jump_items(self, None);
         self.set_picker(PickerGlue::diagnostics(Picker::new(
@@ -186,17 +186,20 @@ impl Editor {
     }
 }
 
-/// Every jumplist row (0047 §2): past newest-first, the current
-/// position marked, then the future. The jumplist lives on the editor,
-/// so admission re-derives rows from the same records — no retained
-/// copy to drift.
+/// Older entries appear newest-first, followed by the selected stored entry,
+/// the synthetic live row and newer entries nearest-first.
 fn jump_items(editor: &Editor, admission: Option<&strop_picker::query::BooleanPlan>) -> Vec<Item> {
+    let jumps = &editor.view().jumps;
+    let selected = jumps.position.unwrap_or(jumps.entries.len());
     let mut items = Vec::new();
-    for entry in editor.jumplist_past.iter().rev() {
+    for entry in jumps.entries[..selected].iter().rev() {
+        items.extend(jump_row(editor, entry, "  ", admission));
+    }
+    if let Some(entry) = jumps.entries.get(selected) {
         items.extend(jump_row(editor, entry, "  ", admission));
     }
     items.extend(jump_row(editor, &editor.jump_record(), "> ", admission));
-    for entry in editor.jumplist_future.iter().rev() {
+    for entry in &jumps.entries[selected.saturating_add(1).min(jumps.entries.len())..] {
         items.extend(jump_row(editor, entry, "  ", admission));
     }
     items

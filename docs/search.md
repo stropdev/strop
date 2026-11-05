@@ -49,7 +49,9 @@ errors and examples. Old `-t`/`-g` UI flags are ordinary text now.
 - **File find** narrows the walk; **search/replace** narrows admission per
   line.
 - **Document symbols and the jump list** are retained lists: the same
-  qualifiers re-filter their rows locally as you type. On the jump list,
+  qualifiers re-filter their rows locally as you type. The jump list contains
+  origins left by jump commands, with a synthetic row for the current position;
+  it is navigation history, not an undo list. On the jump list,
   `language:cpp path:tests` keeps only jumps inside C++ files under
   `tests/`; content atoms match the destination line's text. Evidence a
   row cannot decide (a scratch buffer with no path) admits — overfetch,

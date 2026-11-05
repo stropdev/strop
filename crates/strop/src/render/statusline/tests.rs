@@ -14,8 +14,8 @@ use crate::editor::Editor;
 use super::render;
 use crate::render::clip::width;
 
-/// The modeline row as one string, measured in display cells.
-fn row(editor: &Editor, columns: u16, rows: u16) -> String {
+/// The modeline cells, including severity styling as well as symbols.
+fn grid(editor: &Editor, columns: u16, rows: u16) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(columns, rows)).unwrap();
     terminal
         .draw(|frame| {
@@ -23,9 +23,26 @@ fn row(editor: &Editor, columns: u16, rows: u16) -> String {
             render(editor, frame, area)
         })
         .unwrap();
-    let buffer = terminal.backend().buffer();
+    terminal.backend().buffer().clone()
+}
+
+/// The modeline row as one string, measured in display cells.
+fn row(editor: &Editor, columns: u16, rows: u16) -> String {
+    let buffer = grid(editor, columns, rows);
     let y = rows - 1;
-    crate::headless::row_symbols(buffer, y).collect()
+    crate::headless::row_symbols(&buffer, y).collect()
+}
+
+fn assert_mark_color(editor: &Editor, columns: u16, severity: strop_lsp::Severity) {
+    let buffer = grid(editor, columns, 4);
+    let color = crate::render::severity_color(severity);
+    assert!(
+        buffer
+            .content
+            .iter()
+            .any(|cell| cell.symbol() == "!" && cell.fg == color),
+        "severity-colored feedback marker at {columns} cells"
+    );
 }
 
 fn editor(text: &str, path: Option<&str>) -> Editor {
@@ -169,6 +186,79 @@ fn narrow_failure_badge_survives_without_long_prose() {
             "row fits {columns}: {row:?}"
         );
     }
+}
+
+#[test]
+fn presented_failure_keeps_a_severity_marker_through_bare_layout() {
+    let mut e = editor("unsaved\n", None);
+    e.feed_text(":w<cr>");
+    assert_eq!(
+        e.presented_feedback().map(|record| record.severity()),
+        Some(strop_engine::editor::feedback::FeedbackSeverity::Failure)
+    );
+    let wide = row(&e, 80, 4);
+    assert!(wide.contains("local save failed"), "{wide:?}");
+    assert!(wide.contains("Space a actions"), "{wide:?}");
+
+    for columns in [16, 12, 8, 4] {
+        let shown = row(&e, columns, 4);
+        assert!(shown.contains('!'), "failure at {columns}: {shown:?}");
+        assert!(!shown.contains("write failed"), "{columns}: {shown:?}");
+        assert!(width(&shown) <= usize::from(columns), "{shown:?}");
+        assert_mark_color(&e, columns, strop_lsp::Severity::Error);
+    }
+}
+
+#[test]
+fn presented_warning_keeps_a_severity_marker_through_bare_layout() {
+    let mut e = editor("origin", None);
+    let document = e.terminal_fixture(
+        &[("safe", strop_terminal::model::Style::default())],
+        strop_terminal::model::Phase::Running,
+    );
+    e.terminal_fixture_hold_paste(document, 7);
+    assert_eq!(
+        e.presented_feedback().map(|record| record.severity()),
+        Some(strop_engine::editor::feedback::FeedbackSeverity::Warning)
+    );
+    let wide = row(&e, 100, 4);
+    assert!(wide.contains("i input"), "terminal action stays: {wide:?}");
+    assert!(wide.contains("paste+"), "{wide:?}");
+    assert!(wide.contains("Space a Review/Send/Discard"), "{wide:?}");
+
+    for columns in [16, 12, 8, 4] {
+        let shown = row(&e, columns, 4);
+        assert!(shown.contains('!'), "warning at {columns}: {shown:?}");
+        assert!(!shown.contains("paste held"), "{columns}: {shown:?}");
+        assert!(width(&shown) <= usize::from(columns), "{shown:?}");
+        assert_mark_color(&e, columns, strop_lsp::Severity::Warning);
+    }
+}
+
+#[test]
+fn ephemeral_messages_never_acquire_a_feedback_marker() {
+    let mut e = editor("saved\n", None);
+    e.set_message("saved the file");
+    assert!(e.presented_feedback().is_none());
+    assert!(row(&e, 80, 4).contains("saved the file"));
+    for columns in [16, 12, 8, 4] {
+        let shown = row(&e, columns, 4);
+        assert!(!shown.contains('!'), "message at {columns}: {shown:?}");
+        assert!(width(&shown) <= usize::from(columns), "{shown:?}");
+    }
+}
+
+#[test]
+fn bare_layout_retains_feedback_alongside_lsp_problem_badge() {
+    let mut e = editor("unsaved\n", None);
+    attach(&mut e, 44, strop_engine::editor::AttachDecision::Attached);
+    fail(&mut e, 44, "language server unavailable");
+    e.feed_text(":w<cr>");
+    let shown = row(&e, 16, 4);
+    assert!(shown.contains("LSP!"), "{shown:?}");
+    assert_eq!(shown.matches('!').count(), 2, "{shown:?}");
+    assert_mark_color(&e, 16, strop_lsp::Severity::Error);
+    assert!(width(&shown) <= 16, "{shown:?}");
 }
 
 #[test]

@@ -22,6 +22,9 @@ pub struct Pane {
     pub hscroll: DisplayColumn,
     /// Desired cell retained while vertical motions cross short/wide rows.
     pub desired_column: Option<DisplayColumn>,
+    /// Vim jump history belongs to this window, not the document or editor.
+    #[serde(default)]
+    pub jumps: super::jumps::JumpList,
 }
 
 impl Pane {
@@ -105,6 +108,7 @@ impl Editor {
                 view_top: 0,
                 hscroll: DisplayColumn::new(0),
                 desired_column: None,
+                jumps: view.jumps.clone(),
             }
         });
         self.layout = if vertical {
@@ -160,11 +164,16 @@ impl Editor {
             self.should_quit = true;
             return;
         }
+        let session_policy = self.session_policy;
+        self.request_session_save();
+        self.session_policy = crate::session::SessionPolicy::Disabled;
         while !self.docs.is_empty() {
             if !self.close_buffer(force) {
+                self.session_policy = session_policy;
                 return;
             }
         }
+        self.session_policy = session_policy;
     }
 
     /// `Space w` navigation: h/l/j/k direction, w cycle, 1-9 direct focus.
