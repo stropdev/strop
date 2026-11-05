@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.50.0 — 2026-11-05
+
+### Changed
+
+- **Completion menu provenance and kind color**: completion kinds now use the symbol picker's quiet family palette (callables, types, data, modules), and the ASCII `lsp` / `buf` source tags are color-coded language-service/buffer provenance — including empty-menu provider status. No icon font is required, and selection bands keep covering every column.
+
 ## 0.49.0 — 2026-11-05
 
 ### Added

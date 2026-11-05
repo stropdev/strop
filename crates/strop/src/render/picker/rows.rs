@@ -5,14 +5,14 @@
 //! amber+bold on top of it. Nothing here re-searches text or reparses
 //! display strings.
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use super::super::clip;
 use super::super::diff::{add_fg, del_fg};
-use super::super::{accent, base, muted, secondary, select_bg, text};
+use super::super::{accent, base, kind_color, muted, secondary, select_bg, text};
 use super::window::{match_window, replacement_window};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -282,21 +282,6 @@ fn chip(badge: Option<&str>, active: bool) -> Span<'static> {
         style = style.bg(select_bg());
     }
     Span::styled(text, style)
-}
-
-/// Four quiet kind families (0050 §4): callables, types, data, modules.
-fn kind_color(label: &str) -> Color {
-    match label {
-        "fn" | "meth" | "new" => crate::render::seed(strop_core::theme::current().class_function),
-        "struct" | "class" | "iface" | "enum" | "variant" | "T" => {
-            crate::render::seed(strop_core::theme::current().class_type)
-        }
-        "const" | "var" | "field" | "prop" => {
-            crate::render::seed(strop_core::theme::current().class_string)
-        }
-        "mod" | "ns" | "pkg" => crate::render::seed(strop_core::theme::current().class_type),
-        _ => secondary(),
-    }
 }
 
 /// ` chip  name  container                  :line` — location holds the

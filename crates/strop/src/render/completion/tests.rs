@@ -21,6 +21,26 @@ fn fixture(text: &str, keys: &str) -> Editor {
 }
 
 #[test]
+fn kind_and_source_colors_reuse_picker_families() {
+    let theme = strop_core::theme::current();
+    assert_eq!(
+        kind_color("func"),
+        crate::render::seed(theme.class_function)
+    );
+    assert_eq!(
+        kind_color("ctor"),
+        crate::render::seed(theme.class_function)
+    );
+    assert_eq!(kind_color("class"), crate::render::seed(theme.class_type));
+    assert_eq!(kind_color("type"), crate::render::seed(theme.class_type));
+    assert_eq!(kind_color("var"), crate::render::seed(theme.class_string));
+    assert_eq!(kind_color("mod"), crate::render::seed(theme.class_type));
+    assert_eq!(kind_color("word"), secondary());
+    assert_eq!(source_color("lsp"), crate::render::seed(theme.class_type));
+    assert_eq!(source_color("buf"), crate::render::seed(theme.class_string));
+}
+
+#[test]
 fn selected_word_cells_keep_prefix_hierarchy_and_real_unicode_anchor() {
     let mut editor = fixture("界界response 界界result\n\t界界re\n", "G$a<c-n>");
     let mut terminal = ratatui::Terminal::new(TestBackend::new(100, 24)).unwrap();
@@ -52,9 +72,12 @@ fn selected_word_cells_keep_prefix_hierarchy_and_real_unicode_anchor() {
         assert!(grid[(column, row)].modifier.contains(Modifier::BOLD));
     }
     assert_eq!(grid[(label + 6, row)].fg, text());
-    assert_eq!(grid[(anchor + 2, row)].fg, muted()); // kind
+    assert_eq!(grid[(anchor + 2, row)].fg, secondary()); // kind
     for column in anchor + MENU_WIDTH - 5..anchor + MENU_WIDTH - 2 {
-        assert_eq!(grid[(column, row)].fg, muted()); // source
+        assert_eq!(
+            grid[(column, row)].fg,
+            crate::render::seed(strop_core::theme::current().class_string) // source
+        );
     }
     assert_eq!(
         editor.buf().text().to_string(),
@@ -106,7 +129,7 @@ fn narrow_split_and_bottom_edge_keep_card_inside_owning_pane_off_caret() {
                     && grid[(*x + 2, selected_row)].symbol() == "f"
             })
             .unwrap();
-        assert_eq!(grid[(source, selected_row)].fg, muted());
+        assert_eq!(grid[(source, selected_row)].fg, source_color("buf"));
         assert_eq!(editor.buf().text().to_string(), text);
     }
 }

@@ -112,6 +112,22 @@ pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
     }
 }
 
+/// Completion/symbol kind → color. One vocabulary projection shared by the
+/// picker's chips and the completion menu (0050 §4): four quiet families —
+/// callables, types, data, modules — with unknown kinds neutral.
+pub(crate) fn kind_color(kind: &str) -> Color {
+    let theme = strop_core::theme::current();
+    match kind {
+        "fn" | "meth" | "new" | "func" | "ctor" => seed(theme.class_function),
+        "struct" | "class" | "iface" | "enum" | "variant" | "T" | "type" | "unit" => {
+            seed(theme.class_type)
+        }
+        "const" | "var" | "field" | "prop" | "value" => seed(theme.class_string),
+        "mod" | "ns" | "pkg" => seed(theme.class_type),
+        _ => secondary(),
+    }
+}
+
 /// One style projection for panes and picker previews; overlays compose later.
 pub(crate) fn syntax_style(span: &strop_syntax::Span) -> Style {
     let mut style = Style::default().fg(class_color(span.class));

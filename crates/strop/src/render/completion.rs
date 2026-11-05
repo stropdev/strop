@@ -1,8 +1,8 @@
 //! A non-modal card inside the active pane. Geometry depends on pane/caret
 //! cells, never on a candidate label's byte length or asynchronous arrival order.
-use super::{accent, base, muted, secondary, select_bg, text};
+use super::{accent, base, kind_color, muted, secondary, select_bg, text};
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
@@ -11,6 +11,17 @@ use strop_engine::editor::{CompletionDocumentation, CompletionMenu, Editor};
 const MENU_WIDTH: u16 = 58;
 const MENU_ROWS: u16 = 6;
 const DOC_WIDTH: u16 = 40;
+
+/// Completion provenance → quiet foreground. The ASCII tag stays the icon
+/// (no Nerd Font glyphs): language service teal, buffer words green.
+fn source_color(source: &str) -> Color {
+    let theme = strop_core::theme::current();
+    match source {
+        "lsp" => super::seed(theme.class_type),
+        "buf" => super::seed(theme.class_string),
+        _ => muted(),
+    }
+}
 
 #[cfg(test)]
 mod tests;
@@ -92,7 +103,7 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, pane: Rect, caret: Opti
                 Line::from(vec![
                     Span::styled(
                         format!("{}  ", provider.source),
-                        Style::default().fg(muted()),
+                        Style::default().fg(source_color(provider.source)),
                     ),
                     Span::styled(
                         super::clip::clip_end(
@@ -161,7 +172,10 @@ fn render_row(
         base.fg(accent()),
     ));
     if wide {
-        spans.push(Span::styled(format!("{:<6} ", row.kind), base.fg(muted())));
+        spans.push(Span::styled(
+            format!("{:<6} ", row.kind),
+            base.fg(kind_color(row.kind)),
+        ));
     }
     spans.push(Span::styled(
         &label[..matched],
@@ -185,7 +199,7 @@ fn render_row(
     }
     spans.push(Span::styled(
         format!(" {:>3}", row.source),
-        base.fg(muted()),
+        base.fg(source_color(row.source)),
     ));
     frame.render_widget(Paragraph::new(Line::from(spans)).style(base), area);
 }

@@ -113,8 +113,10 @@ successful.
 Insert mode offers language-server candidates and incremental words from the
 current editable source. Word suggestions remain usable without a language
 server. Read-only source collections do not open completion or gain edit
-authority; open the real source first. The menu shows kind, source and detail;
-selected language items can show documentation without changing the buffer.
+server. The menu shows kind, source and detail. Kind chips use the symbol
+picker's quiet family colors, and the ASCII `lsp` / `buf` provenance tags stay
+color-coded without requiring an icon font; selected language items can show
+documentation without changing the buffer.
 
 - `Ctrl-Space`: request both providers; `Ctrl-X Ctrl-O`: language completion.
 - `Ctrl-N` / `Ctrl-P`: choose a candidate; `Ctrl-Y`: accept it.
