@@ -136,7 +136,8 @@ fn request(document: &Document, trigger: Trigger) -> Request {
             .map_or(strop_syntax::ColonPolicy::None, |spec| {
                 spec.id.colon_policy()
             }),
-        access_labels: detected.is_some_and(|spec| spec.id == LanguageId::Cpp),
+        access_labels: detected
+            .is_some_and(|spec| matches!(spec.id, LanguageId::C | LanguageId::Cpp)),
         unit: document.indent.unit(),
         newline: newline.into(),
     }

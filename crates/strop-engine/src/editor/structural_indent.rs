@@ -22,9 +22,10 @@ pub(crate) struct Request {
     /// Trailing-colon policy from the language registry (0072): one
     /// punctuation rule for Python blocks and C-family labels.
     pub colons: strop_syntax::ColonPolicy,
-    /// C++ electric access-specifier colon (0072): the registry marks
-    /// the one language whose `public:`/`protected:`/`private:` lines
-    /// re-indent to their class-body anchor when typed.
+    /// Electric access-specifier colon (0072): the registry marks
+    /// C++ and the C mapping that carries its headers (`.h`), where
+    /// a bare `public:`/`protected:`/`private:` line re-indents to
+    /// its class-body anchor when typed.
     pub access_labels: bool,
     pub unit: String,
     pub newline: String,

@@ -29,6 +29,11 @@ anchor keep plain insertion — never an invented outdent. The decision rides
 the same per-cursor plan machinery as Enter and typed closers, including
 deferred worker resolution and ordered typeahead.
 
+Amendment (0.51.1): the registry gate includes the C mapping, because
+`.h` — the dominant C++ header extension — detects as C. A C-mapped
+buffer's bare specifier lines snap exactly like C++'s, matching vim,
+whose cindent scope-declaration handling is not disabled in C files.
+
 
 ## Reference behavior
 

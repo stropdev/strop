@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.51.1 — 2026-11-06
+
+### Fixed
+
+- **Electric access specifiers in C-mapped headers**: `.h` files — the dominant C++ header extension — detect as C, and 0.51.0's electric `private:`/`protected:`/`public:` re-indent only fired for the C++ mapping. C-mapped buffers now snap specifier lines to their class-body anchor exactly like `.cpp` (vim does not disable scope-declaration indenting in C either); Rust, Java and the other label languages still insert the colon unchanged.
+
 ## 0.51.0 — 2026-11-05
 
 ### Added

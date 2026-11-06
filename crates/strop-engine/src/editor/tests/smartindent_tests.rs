@@ -521,21 +521,41 @@ fn access_specifier_colon_dedents_to_its_class_body_anchor() {
         "class F {\n    public:\n        int a();\n        int b();\n    private:\n        int c();"
     );
 
-    // Brace on its own line anchors to that line's indentation.
-    for (text, expected) in [
-        ("class F\n{\n        private", "class F\n{\n    private:"),
+    // Brace on its own line anchors to that line's indentation, and
+    // `.h` headers (detected as C) anchor exactly like C++ files.
+    for (path, text, expected) in [
         (
+            "a.cpp",
+            "class F\n{\n        private",
+            "class F\n{\n    private:",
+        ),
+        (
+            "a.h",
+            "class F\n{\n        private",
+            "class F\n{\n    private:",
+        ),
+        (
+            "a.cpp",
+            "class O {\n    class I {\n            public",
+            "class O {\n    class I {\n        public:",
+        ),
+        (
+            "a.h",
             "class O {\n    class I {\n            public",
             "class O {\n    class I {\n        public:",
         ),
         // Already at the anchor: the colon changes nothing but itself.
-        ("class F {\n    private", "class F {\n    private:"),
+        ("a.cpp", "class F {\n    private", "class F {\n    private:"),
     ] {
-        let mut editor = code_editor(text, "a.cpp");
+        let mut editor = code_editor(text, path);
         editor.set_head(text.len());
         editor.feed_text("A:");
         settle_indentation(&mut editor);
-        assert_eq!(editor.buf().text().to_string(), expected, "{text:?}");
+        assert_eq!(
+            editor.buf().text().to_string(),
+            expected,
+            "{path}: {text:?}"
+        );
     }
 }
 
@@ -557,18 +577,24 @@ fn access_specifier_colon_aligns_every_cursor_to_its_own_class() {
 }
 
 #[test]
-fn access_specifier_colon_is_cpp_only() {
-    // Other Label-policy languages and plain C keep the user's
-    // whitespace: the registry marks C++ alone electric.
-    for path in ["a.rs", "a.c", "a.java"] {
+fn access_specifier_colon_is_c_family_only() {
+    // The registry marks C++ and the C mapping that carries its
+    // headers (`.h`, `.c`) electric; other Label-policy languages
+    // keep the user's whitespace.
+    for (path, expected) in [
+        ("a.h", "class F\n{\n    private:"),
+        ("a.c", "class F\n{\n    private:"),
+        ("a.rs", "class F\n{\n        private:"),
+        ("a.java", "class F\n{\n        private:"),
+    ] {
         let mut editor = code_editor("class F\n{\n        private", path);
         editor.set_head(editor.buf().len_bytes());
         editor.feed_text("A:");
         settle_indentation(&mut editor);
         assert_eq!(
             editor.buf().text().to_string(),
-            "class F\n{\n        private:",
-            "{path}: no electric outdent outside C++"
+            expected,
+            "{path}: electric only for the C-family mapping"
         );
     }
 }
