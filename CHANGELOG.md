@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.51.2 — 2026-11-06
+
+### Fixed
+
+- **Complete C-family electric-label indentation**: typing `:` now re-indents `case`/`default:` arms to one unit inside their enclosing brace and named labels to column zero, matching vim instead of letting successive C++ switch arms drift deeper. Access specifiers with whitespace before `:` are recognized without deleting that whitespace, and the second colon in `std::` restores statement indentation after the first colon's possible-label interpretation. C and C++ mappings share the existing per-cursor inline/deferred planner; other languages and non-label punctuation remain plain insertion.
+
 ## 0.51.1 — 2026-11-06
 
 ### Fixed

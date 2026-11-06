@@ -13,11 +13,13 @@ wrong. Each cursor uses its own source context, indentation unit and line
 endings. Undo, counted insertion and dot repeat preserve the operation
 rather than copying generated indentation from a different location.
 
-Typing the `:` that completes a bare C++ access specifier line — `private:`,
-`protected:`, `public:` — snaps that line to one unit inside its enclosing
-class, whatever indentation it inherited (vim's electric label). C-mapped
-buffers (`.h`, `.c`) behave like C++, since headers detect as C. Other
-languages and non-keyword lines insert the colon unchanged.
+In C and C++, typing `:` uses vim's electric-label indentation. Bare access
+specifiers (`private:`, `protected:`, `public:`) and `case`/`default:` labels
+snap to one unit inside their enclosing brace; named labels snap to column
+zero. C-mapped buffers (`.h`, `.c`) behave like C++, since headers detect as
+C. The second colon in a C++ scope operator (`std::`) restores statement
+indentation after the first colon's possible-label interpretation. Other
+languages and non-label punctuation insert the colon unchanged.
 
 A trailing colon opens a one-unit deeper body where the language gives it
 that meaning — one punctuation rule decided by the language registry, not

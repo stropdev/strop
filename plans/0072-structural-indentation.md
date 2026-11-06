@@ -34,6 +34,14 @@ Amendment (0.51.1): the registry gate includes the C mapping, because
 buffer's bare specifier lines snap exactly like C++'s, matching vim,
 whose cindent scope-declaration handling is not disabled in C files.
 
+Amendment (0.51.2): electric `:` covers the remaining C-family labels,
+not just access specifiers. `case`/`default:` align one unit inside the
+innermost enclosing brace (`cino-:`), named labels align at column zero,
+and horizontal whitespace before the colon is preserved. In C++, the
+second colon of a scope operator (`std::`) restores ordinary statement
+indentation after the first colon's necessary named-label interpretation.
+These decisions use the same per-cursor inline/deferred planner; other
+languages and non-label punctuation still insert plainly.
 
 ## Reference behavior
 

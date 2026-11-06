@@ -604,19 +604,98 @@ fn access_specifier_colon_without_anchor_or_word_inserts_plainly() {
     for (text, expected) in [
         // No enclosing brace: never an invented outdent.
         ("private", "private:"),
-        // Not exactly a specifier keyword: not electric at all.
-        (
-            "class F {\n        xprivate",
-            "class F {\n        xprivate:",
-        ),
+        // More than a specifier keyword: not an access specifier. A
+        // lone identifier such as `xprivate` is instead a named label.
         (
             "class F {\n        private x",
             "class F {\n        private x:",
         ),
+        // `case` probing must not split the multibyte character.
+        ("class F {\n        casé", "class F {\n        casé:"),
     ] {
         let mut editor = code_editor(text, "a.cpp");
         editor.set_head(text.len());
         editor.feed_text("A:");
+        settle_indentation(&mut editor);
+        assert_eq!(editor.buf().text().to_string(), expected, "{text:?}");
+    }
+}
+
+#[test]
+fn c_family_colon_reindents_case_default_and_named_labels() {
+    for (path, text, expected) in [
+        (
+            "a.cpp",
+            "int main() {\n    switch (x) {\n            case 1",
+            "int main() {\n    switch (x) {\n        case 1:",
+        ),
+        (
+            "a.cpp",
+            "int main() {\n    switch (x) {\n            default",
+            "int main() {\n    switch (x) {\n        default:",
+        ),
+        (
+            "a.cpp",
+            "int main() {\n    switch (x) {\n            case 1   ",
+            "int main() {\n    switch (x) {\n        case 1   :",
+        ),
+        (
+            "a.cpp",
+            "namespace N {\n    int f() {\n            retry",
+            "namespace N {\n    int f() {\nretry:",
+        ),
+        (
+            "a.c",
+            "int main() {\n        retry   ",
+            "int main() {\nretry   :",
+        ),
+        // Trailing whitespace is part of the label, not a reason to skip it.
+        (
+            "a.cpp",
+            "class F {\n        private   ",
+            "class F {\n    private   :",
+        ),
+    ] {
+        let mut editor = code_editor(text, path);
+        editor.set_head(text.len());
+        editor.feed_text("A:");
+        settle_indentation(&mut editor);
+        assert_eq!(
+            editor.buf().text().to_string(),
+            expected,
+            "{path}: {text:?}"
+        );
+    }
+}
+
+#[test]
+fn scope_operator_second_colon_restores_statement_indent() {
+    for (text, expected) in [
+        ("int main() {\n        std", "int main() {\n    std::"),
+        (
+            "int main() { // main\n        std",
+            "int main() { // main\n    std::",
+        ),
+        (
+            "int main() {\n    switch (x) {\n        case 1:\n\n            std",
+            "int main() {\n    switch (x) {\n        case 1:\n\n            std::",
+        ),
+        (
+            "int main() {\n    switch (x) {\n        case 1:\n            std",
+            "int main() {\n    switch (x) {\n        case 1:\n            std::",
+        ),
+        (
+            "int main() {\n    switch (x) {\n        case 1:\n            break;\n            std",
+            "int main() {\n    switch (x) {\n        case 1:\n            break;\n            std::",
+        ),
+        (
+            "class F {\n    public:\n        std",
+            "class F {\n    public:\n        std::",
+        ),
+    ] {
+        let mut editor = code_editor(text, "a.cpp");
+        editor.set_head(text.len());
+        editor.feed_text("A::");
         settle_indentation(&mut editor);
         assert_eq!(editor.buf().text().to_string(), expected, "{text:?}");
     }

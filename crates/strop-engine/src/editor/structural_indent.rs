@@ -22,11 +22,10 @@ pub(crate) struct Request {
     /// Trailing-colon policy from the language registry (0072): one
     /// punctuation rule for Python blocks and C-family labels.
     pub colons: strop_syntax::ColonPolicy,
-    /// Electric access-specifier colon (0072): the registry marks
-    /// C++ and the C mapping that carries its headers (`.h`), where
-    /// a bare `public:`/`protected:`/`private:` line re-indents to
-    /// its class-body anchor when typed.
-    pub access_labels: bool,
+    /// Electric C-family label colons (0072): access specifiers and
+    /// switch labels align inside their enclosing brace; named labels
+    /// align at column zero. The C mapping also carries C++ `.h` headers.
+    pub electric_labels: bool,
     pub unit: String,
     pub newline: String,
 }
@@ -71,17 +70,100 @@ fn leading(buffer: &Buffer, at: usize) -> String {
     let end = whitespace(buffer, start, at);
     buffer.text().byte_slice(start..end).to_string()
 }
-/// C++ access specifiers: vim's `'cinscopedecls'` defaults. The electric
-/// label applies when one of these words is the line's entire content.
-fn access_specifier(buffer: &Buffer, line_start: usize, at: usize) -> Option<&'static str> {
+/// C-family labels for vim's electric `:`: access specifiers and switch
+/// labels align one unit inside their enclosing brace; named labels start
+/// at column zero. Detection is conservative, but trailing horizontal
+/// whitespace is preserved as label content.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ElectricLabel {
+    Access,
+    Switch,
+    Named,
+    Scope,
+}
+
+fn electric_label(buffer: &Buffer, line_start: usize, at: usize) -> Option<ElectricLabel> {
     let word_start = whitespace(buffer, line_start, at);
-    ["public", "protected", "private"].into_iter().find(|word| {
+    let mut word_end = at;
+    while word_end > word_start && matches!(buffer.byte_at(word_end - 1), Some(b' ' | b'\t')) {
+        word_end -= 1;
+    }
+    let matches = |word: &str| {
         buffer
             .text()
-            .byte_slice(word_start..at)
+            .byte_slice(word_start..word_end)
             .bytes()
-            .eq(word.as_bytes().iter().copied())
-    })
+            .eq(word.bytes())
+    };
+    if ["public", "protected", "private"].into_iter().any(&matches) {
+        return Some(ElectricLabel::Access);
+    }
+    if matches("default") {
+        return Some(ElectricLabel::Switch);
+    }
+    let mut case = buffer.text().byte_slice(word_start..word_end).bytes();
+    if case.by_ref().take(4).eq(b"case".iter().copied())
+        && matches!(case.next(), None | Some(b' ' | b'\t'))
+    {
+        return Some(ElectricLabel::Switch);
+    }
+    let identifier = |end| {
+        let mut bytes = buffer.text().byte_slice(word_start..end).bytes();
+        bytes
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    };
+    if word_end > word_start
+        && buffer.byte_at(word_end - 1) == Some(b':')
+        && identifier(word_end - 1)
+    {
+        // The first colon in `std::` necessarily takes the named-label
+        // path. Like vim, the second restores statement indentation.
+        return Some(ElectricLabel::Scope);
+    }
+    if identifier(word_end) {
+        return Some(ElectricLabel::Named);
+    }
+    None
+}
+
+fn scope_indent(buffer: &Buffer, line_start: usize, open: OpeningDelimiter, unit: &str) -> String {
+    let opener_indent = || {
+        let mut indent = leading(buffer, open.position.get());
+        indent.push_str(unit);
+        indent
+    };
+    let Some(mut previous) = buffer.line_of(line_start).checked_sub(1) else {
+        return opener_indent();
+    };
+    let (previous_start, trimmed) = loop {
+        let previous_start = buffer.line_start(previous);
+        let previous_end = buffer.line_end(previous);
+        let mut trimmed = previous_end;
+        while trimmed > previous_start && matches!(buffer.byte_at(trimmed - 1), Some(b' ' | b'\t'))
+        {
+            trimmed -= 1;
+        }
+        if trimmed > previous_start || previous == 0 {
+            break (previous_start, trimmed);
+        }
+        previous -= 1;
+    };
+    if trimmed == previous_start {
+        return opener_indent();
+    }
+    let mut indent = leading(buffer, trimmed);
+    let opens_body = buffer.line_of(open.position.get()) == previous;
+    let label = buffer.byte_at(trimmed - 1) == Some(b':')
+        && matches!(
+            electric_label(buffer, previous_start, trimmed - 1),
+            Some(ElectricLabel::Access | ElectricLabel::Switch | ElectricLabel::Named)
+        );
+    if opens_body || label {
+        indent.push_str(unit);
+    }
+    indent
 }
 
 /// Tiny fast path: only lexically unambiguous prefixes. Quotes, comments,
@@ -196,22 +278,37 @@ pub(crate) fn plan(
                 text.push(close.closing_character());
                 landing = text.len();
             }
-            // The typed `:` completing a bare C++ access specifier
-            // re-indents the line to its class-body anchor (0072):
-            // the enclosing brace opener's line indentation plus one
-            // unit, vim's `cino-g` default. Everything else — other
-            // languages, non-keyword lines, no brace anchor, strings
-            // and comments — inserts the colon unchanged.
+            // C-family electric labels follow vim's cindent defaults:
+            // access specifiers and switch labels land one unit inside
+            // their enclosing brace; named labels land at column zero.
+            // Other languages, non-label punctuation, missing brace
+            // anchors, strings and comments insert the colon unchanged.
             Trigger::Label => {
-                if code && request.access_labels {
-                    if let (Some(open), Some(word)) = (
+                if code && request.electric_labels {
+                    if let (Some(open), Some(label)) = (
                         opener.filter(|open| open.kind == DelimiterKind::Brace),
-                        access_specifier(buffer, line_start, at),
+                        electric_label(buffer, line_start, at),
                     ) {
-                        base = leading(buffer, open.position.get());
-                        text.push_str(&base);
-                        text.push_str(&request.unit);
-                        text.push_str(word);
+                        match label {
+                            ElectricLabel::Named => {}
+                            ElectricLabel::Scope => {
+                                text.push_str(&scope_indent(
+                                    buffer,
+                                    line_start,
+                                    open,
+                                    &request.unit,
+                                ));
+                            }
+                            ElectricLabel::Access | ElectricLabel::Switch => {
+                                base = leading(buffer, open.position.get());
+                                text.push_str(&base);
+                                text.push_str(&request.unit);
+                            }
+                        }
+                        let word_start = whitespace(buffer, line_start, at);
+                        for chunk in buffer.text().byte_slice(word_start..at).chunks() {
+                            text.push_str(chunk);
+                        }
                         start = line_start;
                         end = at;
                     }
@@ -294,15 +391,13 @@ impl Editor {
                 .all(|byte| matches!(byte, b' ' | b'\t'))
         })
     }
-    /// Cheap input-path gate for the electric access-specifier colon:
-    /// some cursor's line content is exactly one specifier keyword.
-    /// plan() still decides per cursor with the registry's language
-    /// gate, so non-C++ buffers ride the machinery once and insert a
-    /// plain colon.
+    /// Cheap input-path gate for C-family electric labels. plan() still
+    /// decides per cursor with the registry's language gate, so other
+    /// buffers ride the machinery once and insert a plain colon.
     pub(crate) fn label_needs_alignment(&self) -> bool {
         self.all_cursors().into_iter().any(|at| {
             let start = self.buf().line_start(self.buf().line_of(at));
-            access_specifier(self.buf(), start, at).is_some()
+            electric_label(self.buf(), start, at).is_some()
         })
     }
     pub(crate) fn apply_indentation(&mut self, edits: &[Edit]) {
