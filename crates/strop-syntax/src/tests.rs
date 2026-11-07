@@ -577,3 +577,5 @@ mod symbols_fallback {
 }
 
 mod sovel;
+mod splicery;
+mod weft;

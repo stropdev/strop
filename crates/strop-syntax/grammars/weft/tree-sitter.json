@@ -1,0 +1,26 @@
+{
+  "grammars": [
+    {
+      "name": "weft",
+      "camelcase": "Weft",
+      "scope": "source.weft",
+      "path": ".",
+      "file-types": [
+        "weft"
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "Presentation grammar for Weft spec revision 3 — syntax highlighting only (Strop plan 0083); not an authoritative frontend"
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false
+  }
+}

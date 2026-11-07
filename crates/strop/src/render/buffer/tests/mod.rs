@@ -7,6 +7,7 @@ mod documentation;
 mod identity;
 #[path = "../matching_tests.rs"]
 mod matching;
+mod syntax_0083;
 mod syntax_stability;
 mod viewport;
 

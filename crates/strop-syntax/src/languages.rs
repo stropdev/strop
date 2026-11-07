@@ -32,6 +32,10 @@ pub enum LanguageId {
     Css,
     /// Experimental syntax highlighting (0070); presentation grammar only.
     Sovel,
+    /// Syntax highlighting via presentation grammar (0083); no server.
+    Weft,
+    /// Experimental syntax highlighting (0083); presentation grammar only.
+    Splicery,
 }
 
 /// How a trailing `:` on a code line opens the next line's indent
@@ -403,6 +407,30 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["sovel", "sov"],
         highlights: include_str!("../queries/sovel/highlights.scm"),
+        injections: "",
+    },
+    // Syntax highlighting via presentation grammar (0083): statically
+    // linked; no server, no formatter, no symbols.
+    Entry {
+        id: LanguageId::Weft,
+        name: "weft",
+        grammar: || crate::weft::LANGUAGE.into(),
+        extensions: &["weft"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["weft"],
+        highlights: include_str!("../queries/weft/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Splicery,
+        name: "splicery",
+        grammar: || crate::splicery::LANGUAGE.into(),
+        extensions: &["spl"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["splicery", "spl"],
+        highlights: include_str!("../queries/splicery/highlights.scm"),
         injections: "",
     },
 ];

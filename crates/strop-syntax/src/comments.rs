@@ -7,8 +7,10 @@ use strop_core::{Buffer, Range, Replacement};
 pub(crate) fn line_comment(language: LanguageId) -> Option<&'static str> {
     use LanguageId::*;
     match language {
-        Rust | JavaScript | TypeScript | Tsx | Go | C | Cpp | Json | Java | CSharp => Some("//"),
-        Python | Bash | Fish | CMake | Ruby | Toml | Yaml => Some("#"),
+        Rust | JavaScript | TypeScript | Tsx | Go | C | Cpp | Json | Java | CSharp | Weft => {
+            Some("//")
+        }
+        Python | Bash | Fish | CMake | Ruby | Toml | Yaml | Splicery => Some("#"),
         Lua | Sql => Some("--"),
         Php => Some("//"),
         Css | Html | Markdown | MarkdownInline | MarkdownRustdoc | Sovel => None,

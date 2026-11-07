@@ -86,6 +86,45 @@ fn sovel_detection_uses_extension_name_and_alias() {
 }
 
 #[test]
+fn weft_detection_uses_extension_name_and_alias() {
+    // 0083: canonical name `weft`, extension/alias `weft`.
+    let spec = detect(std::path::Path::new("review.weft"), None).unwrap();
+    assert_eq!(spec.name, "weft");
+    assert_eq!(spec.id, LanguageId::Weft);
+    for name in ["weft", "source.weft"] {
+        assert_eq!(for_name(name).map(|spec| spec.name), Some("weft"), "{name}");
+    }
+    assert_eq!(for_extension("weft").map(|spec| spec.name), Some("weft"));
+    assert!(!spec.highlights.is_empty());
+    assert_eq!(
+        strop_core::languages::language_for_extension(".weft"),
+        Some("weft")
+    );
+}
+
+#[test]
+fn splicery_detection_uses_extension_name_and_alias() {
+    // 0083: canonical name `splicery`, extension `spl`, aliases
+    // `splicery`/`spl`.
+    let spec = detect(std::path::Path::new("recipe.spl"), None).unwrap();
+    assert_eq!(spec.name, "splicery");
+    assert_eq!(spec.id, LanguageId::Splicery);
+    for name in ["splicery", "spl", "source.splicery"] {
+        assert_eq!(
+            for_name(name).map(|spec| spec.name),
+            Some("splicery"),
+            "{name}"
+        );
+    }
+    assert_eq!(for_extension("spl").map(|spec| spec.name), Some("splicery"));
+    assert!(!spec.highlights.is_empty());
+    assert_eq!(
+        strop_core::languages::language_for_extension(".spl"),
+        Some("splicery")
+    );
+}
+
+#[test]
 fn core_catalog_membership_matches_syntax_catalog() {
     // 0063 §3: one language catalog policy. Every syntax entry whose
     // language name the core catalog knows must agree on extension

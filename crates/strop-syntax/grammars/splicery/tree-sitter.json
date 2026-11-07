@@ -1,0 +1,26 @@
+{
+  "grammars": [
+    {
+      "name": "splicery",
+      "camelcase": "Splicery",
+      "scope": "source.splicery",
+      "path": ".",
+      "file-types": [
+        "spl"
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "Presentation grammar for Splicery /1 — syntax highlighting only (Strop plan 0083); not an authoritative frontend"
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false
+  }
+}

@@ -67,6 +67,17 @@ pub const LANGUAGES: &[Language] = &[
         extensions: &["sov"],
         aliases: &["sov"],
     },
+    // Syntax highlighting via presentation grammar (0083); no server.
+    Language {
+        name: "weft",
+        extensions: &["weft"],
+        aliases: &["weft"],
+    },
+    Language {
+        name: "splicery",
+        extensions: &["spl"],
+        aliases: &["splicery", "spl"],
+    },
 ];
 
 /// Language name for a bare extension (no dot).
@@ -116,6 +127,20 @@ mod tests {
         assert_eq!(extensions_for_language("sovel"), Some(&["sov"][..]));
         assert_eq!(extensions_for_language("sov"), Some(&["sov"][..]));
         assert!(language_names().any(|name| name == "sovel"));
+    }
+
+    #[test]
+    fn weft_and_splicery_resolve_through_extension_name_and_alias() {
+        // 0083: lang:weft / lang:splicery filters agree with detection.
+        assert_eq!(language_for_extension(".weft"), Some("weft"));
+        assert_eq!(language_for_extension_name("weft"), Some("weft"));
+        assert_eq!(extensions_for_language("weft"), Some(&["weft"][..]));
+        assert_eq!(language_for_extension(".spl"), Some("splicery"));
+        assert_eq!(language_for_extension_name("spl"), Some("splicery"));
+        assert_eq!(extensions_for_language("splicery"), Some(&["spl"][..]));
+        assert_eq!(extensions_for_language("spl"), Some(&["spl"][..]));
+        assert!(language_names().any(|name| name == "weft"));
+        assert!(language_names().any(|name| name == "splicery"));
     }
 
     #[test]

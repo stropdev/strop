@@ -343,11 +343,11 @@
           "crates/strop-engine/src/editor/terminal/presentation.rs": "4c81ef1f50bf701a10cfd72917e330acb37f38f904d853d696ac1b73cf52331a",
           "crates/strop-engine/src/editor/theme.rs": "916402e01abd99ce3c36b42381ffee31b64b384c38dcba71291a9a714869de38",
           "crates/strop-engine/src/editor/trace/seed.rs": "a723aab954139346634ddc86be33ed5572e70886d98fbe5b7e6cb30bff4af6ed",
-          "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
+          "crates/strop-syntax/src/comments.rs": "62f4f2c1c110ab59952ebd83e37c9a18c0b3ce99a0a339d2c11b5a4b18b88167",
           "crates/strop-syntax/src/injections.rs": "b121dff8a50567bf6e0c3473ccac7a5c1e9d8ed6f9f4a94c631f5e7acc2d58e2",
           "crates/strop-syntax/src/injections/documentation.rs": "0761521b7961a6a3cf065d5309bb91b10a451f6294fab2975a95e05ddf3af089",
-          "crates/strop-syntax/src/languages.rs": "17bd91ea8b006ce193bf9b4a7017209336aee4c6a1c763f2daf822a64048722c",
-          "crates/strop-syntax/src/lib.rs": "cb60e3a32f99e68a4e021cb14066987e03aca25688d45646fe05fa27f97704af",
+          "crates/strop-syntax/src/languages.rs": "a76939474c82f259c03fb8ce794376a1fb3beb5b5707dea5b0580fb65f01d03b",
+          "crates/strop-syntax/src/lib.rs": "c23c681327bdbc6426b58275700a9bcd468da0e670e2771c2661ce00d82185d0",
           "crates/strop-terminal/src/client.rs": "f456b801b36be94078fb3bcb3b5b069d65e0737e628fc18e2a2d62814f1aee9c",
           "crates/strop-terminal/src/model/mod.rs": "4af1b183054749001a27b22aad26b440e613855fa4c601d9f3feae8b6b58de92",
           "crates/strop-terminal/src/service/mod.rs": "8d0e1f0a0af68407d792872a065e7d7aad02524cd85cdabc8b766c52bdc99539",
@@ -709,7 +709,7 @@
           "crates/strop-engine/src/editor/visual.rs": "59c8f32974ed5669c32ee1b47855205bb9f23d154f67a4dea9d9b4e023474db9",
           "crates/strop-grammar/src/query/parse.rs": "55ea7bf10ef9af7e2addb84e73eec9a948075af2bcbcaf72398a40b504684ea5",
           "crates/strop-grammar/src/query/parse/atoms.rs": "2e32f011a930d692c6c001b2327e93a4b2e212b580af564397e6bf49c249bca6",
-          "crates/strop-syntax/src/comments.rs": "0d749b70dee92d6166200dc5dbf5831a5ff2c4ade0a16088bf135f460d7a4298",
+          "crates/strop-syntax/src/comments.rs": "62f4f2c1c110ab59952ebd83e37c9a18c0b3ce99a0a339d2c11b5a4b18b88167",
           "crates/strop-syntax/src/indentation.rs": "2e3ebd83b3ab28d26661e69a15398c814e256a633cc9019185f978780b9592c3",
           "crates/strop/src/render/cmd_card.rs": "fb661e939b62ded61933f7f3f4527f1944e3b461875cf54f6c3e2a1f58972518"
         },
@@ -3262,7 +3262,7 @@
       ],
       "pins": {
         "sources": {
-          "crates/strop-fs/Cargo.toml": "3c7be77bb3f5aed422bdb352eda5ad7b2f55c4f37a88414fee3ef11b8994427e",
+          "crates/strop-fs/Cargo.toml": "e9391710f2332e9c77f3660917ca10d881165febd95f8ab07330e6f98534ae05",
           "crates/strop-fs/src/attributes.rs": "c1cb67dcc961364b7ba040dd8884b3859849b3ba6b1e798d7ec3ff328ba8a733",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-fs/src/context.rs": "e75c53dd498284322abc3ac5304595e200ab976d1c6982ccd54a2b7bb57e5f1f",
@@ -5732,7 +5732,7 @@
           "crates/strop-engine/src/editor/namespace.rs": "66ecd1067572d9f5b74017288e66e7fcd27c54950d655c1d43b7b517f693c7b7",
           "crates/strop-engine/src/editor/namespace/capability.rs": "77ed68b151559c16404acd43ab87bb9c3fc29700d4760eeddb0875ab80ebf34d",
           "crates/strop-engine/src/editor/remote/save/store.rs": "587d0d4aab821a3702d9ef0b32106ba10bd326a03a4a663bdd808d7f0124fcf5",
-          "crates/strop-fs/Cargo.toml": "3c7be77bb3f5aed422bdb352eda5ad7b2f55c4f37a88414fee3ef11b8994427e",
+          "crates/strop-fs/Cargo.toml": "e9391710f2332e9c77f3660917ca10d881165febd95f8ab07330e6f98534ae05",
           "crates/strop-fs/src/batch.rs": "f0e262cc55cf332d121d0ed66e338189817595b8faf796a5f21d8e9f542593ff",
           "crates/strop-remote/src/worker_transport.rs": "4ad9782a88656a5e64368f152c19ea6da7fa754c2b9f185ddc8c49c5eea0d78b",
           "crates/strop-worker-client/src/connection.rs": "9cf4d9322c9ee02a3922cc384fe012b73e2dfb790ab7d2013d2018e969b4d46d",
@@ -5740,7 +5740,7 @@
           "crates/strop-worker-client/src/error.rs": "fc4dde15f201479147d38ff0181ea91f919ba650c0df8be7d9e8f88323f6f181",
           "crates/strop-worker-client/src/lib.rs": "6d3e29090f67f60cdc94ee17038f140a1a33ce330446b2da5863bf96698693dc",
           "crates/strop-worker-client/src/payload.rs": "5535efa795b085e991ab0bd893c7770684d3bd15272d26201d43afa28121e666",
-          "crates/strop-worker/Cargo.toml": "287b71a74d1f79f3fc8713ac30d9049fde2f8e381f39b483ac6c8ee3bf7458ed",
+          "crates/strop-worker/Cargo.toml": "4c9387d01476c59ce3543c9bbe1f408c5494b3a26cb3f5b6f804f2f644f8c0de",
           "crates/strop-worker/src/lib.rs": "6db5c15aecf418307e4253457269f862f1bd53a81f23a646abd16721ec524942",
           "crates/strop-worker/src/serve.rs": "a63b5f734bcdf854770075b9d1188738c23106f88543b05cb424ecec9bbe2441",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
@@ -6466,11 +6466,11 @@
           "crates/strop-worker-deploy/src/lib.rs": "13870aae70d96f26582dd7d8ce963e91b48f99049afc0b3926733932e6750966",
           "crates/strop-worker-deploy/src/provider.rs": "f3fa9e92d520dbb5ab066480dea96d061a2e3d9d74e8a1a36d7107001dafb87d",
           "crates/strop-worker-protocol/src/request.rs": "11adbd372451b043496b76561185225c5529e3c57ebdd8c6996428dafac58928",
-          "crates/strop-worker/Cargo.toml": "287b71a74d1f79f3fc8713ac30d9049fde2f8e381f39b483ac6c8ee3bf7458ed",
+          "crates/strop-worker/Cargo.toml": "4c9387d01476c59ce3543c9bbe1f408c5494b3a26cb3f5b6f804f2f644f8c0de",
           "crates/strop-worker/src/serve/cache_gc.rs": "956c793f231dba8415870eb0cd4aa5d2afb237ca9a94c2d5f5f286666b5090ae",
           "crates/strop-worker/src/serve/cache_lease.rs": "f415bb2335faea47328ad02b41d6dfebe340546a79c831b03dde44bb4a30a1fb",
           "crates/strop-worker/src/serve/handshake.rs": "04774bd10d5746fd7c5a1dea17b036e1aba93b92c005052bec7a857932ca6d6a",
-          "crates/strop/Cargo.toml": "de657a03175b0f373dae5c9eeaea26162656e3e369c722970a8d2cd1d08a9bdf"
+          "crates/strop/Cargo.toml": "7d45a1124675bdbc51b3832ae73365633d6ebb13333fd6153bf8c32c54476f9b"
         },
         "evidence": "5801cb8307a55802406db50a05a1249a0cc3e549b4c18f0dc433f1ace919d9e8"
       }

@@ -1,0 +1,859 @@
+================================================================================
+File operations: edit, create, rename, remove
+================================================================================
+
+edit "sdk/src/client.rs" {
+  @call := one text "transport.send(request)"
+  after @call insert ".await"
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (after_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (string)))))))
+
+================================================================================
+File lifecycle: create, rename, remove (one document each)
+================================================================================
+
+create "docs/new.txt" with <<'BODY'
+first line
+second line
+BODY
+
+--------------------------------------------------------------------------------
+
+(document
+  (create_file
+    (string)
+    (payload
+      (piece
+        (heredoc
+          (heredoc_start)
+          (heredoc_body)
+          (heredoc_end))))))
+
+================================================================================
+Raw profile on create; hex payloads
+================================================================================
+
+create "blob.bin" as bytes with hex"0a0d"
+
+--------------------------------------------------------------------------------
+
+(document
+  (create_file
+    (string)
+    (raw_profile)
+    (payload
+      (piece
+        (hex_literal)))))
+
+================================================================================
+Rename and remove documents
+================================================================================
+
+rename "old_name.txt" to "new_name.txt"
+
+--------------------------------------------------------------------------------
+
+(document
+  (rename_file
+    (string)
+    (string)))
+
+================================================================================
+Comments and a fragment of statements
+================================================================================
+
+# bind the call, then append the suffix
+@call := one text "send(request)"
+after @call insert ".await" # trailing note with keywords: each in expect
+
+--------------------------------------------------------------------------------
+
+(document
+  (comment)
+  (fragment
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (after_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (string))))))
+  (comment))
+
+================================================================================
+Selectors: one text/line/hex, within, between, range
+================================================================================
+
+edit "docs/operations.md" {
+  @needle := one text "needle # not a comment"
+  @begin := one line "<!-- begin -->"
+  @window := between @begin and @end_marker
+  @anchor := one line "use lib::Config;" within @window
+  @span := range [0, 6)
+  @quad := range [1024, 2048)
+  replace @span with keep(@anchor)
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (between_selector
+            (reference
+              (handle
+                (name)))
+            (reference
+              (handle
+                (name)))))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)
+            (reference
+              (handle
+                (name)))))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (range_selector
+            (nat)
+            (nat)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (range_selector
+            (nat)
+            (nat)))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (keep_piece
+              (reference
+                (handle
+                  (name))))))))))
+
+================================================================================
+Iteration over line_matches with captures
+================================================================================
+
+edit "service/config/routes.conf" {
+  each @r in line_matches rx"^route[ \t]+(?<verb>[A-Z]+)[ \t]+(?<path>/\S+)$" expect 3 {
+    replace @r with [keep(@r.verb), " ", keep(@r.path)]
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (iteration
+        (handle
+          (name))
+        (collection
+          (line_matches
+            (regex)
+            (nat)))
+        (replace_statement
+          (selector
+            (reference
+              (handle
+                (name))))
+          (payload
+            (payload_list
+              (piece
+                (keep_piece
+                  (reference
+                    (handle
+                      (name))
+                    (name))))
+              (piece
+                (string))
+              (piece
+                (keep_piece
+                  (reference
+                    (handle
+                      (name))
+                    (name)))))))))))
+
+================================================================================
+Frozen collections replay a captured set
+================================================================================
+
+edit "service/config/routes.conf" {
+  each @r in frozen @hits {
+    replace @r with [keep(@r.verb), " ", keep(@r.path)]
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (iteration
+        (handle
+          (name))
+        (collection
+          (frozen_collection
+            (reference
+              (handle
+                (name)))))
+        (replace_statement
+          (selector
+            (reference
+              (handle
+                (name))))
+          (payload
+            (payload_list
+              (piece
+                (keep_piece
+                  (reference
+                    (handle
+                      (name))
+                    (name))))
+              (piece
+                (string))
+              (piece
+                (keep_piece
+                  (reference
+                    (handle
+                      (name))
+                    (name)))))))))))
+
+================================================================================
+line_matches within a window; expect zero
+================================================================================
+
+edit "cfg/app.conf" {
+  @zone := one line "[zone]"
+  each @m in line_matches rx"^name=(?<k>\w+)$" within @zone expect 0 {
+    delete @m
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (iteration
+        (handle
+          (name))
+        (collection
+          (line_matches
+            (regex)
+            (reference
+              (handle
+                (name)))
+            (nat)))
+        (delete_statement
+          (selector
+            (reference
+              (handle
+                (name)))))))))
+
+================================================================================
+Payload pieces: strings, hex, keep, lines like, indent, nested lists
+================================================================================
+
+edit "docs/config.ini" {
+  @banner := one line "[capture]"
+  @here := one line "obsolete"
+  @body := range [0, 6)
+  replace @here with lines like @banner ["A", "B"]
+  replace @body with indent("  ", keep(@body))
+  replace @body with ["trace_send(", keep(@body), ")"]
+  before @banner insert indent("\t", ["a", hex"0a"])
+  after @banner insert keep(@body)
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (range_selector
+            (nat)
+            (nat)))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (lines_like_piece
+              (reference
+                (handle
+                  (name)))
+              (string)
+              (string))))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (indent_piece
+              (string)
+              (payload
+                (piece
+                  (keep_piece
+                    (reference
+                      (handle
+                        (name)))))))))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (payload_list
+            (piece
+              (string))
+            (piece
+              (keep_piece
+                (reference
+                  (handle
+                    (name)))))
+            (piece
+              (string))))))
+    (statement
+      (before_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (indent_piece
+              (string
+                (escape_sequence))
+              (payload
+                (payload_list
+                  (piece
+                    (string))
+                  (piece
+                    (hex_literal)))))))))
+    (statement
+      (after_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (keep_piece
+              (reference
+                (handle
+                  (name))))))))))
+
+================================================================================
+Heredoc: multi-line body, comment-like and quote-like content
+================================================================================
+
+edit "docs/operations.md" {
+  @begin := one line "<!-- policy:begin -->"
+  @end_marker := one line "<!-- policy:end -->"
+  replace between @begin and @end_marker with <<'POLICY'
+Attempts: 3 # not a comment
+Backoff: "exponential"
+POLICY
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (replace_statement
+        (selector
+          (between_selector
+            (reference
+              (handle
+                (name)))
+            (reference
+              (handle
+                (name)))))
+        (payload
+          (piece
+            (heredoc
+              (heredoc_start)
+              (heredoc_body)
+              (heredoc_end))))))))
+
+================================================================================
+Heredoc edge: empty body
+================================================================================
+
+create "a.txt" with <<'EMPTY'
+EMPTY
+
+--------------------------------------------------------------------------------
+
+(document
+  (create_file
+    (string)
+    (payload
+      (piece
+        (heredoc
+          (heredoc_start)
+          (heredoc_end))))))
+
+================================================================================
+Heredoc edge: EOF without terminator line
+================================================================================
+
+create "b.txt" with <<'EOF'
+no terminator follows
+--------------------------------------------------------------------------------
+
+(document
+  (create_file
+    (string)
+    (payload
+      (piece
+        (heredoc
+          (heredoc_start)
+          (heredoc_body)
+          (MISSING heredoc_end))))))
+
+================================================================================
+Heredoc edges: CRLF lines, lookalike terminator, suffix lookalike
+================================================================================
+
+create "crlf.txt" with <<'TAG'
+first line ends CRLF
+  TAG indented is content
+TAGS suffix is content
+TAG
+
+--------------------------------------------------------------------------------
+
+(document
+  (create_file
+    (string)
+    (payload
+      (piece
+        (heredoc
+          (heredoc_start)
+          (heredoc_body)
+          (heredoc_end))))))
+
+================================================================================
+Contextual spellings are not global keywords
+================================================================================
+
+edit "book/glossary.txt" {
+  @text := one line "text as a handle name"
+  @line := one line "line as a handle name"
+  @like := one line "like as a handle name"
+  @within := one line "within as a handle name"
+  @expect := one line "expect as a handle name"
+  @and := one line "and as a handle name"
+  @to := one line "to as a handle name"
+  @frozen := one line "frozen as a handle name"
+  replace @text with keep(@and)
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (keep_piece
+              (reference
+                (handle
+                  (name))))))))))
+
+================================================================================
+Lexical: escapes, UTF-8, rx bodies with quotes and hashes
+================================================================================
+
+edit "uni/ünïcode.txt" {
+  @mark := one text "λ string with \"escaped\" and \\ backslash"
+  @line_hit := one line "→ tab:\t newline:\n quote:\""
+  @re := one text "x"
+  each @m in line_matches rx"quoted \x22 inner # hash" expect 1 {
+    replace @m with keep(@m)
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string
+              (escape_sequence)
+              (escape_sequence)
+              (escape_sequence))))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string
+              (escape_sequence)
+              (escape_sequence)
+              (escape_sequence))))))
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (iteration
+        (handle
+          (name))
+        (collection
+          (line_matches
+            (regex)
+            (nat)))
+        (replace_statement
+          (selector
+            (reference
+              (handle
+                (name))))
+          (payload
+            (piece
+              (keep_piece
+                (reference
+                  (handle
+                    (name)))))))))))
+
+================================================================================
+Incomplete input: unclosed edit block recovers
+================================================================================
+
+edit "half.txt" {
+  @a := one text "open"
+  before @a insert "x"
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (before_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (string)))))
+    (MISSING "}")))
+
+================================================================================
+Incomplete input: unterminated string and stray brackets
+================================================================================
+
+edit "half.txt" {
+  @a := one text "no closing quote
+  replace @a with [
+  @b := range [1,
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (payload_list
+            (MISSING "]")))))
+    (ERROR
+      (handle
+        (name))
+      (nat))))
+
+================================================================================
+Incomplete input: unclosed heredoc colors the rest as body
+================================================================================
+
+edit "half.txt" {
+  @a := one text "open"
+  replace @a with <<'EOF'
+still typing
+# looks like a comment, is body
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (string)))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (heredoc
+              (heredoc_start)
+              (heredoc_body)
+              (MISSING heredoc_end))))))
+    (MISSING "}")))
+
+================================================================================
+Raw profile on edit with hex selector and payload
+================================================================================
+
+edit "fixtures/frame.bin" as bytes {
+  @slot := one hex"00ff"
+  replace @slot with hex"80fe"
+}
+
+--------------------------------------------------------------------------------
+
+(document
+  (edit_file
+    (string)
+    (raw_profile)
+    (statement
+      (binding_statement
+        (handle
+          (name))
+        (selector
+          (one_selector
+            (hex_literal)))))
+    (statement
+      (replace_statement
+        (selector
+          (reference
+            (handle
+              (name))))
+        (payload
+          (piece
+            (hex_literal)))))))
+
+================================================================================
+Heredoc edge: terminator line ends at EOF without newline
+================================================================================
+
+create "c.txt" with <<'END'
+content line
+END
+--------------------------------------------------------------------------------
+
+(document
+  (create_file
+    (string)
+    (payload
+      (piece
+        (heredoc
+          (heredoc_start)
+          (heredoc_body)
+          (heredoc_end))))))

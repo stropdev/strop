@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.52.0 — 2026-11-07
+
+### Added
+
+- **Weft — syntax highlighting (presentation grammar)** (0083): `.weft` reviews open with full revision-3 coloring — header verbs, evidence/set bindings, `and`/`or`/`not`, quantifiers, the dual-role `in`, set algebra (`| & -`), comparisons, spreads and `//` comments — through a first-party tree-sitter grammar statically linked exactly like Sovel's. `weft` fences in Markdown highlight through the normal injection route and `lang:weft` filters agree with `.weft` detection; Ctrl-C toggles `//` comments. No server, formatter, symbols or validity claim: the tree is presentation only.
+- **Splicery — experimental syntax highlighting** (0083): `.spl` recipes open with /1 coloring — document verbs (`edit`/`create`/`rename`/`remove`), `@handle :=` bindings with parameter/variable/attribute roles by position, `rx"…"`/`hex"…"`/strings, `#` comments, contextual spellings (`text`/`line`/`like`/`within`/`expect` stay names outside their productions) and heredocs via the grammar's one external scanner, whose dynamic terminator a regex token cannot express. Incremental edits inside heredoc and `rx` bodies match fresh parses; `lang:splicery` agrees with `.spl` detection and Ctrl-C toggles `#` comments. Highlighting only — never a validity claim, match count or permission.
+
 ## 0.51.2 — 2026-11-06
 
 ### Fixed

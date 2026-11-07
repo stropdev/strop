@@ -19,7 +19,9 @@ pub use indentation::{DelimiterKind, IndentContext, OpeningDelimiter};
 mod injections;
 mod sovel;
 mod spans;
+mod splicery;
 pub mod symbols;
+mod weft;
 pub use spans::Emphasis;
 use spans::{CaptureStyle, LayeredSpan};
 

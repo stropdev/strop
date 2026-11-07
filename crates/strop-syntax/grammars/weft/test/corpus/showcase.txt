@@ -1,0 +1,344 @@
+================================================================================
+Vendored showcase: examples/set-algebra.weft (MIT, Weft a115f51)
+================================================================================
+
+review set_algebra {
+  context "local" at "exact-source";
+  profile "weft.symbolic/1";
+  target plan = proposal "set-algebra-tour";
+
+  // Native finite set algebra: union `|`, intersection `&`, left difference
+  // `-`, scalar membership `in` and inclusive subset `<=`.
+  shared := {1, 2, 3};
+  extra := {2, 3, 4};
+
+  union := shared | extra;            // {1,2,3,4}, left order then unseen right
+  intersection := shared & extra;     // {2,3}, qualifying left order
+  difference := shared - extra;       // {1}, survivors keep left origins
+
+  // Parentheses compose in every set position, including quantifier domains.
+  check union_scope: forall x in union { x in shared or x in extra };
+  check intersection_members: forall x in intersection { x in shared and x in extra };
+  check difference_members: forall x in difference { not (x in extra) };
+
+  // Membership hit/miss and inclusive subset, including equality.
+  check member_hit: 2 in intersection;
+  check member_miss: not (1 in intersection);
+  check subset_reflexive: shared <= shared;
+  check subset_true: intersection <= shared;
+
+  // A false subset keeps the deterministic first-left counterexample (4).
+  need difference;
+  check subset_false: extra <= shared;
+
+  // Quantification over a derived domain; the empty result of a - a keeps
+  // its element type and its whole operand evidence.
+  empty := shared - shared;
+  check vacuous: forall x in empty { false };
+  check exhaustive: exists x in empty { true };
+
+  // Precedence: & binds tighter than | and -; comparisons bind loosest.
+  precedence := shared | {9} & intersection - {2};
+  check precedence_shape: precedence == {1,3};
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    (ident)
+    (scope_decl
+      (string)
+      (string))
+    (profile_decl
+      (string))
+    (target_decl
+      (ident)
+      (string))
+    (comment)
+    (comment)
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_literal
+            (set_item
+              (value
+                (integer)))
+            (set_item
+              (value
+                (integer)))
+            (set_item
+              (value
+                (integer)))))))
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_literal
+            (set_item
+              (value
+                (integer)))
+            (set_item
+              (value
+                (integer)))
+            (set_item
+              (value
+                (integer)))))))
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_union_expression
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (set_expression
+              (value
+                (path
+                  (ident))))))))
+    (comment)
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_intersection_expression
+            (value
+              (path
+                (ident)))
+            (value
+              (path
+                (ident)))))))
+    (comment)
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_difference_expression
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (set_expression
+              (value
+                (path
+                  (ident))))))))
+    (comment)
+    (comment)
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (quantifier
+            (ident)
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (expression
+              (boolean_or_expression
+                (expression
+                  (comparison
+                    (value
+                      (path
+                        (ident)))
+                    (value
+                      (path
+                        (ident)))))
+                (expression
+                  (comparison
+                    (value
+                      (path
+                        (ident)))
+                    (value
+                      (path
+                        (ident)))))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (quantifier
+            (ident)
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (expression
+              (boolean_and_expression
+                (comparison
+                  (value
+                    (path
+                      (ident)))
+                  (value
+                    (path
+                      (ident))))
+                (comparison
+                  (value
+                    (path
+                      (ident)))
+                  (value
+                    (path
+                      (ident))))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (quantifier
+            (ident)
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (expression
+              (not_expression
+                (group_expression
+                  (expression
+                    (comparison
+                      (value
+                        (path
+                          (ident)))
+                      (value
+                        (path
+                          (ident))))))))))))
+    (comment)
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (integer))
+            (value
+              (path
+                (ident)))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (not_expression
+            (group_expression
+              (expression
+                (comparison
+                  (value
+                    (integer))
+                  (value
+                    (path
+                      (ident))))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (path
+                (ident)))
+            (value
+              (path
+                (ident)))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (path
+                (ident)))
+            (value
+              (path
+                (ident)))))))
+    (comment)
+    (statement
+      (need_decl
+        (ident)))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (path
+                (ident)))
+            (value
+              (path
+                (ident)))))))
+    (comment)
+    (comment)
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_difference_expression
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (set_expression
+              (value
+                (path
+                  (ident))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (quantifier
+            (ident)
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (expression
+              (boolean))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (quantifier
+            (ident)
+            (set_expression
+              (value
+                (path
+                  (ident))))
+            (expression
+              (boolean))))))
+    (comment)
+    (statement
+      (set_binding
+        (ident)
+        (set_expression
+          (set_difference_expression
+            (set_expression
+              (set_union_expression
+                (set_expression
+                  (value
+                    (path
+                      (ident))))
+                (set_expression
+                  (set_intersection_expression
+                    (set_literal
+                      (set_item
+                        (value
+                          (integer))))
+                    (value
+                      (path
+                        (ident)))))))
+            (set_expression
+              (set_literal
+                (set_item
+                  (value
+                    (integer)))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (path
+                (ident)))
+            (set_literal
+              (set_item
+                (value
+                  (integer)))
+              (set_item
+                (value
+                  (integer))))))))))

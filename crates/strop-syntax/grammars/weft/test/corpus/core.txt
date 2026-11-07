@@ -1,0 +1,775 @@
+================================================================================
+Review header in order
+================================================================================
+
+review pagination_change {
+    context "example-realm/checkout" at "example-release-42";
+    profile "example-declared-contract-profile";
+    target change = proposal "example-plan-17";
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))))
+
+================================================================================
+Evidence bindings, needs, assumptions and checks
+================================================================================
+
+review evidence {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+
+    asset contract = citation "example-contract-4";
+    claim contract_scope = citation "scope";
+    rule cursor_rule = citation "cursor-rule-2";
+    need contract;
+    need contract_scope;
+    assume client_acceptance: accepts_cursor(change.client);
+    check cursor_condition: cursor_precondition_met(change) by cursor_rule;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (binding_decl
+        name: (ident)
+        citation: (string)))
+    (statement
+      (binding_decl
+        name: (ident)
+        citation: (string)))
+    (statement
+      (binding_decl
+        name: (ident)
+        citation: (string)))
+    (statement
+      (need_decl
+        name: (ident)))
+    (statement
+      (need_decl
+        name: (ident)))
+    (statement
+      (assumption_decl
+        label: (ident)
+        value: (expression
+          (predicate_call
+            predicate: (ident)
+            (value
+              (path
+                (ident)
+                (ident)))))))
+    (statement
+      (check_decl
+        label: (ident)
+        value: (expression
+          (predicate_call
+            predicate: (ident)
+            (value
+              (path
+                (ident)))))
+        (rule_use
+          rule: (ident))))))
+
+================================================================================
+Set bindings with literals, spreads and trailing comma
+================================================================================
+
+review sets {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+
+    empty := {};
+    sdks := {"sdk-v1", "sdk-v2"};
+    all_sdks := {"sdk-v2", ...sdks, "sdk-v3",};
+    nested := {...(a | b), "x", 0, 42};
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_literal))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_literal
+            (set_item
+              (value
+                (string)))
+            (set_item
+              (value
+                (string)))))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_literal
+            (set_item
+              (value
+                (string)))
+            (set_item
+              (spread
+                (set_expression
+                  (value
+                    (path
+                      (ident))))))
+            (set_item
+              (value
+                (string)))))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_literal
+            (set_item
+              (spread
+                (set_expression
+                  (parenthesized_set
+                    (set_expression
+                      (set_union_expression
+                        left: (set_expression
+                          (value
+                            (path
+                              (ident))))
+                        right: (set_expression
+                          (value
+                            (path
+                              (ident))))))))))
+            (set_item
+              (value
+                (string)))
+            (set_item
+              (value
+                (integer)))
+            (set_item
+              (value
+                (integer)))))))))
+
+================================================================================
+Set algebra precedence: & tighter than | and -
+================================================================================
+
+review algebra {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+
+    union := shared | extra;
+    intersection := shared & extra;
+    difference := shared - extra;
+    precedence := shared | {9} & intersection - {2};
+    left_assoc := a - b - c | d | e & f & g;
+    check precedence_shape: precedence == {1,3};
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_union_expression
+            left: (set_expression
+              (value
+                (path
+                  (ident))))
+            right: (set_expression
+              (value
+                (path
+                  (ident))))))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_intersection_expression
+            left: (value
+              (path
+                (ident)))
+            right: (value
+              (path
+                (ident)))))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_difference_expression
+            left: (set_expression
+              (value
+                (path
+                  (ident))))
+            right: (set_expression
+              (value
+                (path
+                  (ident))))))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_difference_expression
+            left: (set_expression
+              (set_union_expression
+                left: (set_expression
+                  (value
+                    (path
+                      (ident))))
+                right: (set_expression
+                  (set_intersection_expression
+                    left: (set_literal
+                      (set_item
+                        (value
+                          (integer))))
+                    right: (value
+                      (path
+                        (ident)))))))
+            right: (set_expression
+              (set_literal
+                (set_item
+                  (value
+                    (integer)))))))))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_union_expression
+            left: (set_expression
+              (set_union_expression
+                left: (set_expression
+                  (set_difference_expression
+                    left: (set_expression
+                      (set_difference_expression
+                        left: (set_expression
+                          (value
+                            (path
+                              (ident))))
+                        right: (set_expression
+                          (value
+                            (path
+                              (ident))))))
+                    right: (set_expression
+                      (value
+                        (path
+                          (ident))))))
+                right: (set_expression
+                  (value
+                    (path
+                      (ident))))))
+            right: (set_expression
+              (set_intersection_expression
+                left: (set_intersection_expression
+                  left: (value
+                    (path
+                      (ident)))
+                  right: (value
+                    (path
+                      (ident))))
+                right: (value
+                  (path
+                    (ident)))))))))
+    (statement
+      (check_decl
+        label: (ident)
+        value: (expression
+          (comparison
+            left: (value
+              (path
+                (ident)))
+            right: (set_literal
+              (set_item
+                (value
+                  (integer)))
+              (set_item
+                (value
+                  (integer))))))))))
+
+================================================================================
+Quantifiers: binders, domains, bodies, dual `in`
+================================================================================
+
+review quantified {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+
+    check union_scope: forall x in union { x in shared or x in extra };
+    check existence: exists item in (a - b) { available(item) };
+    check nested: forall x in s { exists y in s { x == y and not (x in t) } };
+    assume vacuous: forall item in {} { true };
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (check_decl
+        label: (ident)
+        value: (expression
+          (quantifier
+            binder: (ident)
+            domain: (set_expression
+              (value
+                (path
+                  (ident))))
+            body: (expression
+              (boolean_or_expression
+                left: (expression
+                  (comparison
+                    left: (value
+                      (path
+                        (ident)))
+                    right: (value
+                      (path
+                        (ident)))))
+                right: (expression
+                  (comparison
+                    left: (value
+                      (path
+                        (ident)))
+                    right: (value
+                      (path
+                        (ident)))))))))))
+    (statement
+      (check_decl
+        label: (ident)
+        value: (expression
+          (quantifier
+            binder: (ident)
+            domain: (set_expression
+              (parenthesized_set
+                (set_expression
+                  (set_difference_expression
+                    left: (set_expression
+                      (value
+                        (path
+                          (ident))))
+                    right: (set_expression
+                      (value
+                        (path
+                          (ident))))))))
+            body: (expression
+              (predicate_call
+                predicate: (ident)
+                (value
+                  (path
+                    (ident)))))))))
+    (statement
+      (check_decl
+        label: (ident)
+        value: (expression
+          (quantifier
+            binder: (ident)
+            domain: (set_expression
+              (value
+                (path
+                  (ident))))
+            body: (expression
+              (quantifier
+                binder: (ident)
+                domain: (set_expression
+                  (value
+                    (path
+                      (ident))))
+                body: (expression
+                  (boolean_and_expression
+                    left: (comparison
+                      left: (value
+                        (path
+                          (ident)))
+                      right: (value
+                        (path
+                          (ident))))
+                    right: (not_expression
+                      (group_expression
+                        (expression
+                          (comparison
+                            left: (value
+                              (path
+                                (ident)))
+                            right: (value
+                              (path
+                                (ident)))))))))))))))
+    (statement
+      (assumption_decl
+        label: (ident)
+        value: (expression
+          (quantifier
+            binder: (ident)
+            domain: (set_expression
+              (set_literal))
+            body: (expression
+              (boolean))))))))
+
+================================================================================
+Membership, subset, equality and boolean structure
+================================================================================
+
+review propositions {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+
+    check member_hit: 2 in intersection;
+    check member_miss: not (1 in intersection);
+    check subset_reflexive: shared <= shared;
+    check chains: a and b or not c and not not d;
+    check grouped: (x in a or y in b) and z == "s";
+    check flags: not (true == false);
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    (ident)
+    (scope_decl
+      (string)
+      (string))
+    (profile_decl
+      (string))
+    (target_decl
+      (ident)
+      (string))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (integer))
+            (value
+              (path
+                (ident)))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (not_expression
+            (group_expression
+              (expression
+                (comparison
+                  (value
+                    (integer))
+                  (value
+                    (path
+                      (ident))))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (comparison
+            (value
+              (path
+                (ident)))
+            (value
+              (path
+                (ident)))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (boolean_or_expression
+            (expression
+              (boolean_and_expression
+                (comparison
+                  (value
+                    (path
+                      (ident))))
+                (comparison
+                  (value
+                    (path
+                      (ident))))))
+            (expression
+              (boolean_and_expression
+                (not_expression
+                  (comparison
+                    (value
+                      (path
+                        (ident)))))
+                (not_expression
+                  (not_expression
+                    (comparison
+                      (value
+                        (path
+                          (ident))))))))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (boolean_and_expression
+            (group_expression
+              (expression
+                (boolean_or_expression
+                  (expression
+                    (comparison
+                      (value
+                        (path
+                          (ident)))
+                      (value
+                        (path
+                          (ident)))))
+                  (expression
+                    (comparison
+                      (value
+                        (path
+                          (ident)))
+                      (value
+                        (path
+                          (ident))))))))
+            (comparison
+              (value
+                (path
+                  (ident)))
+              (value
+                (string)))))))
+    (statement
+      (check_decl
+        (ident)
+        (expression
+          (not_expression
+            (group_expression
+              (expression
+                (comparison
+                  (value
+                    (boolean))
+                  (value
+                    (boolean)))))))))))
+
+================================================================================
+Lexical: maximal munch, keyword boundary, escapes, UTF-8, comments
+================================================================================
+
+review lexical {
+    context "λ realm" at "snap\r\n";
+    profile "p";
+    target android = proposal "with \"quotes\" and \\ and \n\t";
+
+    // comment with keywords: review check in forall and or not true
+    x := {...a, "..."}; // trailing comment with # and /* block shapes */
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string
+        (escape_sequence)
+        (escape_sequence)))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string
+        (escape_sequence)
+        (escape_sequence)
+        (escape_sequence)
+        (escape_sequence)
+        (escape_sequence)))
+    (comment)
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_literal
+            (set_item
+              (spread
+                (set_expression
+                  (value
+                    (path
+                      (ident))))))
+            (set_item
+              (value
+                (string)))))))
+    (comment)))
+
+================================================================================
+CRLF line endings keep byte-exact spans
+================================================================================
+
+review crlf {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+    s := {"a",
+        "b"};
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (set_binding
+        name: (ident)
+        value: (set_expression
+          (set_literal
+            (set_item
+              (value
+                (string)))
+            (set_item
+              (value
+                (string)))))))))
+
+================================================================================
+Incomplete input: dangling comparison operator
+================================================================================
+
+review partial {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+    check dangling: a ==
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (ERROR
+      (ident)
+      (value
+        (path
+          (ident))))))
+
+================================================================================
+Incomplete input: unterminated string recovers at the line end
+================================================================================
+
+review partial {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+    assume unterminated: "no closing quote
+    need ok;
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (assumption_decl
+        label: (ident)
+        value: (expression
+          (comparison
+            left: (value
+              (string))))
+        (MISSING ";")))
+    (statement
+      (need_decl
+        name: (ident)))))
+
+================================================================================
+Incomplete input: missing closing brace
+================================================================================
+
+review partial {
+    context "c" at "s";
+    profile "p";
+    target plan = proposal "t";
+    need ok;
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (review
+    name: (ident)
+    (scope_decl
+      context: (string)
+      snapshot: (string))
+    (profile_decl
+      profile: (string))
+    (target_decl
+      name: (ident)
+      proposal: (string))
+    (statement
+      (need_decl
+        name: (ident)))
+    (MISSING "}")))
