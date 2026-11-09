@@ -49,6 +49,7 @@ pub(super) fn style(value: TerminalStyle, palette: &Palette) -> Style {
 
 pub(super) fn render(
     editor: &Editor,
+    t: &super::style::Tokens,
     output: &mut Frame,
     area: Rect,
     document: DocumentId,
@@ -56,8 +57,7 @@ pub(super) fn render(
 ) {
     let Some(frame) = editor.terminal_frame(document, true) else {
         output.render_widget(
-            Paragraph::new("terminal starting")
-                .style(Style::default().fg(super::muted()).bg(super::base())),
+            Paragraph::new("terminal starting").style(Style::default().fg(t.muted).bg(t.base)),
             area,
         );
         return;

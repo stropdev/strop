@@ -1,17 +1,16 @@
-//! 0064 §1: the per-pane border-column scrollbar — one thin,
-//! transparent-track hint surface per editor and terminal pane, in the
-//! reserved-vocabulary established for pickers (0050 §8): the column
-//! is reserved before text budgets, the track is quiet, the thumb
-//! carries viewport position and Git spans carry the change overview.
+//! 0064 §1 / 0088 §2 rule 4: the per-pane scrollbar column — reserved
+//! before text budgets, painted only when it carries information. No
+//! track: a thumb whose length is the visible fraction and whose start
+//! is the viewport's fraction of the travel space, plus the Git overview
+//! of changed spans, and nothing at all when the content fits.
 //!
 //! Contract: the scrollbar is never an input owner; the hunk mapping
 //! is fractional over the document's own line space (monotonic and
-//! stable under resize); unavailable Git state renders an empty track,
-//! never a false neutral.
+//! stable under resize).
 
 use super::PaneView;
-use super::{accent, base};
 use crate::editor::Editor;
+use crate::render::style::Tokens;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 
@@ -24,49 +23,53 @@ pub(super) fn reserved(rect: Rect) -> Rect {
     }
 }
 
-/// One editor pane: viewport thumb plus the Git overview of the
-/// visible document's changed spans (added `▎`, changed `▎`, deleted
-/// `▎`, gutter colors) — sparse over the hunk signs, never a scan of
-/// every line.
-pub(super) fn render(editor: &Editor, output: &mut ratatui::Frame, rect: Rect, view: &PaneView) {
+/// One editor pane: when the document scrolls, the Git overview of the
+/// visible document's changed spans (`▎` in the sign colours — sparse
+/// over the hunk signs, never a scan of every line) under the viewport
+/// thumb. A document that fits paints nothing: the gutter already shows
+/// every sign.
+pub(super) fn render(
+    editor: &Editor,
+    t: &Tokens,
+    output: &mut ratatui::Frame,
+    rect: Rect,
+    view: &PaneView,
+) {
     let Some(doc) = editor.document(view.doc) else {
         return;
     };
     let total = doc.buf.len_lines();
     let track_h = usize::from(rect.height);
-    if rect.width == 0 || track_h == 0 || total == 0 {
+    let rows = usize::from(reserved(rect).height);
+    if rect.width == 0 || track_h == 0 || total <= rows {
         return;
     }
     let track_x = rect.x + rect.width - 1;
-    let rows = usize::from(reserved(rect).height);
-    paint_track(output, track_x, rect.y, track_h);
     // The Git overview: only the document whose hunks are live —
-    // another pane's document renders the honest empty track.
+    // another pane's document shows the thumb alone.
     if view.doc == editor.current() {
         for (line, sign) in editor.sign_lines() {
             let row = line_to_row(line.saturating_sub(1), total, track_h);
             let color = match sign {
-                '+' => crate::render::seed(strop_core::theme::current().class_string),
-                '~' => accent(),
-                _ => crate::render::seed(strop_core::theme::current().diag_error),
+                '+' => t.diff_add,
+                '~' => t.diff_change,
+                _ => t.diff_del,
             };
             let cell = &mut output.buffer_mut()[(track_x, rect.y + row as u16)];
             cell.set_symbol("▎");
             cell.set_fg(color);
-            cell.set_bg(base());
+            cell.set_bg(t.base);
         }
     }
     // Viewport thumb last: position is the primary signal. The thumb's
     // LENGTH is the visible fraction of the document (0068 B2: a
     // 1-cell thumb says nothing about how much you're seeing).
-    if total > rows {
-        let thumb = Thumb {
-            track_h,
-            visible: rows,
-            scrollable: total - rows,
-        };
-        thumb.paint(output, track_x, rect.y, view.view_top, accent(), base());
-    }
+    let thumb = Thumb {
+        track_h,
+        visible: rows,
+        scrollable: total - rows,
+    };
+    thumb.paint(output, track_x, rect.y, view.view_top, t.muted, t.base);
 }
 
 /// The viewport thumb: `visible/total` of the track, minimum one cell,
@@ -110,9 +113,10 @@ impl Thumb {
 
 /// One terminal pane: viewport position only (0064 §1) over the
 /// projection's bounded history — no Git overlay, no illusion of
-/// infinity.
+/// infinity, nothing when the history fits.
 pub(super) fn terminal(
     editor: &Editor,
+    t: &Tokens,
     output: &mut ratatui::Frame,
     rect: Rect,
     document: strop_core::id::DocumentId,
@@ -124,34 +128,24 @@ pub(super) fn terminal(
     let Some(frame) = editor.terminal_frame(document, true) else {
         return;
     };
-    paint_track(output, rect.x + rect.width - 1, rect.y, track_h);
     let total = frame.rows.len();
     let rows = usize::from(reserved(rect).height);
-    if total > rows {
-        let scrollable = total - rows;
-        let thumb = Thumb {
-            track_h,
-            visible: rows,
-            scrollable,
-        };
-        thumb.paint(
-            output,
-            rect.x + rect.width - 1,
-            rect.y,
-            frame.history_rows,
-            accent(),
-            rgb(frame.palette.background),
-        );
+    if total <= rows {
+        return;
     }
-}
-
-fn paint_track(output: &mut ratatui::Frame, x: u16, y: u16, height: usize) {
-    for row in 0..height {
-        let cell = &mut output.buffer_mut()[(x, y + row as u16)];
-        cell.set_symbol("│");
-        cell.set_fg(crate::render::seed(strop_core::theme::current().border));
-        cell.set_bg(base());
-    }
+    let thumb = Thumb {
+        track_h,
+        visible: rows,
+        scrollable: total - rows,
+    };
+    thumb.paint(
+        output,
+        rect.x + rect.width - 1,
+        rect.y,
+        frame.history_rows,
+        t.muted,
+        rgb(frame.palette.background),
+    );
 }
 
 /// Fractional, monotonic line→row mapping: stable under resize, and

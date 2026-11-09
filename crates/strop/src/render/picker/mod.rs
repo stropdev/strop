@@ -1,18 +1,21 @@
-//! The picker card (0003 §2): find-file/symbols/grep own one stable
-//! near-full-frame workspace over a dimmed backdrop — input top, results
-//! left, the file preview right with width reclaimed from short labels.
-//! Transient pickers keep the smaller centered floating card. House style:
-//! `▌` selection marker, accent+bold matched chars, hints in the bottom border,
-//! border-column scrollbar.
+//! The picker card (0003 §2, 0088 §2): find-file/symbols/grep own one
+//! stable near-full-frame workspace over a dimmed backdrop — input top,
+//! results left, the file preview right with width reclaimed from short
+//! labels. Transient pickers keep the smaller centered floating card.
+//! House style: the card primitive, `▌` selection marker, accent+bold
+//! matched chars, keycap hints in the bottom border, an honest count
+//! top-right, a thumb-only results scrollbar and one rule between the
+//! list and the preview.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::editor::Editor;
 
+mod hints;
 mod preview;
 mod rows;
 mod window;
@@ -21,208 +24,142 @@ mod workspace_tests;
 
 use rows::render_results;
 
-use super::{accent, base, dim_color, muted, pair_bg, secondary, select_bg, text};
+use super::card::Card;
+use super::style::Tokens;
 
 /// Dim the backdrop: the editor stays readable under the card (0003 §2.1
 /// live backdrop), with fg colors pulled toward the base.
-pub fn dim_backdrop(frame: &mut Frame, area: Rect) {
+pub fn dim_backdrop(t: &Tokens, frame: &mut Frame, area: Rect) {
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
             let cell = &mut frame.buffer_mut()[(x, y)];
-            cell.set_fg(dim_color(cell.fg));
-            if cell.bg != base() {
-                cell.set_bg(dim_color(cell.bg));
+            cell.set_fg(t.dim(cell.fg));
+            if cell.bg != t.base {
+                cell.set_bg(t.dim(cell.bg));
             }
         }
     }
 }
 
-pub fn render_picker(editor: &Editor, frame: &mut Frame) {
-    if !editor.picker_open() {
-        return;
+/// `2,311` — thousands grouped so a total reads at a glance.
+pub(super) fn grouped(value: usize) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, ch) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
     }
+    out
+}
+
+/// The honest count (U6): `38 of 2,311` while filtered, the total when
+/// not, `…` while a source still streams; a failed source headlines
+/// instead (0014: rg's bad-flag stderr reads like an empty project
+/// otherwise), and a warning takes the slot only when there is no error.
+fn count_note(picker: &strop_picker::Picker, streaming: bool) -> String {
+    if let Some(notice) = picker.error.as_ref().or(picker.warning.as_ref()) {
+        return notice.clone();
+    }
+    let total = picker.items.len();
+    let shown = picker.rows.len();
+    let tail = if streaming { "…" } else { "" };
+    if picker.kind == strop_picker::Kind::Search {
+        let included = total.saturating_sub(picker.excluded_count());
+        let files = rows::file_count(picker);
+        return format!(
+            "{} hit{} · {} file{}{tail}",
+            grouped(included),
+            if included == 1 { "" } else { "s" },
+            grouped(files),
+            if files == 1 { "" } else { "s" },
+        );
+    }
+    if shown != total {
+        format!("{} of {}{tail}", grouped(shown), grouped(total))
+    } else {
+        format!("{}{tail}", grouped(total))
+    }
+}
+
+/// The engine's query summary reads `namespace · mode · hidden X (origin)
+/// · ignored Y (origin)`. It is chrome only when something in it is not
+/// the default: the namespace is dropped when it is the working
+/// directory, and the whole row when the rest matches the config.
+fn non_default_scope(editor: &Editor, summary: &str) -> Option<String> {
+    let config = editor.config();
+    let on_off = |on: bool| if on { "on" } else { "off" };
+    let default_tail = format!(
+        "hidden {} (session) · ignored {} (session)",
+        on_off(config.search_show_hidden),
+        on_off(!config.search_respect_ignore)
+    );
+    let cwd = editor.cwd().to_string_lossy();
+    let (namespace, rest) = summary.split_once(" · ")?;
+    let local = namespace == cwd || namespace == "local";
+    if local && rest.ends_with(&default_tail) && !rest.contains("(query)") {
+        return None;
+    }
+    Some(if local {
+        rest.to_owned()
+    } else {
+        summary.to_owned()
+    })
+}
+
+pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
+    let Some(glue) = editor.picker() else {
+        return;
+    };
     let area = frame.area();
-    dim_backdrop(frame, area);
+    dim_backdrop(t, frame, area);
+    let p = &glue.picker;
+    let kind = p.kind;
+    let streaming = p.streaming || glue.rank_pending.is_some();
+    let search_mode = kind == strop_picker::Kind::Search;
+    let replace_mode = search_mode && p.replacement_visible;
 
     // Search, files and symbols own one stable near-full-frame workspace;
     // the smaller floating card remains for transient pickers.
     let card = super::from_cells(strop_engine::editor::prepare::picker_card(
         super::to_cells(area),
-        editor.picker().expect("picker open").picker.kind,
+        kind,
     ));
-    frame.render_widget(Clear, card);
-
-    let (
-        kind,
-        replacement_visible,
-        input,
-        replace_input,
-        input_cursor,
-        replace_cursor,
-        field,
-        row_count,
-        selected,
-        streaming,
-        total,
-        excluded,
-        normal_mode,
-        // 0051: a source failure headlines; a non-blocking warning
-        // (rg's exit-0 stderr) shows when there is no failure — it
-        // must not block Enter on valid results like an error would.
-        picker_notice,
-    ) = {
-        let glue = editor.picker().expect("picker open");
-        let p = &glue.picker;
-        (
-            p.kind,
-            p.replacement_visible,
-            p.input.text().to_string(),
-            p.replace_input.text().to_string(),
-            p.input.cursor(),
-            p.replace_input.cursor(),
-            p.field,
-            p.rows.len(),
-            p.selected,
-            p.streaming || glue.rank_pending.is_some(),
-            p.items.len(),
-            // row + file exclusions both count (0007)
-            p.excluded_count(),
-            p.input_normal(),
-            p.error.clone().or_else(|| p.warning.clone()),
-        )
-    };
-    let search_mode = kind == strop_picker::Kind::Search;
-    let replace_mode = search_mode && replacement_visible;
-    let remote_picker = matches!(
-        kind,
-        strop_picker::Kind::RemoteHosts | strop_picker::Kind::RemoteAddress
-    );
-
-    let collectable = matches!(
-        kind,
-        strop_picker::Kind::Locations
-            | strop_picker::Kind::Diagnostics
-            | strop_picker::Kind::Search
-    );
-    let narrow_card = card.width < 64;
-    let suggestions_open = editor
-        .picker()
-        .is_some_and(|glue| glue.suggestions.is_some());
-    let read_only_search = editor
-        .search_scope()
-        .is_some_and(|scope| scope.root.local_path().is_none());
-    let hint = if suggestions_open {
-        if narrow_card {
-            " enter · esc cancel "
-        } else {
-            " enter accept suggestion · esc dismiss · ↑↓ choose "
-        }
-    } else if narrow_card {
-        // whole groups by priority; never cut through a chord (0050 §8)
-        if search_mode {
-            if read_only_search {
-                " enter open · read-only · esc "
-            } else if field == strop_picker::Field::Replace {
-                " enter review · ctrl-r replace · esc "
-            } else {
-                " enter open · ctrl-r replace · esc "
-            }
-        } else if kind == strop_picker::Kind::RemoteAddress {
-            " enter connect · esc "
-        } else if collectable {
-            " enter open · ctrl-o collect · esc "
-        } else {
-            " enter open · esc "
-        }
-    } else if search_mode {
-        if read_only_search {
-            " enter open · With/Review unavailable · ctrl-x hit · ctrl-d file · ctrl-o collect · esc "
-        } else if field == strop_picker::Field::Replace {
-            " enter review · tab field · ctrl-r replace · ctrl-x hit · ctrl-d file · ctrl-o collect · esc "
-        } else {
-            " enter open · ctrl-r replace · ctrl-x hit · ctrl-d file · ctrl-o collect · ctrl-space suggest · esc "
-        }
-    } else if collectable {
-        " enter open · ctrl-o collect · esc normal/close · ↑↓/tab move "
-    } else if kind == strop_picker::Kind::RemoteAddress {
-        " enter connect · esc normal/close "
-    } else if remote_picker {
-        " enter choose/connect · esc normal/close · ↑↓/tab move "
-    } else {
-        " enter open · esc normal/close · ↑↓/tab move · j/k after esc "
-    };
-    let count = if let Some(notice) = &picker_notice {
-        // a failed source is the headline, not the count (0014: rg's
-        // bad-flag stderr reads like an empty project otherwise); a
-        // warning takes the slot only when there is no failure
-        format!(" {notice} ")
-    } else if search_mode {
-        format!(
-            " {} / {total} included{} ",
-            total.saturating_sub(excluded),
-            if streaming { " · searching…" } else { "" }
-        )
-    } else if streaming {
-        format!(" {total}… ")
-    } else if row_count != total {
-        // 0050 §8: a filtered list says so — visible / total
-        format!(" {row_count} / {total} ")
-    } else {
-        format!(" {total} ")
-    };
-    let count = strop_core::layout::printable_text(count);
-    let count = super::clip::clip_end(
-        &count,
-        usize::from(card.width).saturating_sub(super::clip::width(kind.title()) + 4),
-    );
-    let title = editor
-        .search_scope()
-        .map(|scope| format!(" Search — {} ", scope.root.label()));
-    let title = super::clip::clip_end(
-        title.as_deref().unwrap_or(kind.title()),
-        usize::from(card.width).saturating_sub(super::clip::width(&count) + 4),
-    );
-    // Fit whole action groups; ratatui's raw title clipping can cut a chord.
-    let mut hint_end = 0;
-    let mut hint_cells = 0;
-    for group in hint.split(" · ") {
-        let separator = if hint_end == 0 { "" } else { " · " };
-        let cells = super::clip::width(separator) + super::clip::width(group);
-        if hint_cells + cells > usize::from(card.width.saturating_sub(2)) {
-            break;
-        }
-        hint_cells += cells;
-        hint_end += separator.len() + group.len();
-    }
-    let hint = &hint[..hint_end];
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(muted()))
-        .style(Style::default().bg(base()))
-        .title(Span::styled(
-            title,
-            Style::default().fg(text()).add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(Span::styled(hint, Style::default().fg(muted())))
-        .title_top(Line::from(Span::styled(count, Style::default().fg(muted()))).right_aligned());
-    // 1-cell border + 1-cell inner padding (0001 §4: floating panes
-    // breathe) — the engine's card geometry, shared with preparation.
+    let note = count_note(p, streaming);
+    let note = strop_core::layout::printable_text(&note);
+    let hints = hints::for_picker(editor, glue, card.width);
+    let title = kind.title().trim();
+    Card::new(title)
+        .note(Some(&note))
+        .hints(&hints)
+        .render(frame, card, t);
+    // The engine's inner geometry — 1-cell border + 1-cell padding (0001
+    // §4: floating panes breathe) — is the card primitive's too; paint
+    // reads the engine's so it agrees with preparation to the cell.
     let inner = super::from_cells(strop_engine::editor::prepare::picker_inner(
         super::to_cells(card),
     ));
-    frame.render_widget(&block, card);
 
     // input row(s) + content split; replace mode adds a second field
-    let input_h = strop_engine::editor::prepare::picker_input_height(kind, replacement_visible);
+    let input_h = strop_engine::editor::prepare::picker_input_height(kind, p.replacement_visible);
     // A tiny terminal spends its last row on the active editor, not results.
     // Do not rewrite the retained viewport while it cannot be displayed.
     if inner.height < input_h + 1 {
-        let with = replace_mode && field == strop_picker::Field::Replace;
+        let with = replace_mode && p.field == strop_picker::Field::Replace;
         let projected = super::field::project(
+            t,
             if with { "With" } else { "Find" },
-            if with { &replace_input } else { &input },
-            if with { replace_cursor } else { input_cursor },
+            if with {
+                p.replace_input.text()
+            } else {
+                p.input.text()
+            },
+            if with {
+                p.replace_input.cursor()
+            } else {
+                p.input.cursor()
+            },
             true,
             inner.width,
             &[],
@@ -239,8 +176,7 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             strop_engine::editor::prepare::picker_field_split(super::to_cells(inner), input_h);
         (super::from_cells(fields), super::from_cells(content))
     };
-    let rows = [field_area, content_area];
-    let glyph = if normal_mode { "▮" } else { "❯" };
+    let glyph = if p.input_normal() { "▮" } else { "❯" };
     // Every surface that speaks the query language (0051 §3) renders
     // its qualifier highlighting; the summary line describes source
     // visibility policy, which only the streaming surfaces have.
@@ -253,33 +189,35 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
             | strop_picker::Kind::Jumps
     );
     let summary_roles = matches!(kind, strop_picker::Kind::Files | strop_picker::Kind::Search);
-    let highlights = editor
-        .picker()
-        .map(|glue| glue.query_highlights.as_slice())
-        .unwrap_or(&[]);
-    let search_active = !replace_mode || field == strop_picker::Field::Search;
+    let search_active = !replace_mode || p.field == strop_picker::Field::Search;
     let search_label = if search_mode {
         format!("{glyph} Find")
     } else {
         glyph.to_string()
     };
     let search = super::field::project(
+        t,
         &search_label,
-        &input,
-        input_cursor,
+        p.input.text(),
+        p.input.cursor(),
         search_active,
-        rows[0].width,
-        if query_roles { highlights } else { &[] },
+        field_area.width,
+        if query_roles {
+            glue.query_highlights.as_slice()
+        } else {
+            &[]
+        },
     );
     let mut field_caret = search.cursor.map(|column| (column, 0u16));
     let mut fields = vec![search.line];
     if replace_mode {
         let replacement = super::field::project(
+            t,
             &format!("{glyph} With"),
-            &replace_input,
-            replace_cursor,
+            p.replace_input.text(),
+            p.replace_input.cursor(),
             !search_active,
-            rows[0].width,
+            field_area.width,
             &[],
         );
         if let Some(column) = replacement.cursor {
@@ -287,28 +225,22 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         }
         fields.push(replacement.line);
     }
-    frame.render_widget(Paragraph::new(fields), rows[0]);
-    // section definition: a rule separates where you type from results
-    let rule_y = rows[0].y + input_h - 1;
-    if rule_y < rows[1].y {
-        let rule = editor
-            .picker()
-            .filter(|_| summary_roles)
-            .map(|glue| glue.query_summary.clone())
-            .filter(|summary| !summary.is_empty())
-            .unwrap_or_else(|| "─".repeat(rows[0].width as usize));
-        frame.render_widget(
-            Paragraph::new(rule).style(Style::default().fg(if summary_roles {
-                muted()
-            } else {
-                pair_bg()
-            })),
-            Rect {
-                y: rule_y,
-                height: 1,
-                ..rows[0]
-            },
-        );
+    frame.render_widget(Paragraph::new(fields), field_area);
+    // The scope row (rule 4): only when a scope differs from the default
+    // — an explicit qualifier, a session toggle away from the config, or
+    // a namespace other than the working directory.
+    let scope_y = field_area.y + input_h - 1;
+    if scope_y < content_area.y && summary_roles {
+        if let Some(scope) = non_default_scope(editor, &glue.query_summary) {
+            frame.render_widget(
+                Paragraph::new(scope).style(Style::default().fg(t.muted)),
+                Rect {
+                    y: scope_y,
+                    height: 1,
+                    ..field_area
+                },
+            );
+        }
     }
 
     // 0050 §8: preparation commits one content-aware split for the list,
@@ -320,12 +252,11 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
         .expect("open picker has prepared geometry");
     let (results, preview_area) = match (prepared.results, prepared.preview) {
         (Some(results), preview) => (super::from_cells(results), preview.map(super::from_cells)),
-        (None, _) => (rows[1], None),
+        (None, _) => (content_area, None),
     };
 
     let selected_theme = if kind == strop_picker::Kind::Theme {
-        let p = &editor.picker().expect("picker open").picker;
-        p.rows.get(selected).and_then(|row| {
+        p.rows.get(p.selected).and_then(|row| {
             p.items.get(row.item).and_then(|item| match &item.payload {
                 strop_picker::Payload::ThemeChoice(id) => Some(*id),
                 _ => None,
@@ -361,114 +292,112 @@ pub fn render_picker(editor: &Editor, frame: &mut Frame) {
                 Line::from("ssh://host/absolute/path  —  file or directory"),
                 Line::from("New hosts open /; no mount or recursive workspace scan."),
             ])
-            .style(Style::default().fg(muted())),
+            .style(Style::default().fg(t.muted)),
             results,
         );
     } else {
-        let p = &editor.picker().expect("picker open").picker;
-        // the scrollbar track is reserved BEFORE text budgets (0050 §8)
+        // the scrollbar column is reserved BEFORE text budgets (0050 §8)
         let text_area = Rect {
             width: results.width.saturating_sub(1),
             ..results
         };
-        render_results(frame, text_area, p, selected, &|path| {
+        render_results(frame, t, text_area, p, editor.cwd(), &|path| {
             editor.tab_width_for_location(path)
         });
     }
-    // border-column scrollbar for the results list (0003 §5.5)
+    // thumb-only results scrollbar (rule 4): nothing when the list fits
+    let row_count = p.rows.len();
     if !results.is_empty() && row_count > results.height as usize {
         let track_x = results.x + results.width - 1;
         let track_h = results.height as usize;
-        let frac = selected as f32 / row_count.max(1) as f32;
+        let frac = p.selected as f32 / row_count.max(1) as f32;
         let thumb = ((track_h - 1) as f32 * frac) as usize;
-        for y in 0..track_h {
-            let cell = &mut frame.buffer_mut()[(track_x, results.y + y as u16)];
-            if y == thumb {
-                cell.set_symbol("▮");
-                cell.set_fg(accent());
-            } else {
-                cell.set_symbol("│");
-                cell.set_fg(crate::render::seed(strop_core::theme::current().border));
-            }
-        }
+        let cell = &mut frame.buffer_mut()[(track_x, results.y + thumb as u16)];
+        cell.set_symbol("▮");
+        cell.set_fg(t.muted);
     }
     if let Some((area, id)) = theme_detail {
-        let applied = id == strop_core::theme::current_id();
+        let applied = id == editor.theme();
         let mut heading = vec![Span::styled(
             id.name(),
-            Style::default().fg(text()).add_modifier(Modifier::BOLD),
+            Style::default().fg(t.text).add_modifier(Modifier::BOLD),
         )];
         if applied {
-            heading.push(Span::styled(" · applied", Style::default().fg(accent())));
+            heading.push(Span::styled(" ● applied", Style::default().fg(t.accent)));
         }
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(heading),
                 Line::from(Span::styled(
                     id.description(),
-                    Style::default().fg(secondary()),
+                    Style::default().fg(t.secondary),
                 )),
             ])
-            .style(Style::default().bg(base()))
+            .style(Style::default().bg(t.surface))
             .wrap(Wrap { trim: true }),
             area,
         );
     }
     if let Some(preview_area) = preview_area {
-        preview::render_preview(editor, frame, preview_area);
+        preview::render_preview(editor, t, frame, preview_area);
     }
     // Manual suggestions own focus without resizing the underlying card.
-    {
-        let glue = editor.picker().expect("picker open");
-        if let Some(list) = &glue.suggestions {
-            let available = frame.area().bottom().saturating_sub(rows[0].y + input_h);
-            let show = (list.items.len().min(6) as u16).min(available.saturating_sub(2));
-            let area = Rect {
-                x: rows[0].x,
-                y: rows[0].y + input_h,
-                width: rows[0].width.min(40),
-                height: (show + 2).min(available),
+    if let Some(list) = &glue.suggestions {
+        let available = frame.area().bottom().saturating_sub(field_area.y + input_h);
+        let show = (list.items.len().min(6) as u16).min(available.saturating_sub(2));
+        let area = Rect {
+            x: field_area.x,
+            y: field_area.y + input_h,
+            width: field_area.width.min(40),
+            height: (show + 2).min(available),
+        };
+        let mut lines: Vec<Line> = Vec::with_capacity(show as usize);
+        let first = list
+            .selected
+            .saturating_sub(show.saturating_sub(1) as usize);
+        for (i, suggestion) in list
+            .items
+            .iter()
+            .enumerate()
+            .skip(first)
+            .take(show as usize)
+        {
+            let active = i == list.selected;
+            let style = if active {
+                Style::default().fg(t.text)
+            } else {
+                Style::default().fg(t.secondary)
             };
-            let mut lines: Vec<Line> = Vec::with_capacity(show as usize);
-            let first = list
-                .selected
-                .saturating_sub(show.saturating_sub(1) as usize);
-            for (i, suggestion) in list
-                .items
-                .iter()
-                .enumerate()
-                .skip(first)
-                .take(show as usize)
-            {
-                let active = i == list.selected;
-                let style = if active {
-                    Style::default().fg(text()).bg(select_bg())
-                } else {
-                    Style::default().fg(secondary())
-                };
-                lines.push(Line::from(vec![
-                    Span::styled(if active { "▌" } else { " " }, style),
-                    Span::styled(suggestion.insert.clone(), style),
-                    Span::styled(
-                        format!("  {}", suggestion.detail),
-                        Style::default().fg(muted()),
-                    ),
-                ]));
-            }
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(muted()))
-                .style(Style::default().bg(base()));
-            frame.render_widget(Clear, area);
-            frame.render_widget(Paragraph::new(lines).block(block), area);
+            let line = Line::from(vec![
+                super::card::row_marker(active, t),
+                Span::styled(suggestion.insert.clone(), style),
+                Span::styled(
+                    format!("  {}", suggestion.detail),
+                    Style::default().fg(t.muted),
+                ),
+            ]);
+            lines.push(super::card::band(
+                line,
+                area.width.saturating_sub(2),
+                active,
+                t,
+            ));
         }
+        let inner = Card::new("suggest").render(frame, area, t);
+        frame.render_widget(
+            Paragraph::new(lines),
+            Rect {
+                x: inner.x.saturating_sub(1),
+                width: inner.width.saturating_add(2),
+                ..inner
+            },
+        );
     }
     if let Some((column, row)) = field_caret {
-        if column < rows[0].width && row < rows[0].height {
+        if column < field_area.width && row < field_area.height {
             crate::render::frame_capture::place_cursor(
                 frame,
-                (rows[0].x + column, rows[0].y + row),
+                (field_area.x + column, field_area.y + row),
             );
         }
     }

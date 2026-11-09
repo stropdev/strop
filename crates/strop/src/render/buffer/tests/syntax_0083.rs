@@ -91,7 +91,7 @@ fn editor_with(name: &str, source: &str) -> Editor {
 
 #[test]
 fn weft_cells_carry_class_colors_at_both_widths() {
-    let class = |class| crate::render::class_color(class);
+    let class = |class| crate::render::tokens().class(class);
     let keyword = class(strop_syntax::Class::Keyword);
     let string = class(strop_syntax::Class::String);
     let number = class(strop_syntax::Class::Number);
@@ -111,7 +111,7 @@ fn weft_cells_carry_class_colors_at_both_widths() {
     assert_eq!(fg_at(row_with(&wide, "review showcase"), "review"), keyword);
     assert_eq!(
         fg_at(row_with(&wide, "review showcase"), "showcase"),
-        crate::render::class_color(strop_syntax::Class::Variable),
+        crate::render::tokens().class(strop_syntax::Class::Variable),
         "the review name is a plain variable, not a guessed keyword"
     );
     assert_eq!(
@@ -135,9 +135,9 @@ fn weft_cells_carry_class_colors_at_both_widths() {
 
 #[test]
 fn splicery_heredoc_body_stays_colored_across_an_edit_inside_it() {
-    let string = crate::render::class_color(strop_syntax::Class::String);
-    let keyword = crate::render::class_color(strop_syntax::Class::Keyword);
-    let comment = crate::render::class_color(strop_syntax::Class::Comment);
+    let string = crate::render::tokens().class(strop_syntax::Class::String);
+    let keyword = crate::render::tokens().class(strop_syntax::Class::Keyword);
+    let comment = crate::render::tokens().class(strop_syntax::Class::Comment);
 
     let mut editor = editor_with("policy.spl", SPLICERY);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();

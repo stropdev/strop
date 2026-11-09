@@ -158,13 +158,21 @@ fn clipped_row(
         overlays: true,
     };
     let text = e.buf().text().byte_slice(0..e.buf().line_end(0));
-    let spans = super::content_spans(e, &view, 0, text, style, usize::from(width));
+    let spans = super::content_spans(
+        e,
+        &crate::render::tokens(),
+        &view,
+        0,
+        text,
+        style,
+        usize::from(width),
+    );
     let mut terminal = viewport_terminal(width, 1);
     terminal
         .draw(|f| {
             f.render_widget(
                 ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans))
-                    .style(ratatui::style::Style::default().bg(crate::render::base())),
+                    .style(ratatui::style::Style::default().bg(crate::render::tokens().base)),
                 f.area(),
             )
         })

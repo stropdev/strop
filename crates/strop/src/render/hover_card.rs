@@ -2,16 +2,27 @@
 //! Any key dismisses.
 
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+use ratatui::style::Style;
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::editor::Editor;
 
-use super::{base, muted};
+use super::card::{card_width, Card, Hint};
+use super::style::Tokens;
 
-pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
+const HINTS: &[Hint<'static>] = &[
+    Hint {
+        key: "enter",
+        desc: "full documentation",
+    },
+    Hint {
+        key: "any key",
+        desc: "dismiss",
+    },
+];
+
+pub fn render_hover_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     if editor.input_owner() != crate::editor::InputOwner::HoverCard {
         return;
     }
@@ -19,9 +30,8 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
         return;
     };
     let area = frame.area();
-    let width = ((u32::from(area.width) * 60 / 100) as u16)
-        .max(40)
-        .min(area.width.saturating_sub(4));
+    let longest = text.lines().map(super::clip::width).max().unwrap_or(0);
+    let width = card_width(longest + 4, area.width).max(40.min(area.width.saturating_sub(4)));
     // 0068 C3: size from the WRAPPED row count — counting source lines
     // while Wrap is on silently cut wrapped content at the bottom border.
     let inner_width = width.saturating_sub(4).max(1);
@@ -36,33 +46,10 @@ pub fn render_hover_card(editor: &Editor, frame: &mut Frame) {
         width,
         height,
     };
-    frame.render_widget(Clear, card);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(muted()))
-        .style(Style::default().bg(base()))
-        .title(Span::styled(
-            " hover ",
-            Style::default()
-                .fg(crate::render::text())
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(Span::styled(
-            " enter full documentation · other key dismisses ",
-            Style::default().fg(muted()),
-        ));
-    frame.render_widget(&block, card);
-    let inner = block.inner(card);
-    let inner = Rect {
-        x: inner.x + 1,
-        y: inner.y,
-        width: inner.width.saturating_sub(2),
-        height: inner.height,
-    };
+    let inner = Card::new("hover").hints(HINTS).render(frame, card, t);
     frame.render_widget(
         Paragraph::new(text)
-            .style(Style::default().fg(crate::render::text()))
+            .style(Style::default().fg(t.text))
             .wrap(Wrap { trim: false }),
         inner,
     );

@@ -1,7 +1,7 @@
 //! Cell-grid boundaries for the modeline: what survives when the row
 //! runs out of cells. These assert layout behavior — position kept,
-//! filename kept, printable cells, bounded width — never message
-//! wording.
+//! filename kept, printable cells, bounded width, the fixed chip — never
+//! message wording (messages live in the echo row now).
 
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
@@ -13,6 +13,7 @@ use crate::editor::Editor;
 
 use super::render;
 use crate::render::clip::width;
+use crate::render::tokens;
 
 /// The modeline cells, including severity styling as well as symbols.
 fn grid(editor: &Editor, columns: u16, rows: u16) -> ratatui::buffer::Buffer {
@@ -20,7 +21,7 @@ fn grid(editor: &Editor, columns: u16, rows: u16) -> ratatui::buffer::Buffer {
     terminal
         .draw(|frame| {
             let area = frame.area();
-            render(editor, frame, area)
+            render(editor, &tokens(), frame, area)
         })
         .unwrap();
     terminal.backend().buffer().clone()
@@ -31,18 +32,6 @@ fn row(editor: &Editor, columns: u16, rows: u16) -> String {
     let buffer = grid(editor, columns, rows);
     let y = rows - 1;
     crate::headless::row_symbols(&buffer, y).collect()
-}
-
-fn assert_mark_color(editor: &Editor, columns: u16, severity: strop_lsp::Severity) {
-    let buffer = grid(editor, columns, 4);
-    let color = crate::render::severity_color(severity);
-    assert!(
-        buffer
-            .content
-            .iter()
-            .any(|cell| cell.symbol() == "!" && cell.fg == color),
-        "severity-colored feedback marker at {columns} cells"
-    );
 }
 
 fn editor(text: &str, path: Option<&str>) -> Editor {
@@ -77,6 +66,44 @@ fn fail(editor: &mut Editor, id: u64, reason: &str) {
 }
 
 #[test]
+fn the_chip_is_eight_cells_in_every_mode() {
+    let mut e = editor("alpha beta\n", Some("/w/f.rs"));
+    let chip = |e: &Editor| -> String {
+        let grid = grid(e, 80, 4);
+        let bg = grid[(0, 3)].bg;
+        (0..80)
+            .take_while(|&x| grid[(x, 3)].bg == bg)
+            .map(|x| grid[(x, 3)].symbol())
+            .collect()
+    };
+    assert_eq!(chip(&e), " NORMAL ");
+    e.feed_text("i");
+    assert_eq!(chip(&e), " INSERT ");
+    e.feed(strop_core::frontend_input::Key::Esc);
+    e.feed_text("v");
+    assert_eq!(chip(&e), " VISUAL ");
+    e.feed_text("V");
+    assert_eq!(chip(&e), " V-LINE ");
+    e.feed(strop_core::frontend_input::Key::Esc);
+    e.feed_text("d");
+    assert_eq!(chip(&e), "PENDING ");
+    e.feed(strop_core::frontend_input::Key::Esc);
+    e.feed_text(":");
+    assert_eq!(chip(&e), "COMMAND ");
+    // the path starts at the same column whatever the mode
+    e.feed(strop_core::frontend_input::Key::Esc);
+    e.feed(strop_core::frontend_input::Key::Esc);
+    let normal = row(&e, 80, 4);
+    e.feed_text("i");
+    let insert = row(&e, 80, 4);
+    assert_eq!(
+        normal.find("f.rs"),
+        insert.find("f.rs"),
+        "{normal:?} vs {insert:?}"
+    );
+}
+
+#[test]
 fn modeline_relativizes_to_the_longest_selected_project_root() {
     let mut editor = editor("fn main() {}\n", Some("/w/one/src/main.rs"));
     editor
@@ -92,18 +119,15 @@ fn modeline_relativizes_to_the_longest_selected_project_root() {
 }
 
 #[test]
-fn a_long_path_cannot_crowd_out_status_or_position() {
+fn a_long_path_cannot_crowd_out_the_spec_or_position() {
     let mut editor = editor(
         "alpha\nbeta\n",
         Some("/w/crates/a/very/deeply/nested/directory/tree/mod.rs"),
     );
-    editor.set_message("saved the file");
+    editor.feed_text("d");
     let row = row(&editor, 48, 4);
     assert!(row.contains("mod.rs"), "the filename survives: {row:?}");
-    assert!(
-        row.contains("saved the file"),
-        "the status survives: {row:?}"
-    );
+    assert!(row.contains("PENDING"), "the chip survives: {row:?}");
     assert!(row.contains("1:1"), "the position survives: {row:?}");
     assert!(
         !row.contains("nested"),
@@ -113,12 +137,23 @@ fn a_long_path_cannot_crowd_out_status_or_position() {
 }
 
 #[test]
-fn lifecycle_badges_are_scoped_and_visibly_distinct() {
+fn messages_never_enter_the_modeline() {
+    let mut editor = editor("alpha\n", Some("/w/f.rs"));
+    editor.set_message("saved the file");
+    let row = row(&editor, 80, 4);
+    assert!(!row.contains("saved"), "{row:?}");
+    assert!(row.contains("f.rs"), "{row:?}");
+}
+
+/// U3: ready and starting services show nothing; a failure is the
+/// 4-cell `LSP!` badge, a refusal `LSP?` — never a 30-cell sentence.
+#[test]
+fn service_badges_appear_only_for_problems() {
     let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
     attach(&mut e, 40, strop_engine::editor::AttachDecision::Attached);
     let starting = row(&e, 100, 4);
     assert!(
-        starting.contains("lsp rust-analyzer@w starting"),
+        !starting.contains("LSP") && !starting.contains("lsp"),
         "{starting:?}"
     );
 
@@ -129,8 +164,7 @@ fn lifecycle_badges_are_scoped_and_visibly_distinct() {
         },
     ));
     let ready = row(&e, 100, 4);
-    assert!(ready.contains("lsp rust-analyzer@w ready"), "{ready:?}");
-    assert_ne!(starting, ready);
+    assert!(!ready.contains("LSP"), "{ready:?}");
 
     fail(
         &mut e,
@@ -138,8 +172,14 @@ fn lifecycle_badges_are_scoped_and_visibly_distinct() {
         "executable disappeared — reinstall with rustup component add rust-analyzer",
     );
     let failed = row(&e, 100, 4);
-    assert!(failed.contains("lsp rust-analyzer@w failed"), "{failed:?}");
-    assert!(!failed.contains("reinstall"), "{failed:?}");
+    assert!(failed.contains("LSP!"), "{failed:?}");
+    assert!(
+        !failed.contains("reinstall") && !failed.contains("rust-analyzer"),
+        "{failed:?}"
+    );
+    let grid = grid(&e, 100, 4);
+    let badge = failed.find("LSP!").unwrap() as u16;
+    assert_eq!(grid[(badge, 3)].fg, tokens().error);
 
     let mut refused = editor("fn main() {}\n", Some("/w/src/main.rs"));
     attach(
@@ -152,8 +192,7 @@ fn lifecycle_badges_are_scoped_and_visibly_distinct() {
         },
     );
     let refused_row = row(&refused, 100, 4);
-    assert!(refused_row.contains("refused"), "{refused_row:?}");
-    assert!(refused_row.contains("lsp rust@"), "{refused_row:?}");
+    assert!(refused_row.contains("LSP?"), "{refused_row:?}");
     assert!(
         !refused_row.contains("not found on PATH"),
         "{refused_row:?}"
@@ -161,7 +200,7 @@ fn lifecycle_badges_are_scoped_and_visibly_distinct() {
 }
 
 #[test]
-fn narrow_failure_badge_survives_without_long_prose() {
+fn narrow_failure_badge_survives_every_degradation() {
     let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
     attach(&mut e, 42, strop_engine::editor::AttachDecision::Attached);
     fail(
@@ -171,10 +210,7 @@ fn narrow_failure_badge_survives_without_long_prose() {
     );
     for columns in [48, 24] {
         let row = row(&e, columns, 4);
-        assert!(
-            row.contains("LSP!") || row.contains("failed"),
-            "failure survives {columns}: {row:?}"
-        );
+        assert!(row.contains("LSP!"), "failure survives {columns}: {row:?}");
         assert!(row.contains("NORMAL"), "mode survives {columns}: {row:?}");
         assert!(row.contains("1:1"), "position survives {columns}: {row:?}");
         assert!(
@@ -186,106 +222,59 @@ fn narrow_failure_badge_survives_without_long_prose() {
             "row fits {columns}: {row:?}"
         );
     }
-}
-
-#[test]
-fn presented_failure_keeps_a_severity_marker_through_bare_layout() {
-    let mut e = editor("unsaved\n", None);
-    e.feed_text(":w<cr>");
-    assert_eq!(
-        e.presented_feedback().map(|record| record.severity()),
-        Some(strop_engine::editor::feedback::FeedbackSeverity::Failure)
-    );
-    let wide = row(&e, 80, 4);
-    assert!(wide.contains("local save failed"), "{wide:?}");
-    assert!(wide.contains("Space a actions"), "{wide:?}");
-
     for columns in [16, 12, 8, 4] {
         let shown = row(&e, columns, 4);
-        assert!(shown.contains('!'), "failure at {columns}: {shown:?}");
-        assert!(!shown.contains("write failed"), "{columns}: {shown:?}");
-        assert!(width(&shown) <= usize::from(columns), "{shown:?}");
-        assert_mark_color(&e, columns, strop_lsp::Severity::Error);
-    }
-}
-
-#[test]
-fn presented_warning_keeps_a_severity_marker_through_bare_layout() {
-    let mut e = editor("origin", None);
-    let document = e.terminal_fixture(
-        &[("safe", strop_terminal::model::Style::default())],
-        strop_terminal::model::Phase::Running,
-    );
-    e.terminal_fixture_hold_paste(document, 7);
-    assert_eq!(
-        e.presented_feedback().map(|record| record.severity()),
-        Some(strop_engine::editor::feedback::FeedbackSeverity::Warning)
-    );
-    let wide = row(&e, 100, 4);
-    assert!(wide.contains("i input"), "terminal action stays: {wide:?}");
-    assert!(wide.contains("paste+"), "{wide:?}");
-    assert!(wide.contains("Space a Review/Send/Discard"), "{wide:?}");
-
-    for columns in [16, 12, 8, 4] {
-        let shown = row(&e, columns, 4);
-        assert!(shown.contains('!'), "warning at {columns}: {shown:?}");
-        assert!(!shown.contains("paste held"), "{columns}: {shown:?}");
-        assert!(width(&shown) <= usize::from(columns), "{shown:?}");
-        assert_mark_color(&e, columns, strop_lsp::Severity::Warning);
-    }
-}
-
-#[test]
-fn ephemeral_messages_never_acquire_a_feedback_marker() {
-    let mut e = editor("saved\n", None);
-    e.set_message("saved the file");
-    assert!(e.presented_feedback().is_none());
-    assert!(row(&e, 80, 4).contains("saved the file"));
-    for columns in [16, 12, 8, 4] {
-        let shown = row(&e, columns, 4);
-        assert!(!shown.contains('!'), "message at {columns}: {shown:?}");
+        assert!(shown.contains('!'), "failure mark at {columns}: {shown:?}");
         assert!(width(&shown) <= usize::from(columns), "{shown:?}");
     }
 }
 
+/// Rule 4: the indent segment appears only when the effective setting
+/// differs from the configured default.
 #[test]
-fn bare_layout_retains_feedback_alongside_lsp_problem_badge() {
-    let mut e = editor("unsaved\n", None);
-    attach(&mut e, 44, strop_engine::editor::AttachDecision::Attached);
-    fail(&mut e, 44, "language server unavailable");
-    e.feed_text(":w<cr>");
-    let shown = row(&e, 16, 4);
-    assert!(shown.contains("LSP!"), "{shown:?}");
-    assert_eq!(shown.matches('!').count(), 2, "{shown:?}");
-    assert_mark_color(&e, 16, strop_lsp::Severity::Error);
-    assert!(width(&shown) <= 16, "{shown:?}");
-}
-
-#[test]
-fn save_failure_keeps_transient_precedence_over_service_detail() {
-    let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
-    attach(&mut e, 43, strop_engine::editor::AttachDecision::Attached);
-    fail(&mut e, 43, "server hint retained only in explain");
-    e.set_message("write failed: disk full");
-    let row = row(&e, 80, 4);
-    assert!(row.contains("write failed: disk full"), "{row:?}");
-    assert!(row.contains("failed") || row.contains("LSP!"), "{row:?}");
-    assert!(!row.contains("server hint"), "{row:?}");
-}
-
-/// 0051 R08: the modeline carries the effective indent setting.
-#[test]
-fn modeline_shows_the_effective_indent() {
+fn indent_shows_only_when_it_differs_from_the_config() {
     let e = editor("x\n", None);
     let out = row(&e, 60, 4);
-    assert!(out.contains("Spaces:4"), "the default: {out:?}");
+    assert!(!out.contains("Spaces:4"), "the default is silent: {out:?}");
     let mut e = editor("x\n", None);
     let mut config = e.config().clone();
     config.indent_style = strop_engine::config::IndentStyle::Tabs;
     e.set_config(config);
     e.reresolve_indents();
     let out = row(&e, 60, 4);
-    assert!(out.contains("Tabs:4"), "the configured style: {out:?}");
+    assert!(
+        !out.contains("Tabs:4"),
+        "the configured style is the default: {out:?}"
+    );
+    e.feed_text(":tab-size 2\r");
+    let out = row(&e, 60, 4);
+    assert!(out.contains("Tabs:2"), "an override shows: {out:?}");
+}
+
+#[test]
+fn diagnostics_show_only_when_non_zero() {
+    let mut e = editor("fn main() {}\n", Some("/w/src/main.rs"));
+    assert!(!row(&e, 80, 4).contains('●'));
+    let diag = |col: usize, severity, message: &str| strop_lsp::ResolvedDiag {
+        line: strop_core::id::LineIndex::new(0),
+        col: strop_core::id::ByteColumn::new(col),
+        severity,
+        end_line: strop_core::id::LineIndex::new(0),
+        end_col: strop_core::id::ByteColumn::new(col + 1),
+        message: message.into(),
+    };
+    e.fixture_insert_diagnostics(
+        e.current(),
+        crate::editor::DocumentDiagnostics {
+            revision: e.buf().revision(),
+            items: vec![
+                diag(0, strop_lsp::Severity::Error, "boom"),
+                diag(3, strop_lsp::Severity::Warning, "hm"),
+            ],
+        },
+    );
+    let shown = row(&e, 80, 4);
+    assert!(shown.contains("●1 ▲1"), "{shown:?}");
 }
 
 #[test]
@@ -315,7 +304,7 @@ fn wide_and_control_labels_stay_printable_whole_graphemes() {
 }
 
 #[test]
-fn narrow_rows_keep_the_mode_accent_and_position() {
+fn narrow_rows_keep_the_mode_chip_and_position() {
     let mut editor = editor("hello\n", Some("/w/longfilename.rs"));
     editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {
@@ -396,7 +385,7 @@ fn modeline_search_position_includes_zero_width_line_boundaries() {
 }
 
 #[test]
-fn git_marks_and_flags_render_quietly_beside_the_message() {
+fn git_marks_and_flags_render_quietly() {
     let mut editor = editor("a\n", Some("/w/f.rs"));
     editor.fixture_buf_mut().dirty = true;
     editor.fixture_buf_mut().readonly = true;
@@ -409,8 +398,6 @@ fn git_marks_and_flags_render_quietly_beside_the_message() {
         remotes: Vec::new(),
     }));
     editor.fixture_set_hunks_untracked(true);
-    editor.set_message("wrote f.rs");
-    // 72 cells: the 0051 R08 indent segment joined the required set
     let row = row(&editor, 72, 4);
     assert!(
         row.contains("main*"),
@@ -422,9 +409,24 @@ fn git_marks_and_flags_render_quietly_beside_the_message() {
     );
     assert!(row.contains("[RO]"), "{row:?}");
     assert!(
-        row.contains("wrote f.rs"),
-        "the message wins the status slot: {row:?}"
+        row.contains("  main*  f.rs"),
+        "two-space separators: {row:?}"
     );
+    assert!(!row.contains('│'), "no bar separators: {row:?}");
+}
+
+#[test]
+fn the_pending_spec_takes_the_right_side_in_the_accent() {
+    let mut editor = editor("alpha beta\n", Some("/w/f.rs"));
+    editor.feed_text("d");
+    let grid = grid(&editor, 80, 4);
+    let text: String = (0..80).map(|x| grid[(x, 3)].symbol()).collect();
+    let spec = text
+        .find('d')
+        .filter(|&at| at > 20)
+        .expect("pending spec on the right");
+    assert_eq!(grid[(spec as u16, 3)].fg, tokens().accent, "{text:?}");
+    assert!(text.contains("PENDING"), "{text:?}");
 }
 
 #[test]
@@ -493,6 +495,7 @@ fn terminal_modeline_names_its_launch_namespace_at_every_width() {
         );
         for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
             let shown = row(&editor, columns, rows);
+            assert!(shown.contains("TERM"), "{columns}x{rows}: {shown}");
             if columns >= 80 {
                 assert!(
                     shown.contains(expected_namespace),
@@ -509,8 +512,10 @@ fn terminal_modeline_names_its_launch_namespace_at_every_width() {
     }
 }
 
+/// Terminal hints are whole chords (rule 10) and attention badges name
+/// pinned output and a held paste; every width stays cell-bounded.
 #[test]
-fn terminal_owner_actions_and_attention_survive_golden_cell_sizes() {
+fn terminal_hints_and_attention_survive_golden_cell_sizes() {
     let mut editor = editor("origin", None);
     let document = editor.terminal_fixture(
         &[("safe", strop_terminal::model::Style::default())],
@@ -519,7 +524,11 @@ fn terminal_owner_actions_and_attention_survive_golden_cell_sizes() {
     editor.feed_text("i");
     for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
         let shown = row(&editor, columns, rows);
-        assert!(shown.contains("F2 inspect"), "{columns}x{rows}: {shown}");
+        assert!(shown.contains(" F2  inspect"), "{columns}x{rows}: {shown}");
+        assert!(
+            !shown.contains("ctrl-\\ ctrl-n alt"),
+            "no clipped chords: {shown}"
+        );
     }
     editor.handle_app_event(strop_engine::editor::events::AppEvent::Input(
         strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent::press(
@@ -539,11 +548,10 @@ fn terminal_owner_actions_and_attention_survive_golden_cell_sizes() {
     assert!(editor.terminal_paste_held(document));
     for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
         let shown = row(&editor, columns, rows);
-        assert!(shown.contains("SNAPSHOT"), "{columns}x{rows}: {shown}");
-        assert!(shown.contains("i input"), "{columns}x{rows}: {shown}");
+        assert!(shown.contains("TERM"), "{columns}x{rows}: {shown}");
         assert!(shown.contains("out+"), "{columns}x{rows}: {shown}");
         if columns >= 80 {
-            assert!(shown.contains("Space a Refresh"), "{shown}");
+            assert!(shown.contains(" i  input"), "{shown}");
             assert!(shown.contains("paste+"), "{shown}");
         }
     }
@@ -565,9 +573,10 @@ fn modeline_respects_its_rectangle_and_empty_areas() {
             for cell in &mut frame.buffer_mut().content {
                 cell.set_symbol(".");
             }
-            render(&editor, frame, Rect::new(0, 0, 0, 4));
-            render(&editor, frame, Rect::new(0, 0, 16, 0));
-            render(&editor, frame, Rect::new(2, 1, 10, 2));
+            let t = tokens();
+            render(&editor, &t, frame, Rect::new(0, 0, 0, 4));
+            render(&editor, &t, frame, Rect::new(0, 0, 16, 0));
+            render(&editor, &t, frame, Rect::new(2, 1, 10, 2));
         })
         .unwrap();
     let grid = terminal.backend().buffer();

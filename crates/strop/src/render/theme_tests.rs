@@ -1,8 +1,10 @@
-//! Render evidence for every built-in palette, isolated from parallel unit tests.
+//! Render evidence for every built-in palette. The theme lives on the
+//! editor (0088 §3), so each palette renders in-process beside every
+//! other test — no child process, no global to race.
 use ratatui::{backend::TestBackend, buffer::Buffer as Grid, Terminal};
 use strop_core::{frontend_input::Key, theme::ThemeId, Buffer};
 
-use super::{paint, seed};
+use super::{paint, Tokens};
 use crate::editor::Editor;
 
 fn draw(editor: &mut Editor) -> Grid {
@@ -34,82 +36,46 @@ fn normalized_grid_text(grid: &Grid) -> String {
         .join(" ")
 }
 
-fn contains_bg(grid: &Grid, role: strop_core::theme::Rgb) -> bool {
-    grid.content.iter().any(|cell| cell.bg == seed(role))
+fn contains_bg(grid: &Grid, color: ratatui::style::Color) -> bool {
+    grid.content.iter().any(|cell| cell.bg == color)
 }
 
-fn contains_fg(grid: &Grid, role: strop_core::theme::Rgb) -> bool {
-    grid.content.iter().any(|cell| cell.fg == seed(role))
+fn contains_fg(grid: &Grid, color: ratatui::style::Color) -> bool {
+    grid.content.iter().any(|cell| cell.fg == color)
 }
 
 #[test]
 fn all_themes_reach_source_picker_diff_help_and_statusline() {
-    const CHILD: &str = "STROP_THEME_RENDER_CHILD";
-    if std::env::var_os(CHILD).is_none() {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "render::theme_tests::all_themes_reach_source_picker_diff_help_and_statusline",
-                "--nocapture",
-            ])
-            .env(CHILD, "1")
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "isolated palette rendering failed:\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return;
-    }
-
-    // Only this exact test runs in the child. No other renderer can observe
-    // the global selection changing underneath its assertions.
     for id in ThemeId::ALL {
-        strop_core::theme::set_current(id);
-        let theme = id.palette();
+        let t = Tokens::new(id);
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("source.txt");
         std::fs::write(&path, "foo foo\n    source evidence\n").unwrap();
         let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+        editor.set_theme(id);
         editor.open_fixture(&path).unwrap();
         let grid = draw(&mut editor);
-        assert!(contains_fg(&grid, theme.text), "{} source text", id.name());
-        assert!(contains_bg(&grid, theme.base), "{} base", id.name());
+        assert!(contains_fg(&grid, t.text), "{} source text", id.name());
+        assert!(contains_bg(&grid, t.base), "{} base", id.name());
         assert!(
-            contains_bg(&grid, theme.statusline_bg),
-            "{} modeline",
+            contains_bg(&grid, t.surface),
+            "{} modeline on surface",
             id.name()
         );
-        assert_eq!(
-            super::mode_color(crate::editor::Mode::Insert),
-            seed(theme.class_string)
-        );
-        assert_eq!(
-            super::mode_color(crate::editor::Mode::Visual),
-            seed(theme.class_keyword)
-        );
-        assert_eq!(
-            super::severity_color(strop_lsp::Severity::Warning),
-            seed(theme.warning)
-        );
-        let mix = |a: u8, b: u8| (u16::from(a) * 45 / 100 + u16::from(b) * 55 / 100) as u8;
-        assert_eq!(
-            super::dim_color(seed(theme.text)),
-            ratatui::style::Color::Rgb(
-                mix(theme.text.r, theme.base.r),
-                mix(theme.text.g, theme.base.g),
-                mix(theme.text.b, theme.base.b),
-            ),
-            "{} backdrop blends against its own base",
+        assert!(
+            contains_bg(&grid, t.cursorline),
+            "{} cursor line",
             id.name()
         );
+        assert_eq!(t.mode(crate::editor::Mode::Insert), t.mode_insert);
+        assert_eq!(t.mode(crate::editor::Mode::Visual), t.mode_visual);
+        assert_eq!(t.mode(crate::editor::Mode::Normal), t.accent);
+        assert_eq!(t.severity(strop_lsp::Severity::Warning), t.warning);
 
         editor.feed_text("v");
         let grid = draw(&mut editor);
         assert!(
-            contains_bg(&grid, theme.select_bg),
+            contains_bg(&grid, t.selection),
             "{} visual selection",
             id.name()
         );
@@ -117,17 +83,14 @@ fn all_themes_reach_source_picker_diff_help_and_statusline() {
         editor.open_picker(strop_picker::Kind::Files);
         editor.wait_picker();
         let grid = draw(&mut editor);
-        assert_eq!(grid[(1, 0)].symbol(), "╭");
+        assert_eq!(grid[(2, 0)].symbol(), "╭");
         assert!(
-            contains_bg(&grid, theme.select_bg),
+            contains_bg(&grid, t.raised),
             "{} picker selection",
             id.name()
         );
-        assert!(
-            contains_bg(&grid, theme.surface),
-            "{} preview surface",
-            id.name()
-        );
+        assert!(contains_bg(&grid, t.surface), "{} card surface", id.name());
+        editor.feed(Key::Esc);
         editor.feed(Key::Esc);
 
         editor.open_search(true);
@@ -138,65 +101,29 @@ fn all_themes_reach_source_picker_diff_help_and_statusline() {
         editor.feed(Key::Enter);
         editor.wait_io().unwrap();
         let grid = draw(&mut editor);
+        assert!(contains_fg(&grid, t.diff_del), "{} removed text", id.name());
+        assert!(contains_fg(&grid, t.diff_add), "{} added text", id.name());
         assert!(
-            contains_fg(&grid, theme.diag_error),
-            "{} removed text",
-            id.name()
-        );
-        assert!(
-            contains_fg(&grid, theme.class_string),
-            "{} added text",
-            id.name()
-        );
-        assert!(
-            contains_bg(&grid, theme.diff_del_bg),
+            contains_bg(&grid, t.diff_del_bg),
             "{} removed row",
             id.name()
         );
-        assert!(
-            contains_bg(&grid, theme.diff_add_bg),
-            "{} added row",
-            id.name()
-        );
+        assert!(contains_bg(&grid, t.diff_add_bg), "{} added row", id.name());
 
         editor.feed_text(":help\r");
         assert_eq!(editor.buf().name.as_deref(), Some("help"));
         let grid = draw(&mut editor);
-        assert!(contains_fg(&grid, theme.border), "{} help rules", id.name());
-        assert!(
-            contains_bg(&grid, theme.statusline_bg),
-            "{} help modeline",
-            id.name()
-        );
+        assert!(contains_fg(&grid, t.faint), "{} help rules", id.name());
+        assert!(contains_bg(&grid, t.raised), "{} help keycaps", id.name());
     }
 }
 
 #[test]
 fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
-    const CHILD: &str = "STROP_THEME_PICKER_RENDER_CHILD";
-    if std::env::var_os(CHILD).is_none() {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "render::theme_tests::theme_picker_exposes_full_detail_at_48_and_degrades_at_24",
-                "--nocapture",
-            ])
-            .env(CHILD, "1")
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "isolated theme picker rendering failed:\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return;
-    }
-
     for id in ThemeId::ALL {
-        strop_core::theme::set_current(id);
         let root = tempfile::tempdir().unwrap();
         let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+        editor.set_theme(id);
         editor.feed_text(":theme\r");
         editor.paste_bracketed(id.name());
         editor.wait_picker();
@@ -205,7 +132,7 @@ fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
         let text = normalized_grid_text(&grid);
         let detail = rendered
             .lines()
-            .find(|line| line.contains("· applied"))
+            .find(|line| line.contains("● applied"))
             .unwrap_or_else(|| panic!("{} selected detail: {rendered}", id.name()));
         assert!(text.contains(id.label()), "{} label: {text}", id.name());
         assert!(
@@ -220,20 +147,17 @@ fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
                 id.name()
             );
         }
-        assert!(text.contains("· applied"), "{} marker: {text}", id.name());
-        assert!(rendered.contains('✓'), "{} check", id.name());
-        assert!(rendered.contains("■■■■"), "{} swatches", id.name());
+        assert!(rendered.contains("■■■■■■"), "{} six swatches", id.name());
     }
 
-    strop_core::theme::set_current(ThemeId::Dark);
     let root = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
     editor.feed_text(":theme\r");
     editor.wait_picker();
     let grid = draw_at(&mut editor, 24, 10);
     let text = grid_text(&grid);
-    assert!(text.contains("Dark"), "tiny label: {text}");
-    assert!(text.contains('✓'), "tiny applied check: {text}");
+    assert!(text.contains("Hone"), "tiny label: {text}");
+    assert!(text.contains('●'), "tiny applied mark: {text}");
     assert!(text.contains('▌'), "tiny selection: {text}");
     assert!(text.contains('❯'), "input remains visible: {text}");
     assert!(!text.contains('■'), "tiny swatches omitted: {text}");
@@ -248,13 +172,26 @@ fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
     editor.wait_picker();
     editor.feed(Key::Enter);
     assert!(!editor.picker_open());
-    assert_eq!(strop_core::theme::current_id(), ThemeId::PaperDark);
+    assert_eq!(editor.theme(), ThemeId::PaperDark);
 
     editor.feed_text(":theme\r");
-    editor.paste_bracketed(ThemeId::Light.name());
+    editor.paste_bracketed(ThemeId::Vellum.name());
     editor.wait_picker();
     editor.feed(Key::Esc);
     editor.feed(Key::Esc);
     assert!(!editor.picker_open());
-    assert_eq!(strop_core::theme::current_id(), ThemeId::PaperDark);
+    assert_eq!(editor.theme(), ThemeId::PaperDark);
+}
+
+/// `:theme NAME` with an unknown name keeps the session palette and
+/// names the six choices; a deleted theme is just an unknown name.
+#[test]
+fn unknown_theme_names_keep_the_palette_and_list_the_choices() {
+    let mut editor = Editor::new(Buffer::from_text("x\n"));
+    editor.feed_text(":theme nord\r");
+    assert_eq!(editor.theme(), ThemeId::Hone);
+    assert!(editor
+        .message()
+        .contains("hone, slate, carbide, vellum, paper, paper-dark"));
+    assert!(editor.message().contains("nord"));
 }

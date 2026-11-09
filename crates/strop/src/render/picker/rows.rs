@@ -1,87 +1,73 @@
-//! Picker result rows (0050): per-kind composers over structured
-//! payload fields — symbol chips, file basename-first, grep's real
-//! match window. The selected LOGICAL row paints one full band
-//! (marker, fields, trailing blanks), and query/match evidence is
-//! amber+bold on top of it. Nothing here re-searches text or reparses
-//! display strings.
+//! Picker result rows (0050, 0088 §2): per-kind composers over structured
+//! payload fields — symbol chips, file basename-first, grep hits grouped
+//! under one header per file (U7), diagnostics as severity + message +
+//! location (U8). The selected LOGICAL row paints one full band (marker,
+//! fields, trailing blanks) and query/match evidence is accent+bold on
+//! top of it. Nothing here re-searches text or reparses display strings
+//! beyond the fields the engine wrote.
+use std::path::Path;
+
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+use super::super::card::{band, row_marker};
 use super::super::clip;
-use super::super::diff::{add_fg, del_fg};
-use super::super::{accent, base, kind_color, muted, secondary, select_bg, text};
-use super::window::{match_window, replacement_window};
-use unicode_segmentation::UnicodeSegmentation;
+use super::super::style::Tokens;
 
-/// The main results list: one or two display lines per logical row
-/// (grep), the selection band covering all of a row's lines.
+mod search;
+
+pub(in crate::render::picker) use search::file_count;
+use search::{file_header, search_rows};
+
+/// The main results list: one display line per logical row, plus a
+/// header line wherever a Search hit opens a new file group; replace
+/// mode adds the delta line under each hit.
 pub(super) fn render_results(
     frame: &mut Frame,
+    t: &Tokens,
     area: Rect,
     picker: &strop_picker::Picker,
-    selected: usize,
+    root: &Path,
     tab_for_path: &impl Fn(&strop_workspace::ResourceLocation) -> usize,
 ) {
-    let two_line = picker.kind == strop_picker::Kind::Search;
-    let per_row = if two_line {
-        if picker.replacement_visible {
-            3
+    let selected = picker.selected;
+    let height = usize::from(area.height);
+    let search = picker.kind == strop_picker::Kind::Search;
+    let mut lines: Vec<Line> = Vec::with_capacity(height);
+    if picker.rows.is_empty() && picker.input.text().is_empty() {
+        if matches!(
+            picker.kind,
+            strop_picker::Kind::Files | strop_picker::Kind::Search
+        ) {
+            // 0051 R02: the empty field teaches the vocabulary — never an
+            // obsolete flag hint
+            lines.push(quiet(
+                t,
+                " language:rust path:src/ glob:\"**/*.rs\" hidden:include case:smart",
+            ));
+            lines.push(quiet(
+                t,
+                if picker.kind == strop_picker::Kind::Files {
+                    " bare words are fuzzy paths · ctrl-space suggests"
+                } else {
+                    " bare words are literal content · ctrl-space suggests"
+                },
+            ));
         } else {
-            2
+            lines.push(quiet(
+                t,
+                if picker.streaming {
+                    " loading…"
+                } else if !picker.items.is_empty() {
+                    " preparing results…"
+                } else {
+                    " no entries available"
+                },
+            ));
         }
-    } else {
-        1
-    };
-    let visible_rows = (area.height as usize).div_ceil(per_row);
-    let start_row = if two_line {
-        picker.scroll_top
-    } else {
-        selected.saturating_sub(visible_rows.saturating_sub(1))
-    };
-    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
-    if picker.rows.is_empty()
-        && picker.input.text().is_empty()
-        && matches!(
-            picker.kind,
-            strop_picker::Kind::Files | strop_picker::Kind::Search
-        )
-    {
-        // 0051 R02: the empty field teaches the vocabulary — never an
-        // obsolete flag hint
-        lines.push(Line::from(Span::styled(
-            " language:rust path:src/ glob:\"**/*.rs\" hidden:include case:smart",
-            Style::default().fg(muted()),
-        )));
-        lines.push(Line::from(Span::styled(
-            if picker.kind == strop_picker::Kind::Files {
-                " bare words are fuzzy paths · ctrl-space suggests"
-            } else {
-                " bare words are literal content · ctrl-space suggests"
-            },
-            Style::default().fg(muted()),
-        )));
-    }
-    if picker.rows.is_empty()
-        && picker.input.text().is_empty()
-        && !matches!(
-            picker.kind,
-            strop_picker::Kind::Files | strop_picker::Kind::Search
-        )
-    {
-        let message = if picker.streaming {
-            " loading…"
-        } else if !picker.items.is_empty() {
-            " preparing results…"
-        } else {
-            " no entries available"
-        };
-        lines.push(Line::from(Span::styled(
-            message,
-            Style::default().fg(muted()),
-        )));
     }
     if picker.rows.is_empty() && !picker.input.text().is_empty() {
         // 0050 §8: an empty filtered set is explained, never a blank
@@ -92,31 +78,51 @@ pub(super) fn render_results(
         };
         lines.push(Line::from(Span::styled(
             format!(" No {noun} “{}”", picker.input.text()),
-            Style::default().fg(secondary()),
+            Style::default().fg(t.secondary),
         )));
-        lines.push(Line::from(Span::styled(
-            " edit query · esc normal/close",
-            Style::default().fg(muted()),
-        )));
+        lines.push(quiet(t, " edit query · esc close"));
     }
-    for (vi, row) in picker
-        .rows
-        .iter()
-        .enumerate()
-        .skip(start_row)
-        .take(visible_rows)
-    {
+    let start_row = if search {
+        picker.scroll_top
+    } else {
+        selected.saturating_sub(height.saturating_sub(1))
+    };
+    let name_column = if picker.kind == strop_picker::Kind::Files {
+        file_name_column(picker, start_row, height, area.width)
+    } else {
+        0
+    };
+    let mut last_file: Option<&Path> = None;
+    for (vi, row) in picker.rows.iter().enumerate().skip(start_row) {
+        if lines.len() >= height {
+            break;
+        }
         let active = vi == selected;
         let Some(item) = picker.items.get(row.item) else {
             continue;
         };
         let match_cols = picker.match_columns(row);
-        let tab = match &item.payload {
-            strop_picker::Payload::Grep { location, .. } => tab_for_path(location),
-            _ => 4,
-        };
-        let rendered = if two_line {
-            search_rows(
+        if search {
+            let strop_picker::Payload::Grep { location, .. } = &item.payload else {
+                lines.push(generic_row(t, item, match_cols, area.width, active));
+                continue;
+            };
+            if last_file != Some(location.path.as_path()) {
+                last_file = Some(location.path.as_path());
+                lines.push(file_header(
+                    t,
+                    location,
+                    root,
+                    picker.file_match_count(row.item),
+                    area.width,
+                ));
+                if lines.len() >= height {
+                    break;
+                }
+            }
+            let tab = tab_for_path(location);
+            lines.extend(search_rows(
+                t,
                 item,
                 picker
                     .replacement_visible
@@ -125,58 +131,40 @@ pub(super) fn render_results(
                 area.width,
                 active,
                 tab,
-                picker.file_match_count(row.item),
-            )
-        } else {
-            compose_row(item, picker.kind, match_cols, area.width, active)
-        };
-        lines.extend(rendered);
+            ));
+            continue;
+        }
+        lines.push(match picker.kind {
+            strop_picker::Kind::Symbols | strop_picker::Kind::WorkspaceSymbols => {
+                symbol_row(t, item, match_cols, area.width, active)
+            }
+            strop_picker::Kind::Files => {
+                file_row(t, &item.text, match_cols, name_column, area.width, active)
+            }
+            strop_picker::Kind::Diagnostics => diagnostic_row(t, item, root, area.width, active),
+            strop_picker::Kind::Theme => match &item.payload {
+                strop_picker::Payload::ThemeChoice(id) => {
+                    theme_row(t, *id, match_cols, area.width, active)
+                }
+                _ => generic_row(t, item, match_cols, area.width, active),
+            },
+            _ => generic_row(t, item, match_cols, area.width, active),
+        });
     }
+    lines.truncate(height);
     frame.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(base())),
+        Paragraph::new(lines).style(Style::default().bg(t.surface)),
         area,
     );
 }
 
-/// One logical row as display lines, by kind.
-fn compose_row(
-    item: &strop_picker::Item,
-    kind: strop_picker::Kind,
-    match_cols: &[u32],
-    width: u16,
-    active: bool,
-) -> Vec<Line<'static>> {
-    match kind {
-        strop_picker::Kind::Symbols | strop_picker::Kind::WorkspaceSymbols => {
-            vec![symbol_row(item, match_cols, width, active)]
-        }
-        strop_picker::Kind::Files => vec![file_row(&item.text, match_cols, width, active)],
-        strop_picker::Kind::Theme => match &item.payload {
-            strop_picker::Payload::ThemeChoice(id) => vec![theme_row(
-                *id,
-                strop_core::theme::current_id(),
-                match_cols,
-                width,
-                active,
-            )],
-            _ => vec![generic_row(item, match_cols, width, active)],
-        },
-        _ => vec![generic_row(item, match_cols, width, active)],
-    }
+fn quiet(t: &Tokens, text: &'static str) -> Line<'static> {
+    Line::from(Span::styled(text, Style::default().fg(t.muted)))
 }
 
-/// Selection band and the marker share one style decision.
-fn marker(active: bool) -> Span<'static> {
-    let style = if active {
-        Style::default().fg(accent()).bg(select_bg())
-    } else {
-        Style::default().fg(muted())
-    };
-    Span::styled(if active { "▌" } else { " " }, style)
-}
-
-/// Pad a row to the full width; the band covers the blanks (0050 §4).
-fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'static> {
+/// Pad a row to the full width and print every cell; the band covers
+/// the blanks (0050 §4). Content past the width clips with an ellipsis.
+fn finish(t: &Tokens, mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'static> {
     if width == 0 {
         return Line::default();
     }
@@ -186,12 +174,10 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
                 .into_owned()
                 .into();
         }
-        if active {
-            span.style = span.style.bg(select_bg());
-        }
     }
-    let clipped = spans.iter().map(Span::width).sum::<usize>() > width as usize;
-    let budget = width as usize - usize::from(clipped);
+    let total: usize = spans.iter().map(Span::width).sum();
+    let clipped = total > usize::from(width);
+    let budget = usize::from(width) - usize::from(clipped);
     let mut used = 0;
     let mut output = Vec::new();
     for mut span in spans {
@@ -200,7 +186,9 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
         }
         if span.width() > budget - used {
             let mut prefix = String::new();
-            for grapheme in span.content.graphemes(true) {
+            for grapheme in
+                unicode_segmentation::UnicodeSegmentation::graphemes(span.content.as_ref(), true)
+            {
                 let cells = clip::width(grapheme);
                 if used + cells > budget {
                     break;
@@ -216,30 +204,29 @@ fn finish(mut spans: Vec<Span<'static>>, width: u16, active: bool) -> Line<'stat
         output.push(span);
     }
     if clipped {
-        output.push(Span::styled(
-            "…",
-            if active {
-                Style::default().fg(muted()).bg(select_bg())
-            } else {
-                Style::default().fg(muted())
-            },
-        ));
-        used += 1;
+        output.push(Span::styled("…", Style::default().fg(t.muted)));
     }
-    if active && used < width as usize {
-        output.push(Span::styled(
-            " ".repeat(width as usize - used),
-            Style::default().bg(select_bg()),
-        ));
-    }
-    Line::from(output)
+    band(Line::from(output), width, active, t)
 }
 
 /// Emphasize the query match inside a field's text: accent+bold chars,
 /// never background blocks (0001 §4). `cols` are char indices.
-fn emphasis(value: &str, cols: &[u32], base: Style, active: bool) -> Vec<Span<'static>> {
+fn emphasis(t: &Tokens, value: &str, cols: &[u32], base: Style) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut character = 0;
+    let mut run = String::new();
+    let mut run_matched = false;
+    let flush = |spans: &mut Vec<Span<'static>>, run: &mut String, matched: bool| {
+        if run.is_empty() {
+            return;
+        }
+        let style = if matched {
+            base.fg(t.accent).add_modifier(Modifier::BOLD)
+        } else {
+            base
+        };
+        spans.push(Span::styled(std::mem::take(run), style));
+    };
     for (glyph, grapheme) in strop_core::layout::RopeGraphemes::new(value.into(), 4) {
         let end = character + grapheme.chars().count();
         let matched = cols
@@ -249,22 +236,29 @@ fn emphasis(value: &str, cols: &[u32], base: Style, active: bool) -> Vec<Span<'s
         if glyph.width == 0 {
             continue;
         }
-        let mut style = if matched {
-            base.fg(accent()).add_modifier(Modifier::BOLD)
-        } else {
-            base
-        };
-        if active {
-            style = style.bg(select_bg());
+        if matched != run_matched {
+            flush(&mut spans, &mut run, run_matched);
+            run_matched = matched;
         }
-        let shown = strop_core::layout::printable_grapheme(&grapheme).to_string();
-        spans.push(Span::styled(shown, style));
+        run.push_str(strop_core::layout::printable_grapheme(&grapheme));
     }
+    flush(&mut spans, &mut run, run_matched);
     spans
 }
 
 fn plain(text: impl Into<String>, style: Style) -> Span<'static> {
     Span::styled(text.into(), style)
+}
+
+/// Workspace-relative display for a local path; remote/container
+/// locations keep their authority label.
+fn relative_label(location: &strop_workspace::ResourceLocation, root: &Path) -> String {
+    if location.local_path().is_some() {
+        let relative = location.path.strip_prefix(root).unwrap_or(&location.path);
+        strop_workspace::directory::display_path(relative)
+    } else {
+        location.label()
+    }
 }
 
 // ---- symbols --------------------------------------------------------------
@@ -274,19 +268,18 @@ fn plain(text: impl Into<String>, style: Style) -> Span<'static> {
 /// foreground — never a saturated badge background.
 const CHIP_W: usize = 9;
 
-fn chip(badge: Option<&str>, active: bool) -> Span<'static> {
+fn chip(t: &Tokens, badge: Option<&str>) -> Span<'static> {
     let label = badge.unwrap_or("");
-    let text = format!(" {:<7} ", label);
-    let mut style = Style::default().fg(kind_color(label));
-    if active {
-        style = style.bg(select_bg());
-    }
-    Span::styled(text, style)
+    Span::styled(
+        format!(" {:<7} ", label),
+        Style::default().fg(t.kind(label)),
+    )
 }
 
 /// ` chip  name  container                  :line` — location holds the
 /// right edge; the container drops before the name truncates.
 fn symbol_row(
+    t: &Tokens,
     item: &strop_picker::Item,
     match_cols: &[u32],
     width: u16,
@@ -295,30 +288,25 @@ fn symbol_row(
     let (name, container, location) = symbol_fields(item);
     let budget = (width as usize).saturating_sub(1 + CHIP_W);
     let loc_w = clip::width(&location);
-    let (name_w, _cont_w) = if !location.is_empty() {
-        (budget.saturating_sub(loc_w + 1), loc_w)
+    let name_w = if location.is_empty() {
+        budget
     } else {
-        (budget, 0)
+        budget.saturating_sub(loc_w + 1)
     };
     let name_budget = name_w.saturating_sub(if container.is_empty() { 0 } else { 1 });
-    let mut spans = vec![marker(active), chip(item.badge.as_deref(), active)];
+    let mut spans = vec![row_marker(active, t), chip(t, item.badge.as_deref())];
     let name_chars = clip::width(&name);
     if name_chars <= name_budget {
-        spans.extend(emphasis(
-            &name,
-            match_cols,
-            Style::default().fg(text()),
-            active,
-        ));
+        spans.extend(emphasis(t, &name, match_cols, Style::default().fg(t.text)));
         let used = 1 + CHIP_W + name_chars;
         // container sits after the name; pad between the fields
         if !container.is_empty() && used + 1 + clip::width(&container) + loc_w < width as usize {
             spans.push(plain(" ", Style::default()));
             spans.extend(emphasis(
+                t,
                 &container,
                 &[],
-                Style::default().fg(secondary()),
-                active,
+                Style::default().fg(t.secondary),
             ));
         } else if used < width as usize {
             spans.push(plain(" ", Style::default()));
@@ -326,19 +314,19 @@ fn symbol_row(
     } else {
         let clipped = clip::clip_end(&name, name_budget);
         spans.extend(emphasis(
+            t,
             &clipped,
             match_cols,
-            Style::default().fg(text()),
-            active,
+            Style::default().fg(t.text),
         ));
     }
     if !location.is_empty() {
         let used: usize = spans.iter().map(Span::width).sum();
         let pad = (width as usize).saturating_sub(used + loc_w + 1);
         spans.push(plain(" ".repeat(pad.max(1)), Style::default()));
-        spans.push(plain(&location, Style::default().fg(secondary())));
+        spans.push(plain(&location, Style::default().fg(t.secondary)));
     }
-    finish(spans, width, active)
+    finish(t, spans, width, active)
 }
 
 /// (name, container, location) from the symbol row's own construction
@@ -366,10 +354,40 @@ fn symbol_fields(item: &strop_picker::Item) -> (String, String, String) {
 
 // ---- files ----------------------------------------------------------------
 
-/// ` client.cpp   tests/integration/transport/http` — basename bright
-/// (query matches on it emphasized), the parent path secondary at the
-/// right edge, middle-elided but never dropping the disambiguator.
-fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'static> {
+/// The directory column: the widest visible basename plus a gap, capped
+/// at half the row so a long name cannot push every directory off.
+fn file_name_column(
+    picker: &strop_picker::Picker,
+    start: usize,
+    height: usize,
+    width: u16,
+) -> usize {
+    let widest = picker
+        .rows
+        .iter()
+        .skip(start)
+        .take(height)
+        .filter_map(|row| picker.items.get(row.item))
+        .map(|item| {
+            let name = item.text.rsplit('/').next().unwrap_or(&item.text);
+            clip::width(name)
+        })
+        .max()
+        .unwrap_or(0);
+    (widest + 2).min(usize::from(width) / 2)
+}
+
+/// ` STATUS.md      plans/` — basename bright (query matches on it
+/// emphasized), the directory in `fg.secondary` after it at one shared
+/// column, elided from the left so the parent nearest the file survives.
+fn file_row(
+    t: &Tokens,
+    value: &str,
+    match_cols: &[u32],
+    name_column: usize,
+    width: u16,
+    active: bool,
+) -> Line<'static> {
     let (dir, name) = match value.rfind('/') {
         Some(i) => (&value[..i], &value[i + 1..]),
         None => ("", value),
@@ -377,7 +395,7 @@ fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'
     let name_off = dir.chars().count() + usize::from(!dir.is_empty());
     // matches inside the basename shift into the name's own coordinates;
     // matches in the directory emphasize the context field (0050 §6)
-    let mut name_cols: Vec<u32> = match_cols
+    let name_cols: Vec<u32> = match_cols
         .iter()
         .filter_map(|c| c.checked_sub(name_off as u32))
         .collect();
@@ -386,174 +404,183 @@ fn file_row(value: &str, match_cols: &[u32], width: u16, active: bool) -> Line<'
         .copied()
         .filter(|c| (*c as usize) < dir.chars().count())
         .collect();
-    let budget = (width as usize).saturating_sub(1);
-    let dir_w = clip::width(dir);
+    let budget = (width as usize).saturating_sub(2);
+    let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
     let name_w = clip::width(name);
-    let mut spans = vec![marker(active)];
-    if budget >= name_w + dir_w + 2 {
-        spans.extend(emphasis(
-            name,
-            &name_cols,
-            Style::default().fg(text()),
-            active,
-        ));
-        let pad = budget - name_w - dir_w;
+    let column = name_column.max(name_w + 2).min(budget);
+    let shown_name = clip::clip_end(name, column.saturating_sub(2).max(1));
+    spans.extend(emphasis(
+        t,
+        &shown_name,
+        &name_cols,
+        Style::default().fg(t.text),
+    ));
+    let room = budget.saturating_sub(column);
+    if !dir.is_empty() && room >= 4 {
+        let pad = column.saturating_sub(clip::width(&shown_name));
         spans.push(plain(" ".repeat(pad), Style::default()));
-        spans.extend(emphasis(
-            dir,
-            &dir_cols,
-            Style::default().fg(secondary()),
-            active,
-        ));
-    } else {
-        let room = if dir.is_empty() || budget < 8 {
-            0
+        let shown_dir = format!("{dir}/");
+        let shown_dir = if clip::width(&shown_dir) > room {
+            clip::clip_start(&shown_dir, room).into_owned()
         } else {
-            (budget / 3).max(4).min(budget / 2)
+            shown_dir
         };
-        let name_budget = budget.saturating_sub(room + usize::from(room > 0));
-        let shown = clip::clip_end(name, name_budget);
-        if name_w > name_budget {
-            let prefix = shown.chars().count().saturating_sub(1);
-            name_cols.retain(|column| (*column as usize) < prefix);
-        }
+        // columns only survive while the directory is whole
+        let cols: &[u32] = if shown_dir.starts_with('…') {
+            &[]
+        } else {
+            &dir_cols
+        };
         spans.extend(emphasis(
-            &shown,
-            &name_cols,
-            Style::default().fg(text()),
-            active,
+            t,
+            &shown_dir,
+            cols,
+            Style::default().fg(t.secondary),
         ));
-        if room > 0 {
-            let context = elide_middle(dir, room);
-            let pad = budget.saturating_sub(clip::width(&shown) + clip::width(&context));
-            spans.push(plain(" ".repeat(pad), Style::default()));
-            spans.extend(emphasis(
-                &context,
-                &[],
-                Style::default().fg(secondary()),
-                active,
-            ));
-        }
     }
-    finish(spans, width, active)
-}
-
-/// Middle-elide a path, keeping head and tail components (the tail is
-/// where duplicate basenames disambiguate).
-fn elide_middle(path: &str, room: usize) -> String {
-    if room == 0 {
-        return String::new();
-    }
-    if clip::width(path) <= room {
-        return path.to_string();
-    }
-    let tail_budget = (room - 1) * 2 / 3;
-    let head_budget = room - 1 - tail_budget;
-    let head = clip::clip_end(path, head_budget + 1);
-    let tail = clip::clip_start(path, tail_budget + 1);
-    format!(
-        "{}…{}",
-        head.strip_suffix('…').unwrap_or(&head),
-        tail.strip_prefix('…').unwrap_or(&tail)
-    )
-}
-
-/// Match columns for the window's own char coordinates.
-fn match_cols_in_window((start, end): (usize, usize), _window: &str) -> Vec<u32> {
-    (start as u32..end as u32).collect()
+    finish(t, spans, width, active)
 }
 
 // ---- themes ---------------------------------------------------------------
 
-/// Selection and application are separate: the band marks the cursor and the
-/// check marks the live palette. Hidden canonical/description matches have
-/// columns beyond the label and therefore cannot paint unrelated label glyphs.
+/// Selection and application are separate: the band marks the cursor and
+/// `●` (rule 5) marks the live palette. Six swatches — base, surface,
+/// text, accent, keyword, string — preview the palette's planes and ink.
 fn theme_row(
+    t: &Tokens,
     id: strop_core::theme::ThemeId,
-    applied: strop_core::theme::ThemeId,
     match_cols: &[u32],
     width: u16,
     active: bool,
 ) -> Line<'static> {
-    let current = id == applied;
-    let mut spans = vec![marker(active)];
-    spans.push(plain(
-        if current { "✓ " } else { "  " },
-        Style::default().fg(if current { accent() } else { muted() }),
-    ));
+    let applied = id == t.id;
+    let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
     spans.extend(emphasis(
+        t,
         id.label(),
         match_cols,
-        Style::default().fg(if active { text() } else { secondary() }),
-        active,
+        Style::default().fg(if active { t.text } else { t.secondary }),
     ));
-
+    if applied {
+        spans.push(plain(" ●", Style::default().fg(t.accent)));
+    }
     // A complete strip is right-aligned only after the whole label fits.
-    // Narrow rows retain the selection, application check and name instead.
-    let used = 3 + clip::width(id.label());
+    // Narrow rows retain the selection, application mark and name instead.
+    let used: usize = spans.iter().map(Span::width).sum();
     let width = width as usize;
-    if width >= 24 && width >= used + 5 {
-        spans.push(plain(" ".repeat(width - used - 5), Style::default()));
-        spans.push(plain(" ", Style::default()));
+    if width >= 24 && width >= used + 8 {
+        spans.push(plain(" ".repeat(width - used - 7), Style::default()));
         let palette = id.palette();
         for role in [
+            palette.bg.base,
+            palette.bg.surface,
+            palette.fg.text,
             palette.accent,
-            palette.class_function,
-            palette.class_string,
-            palette.diag_error,
+            palette.syn.keyword,
+            palette.syn.string,
         ] {
             spans.push(Span::styled(
                 "■",
-                Style::default().fg(crate::render::seed(role)),
+                Style::default().fg(crate::render::style::color(role)),
             ));
         }
     }
-    finish(spans, width as u16, active)
+    finish(t, spans, width as u16, active)
 }
 
-// ---- generic rows (buffers, jumps, remote, diagnostics, locations) --------
+// ---- diagnostics ------------------------------------------------------------
+
+/// `▌ ● cannot find function …      editmap.rs:25` (U8): severity glyph
+/// in its colour, the message in text, the location in secondary at
+/// the right edge. The engine writes `{path}:{line} {E|W|I|H} {message}`
+/// and the message into the payload's `line_text`; the severity letter
+/// is read from the row text at the offset those fields pin.
+fn diagnostic_row(
+    t: &Tokens,
+    item: &strop_picker::Item,
+    root: &Path,
+    width: u16,
+    active: bool,
+) -> Line<'static> {
+    let (location, line, message) = match &item.payload {
+        strop_picker::Payload::Grep {
+            location,
+            line,
+            line_text,
+            ..
+        } => (relative_label(location, root), *line, line_text.to_string()),
+        strop_picker::Payload::Remote {
+            endpoint,
+            path,
+            line,
+            ..
+        } => (
+            format!("{endpoint}{}", path.display()),
+            *line,
+            item.text.clone(),
+        ),
+        _ => return generic_row(t, item, &[], width, active),
+    };
+    let severity = item
+        .text
+        .split(' ')
+        .nth(1)
+        .and_then(|word| word.chars().next());
+    let (glyph, color) = match severity {
+        Some('E') => ("●", t.error),
+        Some('W') => ("▲", t.warning),
+        Some('I') => ("ℹ", t.info),
+        _ => ("·", t.hint),
+    };
+    let location = format!("{location}:{line}");
+    // marker + ` ● ` = 4 cells before the message
+    let budget = usize::from(width).saturating_sub(4);
+    let loc_w = clip::width(&location);
+    let message_budget = budget.saturating_sub(loc_w + 2);
+    let message = message.replace('\n', " · ");
+    let message = clip::clip_end(&message, message_budget.max(4));
+    let used = 4 + clip::width(&message);
+    let pad = usize::from(width).saturating_sub(used + loc_w).max(1);
+    let spans = vec![
+        row_marker(active, t),
+        plain(format!(" {glyph} "), Style::default().fg(color)),
+        plain(message.into_owned(), Style::default().fg(t.text)),
+        plain(" ".repeat(pad), Style::default()),
+        plain(location, Style::default().fg(t.secondary)),
+    ];
+    finish(t, spans, width, active)
+}
+
+// ---- generic rows (buffers, jumps, remote, locations) -------------------------
 
 fn generic_row(
+    t: &Tokens,
     item: &strop_picker::Item,
     match_cols: &[u32],
     width: u16,
     active: bool,
 ) -> Line<'static> {
-    let mut spans = vec![marker(active)];
-    let text = clip::clip_end(&item.text, width.saturating_sub(1) as usize);
+    let text = clip::clip_end(&item.text, width.saturating_sub(2) as usize);
     let dim_prefix = locator_prefix_chars(item);
-    let base = Style::default().fg(if active {
-        crate::render::text()
-    } else {
-        secondary()
-    });
-    let mut character = 0;
-    for (glyph, grapheme) in strop_core::layout::RopeGraphemes::new(text.as_ref().into(), 4) {
-        let end = character + grapheme.chars().count();
-        let mut style = if character < dim_prefix {
-            base.fg(muted())
-        } else {
-            base
-        };
-        if match_cols
-            .iter()
-            .any(|&column| character <= column as usize && (column as usize) < end)
-        {
-            style = style.fg(accent()).add_modifier(Modifier::BOLD);
-        }
-        character = end;
-        if glyph.width == 0 {
-            continue;
-        }
-        if active {
-            style = style.bg(select_bg());
-        }
-        spans.push(Span::styled(
-            strop_core::layout::printable_grapheme(&grapheme).to_string(),
-            style,
-        ));
-    }
-    finish(spans, width, active)
+    let base = Style::default().fg(if active { t.text } else { t.secondary });
+    let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
+    let total = text.chars().count();
+    let (locator, rest) = split_chars(&text, dim_prefix.min(total));
+    spans.extend(emphasis(t, locator, match_cols, base.fg(t.muted)));
+    let rest_cols: Vec<u32> = match_cols
+        .iter()
+        .filter_map(|c| c.checked_sub(dim_prefix as u32))
+        .collect();
+    spans.extend(emphasis(t, rest, &rest_cols, base));
+    finish(t, spans, width, active)
+}
+
+fn split_chars(text: &str, chars: usize) -> (&str, &str) {
+    let byte = text
+        .char_indices()
+        .nth(chars)
+        .map_or(text.len(), |(byte, _)| byte);
+    text.split_at(byte)
 }
 
 /// Chars of the row text that form the locator (dimmed): computed from
@@ -606,139 +633,3 @@ fn digits(mut n: usize) -> usize {
     }
     d
 }
-
-// ---- shared Search rows ----------------------------------------------------
-
-/// One source identity/code row, with an optional literal replacement layer.
-fn search_rows(
-    item: &strop_picker::Item,
-    replacement: Option<&str>,
-    excluded: bool,
-    width: u16,
-    active: bool,
-    tab: usize,
-    file_hits: Option<usize>,
-) -> Vec<Line<'static>> {
-    let strop_picker::Payload::Grep {
-        location,
-        line,
-        col,
-        match_len,
-        line_text,
-    } = &item.payload
-    else {
-        return vec![generic_row(item, &[], width, active)];
-    };
-    let path = &location.path;
-    let secondary = if excluded { muted() } else { secondary() };
-    let budget = (width as usize).saturating_sub(1);
-    let basename = path
-        .file_name()
-        .unwrap_or(path.as_os_str())
-        .to_string_lossy();
-    let mut room = (width as usize).saturating_sub(clip::width(&basename) + 5);
-    let mut notice = String::new();
-    if let Some(count) = file_hits {
-        let count = format!(" · {count} hits");
-        if clip::width(&count) <= room {
-            room -= clip::width(&count);
-            notice.push_str(&count);
-        }
-    }
-    for label in [excluded.then_some("excluded"), item.badge.as_deref()]
-        .into_iter()
-        .flatten()
-    {
-        if clip::width(label) + 3 <= room {
-            room -= clip::width(label) + 3;
-            notice.push_str(" · ");
-            notice.push_str(label);
-        }
-    }
-    let path_width = width.saturating_sub((4 + clip::width(&notice)) as u16);
-    let label = if location.local_path().is_some() {
-        strop_workspace::directory::display_path(path)
-    } else {
-        location.label()
-    };
-    let heading = file_row(&label, &[], path_width, active);
-    let mut top = vec![
-        marker(active),
-        plain(
-            if excluded { "[ ] " } else { "[x] " },
-            Style::default().fg(muted()),
-        ),
-    ];
-    for mut span in heading.spans.into_iter().skip(1) {
-        if excluded {
-            span.style = span.style.fg(muted());
-        }
-        top.push(span);
-    }
-    if !notice.is_empty() {
-        top.push(plain(notice, Style::default().fg(muted())));
-    }
-    let mut line1 = finish(top, width, active);
-    if !active {
-        line1.style = Style::default().bg(crate::render::seed(
-            strop_core::theme::current().inactive_bg,
-        ));
-    }
-    // The same checked byte span drives source evidence and the optional delta.
-    let (s, e) = strop_picker::replace_span(line_text, *col, *match_len);
-    let numbers = format!(" {line}:{}  ", s + 1);
-    let numbers_w = clip::width(&numbers);
-    let code_budget = budget.saturating_sub(numbers_w + 2);
-    let evidence = |window: &str, span: (usize, usize)| {
-        if excluded {
-            Vec::new()
-        } else {
-            match_cols_in_window(span, window)
-        }
-    };
-    let (old_window, old_match) = match_window(line_text, s, e, code_budget, tab);
-    let delta = replacement.filter(|_| !excluded);
-    let del = if excluded {
-        secondary
-    } else if delta.is_some() {
-        del_fg()
-    } else {
-        text()
-    };
-    let mut old = vec![plain(" ", Style::default())];
-    old.push(plain(&numbers, Style::default().fg(secondary)));
-    old.push(plain(
-        if delta.is_some() { "- " } else { "  " },
-        Style::default().fg(del),
-    ));
-    old.extend(emphasis(
-        &old_window,
-        &evidence(&old_window, old_match),
-        Style::default().fg(del),
-        active,
-    ));
-    let line2 = finish(old, width, active);
-    let Some(delta) = delta else {
-        let mut lines = vec![line1, line2];
-        if replacement.is_some() {
-            lines.push(finish(Vec::new(), width, active));
-        }
-        return lines;
-    };
-    let (new_window, new_match) = replacement_window(line_text, s, e, delta, code_budget, tab);
-    let add = if excluded { secondary } else { add_fg() };
-    let mut new = vec![plain(" ", Style::default())];
-    new.push(plain(" ".repeat(numbers_w), Style::default()));
-    new.push(plain("+ ", Style::default().fg(add)));
-    new.extend(emphasis(
-        &new_window,
-        &evidence(&new_window, new_match),
-        Style::default().fg(add),
-        active,
-    ));
-    let line3 = finish(new, width, active);
-    vec![line1, line2, line3]
-}
-
-#[cfg(test)]
-mod tests;

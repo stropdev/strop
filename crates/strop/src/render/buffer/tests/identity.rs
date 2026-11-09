@@ -63,8 +63,8 @@ fn cli_picker_and_edit_project_the_same_workspace_relative_title() {
         editor.split(true, None);
         let titles = row_symbols(&draw(&mut editor, 100, 6), 0, 0, 100).join("");
         assert_eq!(titles.matches("src/sample.rs").count(), 2, "{titles}");
-        assert!(titles.contains("1  src/sample.rs"), "{titles}");
-        assert!(titles.contains("2 ▌src/sample.rs"), "{titles}");
+        assert!(titles.contains("╭ 1 src/sample.rs"), "{titles}");
+        assert!(titles.contains("╭ 2 src/sample.rs"), "{titles}");
         assert!(!titles.contains(root.path().to_string_lossy().as_ref()));
     }
 }
@@ -96,15 +96,15 @@ fn duplicate_outside_dirty_and_readonly_titles_keep_their_context() {
 
     let titles = row_symbols(&draw(&mut editor, 180, 6), 0, 0, 180).join("");
     assert!(titles.contains("one/shared.rs"), "{titles}");
-    assert!(titles.contains("2  one/shared.rs"), "{titles}");
-    assert!(titles.contains("3 ▌two/shared.rs"), "{titles}");
+    assert!(titles.contains("╭ 2 one/shared.rs"), "{titles}");
+    assert!(titles.contains("╭ 3 two/shared.rs"), "{titles}");
     assert!(titles.contains(outside_path.to_string_lossy().as_ref()));
-    assert!(titles.contains('*'), "{titles}");
+    assert!(titles.contains('●'), "{titles}");
     assert!(titles.contains("[RO]"), "{titles}");
 
     let titles = row_symbols(&draw(&mut editor, 48, 16), 0, 0, 48).join("");
     assert!(
-        titles.contains("1  /"),
+        titles.contains("╭ 1 /"),
         "outside authority remains absolute: {titles}"
     );
     assert!(
@@ -125,9 +125,12 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
 
     let grid = draw(&mut editor, 100, 6);
     let titles = row_symbols(&grid, 0, 0, 100).join("");
-    assert!(titles.contains("1  ssh://fixture/repo/app.log"), "{titles}");
+    assert!(
+        titles.contains("╭ 1 ssh://fixture/repo/app.log"),
+        "{titles}"
+    );
     assert!(titles.contains("[RO]"), "{titles}");
-    assert!(titles.contains("2 ▌[scratch]"), "{titles}");
+    assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
 
     let grid = draw(&mut editor, 48, 16);
     let titles = row_symbols(&grid, 0, 0, 48).join("");
@@ -137,8 +140,11 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
     editor.focus_pane(0);
     let grid = draw(&mut editor, 100, 6);
     let titles = row_symbols(&grid, 0, 0, 100).join("");
-    assert!(titles.contains("1 ▌ssh://fixture/repo/app.log"), "{titles}");
-    assert!(titles.contains("2  [scratch]"), "{titles}");
+    assert!(
+        titles.contains("╭ 1 ssh://fixture/repo/app.log"),
+        "{titles}"
+    );
+    assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
 }
 
 #[test]
@@ -163,12 +169,19 @@ fn narrow_titles_preserve_focus_flags_geometry_and_single_vertical_rule() {
         if vertical {
             let grid = terminal.backend().buffer();
             let second_title = (0..48).find(|&x| grid[(x, 0)].symbol() == "2").unwrap();
-            assert_eq!(grid[(second_title - 1, 1)].symbol(), " ");
-            assert_eq!(grid[(second_title - 2, 1)].symbol(), "│");
-            assert_eq!(grid[(47, 1)].symbol(), "│", "reserved track remains");
+            // `╭ 2 …`: the corner, a space, the number; the divider column
+            // sits one cell left of the corner and carries the one rule
+            assert_eq!(grid[(second_title - 1, 0)].symbol(), " ");
+            assert_eq!(grid[(second_title - 2, 0)].symbol(), "╭");
+            assert_eq!(
+                grid[(second_title - 3, 1)].symbol(),
+                "│",
+                "the divider column"
+            );
+            assert_eq!(grid[(47, 1)].symbol(), " ", "reserved column, no track");
         } else {
             let grid = terminal.backend().buffer();
-            assert!((0..grid.area.height).any(|y| (0..48).any(|x| grid[(x, y)].symbol() == "─")));
+            assert!((0..grid.area.height).any(|y| grid[(0, y)].symbol() == "╰"));
         }
 
         for (width, height) in [(48, 16), (24, 10), (48, 16)] {
@@ -177,8 +190,8 @@ fn narrow_titles_preserve_focus_flags_geometry_and_single_vertical_rule() {
                 .draw(|f| crate::render::paint(&mut editor, f))
                 .unwrap();
             let text = grid_text(terminal.backend().buffer());
-            assert!(text.contains("2 ▌"), "{text}");
-            assert!(text.contains('*'), "{text}");
+            assert!(text.contains("╭ 2 "), "{text}");
+            assert!(text.contains('●'), "{text}");
             assert!(text.contains("[RO]"), "{text}");
         }
     }

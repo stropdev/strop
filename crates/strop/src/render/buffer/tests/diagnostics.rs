@@ -46,14 +46,14 @@ fn diagnostics_use_gutter_and_eol_without_underlining_source_cells() {
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let buffer = terminal.backend().buffer();
 
-    let error = crate::render::severity_color(strop_lsp::Severity::Error);
+    let error = crate::render::tokens().severity(strop_lsp::Severity::Error);
     assert_eq!(buffer[(0, 0)].symbol(), "●", "diagnostic gutter sign");
     assert_eq!(buffer[(0, 0)].fg, error);
     let note = (0..60)
         .map(|x| &buffer[(x, 0)])
         .find(|cell| cell.symbol() == "▍")
         .expect("cursor-line diagnostic note");
-    assert_eq!(note.fg, crate::render::dim_color(error));
+    assert_eq!(note.fg, crate::render::tokens().dim(error));
 
     let gutter = crate::render::buffer::GUTTER;
     let source: String = (gutter..gutter + 10)
@@ -99,7 +99,7 @@ fn a_snippet_placeholder_paints_as_the_selection() {
     let mut terminal = viewport_terminal(30, 6);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let buffer = terminal.backend().buffer();
-    let select = crate::render::select_bg();
+    let select = crate::render::tokens().selection;
     let painted: Vec<u16> = (0..30).filter(|x| buffer[(*x, 0)].bg == select).collect();
     // "fn name(arg) {}" — 5-cell gutter, "fn " (3), so "name" is cells 8..12
     assert_eq!(
@@ -153,13 +153,13 @@ fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
     assert_eq!(e.view().hscroll.get(), 6);
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 0, 2, 13),
-        ["▸", " ", " ", " ", " ", " ", " ", "1", " ", "e\u{301}", "\u{fffd}", "Z", "\u{2502}"]
+        ["▎", " ", " ", " ", " ", " ", " ", "1", " ", "e\u{301}", "\u{fffd}", "Z", " "]
     );
     // the stats band scrolls WITH the content; the number gutter does
     // not — and the reserved track column (0064 §1) closes the band
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 9, 0, 4),
-        [" ", "+", "1", "\u{2502}"]
+        [" ", "+", "1", " "]
     );
     terminal.backend_mut().assert_cursor_position((11, 2));
 }

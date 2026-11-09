@@ -1,5 +1,5 @@
 //! One printable cell projection for modal input fields, independent of grammar.
-use super::{accent, muted, text};
+use super::style::Tokens;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use strop_core::id::DisplayColumn;
@@ -12,6 +12,7 @@ pub(super) struct FieldLine {
 }
 
 pub(super) fn project(
+    t: &Tokens,
     label: &str,
     value: &str,
     caret: usize,
@@ -42,7 +43,7 @@ pub(super) fn project(
             } else {
                 " ".repeat(visible.width)
             },
-            Style::default().fg(if active { accent() } else { muted() }),
+            Style::default().fg(if active { t.accent } else { t.muted }),
         ));
         prefix = visible.x + visible.width;
     }
@@ -62,7 +63,10 @@ pub(super) fn project(
             .iter()
             .rev()
             .find(|span| span.range.contains(&glyph.byte))
-            .map_or_else(|| Style::default().fg(text()), |span| role_style(span.role));
+            .map_or_else(
+                || Style::default().fg(t.text),
+                |span| role_style(t, span.role),
+            );
         let text = if visible.complete && grapheme != "\t" {
             printable_grapheme(&grapheme).to_string()
         } else {
@@ -72,7 +76,7 @@ pub(super) fn project(
         used = visible.x + visible.width;
     }
     if active && caret == value.len() && used < available {
-        spans.push(Span::styled("▏", Style::default().fg(accent())));
+        spans.push(Span::styled("▏", Style::default().fg(t.accent)));
     }
     FieldLine {
         line: Line::from(spans),
@@ -80,19 +84,17 @@ pub(super) fn project(
     }
 }
 
-fn role_style(role: Role) -> Style {
+fn role_style(t: &Tokens, role: Role) -> Style {
     match role {
-        Role::QualifierKey => Style::default().fg(accent()).add_modifier(Modifier::BOLD),
-        Role::Punctuation => Style::default().fg(muted()),
-        Role::Operator => Style::default().fg(accent()).add_modifier(Modifier::BOLD),
-        Role::Value | Role::Literal => Style::default().fg(text()),
-        Role::Regex => Style::default().fg(crate::render::seed(
-            strop_core::theme::current().class_keyword,
-        )),
+        Role::QualifierKey => Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        Role::Punctuation => Style::default().fg(t.muted),
+        Role::Operator => Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        Role::Value | Role::Literal => Style::default().fg(t.text),
+        Role::Regex => Style::default().fg(t.syn.keyword),
         Role::Negation | Role::Error => Style::default()
-            .fg(crate::render::seed(strop_core::theme::current().diag_error))
+            .fg(t.error)
             .add_modifier(Modifier::UNDERLINED),
-        Role::Incomplete => Style::default().fg(muted()).add_modifier(Modifier::ITALIC),
+        Role::Incomplete => Style::default().fg(t.muted).add_modifier(Modifier::ITALIC),
     }
 }
 
@@ -104,7 +106,8 @@ mod tests {
         let text = "界e\u{301}\talpha界omega";
         for width in [1, 4, 12, 40] {
             for caret in [0, 3, 6, text.len()] {
-                let projection = project("find", text, caret, true, width, &[]);
+                let t = Tokens::new(strop_core::theme::ThemeId::Hone);
+                let projection = project(&t, "find", text, caret, true, width, &[]);
                 assert!(projection.line.width() <= usize::from(width));
                 assert!(projection.cursor.is_some_and(|column| column < width));
                 assert!(projection

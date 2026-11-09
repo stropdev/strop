@@ -142,7 +142,9 @@ impl PickerMeasurement {
 // arithmetic pinned against the toolkit solver by the strop-editor
 // picker geometry tests) ---
 
-/// The floating/workspace card rect for the open kind (0050 §8).
+/// The floating/workspace card rect for the open kind (0050 §8). The
+/// workspace card is `columns − 4` wide at 100 columns and up, full-bleed
+/// below (0088 §2 rule 9).
 pub fn picker_card(area: CellRect, kind: strop_picker::Kind) -> CellRect {
     if matches!(
         kind,
@@ -151,10 +153,11 @@ pub fn picker_card(area: CellRect, kind: strop_picker::Kind) -> CellRect {
             | strop_picker::Kind::Symbols
             | strop_picker::Kind::WorkspaceSymbols
     ) {
+        let margin = if area.width >= 100 { 2 } else { 0 };
         CellRect {
-            x: area.x + 1,
+            x: area.x + margin,
             y: area.y,
-            width: area.width.saturating_sub(2),
+            width: area.width.saturating_sub(2 * margin),
             height: area.height.saturating_sub(1),
         }
     } else {

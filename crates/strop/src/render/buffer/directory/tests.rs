@@ -68,31 +68,30 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     let grid = frame(&mut editor, 80, 9);
     assert_eq!(
         row_text(&grid, 2),
-        "▸  3 src/                         4.0 KiB  drwxr-xr-x                          │"
+        "▌  3 src/                         4.0 KiB  drwxr-xr-x"
     );
     assert_eq!(
         row_text(&grid, 3),
-        "   4 README.md                    8.0 KiB  -rw-r--r--                          │"
+        "   4 README.md                    8.0 KiB  -rw-r--r--"
     );
     assert_eq!(
         row_text(&grid, 4),
-        "   5 zero.txt                         0 B  -rw-r--r--                          │"
+        "   5 zero.txt                         0 B  -rw-r--r--"
     );
     // the cursor-row band spans the pane; the reserved track column
     // (0064 §1) keeps its own surface at the last cell
-    assert!((0..79).all(|x| grid[(x, 2)].bg == diff::cursor_row_bg()));
-    assert_eq!(grid[(5, 2)].fg, accent());
-    assert_eq!(grid[(5, 3)].fg, crate::render::text());
-    assert_eq!(grid[(34, 3)].fg, muted());
-    assert_eq!(grid[(5, 0)].fg, muted());
+    assert!((0..79).all(|x| grid[(x, 2)].bg == crate::render::tokens().cursorline));
+    assert_eq!(grid[(5, 2)].fg, crate::render::tokens().accent);
+    assert_eq!(grid[(5, 3)].fg, crate::render::tokens().text);
+    assert_eq!(grid[(34, 3)].fg, crate::render::tokens().muted);
+    assert_eq!(grid[(5, 0)].fg, crate::render::tokens().muted);
     assert!(grid[(16, 0)].modifier.contains(Modifier::BOLD));
     editor.feed_text(":fs mark\rj");
     let marked = frame(&mut editor, 80, 9);
     assert_eq!(marked[(0, 2)].symbol(), "●");
-    assert_eq!(marked[(0, 3)].symbol(), "▸");
+    assert_eq!(marked[(0, 3)].symbol(), "▌");
     // the track column keeps its own surface (0064 §1)
-    assert_eq!(marked[(78, 2)].bg, diff::cursor_row_bg());
-    assert_eq!(marked[(79, 2)].symbol(), "\u{2502}");
+    assert_eq!(marked[(78, 2)].bg, crate::render::tokens().cursorline);
 }
 
 #[test]
@@ -113,7 +112,7 @@ fn narrow_round_trip_keeps_native_names_and_cursor_mapping() {
     let restored = frame(&mut editor, 80, 9);
     assert_eq!(editor.buf().snapshot(), expected);
     let selected_row = (0..restored.area.height)
-        .find(|&row| restored[(0, row)].symbol() == "▸")
+        .find(|&row| restored[(0, row)].symbol() == "▌")
         .unwrap();
     assert_eq!(restored[(5, selected_row)].symbol(), "日");
     assert_eq!(editor.head(), editor.buf().line_start(2));
@@ -133,11 +132,9 @@ fn narrow_round_trip_keeps_native_names_and_cursor_mapping() {
 fn empty_folder_is_not_rendered_as_missing_file_rows() {
     let mut editor = folder(Vec::new(), ListingState::Complete);
     let grid = frame(&mut editor, 60, 8);
-    // 0064 §1: the last column is the reserved scrollbar track.
-    assert_eq!(
-        row_text(&grid, 2),
-        "     Empty folder                                          │"
-    );
+    // 0064 §1: the last column is the reserved scrollbar column (blank
+    // while the listing fits).
+    assert_eq!(row_text(&grid, 2), "     Empty folder");
     assert!((3..7).all(|row| row_text(&grid, row)
         .chars()
         .all(|c| c.is_whitespace() || c == '\u{2502}')));
