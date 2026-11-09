@@ -24,8 +24,10 @@ pub const MAX_SESSIONS: usize = 16;
 #[serde(transparent)]
 pub struct SessionId(u64);
 impl SessionId {
-    pub fn from_request(request: strop_core::worker::WorkerId) -> Self {
-        Self(request.get())
+    /// The owner (the editor) numbers its sessions; the value is both the
+    /// identity and the user-facing `terminal #N`.
+    pub const fn new(value: u64) -> Self {
+        Self(value)
     }
     pub fn get(self) -> u64 {
         self.0

@@ -494,10 +494,8 @@ mod loom_tests {
                         rows: 3,
                     })
                     .expect("hint");
-                    tx.send(AppEvent::TerminalUpdate(SessionId::from_request(
-                        strop_core::worker::WorkerId::new(1),
-                    )))
-                    .expect("hint");
+                    tx.send(AppEvent::TerminalUpdate(SessionId::new(1)))
+                        .expect("hint");
                     tx.send(AppEvent::Resize {
                         columns: 5,
                         rows: 5,

@@ -6,7 +6,7 @@ fn service() -> (Service, mpsc::Receiver<Request>, UnixDatagram) {
     let (wake, listening) = UnixDatagram::pair().unwrap();
     wake.set_nonblocking(true).unwrap();
     listening.set_nonblocking(true).unwrap();
-    let session = SessionId::from_request(strop_core::worker::WorkerId::new(1));
+    let session = SessionId::new(1);
     (
         Service {
             sender,

@@ -348,14 +348,17 @@ impl Editor {
             self.lsp_state.navigation = None;
             self.cancel_open(strop_core::worker::CancelReason::Superseded);
         }
+        // Every decline names the verb it refused (0088 U17): `Space s`
+        // and `Space k` must say why nothing opened.
+        let label = kind.label();
         let Some(doc) = self.lsp_document_location(self.current()) else {
-            self.message =
-                "language services require a complete file buffer, not a partial/follow view"
-                    .into();
+            self.message = format!(
+                "{label}: language services require a complete file buffer, not a partial/follow view"
+            );
             return;
         };
         let Some(language) = self.lsp_doc_language(self.current(), &doc.path) else {
-            self.message = "no language server for this file type".into();
+            self.message = format!("{label}: no language server for this file type");
             return;
         };
         let Some((server, _)) =
@@ -405,20 +408,19 @@ impl Editor {
                         .iter()
                         .any(|a| a.language == language);
                     if covered_language {
-                        "no language context for this file — reach it via gd from a                          served file, or add its root to languages.toml"
-                            .into()
+                        format!("{label}: no language context for this file — reach it via gd from a served file, or add its root to languages.toml")
                     } else {
-                        "no language server — install it or fix languages.toml".into()
+                        format!("{label}: no language server attached — install it or fix languages.toml")
                     }
                 }
                 strop_workspace::Filesystem::Remote(endpoint) => {
                     format!(
-                        "no language server on {endpoint} — install it there or fix languages.toml"
+                        "{label}: no language server on {endpoint} — install it there or fix languages.toml"
                     )
                 }
                 strop_workspace::Filesystem::Container(id) => {
                     format!(
-                        "no language server in container {} — run :container-worker and install it there or fix languages.toml",
+                        "{label}: no language server in container {} — run :container-worker and install it there or fix languages.toml",
                         &id.as_str()[..12]
                     )
                 }

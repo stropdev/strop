@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn admitted_ssh_terminal_executes_remotely_and_retains_launch_identity() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("admitted_ssh_terminal_executes_remotely_and_retains_launch_identity") {
         return;
     }
     let fixture = Fixture::new();

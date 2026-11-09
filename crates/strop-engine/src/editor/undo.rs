@@ -21,13 +21,13 @@ impl Editor {
     /// `Space u`: open the undo tree of the current buffer.
     pub(crate) fn open_undo_tree(&mut self) {
         if self.buf().readonly {
-            self.message = "readonly buffer".into();
+            self.message = "undo tree: not available in a readonly buffer".into();
             return;
         }
         self.cancel_pending();
         let rows = self.buf().history().tree_rows();
         if rows.is_empty() {
-            self.message = "no undo history".into();
+            self.message = "undo tree: undo history is empty".into();
             return;
         }
         let origin = self.current();

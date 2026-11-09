@@ -2,7 +2,9 @@ use super::*;
 
 #[test]
 fn search_here_preserves_ssh_identity_through_preview_open_collection_and_replay() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required(
+        "search_here_preserves_ssh_identity_through_preview_open_collection_and_replay",
+    ) {
         return;
     }
     let fixture = Fixture::new();

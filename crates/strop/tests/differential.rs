@@ -6,7 +6,8 @@
 //! deviations live in KNOWN_DIVERGENCES with a reason — the list is
 //! reviewed, never grown silently.
 //!
-//! Skips (with a notice) when nvim is absent — the docker gate installs
+//! Skips (with a notice) when nvim is absent; `STROP_REQUIRE_NVIM=1`
+//! turns that skip into a failure — the docker gate installs nvim and sets
 //! it, so CI always runs this.
 
 use std::io::Write;
@@ -241,6 +242,11 @@ const CASES: &[Case] = &[
         name: "x and dot",
         text: "abc\n",
         keys: "x.",
+    },
+    Case {
+        name: "each x is one undo step",
+        text: "abcdef\n",
+        keys: "xlxu",
     },
     Case {
         name: "x writes the unnamed register",
@@ -495,7 +501,18 @@ fn have_nvim() -> bool {
 #[test]
 fn differential_vs_nvim() {
     if !have_nvim() {
-        eprintln!("differential: nvim not installed — skipped (CI installs it)");
+        // The Docker gate installs nvim and sets STROP_REQUIRE_NVIM=1, so a
+        // missing oracle there is a failure, never a quiet pass (0086 F3).
+        assert!(
+            std::env::var_os("STROP_REQUIRE_NVIM").as_deref() != Some(std::ffi::OsStr::new("1")),
+            "differential: STROP_REQUIRE_NVIM=1 but nvim is not runnable"
+        );
+        // Straight to stderr: libtest captures eprintln!, which would hide it.
+        writeln!(
+            std::io::stderr().lock(),
+            "differential: nvim not installed — skipped (set STROP_REQUIRE_NVIM=1 to require it)"
+        )
+        .unwrap();
         return;
     }
     let mut failures = Vec::new();

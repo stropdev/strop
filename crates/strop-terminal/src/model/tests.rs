@@ -161,7 +161,7 @@ fn full_frame(columns: u16, lines: &[&str]) -> Frame {
         offset += u64::from(columns) + 1;
     }
     Frame {
-        session: SessionId::from_request(strop_core::worker::WorkerId::new(7)),
+        session: SessionId::new(7),
         revision: 3,
         geometry: Geometry {
             columns,
@@ -298,7 +298,7 @@ fn frame_wire_derives_projection_and_offsets() {
         })
         .collect();
     let frame = Frame {
-        session: SessionId::from_request(strop_core::worker::WorkerId::new(7)),
+        session: SessionId::new(7),
         revision: 3,
         geometry: Geometry {
             columns: 2,

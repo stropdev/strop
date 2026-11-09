@@ -462,6 +462,29 @@ fn successful_save_enters_exact_verified_root_and_rebuild_retires_old_editor_bin
     assert!(!editor.containers.attached.contains_key(&"a".repeat(64)));
 }
 
+#[test]
+fn discovery_of_a_workspace_without_configurations_stays_silent() {
+    // 0088 U13: no devcontainer is the ordinary case — no notice, no
+    // `Space a` advertisement for an empty result.
+    let root = Dir::new();
+    let mut editor = Editor::new_in(Buffer::from_text("local\n"), root.0.clone());
+    editor.devcontainers.discover(key(&root)).unwrap();
+    settle(&mut editor);
+    assert!(
+        editor.feedback().iter().all(|record| !matches!(
+            record.kind,
+            FeedbackKind::DevcontainerOperation | FeedbackKind::DevcontainerOffer
+        )),
+        "{:?}",
+        editor
+            .feedback()
+            .iter()
+            .map(|record| record.summary())
+            .collect::<Vec<_>>()
+    );
+    assert!(editor.presented_feedback().is_none());
+}
+
 fn no_replay_frame(_: &mut Editor, _: u16, _: u16, _: bool) -> std::io::Result<()> {
     Ok(())
 }
@@ -475,6 +498,8 @@ fn recorded_discovery_completion_replays_without_native_work() {
     use strop_trace::replay::{Node, Tape};
 
     let root = Dir::new();
+    // A discovery issue is what makes the completion speak (U13).
+    root.write(".devcontainer/devcontainer.json", "{ not json");
     let mut editor = Editor::new_in(Buffer::from_text("local\n"), root.0.clone());
     editor.config.completion.enabled = false;
     editor.tape = Rc::new(Tape::fixture(|operation, _| match operation {

@@ -2,6 +2,7 @@
 //! network, real HOME, host key discovery or sleeps. Required by Docker's gate.
 #![cfg(unix)]
 use std::ffi::{OsStr, OsString};
+use std::io::Write as _;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,22 @@ mod search;
 mod terminal;
 #[path = "remote_ssh/writes.rs"]
 mod writes;
+
+/// The OpenSSH journeys need a provisioned sshd, which the Docker gate sets
+/// `STROP_REQUIRE_SSH_TESTS=1` for. Elsewhere they skip, and say so: a
+/// green host run must never read as SSH coverage it did not have.
+fn ssh_required(test: &str) -> bool {
+    let required = std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() == Some(OsStr::new("1"));
+    if !required {
+        // Straight to stderr: libtest captures eprintln!, which would hide it.
+        writeln!(
+            std::io::stderr().lock(),
+            "skipped {test}: set STROP_REQUIRE_SSH_TESTS=1 to run the OpenSSH journey"
+        )
+        .unwrap();
+    }
+    required
+}
 
 struct Fixture {
     directory: tempfile::TempDir,
@@ -159,7 +176,7 @@ fn states(output: &str) -> Vec<serde_json::Value> {
 
 #[test]
 fn openssh_reads_native_names_and_replay_needs_no_ssh() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("openssh_reads_native_names_and_replay_needs_no_ssh") {
         return;
     }
     let fixture = Fixture::new();
@@ -209,7 +226,7 @@ fn openssh_reads_native_names_and_replay_needs_no_ssh() {
 
 #[test]
 fn openssh_failures_keep_the_current_buffer_and_explain_the_cause() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("openssh_failures_keep_the_current_buffer_and_explain_the_cause") {
         return;
     }
     let fixture = Fixture::new();
@@ -269,7 +286,7 @@ fn openssh_failures_keep_the_current_buffer_and_explain_the_cause() {
 
 #[test]
 fn explicit_remote_worker_enables_services_without_a_file_write_permit() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("explicit_remote_worker_enables_services_without_a_file_write_permit") {
         return;
     }
     let fixture = Fixture::new();

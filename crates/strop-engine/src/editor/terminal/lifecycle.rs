@@ -65,13 +65,6 @@ impl Editor {
             );
             return;
         }
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
         let keyboard = self.terminals.keyboard;
         if !self.terminals.capture {
             if let Err(error) = self.tape.omit_content("terminal") {
@@ -79,7 +72,10 @@ impl Editor {
                 return;
             }
         }
-        let session = SessionId::from_request(request);
+        let Some(session) = self.terminals.next_session() else {
+            self.message = "terminal session numbers exhausted".into();
+            return;
+        };
         let geometry = Geometry {
             columns: 80,
             rows: (self.view_rows.max(1).min(MAX_ROWS as usize)) as u16,

@@ -241,6 +241,34 @@ fn real_pty_hidden_session_quit_review_focus_stop_and_return_do_not_implicitly_k
 }
 
 #[test]
+fn real_pty_sessions_number_from_one_per_editor() {
+    // 0088 U12: unrelated worker requests (opens, git, discovery) must not
+    // leak into the user-facing number — the first terminal is #1.
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    for _ in 0..26 {
+        editor.worker_ids.allocate().unwrap();
+    }
+    for number in 1..=2 {
+        editor.feed_text(":terminal exec /bin/sh\r");
+        let terminal = editor.current();
+        drain_until(
+            &mut editor,
+            |editor| matches!(editor.terminal_phase(terminal), Some(Phase::Running)),
+            "shell startup",
+        );
+        let expected = format!("terminal #{number}");
+        assert_eq!(editor.buf().name.as_deref(), Some(expected.as_str()));
+        let label = editor.doc(terminal).label(directory.path());
+        assert!(
+            label.starts_with(&format!("{expected} · launch ")),
+            "{label}"
+        );
+        assert!(editor.close_buffer(false));
+    }
+}
+
+#[test]
 fn real_pty_nested_application_keys_stay_child_owned() {
     use strop_core::frontend_input::Input;
     let directory = tempfile::tempdir().unwrap();

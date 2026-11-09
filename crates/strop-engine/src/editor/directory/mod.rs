@@ -186,13 +186,24 @@ impl Editor {
             self.set_head(self.buf().line_start(1));
         }
     }
-    /// Textual open operands inherit a Directory scope, not an ordinary remote
-    /// file's namespace. Outside Directory, native paths retain local Ex semantics.
+    /// The base a relative Ex operand (`:e`, `:sp`, `:browse`, their
+    /// completion) resolves against. Local operands follow Vim: the editor's
+    /// cwd, even from a local Directory buffer (0088 U2 — browsing never
+    /// changes where `:e path` lands). A remote or container Directory has
+    /// no cwd in its namespace, so its own location is the base there; an
+    /// ordinary remote file never lends its namespace.
     pub(crate) fn open_context(&self) -> ResourceLocation {
-        self.directory().map_or_else(
-            || ResourceLocation::local(self.cwd.clone()),
-            |directory| directory.location.clone(),
-        )
+        match self.directory() {
+            Some(directory)
+                if !matches!(
+                    directory.location.filesystem,
+                    strop_workspace::Filesystem::Local
+                ) =>
+            {
+                directory.location.clone()
+            }
+            _ => ResourceLocation::local(self.cwd.clone()),
+        }
     }
     /// Operand context is captured in the source namespace; no ambient chdir.
     pub(crate) fn directory_context(&self) -> ResourceLocation {
