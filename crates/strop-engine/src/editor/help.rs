@@ -1,11 +1,144 @@
 //! `:help` (also `Space ?`): the keybinding table as a real readonly
 //! buffer (0001 §4) — `/` searches it, motions walk it, `q` closes it.
-//! Replaces the floating keybinds popup: a buffer you can search beats
-//! a card you can only scroll.
+//! Laid out in the keymap's curated section order (0088 U10): a header,
+//! then per section a `─ Title ─` rule and one row per binding with the
+//! keys in a padded column the renderer paints as a keycap. Replaces
+//! the floating keybinds popup: a buffer you can search beats a card you
+//! can only scroll.
 
 use strop_core::Buffer;
 
 use super::Editor;
+
+/// The key column is padded one cell each side of the widest key; two
+/// spaces separate it from the description (`render/help.rs` splits
+/// rows on exactly this shape).
+fn push_row(text: &mut String, keys: &str, width: usize, desc: &str, planned: bool) {
+    let soon = if planned { "  (soon)" } else { "" };
+    text.push_str(&format!("   {keys:<width$}   {desc}{soon}\n"));
+}
+
+fn push_rule(text: &mut String, title: &str) {
+    text.push_str(&format!("\n─ {title} ─\n"));
+}
+
+/// Hand-written rows for surfaces the binding table does not model
+/// (remote browsing, the query language, …): `(title, rows)`.
+const EXTRA: &[(&str, &[(&str, &str)])] = &[
+    (
+        "Remote",
+        &[
+            ("space o / :remote", "Choose SSH or a running container; Add a host… enters an address"),
+            ("- / backspace", "Visit parent directory and retain the selected child"),
+            (":remote root / home", "Browse remote root or negotiated home directory"),
+            (":remote worker [URI]", "Explicit worker consent for Git/LSP/search; no edit permit"),
+            (":remote edit", "Admit worker, verify full snapshot and enable editing"),
+            (":w / :wq", "Save an authorized remote file; no conflict bypass via !"),
+            (":remote verify", "Reconcile an unconfirmed save without blind overwrite"),
+            (":tail [BYTES] [URI]", "Read a bounded tail (URI defaults to current file)"),
+            (":range START BYTES URI", "Read a byte window; line numbers are window-relative"),
+            (":follow [URI]", "Follow a bounded tail; Escape stops following"),
+            (":unfollow", "Keep the snapshot and stop polling"),
+            (":browse [URI]", "Open a directory; Enter selects an entry or ../"),
+            (":filter [TEXT]", "Filter a directory; no text restores all entries"),
+            (":remote connect URI", "Hold a shared SSH connection explicitly"),
+            (":remote disconnect URI", "Close the endpoint's owned connection"),
+            (":remote clear", "Close all owned connections"),
+            (":remote list", "List authenticated connections in a buffer"),
+            (":trust", "Authorize the pending endpoint/project command"),
+            ("tab", "Complete an SSH URI without starting authentication"),
+            (":e!", "Refresh the remote snapshot and revoke write authority"),
+            ("directory columns", "kind, POSIX permissions, server bytes, name; ? = unknown"),
+            (":explain", "Why: workspaces, LSP readiness/failures, effective config"),
+        ],
+    ),
+    (
+        "Query language",
+        &[
+            ("surfaces", "space f, space /, space R, symbols (space S), the space j jumplist"),
+            ("one language", "Identical local-workspace qualifiers on every surface above"),
+            ("language:rust", "Include a language family (alias: language:rs)"),
+            ("scope", "Regular local files; directory links and special files are not searched"),
+            ("SSH/container listings", "Hidden entries included; no ignore-file filtering (local search defaults do not apply)"),
+            ("path:src/", "Literal substring in the workspace-relative path"),
+            ("glob:\"**/*.rs\"", "Explicit path glob; quote values with spaces"),
+            ("fpath:modules/jweb/", "Fuzzy scope over full workspace-relative path"),
+            ("-language: -glob: -path:", "Exclude; exclusions win"),
+            ("hidden:include|exclude", "Show/hide dotfiles (default: shown)"),
+            ("ignored:include|exclude", "Include/respect ignored files (default: respected)"),
+            ("case:sensitive", "Exact case; default is insensitive on every query surface"),
+            ("case:ignore|insensitive", "Explicit insensitive matching; case:smart opts into smart case"),
+            ("text:\"...\"", "Explicit literal content expression (default for bare words)"),
+            ("regex:\"...\"", "Explicit Rust-regex expression"),
+            ("ctrl-space", "Manual qualifier/language/value suggestions"),
+            ("filter-only Search", "Needs a search expression; file find lists matches"),
+            ("quoted text", "Stays literal — never a filter (\"language:rust\" searches that text)"),
+            ("old -t / -g flags", "Now ordinary literal text; use language: and glob:"),
+            ("file expressions", "Bare words are fuzzy; quoted/text: are literal; regex: is explicit"),
+            ("quotes", "Single/double quotes; escape the active quote or backslash"),
+            ("With", "Always literal replacement text; $1 is not a capture expansion"),
+            (":[range]s/a/b/[g]", "Buffer-search pattern; live before/after preview before Enter"),
+            (":s replacement", "Literal text; escaped delimiter and \\\\ are unescaped"),
+            ("buffer / ?", "Case-insensitive by default; case:sensitive forces exact case"),
+            ("buffer case:ignore", "Explicit insensitive search (alias: case:insensitive)"),
+            ("input ctrl-r {reg}", "Insert a register; field Normal p/P pastes; no Ctrl-C quit"),
+            ("visual ctrl-c", "Toggle line comments on the selected lines"),
+        ],
+    ),
+    (
+        "Search workspace",
+        &[
+            ("space /", "Open/resume the retained local Search investigation"),
+            ("space R", "Resume the same Search with replacement visible"),
+            ("ctrl-r", "Toggle With without restarting Search or losing its draft"),
+            ("Find enter", "Open selected source, even when With is visible"),
+            ("With enter", "Prepare Review; never apply or save directly"),
+            ("tab / s-tab", "Switch visible fields; otherwise move results"),
+            ("ctrl-x / ctrl-d", "Exclude/include match or file in the shared workset"),
+            ("esc", "Dismiss suggestions, enter field Normal, then hide Search"),
+            ("re-entry", "Refresh exact witnesses in the captured scope; report lost decisions"),
+            ("scope", "Local project backend; unsupported namespaces refuse, never fall back"),
+        ],
+    ),
+    (
+        "Collections",
+        &[
+            ("ctrl-o", "Collect complete included results; all-excluded is empty"),
+            ("+ / -", "Expand/contract the current excerpt's context"),
+            ("]e / [e", "Next/previous excerpt; ]f / [f move file cards"),
+            ("g<space>", "Open the real source; Ctrl-O restores the collection view"),
+            ("read-only", "Search/yank/navigate freely; edits happen in the real source"),
+        ],
+    ),
+    (
+        "Indentation",
+        &[
+            (":tab-size [N|auto]", "Source width, 1-16; no argument opens the selector"),
+            (":indent-style [spaces|tabs|auto]", "Source style or configured/detected policy"),
+            ("detection", "Bounded open/reload sample; ambiguity keeps the configured fallback"),
+        ],
+    ),
+    (
+        "Review",
+        &[
+            ("enter in With", "Prepare the exact review, without changing or saving sources"),
+            ("space a", "Apply/Save/Cancel/Inspect actions valid for the focused review"),
+            (":apply-change", "Apply to source buffers; results remain dirty until saved"),
+            (":cancel-change", "Cancel and restore the query/draft/exclusions"),
+            (":save-change", "Save files from the most recent applied operation"),
+            (":undo-change", "Undo verified targets; conflicted receipt members remain recoverable"),
+        ],
+    ),
+    (
+        "Documentation",
+        &[
+            ("enter on hover", "Open full searchable documentation; Ctrl-O returns"),
+            (":containers", "Attach to a running container (read-only browse)"),
+            (":container-worker", "Enable verified services for the attached container"),
+            (":container-edit", "Verify the snapshot and enable conditional file saves"),
+        ],
+    ),
+];
 
 impl Editor {
     /// Open the generated help buffer (`:help` / `Space ?`).
@@ -23,12 +156,15 @@ impl Editor {
             self.view_mut().view_top = 0;
             return;
         }
-        let mut text = String::from("strop help — / searches · q closes\n");
+        let mut text = format!(
+            "strop {} · help · / search · q close\n",
+            env!("CARGO_PKG_VERSION")
+        );
         for section in crate::keymap::SECTIONS {
-            text.push_str(&format!("\n[{section}]\n"));
+            push_rule(&mut text, section.title);
             let rows: Vec<_> = crate::keymap::BINDINGS
                 .iter()
-                .filter(|b| b.sections.contains(section))
+                .filter(|b| b.sections.contains(&section.id))
                 .collect();
             let width = rows
                 .iter()
@@ -36,107 +172,25 @@ impl Editor {
                 .max()
                 .unwrap_or(0);
             for b in rows {
-                let planned = if b.live { "" } else { "  (soon)" };
-                text.push_str(&format!(
-                    "  {:<width$}  {}{planned}\n",
-                    b.keys,
-                    b.desc,
-                    width = width
-                ));
+                push_row(&mut text, b.keys, width, b.desc, !b.live);
             }
         }
-        text.push_str(concat!(
-            "\n[remote]\n",
-            "  Space o / :remote       Choose SSH or a running container; Add a host… enters an address\n",
-            "  - / Backspace           Visit parent directory and retain the selected child\n",
-            "  :remote root / home     Browse remote root or negotiated home directory\n",
-            "  :remote worker [URI]    Explicit worker consent for Git/LSP/search; no edit permit\n",
-            "  :remote edit            Admit worker, verify full snapshot and enable editing\n",
-            "  :w / :wq                 Save an authorized remote file; no conflict bypass via !\n",
-            "  :remote verify           Reconcile an unconfirmed save without blind overwrite\n",
-            "  :tail [BYTES] [URI]     Read a bounded tail (URI defaults to current file)\n",
-            "  :range START BYTES URI  Read a byte window; line numbers are window-relative\n",
-            "  :follow [URI]           Follow a bounded tail; Escape stops following\n",
-            "  :unfollow               Keep the snapshot and stop polling\n",
-            "  :browse [URI]           Open a directory; Enter selects an entry or ../\n",
-            "  :filter [TEXT]          Filter a directory; no text restores all entries\n",
-            "  :remote connect URI     Hold a shared SSH connection explicitly\n",
-            "  :remote disconnect URI  Close the endpoint's owned connection\n",
-            "  :remote clear           Close all owned connections\n",
-            "  :remote list            List authenticated connections in a buffer\n",
-            "  :trust                  Authorize the pending endpoint/project command\n",
-            "  Tab                     Complete an SSH URI without starting authentication\n",
-            "  :e!                     Refresh the remote snapshot and revoke write authority\n",
-            "  directory columns       kind, POSIX permissions, server bytes, name; ? = unknown\n",
-            "  :explain                 Why: workspaces, LSP readiness/failures, effective config\n",
-            "\n",
-            "\n[query]\n",
-            "  Surfaces: Space f / Space / / Space R, symbols (Space S), the Space j jumplist\n",
-            "  One local-workspace qualifier language, identical on every surface above\n",
-            "  language:rust           Include a language family (alias: language:rs)\n",
-            "  scope                   Regular local files; directory links and special files are not searched\n",
-            "  SSH/container listings  Hidden entries included; no ignore-file filtering (local search defaults do not apply)\n",
-            "  path:src/               Literal substring in the workspace-relative path\n",
-            "  glob:\"**/*.rs\"        Explicit path glob; quote values with spaces\n",
-            "  fpath:modules/jweb/   Fuzzy scope over full workspace-relative path\n",
-            "  -language: -glob: -path:  Exclude; exclusions win\n",
-            "  hidden:include|exclude  Show/hide dotfiles (default: shown)\n",
-            "  ignored:include|exclude Include/respect ignored files (default: respected)\n",
-            "  case:sensitive          Exact case; default is insensitive on every query surface\n",
-            "  case:ignore|insensitive Explicit insensitive matching; case:smart opts into smart case\n",
-            "  text:\"...\"             Explicit literal content expression (default for bare words)\n",
-            "  regex:\"...\"            Explicit Rust-regex expression\n",
-            "  ctrl-space              Manual qualifier/language/value suggestions\n",
-            "  filter-only Search      Needs a search expression; file find lists matches\n",
-            "  quoted text             Stays literal — never a filter (\"language:rust\" searches that text)\n",
-            "  old -t / -g flags       Now ordinary literal text; use language: and glob:\n",
-            "  file expressions        Bare words are fuzzy; quoted/text: are literal; regex: is explicit\n",
-            "  quotes                  Single/double quotes; escape the active quote or backslash\n",
-            "  With                    Always literal replacement text; $1 is not a capture expansion\n",
-            "  :[range]s/a/b/[g]       Buffer-search pattern; live before/after preview before Enter\n",
-            "  :s replacement          Literal text; escaped delimiter and \\\\ are unescaped\n",
-            "  Buffer / ?             Case-insensitive by default; case:sensitive forces exact case\n",
-            "  Buffer case:ignore     Explicit insensitive search (alias: case:insensitive)\n",
-            "  Input Ctrl-R {reg}     Insert a register; field Normal p/P pastes; no Ctrl-C quit\n",
-            "  Visual Ctrl-C          Toggle line comments on the selected lines\n",
-            "\n[Search workspace]\n",
-            "  Space /                 Open/resume the retained local Search investigation\n",
-            "  Space R                 Resume the same Search with replacement visible\n",
-            "  Ctrl-R                  Toggle With without restarting Search or losing its draft\n",
-            "  Find Enter              Open selected source, even when With is visible\n",
-            "  With Enter              Prepare Review; never apply or save directly\n",
-            "  Tab / Shift-Tab         Switch visible fields; otherwise move results\n",
-            "  Ctrl-X / Ctrl-D         Exclude/include match or file in the shared workset\n",
-            "  Esc                     Dismiss suggestions, enter field Normal, then hide Search\n",
-            "  Re-entry                Refresh exact witnesses in the captured scope; report lost decisions\n",
-            "  Scope                   Local project backend; unsupported namespaces refuse, never fall back\n",
-            "\n[collections]\n",
-            "  Ctrl-O                  Collect complete included results; all-excluded is empty\n",
-            "  + / -                   Expand/contract the current excerpt's context\n",
-            "  ]e / [e                 Next/previous excerpt; ]f / [f move file cards\n",
-            "  g<Space>                Open the real source; Ctrl-O restores the collection view\n",
-            "  read-only               Search/yank/navigate freely; edits happen in the real source\n",
-            "\n[indentation]\n",
-            "  :tab-size [N|auto]      Source width, 1-16; no argument opens the selector\n",
-            "  :indent-style [spaces|tabs|auto]  Source style or configured/detected policy\n",
-            "  Detection              Bounded open/reload sample; ambiguity keeps the configured fallback\n",
-            "\n[review]\n",
-            "  Enter in With           Prepare the exact review, without changing or saving sources\n",
-            "  Space a                 Apply/Save/Cancel/Inspect actions valid for the focused review\n",
-            "  :apply-change           Apply to source buffers; results remain dirty until saved\n",
-            "  :cancel-change          Cancel and restore the query/draft/exclusions\n",
-            "  :save-change            Save files from the most recent applied operation\n",
-            "  :undo-change            Undo verified targets; conflicted receipt members remain recoverable\n",
-            "\n[documentation]\n",
-            "  Enter on hover          Open full searchable documentation; Ctrl-O returns\n",
-            "  :containers               Attach to a running container (read-only browse)\n",
-            "  :container-worker         Enable verified services for the attached container\n",
-            "  :container-edit           Verify the snapshot and enable conditional file saves\n",
-        ));
-        text.push_str("\nSupported language filters:\n  ");
+        for (title, rows) in EXTRA {
+            push_rule(&mut text, title);
+            let width = rows
+                .iter()
+                .map(|(keys, _)| keys.chars().count())
+                .max()
+                .unwrap_or(0);
+            for (keys, desc) in *rows {
+                push_row(&mut text, keys, width, desc, false);
+            }
+        }
+        push_rule(&mut text, "Languages");
+        text.push_str("   ");
         for (index, language) in strop_core::languages::language_names().enumerate() {
             if index > 0 {
-                text.push_str(if index % 8 == 0 { "\n  " } else { " " });
+                text.push_str(if index % 8 == 0 { "\n   " } else { " " });
             }
             text.push_str(language);
         }
@@ -159,11 +213,16 @@ impl Editor {
         if topic.is_empty() {
             return;
         }
-        let heading = format!("[{topic}]");
+        // `:help git` reaches a section by id or title, case-insensitively
+        let title = crate::keymap::Section::find(topic)
+            .map(|section| section.title.to_owned())
+            .unwrap_or_else(|| topic.to_owned());
+        let heading = format!("─ {title} ─");
         let line = self.buf().text().lines().position(|line| {
             line.chars()
                 .take_while(|&c| c != '\n' && c != '\r')
-                .eq(heading.chars())
+                .collect::<String>()
+                .eq_ignore_ascii_case(&heading)
         });
         if let Some(line) = line {
             self.set_head(self.buf().line_start(line));
@@ -185,8 +244,14 @@ mod tests {
         assert_eq!(e.buf().name.as_deref(), Some("help"));
         assert!(e.buf().readonly);
         let text = e.buf().text().to_string();
+        let mut last = 0;
         for section in crate::keymap::SECTIONS {
-            assert!(text.contains(&format!("[{section}]")), "missing {section}");
+            let heading = format!("─ {} ─", section.title);
+            let at = text
+                .find(&heading)
+                .unwrap_or_else(|| panic!("missing {}", section.title));
+            assert!(at > last, "{} out of curated order", section.title);
+            last = at;
         }
         let missing: Vec<_> = [
             ":theme",
@@ -225,9 +290,14 @@ mod tests {
     }
 
     #[test]
-    fn space_question_opens_help() {
+    fn space_question_opens_help_and_topics_reach_sections() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(" ?");
         assert_eq!(e.buf().name.as_deref(), Some("help"));
+        e.feed_text("q");
+        e.feed_text(":help git\r");
+        let line = e.buf().line_of(e.head());
+        let text = e.buf().text().line(line).to_string();
+        assert!(text.starts_with("─ Git ─"), "{text:?}");
     }
 }

@@ -287,22 +287,32 @@ pub fn any_child(path: &[String]) -> bool {
     INDEX.has_child(ROOT, path)
 }
 
-/// One which-key hint row: the next key after a pending prefix.
+/// One which-key hint row: the next key after a pending prefix, with
+/// the row's home section so cards group the way help does.
 pub struct Hint {
     pub key: String,
     pub desc: &'static str,
     pub live: bool,
+    pub section: &'static str,
+}
+
+/// The sections whose rows a mode can reach: Insert and Terminal rows
+/// never show on a Normal-mode card, Visual sees only its own.
+pub fn sections_for(mode: crate::editor::Mode) -> &'static [&'static str] {
+    use crate::editor::Mode;
+    match mode {
+        Mode::Normal => &[
+            "moving", "editing", "search", "leader", "panes", "git", "pickers", "ex",
+        ],
+        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => &["visual"],
+        Mode::Insert => &[],
+    }
 }
 
 /// Mode-appropriate hints, including planned rows. Shortest sequences win;
 /// table order and then alternative order break ties.
 pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
-    use crate::editor::Mode;
-    let sections: &[&str] = match mode {
-        Mode::Normal => &["normal", "leader", "git", "ex+panes"],
-        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => &["visual"],
-        Mode::Insert => &[],
-    };
+    let sections = sections_for(mode);
     let mut out: Vec<Hint> = Vec::new();
     let plen = prefix.chars().count();
     for seq in &INDEX.hints {
@@ -316,6 +326,7 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
                     key,
                     desc: b.desc,
                     live: b.live,
+                    section: b.sections.first().copied().unwrap_or(""),
                 });
             }
         }
@@ -330,8 +341,8 @@ pub fn compat_report() -> String {
          `✓` ships exactly; `(soon)` is a planned slot.\n",
     );
     for section in SECTIONS {
-        out.push_str(&format!("\n## {section}\n\n"));
-        for b in BINDINGS.iter().filter(|b| b.sections.contains(section)) {
+        out.push_str(&format!("\n## {}\n\n", section.title));
+        for b in BINDINGS.iter().filter(|b| b.sections.contains(&section.id)) {
             let mark = if b.live { "✓" } else { "·" };
             let soon = if b.live { "" } else { " (soon)" };
             out.push_str(&format!("- `{mark} {}` — {}{}\n", b.keys, b.desc, soon));
