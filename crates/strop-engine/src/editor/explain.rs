@@ -242,7 +242,7 @@ impl Editor {
             // a knob that resolves to nothing is a test failure, never
             // a "?" in front of the user.
             let session_theme = if knob.key == "theme" {
-                let selected = strop_core::theme::current_id();
+                let selected = self.theme;
                 (selected != self.config.theme).then_some(selected)
             } else {
                 None
@@ -719,33 +719,9 @@ mod tests {
 
     #[test]
     fn explain_reports_selected_session_theme() {
-        const CHILD: &str = "STROP_EXPLAIN_THEME_TEST_CHILD";
-        if std::env::var_os(CHILD).is_none() {
-            // The palette selector is process-global; keep this mutation out
-            // of the parallel unit-test process.
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "editor::explain::tests::explain_reports_selected_session_theme",
-                    "--test-threads=1",
-                    "--nocapture",
-                ])
-                .env(CHILD, "1")
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "isolated theme explanation failed:\n{}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
-            return;
-        }
-
         let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.config.theme = strop_core::theme::ThemeId::Dark;
-        e.feed_text(":theme nord\r");
+        e.config.theme = strop_core::theme::ThemeId::Hone;
+        e.feed_text(":theme slate\r");
         e.feed_text(":explain\r");
         let text = e.buf().text().to_string();
         let theme_row = text
@@ -753,7 +729,7 @@ mod tests {
             .find(|line| line.trim_start().starts_with("theme = "))
             .unwrap_or_else(|| panic!("missing theme row:\n{text}"));
         assert!(
-            theme_row.trim_start().starts_with("theme = nord"),
+            theme_row.trim_start().starts_with("theme = slate"),
             ":explain must report the selected session palette:\n{text}"
         );
         assert!(

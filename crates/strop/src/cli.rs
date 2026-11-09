@@ -34,8 +34,6 @@ pub enum Command {
         trace: PathBuf,
     },
     Help,
-    /// Built-in theme attribution, also retained in source packages.
-    ThemeLicenses,
     Version,
     Compat,
     Config,
@@ -116,12 +114,10 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                         .ok_or("--theme requires a UTF-8 palette name")?;
                     theme =
                         Some(strop_core::theme::ThemeId::from_name(value).ok_or_else(|| {
-                            let choices = strop_core::theme::ThemeId::ALL
-                                .iter()
-                                .map(|id| id.name())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            format!("unknown theme {value:?}; choose {choices}")
+                            format!(
+                                "unknown theme {value:?}; choose {}",
+                                strop_core::theme::ThemeId::choices()
+                            )
                         })?);
                     continue;
                 }
@@ -131,10 +127,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 }
                 "--help" | "-h" => {
                     command = Some(Command::Help);
-                    continue;
-                }
-                "--licenses" => {
-                    command = Some(Command::ThemeLicenses);
                     continue;
                 }
                 "--version" | "-V" => {
@@ -298,10 +290,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     command = Some(Command::ExportMetadata { trace });
                     continue;
                 }
-                "licenses" if command.is_none() && !headless && replay.is_none() => {
-                    command = Some(Command::ThemeLicenses);
-                    continue;
-                }
                 "compat" if command.is_none() && !headless && replay.is_none() => {
                     command = Some(Command::Compat);
                     continue;
@@ -415,10 +403,6 @@ mod tests {
     fn subcommands_map_to_their_commands() {
         assert!(matches!(parse(&["help"]).unwrap().command, Command::Help));
         assert!(matches!(
-            parse(&["licenses"]).unwrap().command,
-            Command::ThemeLicenses
-        ));
-        assert!(matches!(
             parse(&["compat"]).unwrap().command,
             Command::Compat
         ));
@@ -510,10 +494,6 @@ mod tests {
             parse(&["--replay-script", "t.jsonl"]).unwrap().command,
             Command::Replay { .. }
         ));
-        assert!(matches!(
-            parse(&["--licenses"]).unwrap().command,
-            Command::ThemeLicenses
-        ));
         // The default edit form with no subcommand is untouched.
         assert!(matches!(
             parse(&["-R", "a.rs:12"]).unwrap().command,
@@ -525,7 +505,7 @@ mod tests {
     fn a_word_after_a_command_is_still_an_operand_slot() {
         // The first word chose the command; the trailing word takes the
         // one operand slot (the flag commands ignore it, like their
-        // --licenses ancestors).
+        // --compat ancestors).
         assert!(matches!(
             parse(&["config", "x.txt"]).unwrap().command,
             Command::Config

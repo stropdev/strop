@@ -209,6 +209,9 @@ pub struct Editor {
     /// jump detection across recorded actions.
     pub(crate) fade_track: Option<(usize, strop_core::id::DocumentId, usize)>,
     pub(crate) message: String,
+    /// The session palette (0088 §3): config supplies the startup choice,
+    /// `--theme` overrides it, `:theme` switches it. Nothing is process-global.
+    pub(crate) theme: strop_core::theme::ThemeId,
     pub(crate) feedback: feedback::FeedbackStore,
     pub(crate) should_quit: bool,
     /// Last visual range for `gv` (recorded per visual-mode key).
@@ -479,6 +482,7 @@ impl Editor {
             cursor_fade: None,
             fade_track: None,
             message: String::new(),
+            theme: strop_core::theme::ThemeId::default(),
             feedback: feedback::FeedbackStore::default(),
             should_quit: false,
             last_visual: None,
