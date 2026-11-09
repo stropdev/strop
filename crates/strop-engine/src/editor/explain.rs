@@ -242,7 +242,7 @@ impl Editor {
             // a knob that resolves to nothing is a test failure, never
             // a "?" in front of the user.
             let session_theme = if knob.key == "theme" {
-                let selected = self.theme;
+                let selected = self.presentation.theme;
                 (selected != self.config.theme).then_some(selected)
             } else {
                 None

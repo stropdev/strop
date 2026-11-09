@@ -169,7 +169,7 @@ invocation and retires completion-only work.
 
 ## Syntax and display
 
-Tree-sitter highlighting for 23 languages (including CMake, Markdown,
+Tree-sitter highlighting for 26 languages (including CMake, Markdown,
 TOML, YAML, HTML and CSS); grammars and licensed queries ship in the
 binary. Markdown fences select any bundled language — not just Rust — and
 the same injection pipeline highlights fenced examples inside Rust

@@ -20,7 +20,7 @@
   20 }        ╰  tab s-tab  next   ctrl-y  accept ──╯                           
   21 i    let ch                                                                
 ~                                                                               
- ● Dev container discovery completed                           space a  actions 
+~                                                                               
  INSERT   src/render/statusline.rs ●                                 21:12  100%
 
   0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 51:#696d77/#f6f2e9+i 23:reset/#f6f2e9 1:reset/reset
@@ -45,5 +45,5 @@
  19: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 8:reset/#f6f2e9 2:#656d7b/#fdfbf6 11:#9a5a12/#e5dfd0+b 7:#656d7b/#fdfbf6 8:#9a5a12/#e5dfd0+b 11:#656d7b/#fdfbf6 26:reset/#f6f2e9 1:reset/reset
  20: 1:#656d7b/#efeadf+b 4:#9a5a12/#efeadf 5:#262a30/#efeadf 3:#6f3aa8/#efeadf 3:#262a30/#efeadf 63:#efeadf/#efeadf 1:reset/reset
  21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 22: 3:#2a6a94/#fdfbf6+b 33:#2a6a94/#fdfbf6 26:reset/#fdfbf6 9:#9a5a12/#e5dfd0+b 8:#656d7b/#fdfbf6 1:reset/#fdfbf6
+ 22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  23: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 33:reset/#fdfbf6 11:#656d7b/#fdfbf6

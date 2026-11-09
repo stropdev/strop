@@ -9,13 +9,13 @@ use strop_picker::{Item, Payload, Picker};
 impl Editor {
     /// The palette every surface renders with right now.
     pub fn theme(&self) -> ThemeId {
-        self.theme
+        self.presentation.theme
     }
 
     /// The startup selection (config or `--theme`): no message, no
     /// terminal refresh — nothing is running yet.
     pub fn set_theme(&mut self, id: ThemeId) {
-        self.theme = id;
+        self.presentation.theme = id;
     }
 
     /// `:theme` opens the selector; `:theme NAME` applies a registered
@@ -53,7 +53,7 @@ impl Editor {
     /// The one mutation path: selector rows and the direct argument
     /// land here alike.
     pub(crate) fn apply_theme(&mut self, id: ThemeId) {
-        self.theme = id;
+        self.presentation.theme = id;
         self.message = match self.set_terminal_themes(id) {
             Ok(()) => format!("theme: {} palette", id.name()),
             Err(error) => format!("theme: {}; terminal refresh failed: {error}", id.name()),

@@ -36,7 +36,7 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- ● Dev container discovery completed                                                                                       space a  actions 
+~                                                                                                                                           
  INSERT   src/render/statusline.rs ●                                                                                             21:12  100%
 
   0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 51:#696d77/#f6f2e9+i 83:reset/#f6f2e9 1:reset/reset
@@ -77,5 +77,5 @@
  35: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  36: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  37: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
- 38: 3:#2a6a94/#fdfbf6+b 33:#2a6a94/#fdfbf6 86:reset/#fdfbf6 9:#9a5a12/#e5dfd0+b 8:#656d7b/#fdfbf6 1:reset/#fdfbf6
+ 38: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  39: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 93:reset/#fdfbf6 11:#656d7b/#fdfbf6

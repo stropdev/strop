@@ -266,7 +266,7 @@ impl Editor {
         phase: Phase,
     ) -> DocumentId {
         let session = self.terminals.next_session().unwrap();
-        let frame = fixture_frame(session, self.theme, rows, 1, 0);
+        let frame = fixture_frame(session, self.presentation.theme, rows, 1, 0);
         let geometry = frame.geometry;
         let mut document =
             super::Document::output(strop_core::Buffer::from_snapshot(frame.projection.clone()));
@@ -319,7 +319,13 @@ impl Editor {
         self.apply_terminal_update(strop_terminal::model::Update {
             session,
             phase,
-            frame: Some(fixture_frame(session, self.theme, rows, revision, origin)),
+            frame: Some(fixture_frame(
+                session,
+                self.presentation.theme,
+                rows,
+                revision,
+                origin,
+            )),
             effects: Vec::new(),
             acknowledged_input: 0,
             warning: None,

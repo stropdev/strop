@@ -30,11 +30,11 @@ impl Editor {
     }
 
     pub(crate) fn flash(&mut self, range: Range) {
-        self.flash = Some((range, self.tape.now()));
+        self.presentation.flash = Some((range, self.tape.now()));
     }
 
     pub fn flash_range(&self) -> Option<Range> {
-        self.flash.and_then(|(range, at)| {
+        self.presentation.flash.and_then(|(range, at)| {
             (self.tape.now().monotonic_ms.saturating_sub(at.monotonic_ms)
                 < FLASH_FOR.as_millis() as u64)
                 .then_some(range)
@@ -50,7 +50,7 @@ impl Editor {
         if !self.config.cursor_fade {
             return None;
         }
-        let at = self.cursor_fade?;
+        let at = self.presentation.cursor_fade?;
         let elapsed = self.tape.now().monotonic_ms.saturating_sub(at.monotonic_ms);
         (elapsed < CURSOR_FADE_MS).then_some((elapsed * 100 / CURSOR_FADE_MS) as u8)
     }
@@ -68,7 +68,7 @@ impl Editor {
             self.current(),
             self.buf().line_of(self.head()),
         );
-        let jumped = match self.fade_track.replace(mark) {
+        let jumped = match self.presentation.fade_track.replace(mark) {
             Some((pane, doc, line)) => {
                 pane != mark.0
                     || doc != mark.1
@@ -77,7 +77,7 @@ impl Editor {
             None => false,
         };
         if focus_gained || jumped {
-            self.cursor_fade = Some(self.tape.now());
+            self.presentation.cursor_fade = Some(self.tape.now());
         }
     }
 

@@ -137,7 +137,7 @@ impl Editor {
                     launch,
                     geometry,
                     keyboard,
-                    Some(Palette::for_theme(self.theme)),
+                    Some(Palette::for_theme(self.presentation.theme)),
                     move |session| {
                         let _ = sender.send(session);
                     },
