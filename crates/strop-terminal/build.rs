@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+/// The pointer every Zig refusal carries: the repo's pinned, checksummed installer.
+const INSTALL_ZIG: &str = "install it with `sh .github/scripts/install-zig.sh DIR` and set ZIG=DIR/zig, or use a prebuilt strop release.";
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = match std::env::var("TARGET")?.as_str() {
         "x86_64-unknown-linux-gnu" => "x86_64-linux-gnu",
@@ -13,10 +16,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("missing build output root")?);
     let zig = std::env::var_os("ZIG").unwrap_or_else(|| "zig".into());
     let version = Command::new(&zig).arg("version").output().map_err(|error| {
-        format!("strop source builds require Zig 0.16.0; set ZIG to its path or use a prebuilt strop release. No compiler is downloaded: {error}")
+        format!("strop source builds require Zig 0.16.0; {INSTALL_ZIG} No compiler is downloaded: {error}")
     })?;
     if !version.status.success() || String::from_utf8(version.stdout)?.trim() != "0.16.0" {
-        return Err("strop source builds require exactly Zig 0.16.0".into());
+        return Err(
+            format!("strop source builds require exactly Zig 0.16.0; {INSTALL_ZIG}").into(),
+        );
     }
     let source_root = out.join("upstream");
     std::fs::create_dir_all(&source_root)?;
