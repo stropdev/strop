@@ -7,7 +7,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "aarch64-unknown-linux-gnu" => "aarch64-linux-gnu",
         "x86_64-unknown-linux-musl" => "x86_64-linux-musl",
         "aarch64-unknown-linux-musl" => "aarch64-linux-musl",
-        "aarch64-apple-darwin" => "aarch64-macos",
         other => return Err(format!("unsupported terminal build target: {other}").into()),
     };
     let root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or("missing package root")?);

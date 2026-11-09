@@ -109,9 +109,10 @@ fn which_key_children() {
 /// sequences the hand-written match tree completes on its own are
 /// listed.
 ///
-/// The trie cutover (0008 §5) DELETES this list: dispatch walks the
-/// keymap trie, so leaves == BINDINGS rows mechanically and this
-/// hand enumeration is dead weight.
+/// The trie already makes leaves == BINDINGS rows for everything it
+/// dispatches; this list guards the surfaces still dispatched by hand
+/// (ex commands, pickers, panes, visual absorbers) until they move onto
+/// the trie, at which point the list goes.
 const DISPATCHED: &[&str] = &[
     // leader (normal mode)
     "space f",

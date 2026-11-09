@@ -67,7 +67,7 @@ impl EndpointFacts {
     /// still the honest identity of the only local bytes we may
     /// upload. Different arch/OS is never a same-binary deploy.
     pub fn local_binary_target(&self) -> Option<&'static str> {
-        (self.system == local_system() && self.machine == local_machine())
+        (self.system == "Linux" && self.machine == local_machine())
             .then_some(strop_worker_protocol::TARGET_TRIPLE)
     }
 }
@@ -123,16 +123,7 @@ pub fn target_for(system: &str, machine: &str) -> Option<&'static str> {
 /// discovered target matches can run this install's own binary
 /// (0058 §5 — same-target endpoints use the verified local artifact).
 pub fn local_target() -> Option<&'static str> {
-    target_for(local_system(), local_machine())
-}
-
-const fn local_system() -> &'static str {
-    #[cfg(target_os = "linux")]
-    return "Linux";
-    #[cfg(target_os = "macos")]
-    return "Darwin";
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    return "other";
+    target_for("Linux", local_machine())
 }
 
 const fn local_machine() -> &'static str {

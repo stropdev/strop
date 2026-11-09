@@ -141,7 +141,7 @@ fn deploy_handshake_read_write_notify_parity_over_real_sshd() {
         .any(|entry| entry.name.as_path() == Path::new("worker-written.txt")));
 
     // Hints are available only when the worker advertises native
-    // coverage. macOS currently advertises Unsupported and must refuse
+    // coverage. A worker advertising Unsupported must refuse
     // subscription explicitly; no fake polling/notify success.
     match worker.capabilities().unwrap().notify {
         strop_worker_protocol::NotifyCoverage::Native => {

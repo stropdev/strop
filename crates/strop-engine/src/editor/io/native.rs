@@ -236,7 +236,7 @@ impl Editor {
 
 fn launch_browser(url: &str) -> Outcome<NativeResult> {
     use std::process::{Command, Stdio};
-    for opener in ["wslview", "xdg-open", "open"] {
+    for opener in ["wslview", "xdg-open"] {
         let mut child = match Command::new(opener)
             .arg(url)
             .stdin(Stdio::null())

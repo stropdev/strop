@@ -1,9 +1,12 @@
-# strop build/test/release services (plan 0002 §4).
-#   docker compose run --build --rm test      # fmt + clippy -D warnings + cargo test
-#   docker compose run --build --rm build     # debug binary
+# strop build/test/release services (plans/0002 §4, plans/0086 §8).
+#   docker compose run --build --rm test            # fmt + clippy -D warnings + cargo test + Loom
+#   docker compose run --build --rm proofs          # Lean proofs over the kernel translation
+#   docker compose run --build --rm model           # TLC probation models
+#   docker compose run --build --rm container-test  # real Docker journeys (host engine)
+#   docker compose run --build --rm ssh-pythonfree  # real sshd, no Python on the host
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
-#   docker compose run --build --rm model     # TLC over the editor protocol (0024)
-#   docker compose run --build --rm bench     # the perf gate suite (0025)
+#   docker compose run --build --rm bench           # perf scenarios (measurement, not a gate)
+# Every service above except bench is a blocking gate.
 
 services:
   test:
@@ -13,8 +16,7 @@ services:
       target: test
     # The gate runs at image-build time (RUN steps); if the image
     # exists, the gate passed. The command is just a confirmation.
-    command: 'echo "gate passed: fmt + clippy -D warnings + cargo test"'
-
+    command: 'echo "gate passed: fmt + clippy -D warnings + cargo test + loom"'
 
   # The OpenSSH fixture deploys and launches the native worker inside a
   # Python-free image; the full test image intentionally has python3 for
@@ -45,44 +47,6 @@ services:
       - sh
       - -c
       - cargo test --locked -p strop-containers -p strop-worker-deploy -p strop-git && cargo test --locked -p strop-editor --test container_editor
-
-  # Same-source Verus gate (0057 VF18 / 0058 WK18), pinned verifier
-  # toolchain outside the shipping build graph.
-  verify:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: verify
-    command: 'echo "gate passed: edit geometry + worker admission verified (Verus)"'
-
-  # The TLAPS proof gate (0057 VF17 / 0058 WK17): generalized safety of
-  # SearchLifecycle, WorkerSession and WorkerDeploy with paired negative
-  # controls, in its own pinned toolchain image. Kept out of
-  # specs/gate.sh: the model stage has no tlapm, so chaining would
-  # break that gate.
-  tlaps:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: tlaps
-    command: 'echo "gate passed: search, worker-session and deploy safety proved (TLAPS)"'
-
-  # The core-assurance lane (0057 VF19/VF20 + 0058 WK16–WK20):
-  # claim/evidence digests, native Store/recovery/stream journeys,
-  # instrumented Loom campaigns and semantic mutant kills. All RUN
-  # steps gate at image-build time like the test lane.
-  core-assurance:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: core-assurance
-    command: 'echo "gate passed: core assurance (inventory, native effects, loom, mutants)"'
-  build:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: bin
-    command: cargo build --locked
 
   model:
     build:
@@ -124,3 +88,14 @@ services:
         && echo "released: /dist/$$PKG.tar.gz"
     volumes:
       - ${STROP_DIST:-./dist}:/dist
+
+  # plans/0086: the Lean gate over the Charon/Aeneas translation of
+  # crates/strop-kernel — regenerate proofs/Extracted and refuse drift,
+  # lake build, axiom audit, calibration mutants. Pinned toolchain shared
+  # with gripsack's proofs image (linux/amd64 only).
+  proofs:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: proofs/Dockerfile
+      target: gate

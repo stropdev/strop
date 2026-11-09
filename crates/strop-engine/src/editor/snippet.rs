@@ -205,7 +205,7 @@ impl Editor {
                             let mut mapped = offset;
                             for &(start, end) in ranges.iter().rev() {
                                 mapped =
-                                    strop_core::editmap::map_position(mapped, start, end, start);
+                                    strop_kernel::editmap::map_position(mapped, start, end, start);
                             }
                             mapped
                         });

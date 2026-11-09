@@ -254,47 +254,6 @@ fn diagnostic_jumps_wrap() {
     assert_eq!(e.buf().line_of(e.head()), 3);
 }
 #[test]
-fn dbg_unicode() {
-    let mut e = Editor::new(Buffer::from_text("café münchen\n"));
-    e.feed_text("llll");
-    eprintln!(
-        "after 4l: byte {} col {}",
-        e.head(),
-        e.buf().col_of(e.head())
-    );
-    e.feed_text("rX");
-    eprintln!("after rX: {:?}", e.buf().text().to_string());
-    let mut e = Editor::new(Buffer::from_text("café münchen\n"));
-    e.feed_text("/mü\r");
-    eprintln!(
-        "search land: byte {} col {}",
-        e.head(),
-        e.buf().col_of(e.head())
-    );
-}
-#[test]
-fn dbg_l_steps() {
-    let mut e = Editor::new(Buffer::from_text("café münchen\n"));
-    for i in 0..5 {
-        e.feed_text("l");
-        eprintln!("l{}: byte {}", i + 1, e.head());
-    }
-}
-#[test]
-fn dbg_l_from_3() {
-    let mut e = Editor::new(Buffer::from_text("café münchen\n"));
-    e.set_head(3);
-    e.feed_text("l");
-    eprintln!(
-        "l from 3 -> {} (mode {:?}, msg {:?})",
-        e.head(),
-        e.mode,
-        e.message
-    );
-    e.feed_text("l");
-    eprintln!("again -> {}", e.head());
-}
-#[test]
 fn bracketed_paste_is_one_text_unit() {
     // 0017: paste inserts the payload verbatim (":q!" is TEXT here,
     // never a command), one undo unit

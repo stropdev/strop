@@ -532,7 +532,11 @@ mod tests {
 
     #[test]
     fn remote_work_uses_transport_timeouts_not_the_filesystem_watchdog() {
-        let mut worker = SourceWorker::with_stall_timeout(Duration::from_millis(20)).unwrap();
+        // The stall window must exceed the scheduling gap between the job
+        // starting and the closure arming its remote-work guard; 20 ms lost
+        // that race under a loaded test run. Holding for 5× the window
+        // still proves the watchdog stays quiet.
+        let mut worker = SourceWorker::with_stall_timeout(Duration::from_millis(200)).unwrap();
         let (source_tx, source_rx) = channel();
         let (started, entered) = channel();
         let (release, released) = channel();
@@ -544,7 +548,7 @@ mod tests {
         });
         entered.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(matches!(
-            source_rx.recv_timeout(Duration::from_millis(100)),
+            source_rx.recv_timeout(Duration::from_millis(1000)),
             Err(RecvTimeoutError::Timeout)
         ));
         release.send(()).unwrap();

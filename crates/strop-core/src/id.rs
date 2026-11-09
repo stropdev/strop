@@ -9,62 +9,8 @@
 
 mod seed;
 pub use seed::{ArenaSeed, ArenaSeedError};
-use vstd::prelude::*;
 
-verus! {
-
-/// The slot-reuse decision, mathematically: a reused slot's occupant
-/// generation strictly advances — a generation that would wrap retires
-/// the slot for good, so a stale key can never alias a new occupant
-/// (0056 AR13).
-pub open spec fn generation_advances(current: int, next: int) -> bool {
-    next == current + 1
-}
-
-/// The next occupant generation for a reused slot, or retirement.
-/// `Arena::try_insert` consults this exact decision; a retired slot is
-/// dropped from the free list and never hands out an id again.
-pub fn next_generation(current: u32) -> (next: Option<u32>)
-    ensures
-        next.is_some() == (current < u32::MAX),
-        next.is_some() ==> generation_advances(current as int, next.unwrap() as int),
-        next.is_some() ==> next.unwrap() != current,
-{
-    if current == u32::MAX {
-        None
-    } else {
-        Some(current + 1)
-    }
-}
-
-/// The index-space decision: a fresh slot exists only while the slot
-/// count fits the u32 index space — a full index space refuses instead
-/// of truncating `slots.len()` onto a live slot (0056 AR13).
-/// `Arena::try_insert` consults this exact decision.
-pub fn index_for_len(len: usize) -> (index: Option<u32>)
-    ensures
-        index.is_some() == (len <= u32::MAX as usize),
-        index.is_some() ==> index.unwrap() as usize == len,
-{
-    if len > u32::MAX as usize {
-        None
-    } else {
-        Some(len as u32)
-    }
-}
-
-/// Reuse never aliases: the generation a slot hands out next differs
-/// from every generation it handed out before.
-proof fn reused_slot_never_aliases(current: int, next: int)
-    requires
-        generation_advances(current, next),
-    ensures
-        next != current,
-        next > current,
-{
-}
-
-}
+use strop_kernel::generation::{index_for_len, next_generation};
 
 /// A generational-arena key: the index names the slot, the generation
 /// names the occupant. Stale keys fail lookup.

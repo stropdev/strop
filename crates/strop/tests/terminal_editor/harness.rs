@@ -40,7 +40,7 @@ impl Tui {
             ws_ypixel: 0,
         });
         // SAFETY: valid output pointers and an initialized, writable
-        // winsize for Linux's const and macOS's mutable openpty APIs.
+        // winsize for openpty.
         // This dedicated integration binary has no concurrent fork.
         assert_eq!(
             unsafe {

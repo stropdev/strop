@@ -509,17 +509,16 @@ fn block_row(row: &str, width: DisplayColumn, count: usize, mid_row: bool, tab: 
 }
 
 /// Read the system clipboard via the first working provider (helix's
-/// playbook: wl-paste, xclip, xsel, pbpaste). Runs on a worker; every
+/// playbook: wl-paste, xclip, xsel). Runs on a worker; every
 /// failure is terminal and typed — "not installed" tries the next
 /// provider, anything else (spawn error, nonzero exit, non-UTF-8
 /// data) reports itself instead of masquerading as an empty
 /// clipboard.
 fn read_system_clipboard() -> Outcome<String> {
-    let providers: [(&str, &[&str]); 4] = [
+    let providers: [(&str, &[&str]); 3] = [
         ("wl-paste", &[]),
         ("xclip", &["-selection", "clipboard", "-o"]),
         ("xsel", &["--clipboard", "--output"]),
-        ("pbpaste", &[]),
     ];
     let mut failed = Vec::new();
     for (cmd, args) in providers {

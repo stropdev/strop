@@ -161,7 +161,6 @@ pub(crate) struct SessionState {
     next_stream: AtomicU64,
     next_exec: AtomicU64,
     stop: AtomicBool,
-    #[cfg(target_os = "linux")]
     notify: Arc<Mutex<crate::notify::NotifyManager>>,
 }
 
@@ -262,7 +261,6 @@ pub fn run_with_limits(
         next_stream: AtomicU64::new(0),
         next_exec: AtomicU64::new(0),
         stop: AtomicBool::new(false),
-        #[cfg(target_os = "linux")]
         notify: Arc::new(Mutex::new(crate::notify::NotifyManager::new(
             crate::notify::NotifyConfig::default(),
         ))),
@@ -271,14 +269,12 @@ pub fn run_with_limits(
         let shared = Arc::clone(&shared);
         thread::spawn(move || write_loop(&shared, writer))
     };
-    #[cfg(target_os = "linux")]
     let pump = notify::start_notify_pump(&shared);
     let reason = read_loop(&shared, &mut reader, &mut decoder);
     shared.stop.store(true, Ordering::Release);
     // Wake lane-blocked producers so the drain observes their tokens
     // promptly instead of waiting out the lane.
     shared.scheduler.wake_producers();
-    #[cfg(target_os = "linux")]
     let _ = pump.join();
     teardown(&shared, reason);
     // Drain, then halt: the writer publishes the queued `bye` (and any

@@ -327,7 +327,6 @@ fn store_same_size_change_verifies_after_a_lost_receipt() {
     });
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn receiptless_store_recovery_refuses_changed_extended_attributes() {
     use std::ffi::OsStr;

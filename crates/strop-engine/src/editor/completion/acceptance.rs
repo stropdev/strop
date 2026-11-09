@@ -363,14 +363,16 @@ fn finish(
         }
     }
     edits.sort_unstable_by_key(|edit| (edit.range.start, edit.range.end));
-    strop_core::editmap::check_batch(
-        length,
-        edits
-            .iter()
-            .map(|edit| (edit.range.start.get(), edit.range.end.get()))
-            .collect(),
-    )
-    .map_err(|()| AcceptanceRefusal::Overlap)?;
+    let pairs: Vec<(usize, usize)> = edits
+        .iter()
+        .map(|edit| (edit.range.start.get(), edit.range.end.get()))
+        .collect();
+    strop_kernel::editmap::validate_batch(length, &pairs).map_err(|refusal| match refusal {
+        strop_kernel::editmap::BatchRefusal::Overlap => AcceptanceRefusal::Overlap,
+        strop_kernel::editmap::BatchRefusal::OutOfBounds => AcceptanceRefusal::InvalidRange,
+        // sorted immediately above
+        strop_kernel::editmap::BatchRefusal::Unsorted => AcceptanceRefusal::InvalidRange,
+    })?;
     // Earlier edits shift everything behind them (imports sit ahead of
     // the primary); tabstops take the same ride as the caret.
     let shift_before = |edits: &[Edit<'_>], primary: &Range| -> isize {

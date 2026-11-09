@@ -1,4 +1,3 @@
-#![cfg(any(target_os = "linux", target_os = "macos"))]
 use super::*;
 use std::path::Path;
 use strop_workspace::operation::*;

@@ -1,6 +1,8 @@
 //! Owned filesystem behavior over strop-workspace's pure resource contracts.
 //! All functions performing native work are worker-only. No frontend types or
 //! background task is created merely by constructing a plan or inspecting data.
+#[cfg(not(target_os = "linux"))]
+compile_error!("strop-fs supports Linux only; the release target is x86_64-unknown-linux-musl");
 pub mod batch;
 mod context;
 mod environment;
@@ -8,22 +10,14 @@ mod listing;
 mod observation;
 pub use context::{ExecutionContext, NamespaceView};
 pub use environment::Environment;
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+#[cfg(test)]
 mod adversarial;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod attributes;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod guard;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub mod local;
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-#[path = "unsupported.rs"]
-pub mod local;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod stage;
 #[cfg(test)]
 mod tests;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod trash;
 
 pub use listing::{assemble, list, parent, ListedDirectory, ObservedEntry};

@@ -30,7 +30,6 @@ pub(crate) fn managed_root(
     }
 }
 
-#[cfg(target_os = "linux")]
 pub(crate) fn prepare_restore(operation: &PreparedOperation) -> Result<Option<Info>, FsFailure> {
     use rustix::fs::{Mode, OFlags};
     use std::io::Read;
@@ -175,10 +174,4 @@ pub(crate) fn prepare_restore(operation: &PreparedOperation) -> Result<Option<In
         identity,
         expected: Some(before),
     }))
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn prepare_restore(_: &PreparedOperation) -> Result<Option<Info>, FsFailure> {
-    // The macOS native Trash layout has no freedesktop .trashinfo sidecar.
-    Ok(None)
 }

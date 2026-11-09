@@ -109,14 +109,7 @@ fn sweep(
             "cache collection context does not match this worker's admitted endpoint",
         ));
     }
-    #[cfg(not(strop_mutant))]
     let _lock = guard.lock().map_err(|error| io_failure("lock", error))?;
-    #[cfg(strop_mutant)]
-    let _lock = if std::env::var("STROP_MUTANT").as_deref() == Ok("cache-gc-unlocked-retirement") {
-        None
-    } else {
-        Some(guard.lock().map_err(|error| io_failure("lock", error))?)
-    };
     let root = guard.root().map_err(|error| io_failure("root", error))?;
     let leases_dir = root.join(LEASES_DIR);
     let objects_dir = root.join(OBJECTS_DIR);
@@ -151,13 +144,6 @@ fn sweep(
             continue; // foreign entry, never touched
         }
         let live_leases = u64::from(pinned.contains(&name));
-        #[cfg(strop_mutant)]
-        let live_leases =
-            if std::env::var("STROP_MUTANT").as_deref() == Ok("cache-gc-ignore-foreign-lease") {
-                0
-            } else {
-                live_leases
-            };
         if keep_object(name == guard.object_sha256(), live_leases) {
             report.kept_objects += 1;
             continue;

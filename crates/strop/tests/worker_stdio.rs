@@ -8,7 +8,6 @@ use std::io::Read as _;
 use std::path::Path;
 
 use strop_worker_client::{ClientError, Worker};
-#[cfg(target_os = "linux")]
 use strop_worker_client::{StderrCapture, Transport};
 use strop_workspace::operation::{CopyVersion, OperationIntent, OperationKind};
 use strop_workspace::ResourceLocation;
@@ -76,10 +75,8 @@ fn a_non_worker_binary_fails_the_handshake_typed() {
     }
 }
 
-#[cfg(target_os = "linux")]
 const CACHE_TEST_CONTEXT: &str = "local-test-cache";
 
-#[cfg(target_os = "linux")]
 fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     use std::os::unix::fs::PermissionsExt;
 
@@ -99,7 +96,6 @@ fn cached_worker_binary() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     (directory, object, root)
 }
 
-#[cfg(target_os = "linux")]
 fn seed_cache_binary(root: &Path, binary: &Path) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
@@ -155,7 +151,6 @@ fn seed_cache_binary(root: &Path, binary: &Path) -> std::path::PathBuf {
     object
 }
 
-#[cfg(target_os = "linux")]
 fn spawn_cached_worker(object: &Path) -> std::io::Result<Transport> {
     use std::process::{Command, Stdio};
 
@@ -176,7 +171,6 @@ fn spawn_cached_worker(object: &Path) -> std::io::Result<Transport> {
     })
 }
 
-#[cfg(target_os = "linux")]
 fn seed_cache_object(root: &Path, bytes: &[u8], context: &str, version: &str) -> String {
     use std::os::unix::fs::PermissionsExt;
 
@@ -210,7 +204,6 @@ fn seed_cache_object(root: &Path, bytes: &[u8], context: &str, version: &str) ->
     sha
 }
 
-#[cfg(target_os = "linux")]
 fn seed_cache_lease(root: &Path, lease: u64, sha: &str) {
     use std::os::unix::fs::PermissionsExt;
 
@@ -228,7 +221,6 @@ fn seed_cache_lease(root: &Path, lease: u64, sha: &str) {
 /// A content-addressed object removed after exec but before Hello is
 /// not an installed artifact. The kernel may still be executing its
 /// inode; that must not grant a session with no matching cache lease.
-#[cfg(target_os = "linux")]
 #[test]
 fn deleted_cache_object_cannot_welcome_an_unleased_worker() {
     let (_directory, object, _root) = cached_worker_binary();
@@ -252,7 +244,6 @@ fn deleted_cache_object_cannot_welcome_an_unleased_worker() {
     );
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cached_worker_waits_for_exclusive_lease_snapshot_before_welcome() {
     use std::os::unix::fs::OpenOptionsExt;
@@ -314,7 +305,6 @@ fn cached_worker_waits_for_exclusive_lease_snapshot_before_welcome() {
     worker.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cache_gc_retires_only_unleased_selected_context_artifacts() {
     use strop_core::worker::cache_record::{OBJECTS_DIR, RECEIPTS_DIR};
@@ -342,7 +332,6 @@ fn cache_gc_retires_only_unleased_selected_context_artifacts() {
     worker.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cache_gc_rejects_a_foreign_context_even_with_its_receipt() {
     use strop_core::worker::cache_record::OBJECTS_DIR;
@@ -361,7 +350,6 @@ fn cache_gc_rejects_a_foreign_context_even_with_its_receipt() {
     worker.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cache_gc_keeps_foreign_live_lease_until_its_record_is_released() {
     use strop_core::worker::cache_record::{LEASES_DIR, OBJECTS_DIR};
@@ -386,7 +374,6 @@ fn cache_gc_keeps_foreign_live_lease_until_its_record_is_released() {
     worker.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cache_gc_preserves_another_actual_worker_process_and_build() {
     use std::process::Command;
@@ -426,7 +413,6 @@ fn cache_gc_preserves_another_actual_worker_process_and_build() {
     second.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cache_gc_refuses_corrupt_lease_before_any_retirement() {
     use strop_core::worker::cache_record::{LEASES_DIR, OBJECTS_DIR};
@@ -446,7 +432,6 @@ fn cache_gc_refuses_corrupt_lease_before_any_retirement() {
     worker.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cache_gc_holds_the_worker_lease_lock_through_retirement() {
     use std::sync::mpsc::{channel, RecvTimeoutError};

@@ -1,0 +1,7 @@
+# Build context: sources only (plans/0086 §8).
+.git/
+dist/
+target/
+demos/
+plans/
+proofs/.lake/

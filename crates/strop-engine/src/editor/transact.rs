@@ -195,7 +195,7 @@ fn map_position(position: usize, change: &Change) -> usize {
     // byte offsets bounded by the buffer length, so its no-overflow
     // precondition is established by the rope, not by this caller.
     debug_assert!(edit.new_end_byte >= edit.start_byte);
-    strop_core::editmap::map_position(
+    strop_kernel::editmap::map_position(
         position,
         edit.start_byte,
         edit.old_end_byte,

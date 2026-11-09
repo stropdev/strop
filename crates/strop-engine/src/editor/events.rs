@@ -91,17 +91,6 @@ fn forward<T: Send + 'static>(
     std::thread::spawn(move || {
         while let Ok(item) = rx.recv() {
             let event = wrap(item);
-            // VF19 calibration seam (verification/mutants.json, mutant
-            // `forward-drop-refused`): the mutant build treats a full-lane
-            // refusal as terminal — the pre-fix defect the registered kill
-            // test must catch. Never compiled outside `--cfg strop_mutant`.
-            #[cfg(strop_mutant)]
-            if crate::mutant::active(crate::mutant::FORWARD_DROP_REFUSED) {
-                if tx.send(event).is_err() {
-                    break;
-                }
-                continue;
-            }
             if tx.send_blocking(event).is_err() {
                 break;
             }

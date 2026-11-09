@@ -155,7 +155,6 @@ impl CacheLeaseGuard {
                 "worker cache object is not owned and executable",
             ));
         }
-        #[cfg(target_os = "linux")]
         {
             let running = fs::metadata("/proc/self/exe")?;
             if object_stat.dev() != running.dev() || object_stat.ino() != running.ino() {

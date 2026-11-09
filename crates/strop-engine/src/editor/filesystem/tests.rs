@@ -547,7 +547,6 @@ fn native_trash_restore_cleans_metadata_and_preserves_the_detached_draft() {
     assert_eq!(editor.doc(document).buf.text(), "unsaved stored\n");
     assert!(editor.doc(document).buf.path.is_none());
     assert!(editor.doc(document).buf.dirty);
-    #[cfg(target_os = "linux")]
     {
         assert_eq!(
             std::fs::read_dir(root.path().join("data/Trash/files"))

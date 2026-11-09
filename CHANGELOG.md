@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.53.0 — 2026-11-09
+
+### Changed
+
+- **A Lean-proved kernel** (plans/0086): edit geometry, worker frame admission and arena generation arithmetic moved into `strop-kernel`, a dependency-free crate that Charon/Aeneas translate to Lean 4. The theorems are about the shipped code, not a copy: anchor mapping through an edit is right-affinity, monotone and stays inside the edited buffer; a batch of edits is accepted exactly when it is strictly ordered, in bounds and disjoint, and every refusal names a real defect; folding the per-edit mapping in production's reverse application order equals mapping once in original coordinates; a frame reported ready always has its body inside the buffer. Nine calibration mutants must each break their theorem, and an axiom audit admits only Lean's standard axioms. Verus and TLAPS are retired.
+- **One honest gate**: every CI lane now blocks a release, and local qualification refuses a commit whose CI is not green. The boundary inventory, evidence digests, completion freeze and 17 of 20 TLC models are deleted (history stays in git); three TLC models stay as counterexample finders on probation. Docker builds keep cargo caches, so a source edit no longer recompiles every dependency.
+- **`strop update` on retired channels**: installs from Homebrew or crates.io are told to reinstall with `install.sh`, since those channels no longer receive releases, instead of being told to upgrade through them.
+- **Linux only, in code as in distribution**: the unshipped native-Windows GUI, the `--ui-stdio` protocol server it used, macOS code paths and the arm64 container mapping are gone. Containers on any platform other than Linux/amd64 are refused up front, rather than accepted and then failing because no worker exists for them.
+- **Security policy**: `SECURITY.md` now says how to report a vulnerability privately; the stale Windows code-signing policy is removed.
+
 ## 0.52.0 — 2026-11-07
 
 ### Added

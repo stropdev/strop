@@ -20,18 +20,12 @@ The baseline this release migrates is the post-0056 candidate:
   resource-binding/operation outcomes, AR06 bounded work/queues, AR07
   selected-context native/SSH/container execution admission, AR08
   trust/privacy classification, AR09/AR10 the bounded UI protocol
-  (`strop-ui-protocol`, `strop --ui-stdio`) and Rust driver, AR11/AR12
+  (retired with the GUI in 0.53, plans/0086), AR11/AR12
   install/release identity, AR13–AR16 identity exhaustion, ownership
   splits, pinned inputs and integration gates.
-- Verification ledger (0057, the pre-worker baseline WK16 migrates):
-  VF01–VF20 as named in `plans/0057-core-verification-and-assurance.md`;
-  the worker release rebinds rather than inherits them (0058 §8 mapping
-  table is the migration manifest's skeleton).
-- The immutable 0057 archive has 75 claims but recorded dirty inputs.
-  A second clean Linux x86_64 snapshot at `a05d84f` has 74 claims and
-  six raw passing gates (`verification/baseline/0057-linux-evidence.json`);
-  it is local profile evidence, not macOS/aarch64 or full VF20
-  publication. FS-STORE is the additional worker-cutover claim.
+- Verification: the 0057 boundary inventory and its evidence archive were
+  retired in 0.53 (plans/0086). What is proved is the Lean claim list the
+  `proofs` gate prints; everything else is tested.
 
 One worker integration owner controls protocol/context/identity/outcome
 contracts, caller migration and the final proof manifest (0058 §2). This
@@ -77,8 +71,6 @@ fallback.
   SSH or container worker owns the PTY, child and stream. Interactive
   terminals require the matching admitted worker; container launches also
   pin the attached incarnation and never retarget to the host.
-- The `strop --ui-stdio` presentation server remains a distinct,
-  bounded editor presentation protocol; it is not a second executor.
 
 ## 3. Wire shape (WK02, implemented by `strop-worker-protocol`)
 
@@ -87,9 +79,9 @@ container exec stdio — no second serializer, JSON-RPC or SFTP variant
 per transport.
 
 - **Framing** (`frame.rs`): bounded `Content-Length: N\r\n\r\n` + body,
-  the convention strop-ui-protocol/strop-lsp already pin. Header bound
-  8192 bytes; body bound 1 MiB. The decoder calls the same-source Verus
-  header/body/completeness gates before slicing; the proved bound on
+  the convention strop-lsp already pins. Header bound 8192 bytes; body
+  bound 1 MiB. The decoder calls the Lean-proved kernel admissions
+  (`strop_kernel::frame`, `proofs/Kernel/Frame.lean`) before slicing; the proved bound on
   ready-frame indices assumes the codec supplied its scanned header
   offset and parsed body length. The codec's byte scanner is tested,
   not formally proved. Every violation is a typed `FrameError`;
@@ -133,13 +125,11 @@ per transport.
   failure after any unlink is `Incomplete` with partial retirements,
   never an empty success or an automatic retransmission.
 
-- **Same-source admission proof** (`strop-core::worker::session`):
-  Verus checks the real `classify_session` function for arbitrary
-  `u64` incarnation/lease values and refusal precedence through
-  quiesce/close. The worker
-  calls that function before handle lookup. The proof assumes the
-  handshake's identity facts are honest; it does not verify SSH, Docker,
-  OS effects, deployment, frame parsing or save durability.
+- **Session admission** (`strop-core::worker::session`): the worker calls
+  `classify_session` before handle lookup — incarnation, then lease, then
+  close, then retirement, first mismatch wins. It is tested, not proved;
+  moving it into the Lean kernel is a plans/0086 F4 candidate. It assumes
+  the handshake's identity facts are honest.
 
 - **Streams**: every bulk payload has a `StreamId`; chunks are ordered
   per stream; stream handles are session-scoped. Child stdout/stderr are
@@ -318,8 +308,7 @@ enable (0058 §4):
   activation and probe cleanup (WK05/WK06) — the worker being deployed
   cannot deploy itself; later scoped garbage collection runs only in
   the admitted native worker;
-- the `--ui-stdio` early entry and native-free replay/export CLI paths,
-  which run before editor setup;
+- the native-free replay/export CLI paths, which run before editor setup;
 - `strop update` / installer identity (AR11/AR12).
 
 This is not a loophole: user-file save and admitted service execution

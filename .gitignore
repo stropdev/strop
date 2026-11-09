@@ -4,3 +4,7 @@ demos/tail_*
 demos/g_*
 demos/frame_*
 demos/f_*
+specs/*_TTrace_*
+specs/states/
+__pycache__/
+.tlacache/

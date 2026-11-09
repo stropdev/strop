@@ -1,5 +1,7 @@
 #!/bin/sh
-# Local Linux/WSL release entrypoint (plans/0079-local-linux-release.md).
+# Local Linux/WSL release entrypoint (plans/0079, plans/0086 §8).
+# qualify: every blocking gate on the exact clean source, including the
+# GitHub ci run for HEAD and the local-only Lean proofs gate.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -11,8 +13,6 @@ TAG="v$VERSION"
 TARGET="x86_64-unknown-linux-musl"
 DIST="$ROOT/dist/$TAG"
 ARCHIVE="$DIST/strop-$VERSION-$TARGET.tar.gz"
-CANDIDATE="$DIST/completion-$TARGET.json"
-FROZEN="$DIST/completion-candidate.json"
 REPO="stropdev/strop"
 
 case "$VERSION" in
@@ -52,10 +52,18 @@ catalog() {
 case "$COMMAND" in
 qualify)
     clean_source
-    python3 verification/check.py --release
+    head=$(git rev-parse HEAD)
+    conclusion=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$head" \
+        --json conclusion --jq '.[0].conclusion // "missing"')
+    if [ "$conclusion" != "success" ]; then
+        echo "ci for $head is '$conclusion', not success — push and wait for green" >&2
+        exit 1
+    fi
     sh tests/release-catalog.sh
     sh tests/install.sh
     docker compose run --build --rm test
+    docker compose run --build --rm model
+    docker compose run --build --rm proofs
     ;;
 package)
     clean_source
@@ -83,20 +91,15 @@ package)
     printf 'frame\n' > "$WORK/smoke.txt"
     "$BINARY" --headless "$WORK/smoke.txt" "$WORK/smoke.rs" | grep -q "fn main"
     timeout 15 "$BINARY" --worker-stdio </dev/null
-    python3 -B verification/qualify_completion.py \
-        --binary "$BINARY" --profile release-musl-stripped \
-        --build "docker compose release; $TARGET" --out "$CANDIDATE"
-    python3 verification/freeze.py --completion-report "$CANDIDATE" --out "$FROZEN"
-    python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
     catalog
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
     echo "qualified local release directory: $DIST"
     ;;
 draft)
     clean_source
-    [ -f "$ARCHIVE" ] && [ -f "$ARCHIVE.sha256" ] && [ -f "$CANDIDATE" ] \
-        && [ -f "$FROZEN" ] && [ -f "$DIST/catalog.json" ] && [ -f "$DIST/release-notes.md" ]
-    python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
+    [ -f "$ARCHIVE" ] && [ -f "$ARCHIVE.sha256" ] \
+        && [ -f "$DIST/catalog.json" ] && [ -f "$DIST/release-notes.md" ]
+    (cd "$DIST" && sha256sum -c "$(basename "$ARCHIVE").sha256")
     local_commit=$(git rev-parse HEAD)
     remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
     if [ -z "$remote_commit" ]; then
@@ -108,13 +111,12 @@ draft)
     fi
     gh release create "$TAG" --repo "$REPO" --verify-tag --draft \
         --title "strop $TAG" --notes-file "$DIST/release-notes.md" \
-        "$ARCHIVE" "$ARCHIVE.sha256" "$CANDIDATE" "$FROZEN" \
-        "$DIST/catalog.json"
+        "$ARCHIVE" "$ARCHIVE.sha256" "$DIST/catalog.json"
     gh release view "$TAG" --repo "$REPO"
     ;;
 publish)
     clean_source
-    python3 verification/freeze.py --check --completion-report "$CANDIDATE" --out "$FROZEN"
+    (cd "$DIST" && sha256sum -c "$(basename "$ARCHIVE").sha256")
     local_commit=$(git rev-parse HEAD)
     remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
     if [ -z "$remote_commit" ]; then

@@ -137,7 +137,7 @@ impl RebuildPositions {
                 if old.source == self.source {
                     for change in &self.changes {
                         let edit = change.edit;
-                        source_position = strop_core::editmap::map_position(
+                        source_position = strop_kernel::editmap::map_position(
                             source_position,
                             edit.start_byte,
                             edit.old_end_byte,

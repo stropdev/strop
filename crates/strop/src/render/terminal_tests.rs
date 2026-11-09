@@ -155,7 +155,10 @@ fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
 fn modal_terminal_editor() -> Editor {
     use strop_terminal::model::{Color as TColor, Phase, Rgb as TRgb, Style as TStyle};
     let mut editor = Editor::new(Buffer::from_text("origin"));
-    editor.terminal_fixture(
+    // A fixed launch directory: the status line must not depend on where
+    // the checkout lives (a long host path truncates the hints).
+    editor.terminal_fixture_at(
+        strop_workspace::ResourceLocation::local(std::path::PathBuf::from("/work")),
         &[
             (
                 "idx",

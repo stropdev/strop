@@ -3,6 +3,7 @@ use super::Buffer;
 use crate::history::{Edit, EditKind};
 use crate::id::{BufferRevision, ByteOffset};
 use crate::{InputEdit, Range};
+use strop_kernel::editmap::{validate_batch, BatchRefusal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ChangeOrigin {
@@ -152,21 +153,18 @@ impl Buffer {
             self.validate_range(edit.range)?;
         }
         replacements.sort_unstable_by_key(|edit| (edit.range.start.get(), edit.range.end.get()));
-        // The verified geometry kernel (0045, crate::editmap): sorted by
-        // start, strictly non-overlapping, in-bounds — proven, and the
-        // error here can only be an overlap (bounds checked above).
+        // The proved geometry kernel (strop_kernel::editmap): accepted
+        // means strictly ascending, non-overlapping and in bounds, so the
+        // reverse application below keeps every edit's coordinates valid.
         let pairs: Vec<(usize, usize)> = replacements
             .iter()
             .map(|edit| (edit.range.start.get(), edit.range.end.get()))
             .collect();
-        let sorted = crate::editmap::check_batch(self.len_bytes(), pairs)
-            .map_err(|()| EditError::Overlap)?;
-        // Keep the payloads beside their sorted geometry. Searching/removing
-        // each payload by range made large reviewed batches quadratic.
-        debug_assert!(replacements
-            .iter()
-            .zip(sorted)
-            .all(|(edit, pair)| (edit.range.start.get(), edit.range.end.get()) == pair));
+        validate_batch(self.len_bytes(), &pairs).map_err(|refusal| match refusal {
+            BatchRefusal::Overlap => EditError::Overlap,
+            BatchRefusal::OutOfBounds => EditError::InvalidRange,
+            BatchRefusal::Unsorted => unsorted_batch(),
+        })?;
         self.epoch
             .checked_add(replacements.len() as u64)
             .ok_or(EditError::RevisionExhausted)?;
@@ -478,4 +476,12 @@ impl Buffer {
             end: end.into(),
         }))
     }
+}
+
+/// The batch was sorted immediately before validation, so the kernel's
+/// ordering refusal is unreachable; reported as an invalid range rather
+/// than a panic in release builds.
+fn unsorted_batch() -> EditError {
+    debug_assert!(false, "replacements are sorted before validation");
+    EditError::InvalidRange
 }
