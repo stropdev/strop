@@ -7,7 +7,7 @@ fn terminal(columns: u16, rows: u16) -> Vt {
 
 fn themed_terminal(columns: u16, rows: u16, palette: Option<&Palette>) -> Vt {
     Vt::new(
-        SessionId::from_request(strop_core::worker::WorkerId::new(1)),
+        SessionId::new(1),
         Geometry {
             columns,
             rows,

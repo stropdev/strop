@@ -65,6 +65,10 @@ pub(crate) struct State {
     focused: bool,
     pub capture: bool,
     pub keyboard: u8,
+    /// The last issued session number. Sessions number from 1 per editor
+    /// (0088 U12): the number is what `terminal #N` shows, and it never
+    /// repeats, so a stale record can never bind to a later launch.
+    last_session: u64,
 }
 impl Default for State {
     fn default() -> Self {
@@ -77,6 +81,7 @@ impl Default for State {
             capture: false,
             focused: true,
             keyboard: 0,
+            last_session: 0,
         }
     }
 }
@@ -89,6 +94,11 @@ impl State {
     }
     pub fn live(&self) -> bool {
         self.entries.values().any(|entry| entry.phase.live())
+    }
+    /// The next per-editor session number; `None` once the space is spent.
+    fn next_session(&mut self) -> Option<SessionId> {
+        self.last_session = self.last_session.checked_add(1)?;
+        Some(SessionId::new(self.last_session))
     }
 }
 impl Editor {
@@ -254,7 +264,7 @@ impl Editor {
         rows: &[(&str, strop_terminal::model::Style)],
         phase: Phase,
     ) -> DocumentId {
-        let session = SessionId::from_request(self.worker_ids.allocate().unwrap());
+        let session = self.terminals.next_session().unwrap();
         let frame = fixture_frame(session, rows, 1, 0);
         let geometry = frame.geometry;
         let mut document =
