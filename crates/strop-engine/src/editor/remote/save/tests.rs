@@ -64,7 +64,6 @@ fn receipt(editor: &Editor, ticket: &Ticket<RemoteWriteKey>) -> WriteVersion {
     )
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn lost_store_reply_reconciles_over_a_restarted_real_worker() {
     use strop_worker_client::{Transport, Worker};

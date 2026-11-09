@@ -390,7 +390,6 @@ fn cancellation_before_publication_leaves_no_effect() {
     assert!(!destination.exists());
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn cross_mount_rename_is_a_typed_unsupported_refusal() {
     // /dev/shm is a distinct tmpfs mount in the test lanes; the plan's

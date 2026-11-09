@@ -128,8 +128,8 @@ impl Worker {
     /// (0058 WK07/WK08): the far end was provisioned and verified by the
     /// deployment flow for its endpoint, so the handshake binds the
     /// worker's reported target to the admitted endpoint's triple —
-    /// which may differ from this client's platform (a macOS editor
-    /// driving a Linux container worker), never to a guessed local one.
+    /// which may differ from this client's platform, never to a guessed
+    /// local one.
     /// Version and protocol still bind to this exact release.
     pub fn connect_deployed(
         expected_target: impl Into<String>,

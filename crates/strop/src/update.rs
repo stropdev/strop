@@ -359,15 +359,12 @@ pub fn update(check_only: bool) -> Result<(), String> {
         ));
     };
     match receipt.channel {
-        Channel::Brew => {
-            return Err(
-                "installation receipt says homebrew — run: brew upgrade stropdev/tap/strop".into(),
-            )
-        }
-        Channel::Cargo => {
-            return Err(
-                "installation receipt says cargo — run: cargo install strop-editor --locked".into(),
-            )
+        Channel::Brew | Channel::Cargo => {
+            return Err(format!(
+                "installation receipt says {}, a retired channel that no longer receives \
+                 releases — reinstall with install.sh to move to the release tarball",
+                receipt.channel.name()
+            ))
         }
         Channel::Mise => {
             return Err("installation receipt says mise — run: mise upgrade strop".into())
@@ -490,12 +487,7 @@ fn update_targets_are_linux_x86_64_only() {
         target_triple("linux", "x86_64").unwrap(),
         "x86_64-unknown-linux-musl"
     );
-    for (os, arch) in [
-        ("linux", "aarch64"),
-        ("macos", "aarch64"),
-        ("macos", "x86_64"),
-        ("macos", "amd64"),
-    ] {
+    for (os, arch) in [("linux", "aarch64"), ("windows", "x86_64")] {
         assert!(target_triple(os, arch).is_err(), "{os}/{arch}");
     }
 }

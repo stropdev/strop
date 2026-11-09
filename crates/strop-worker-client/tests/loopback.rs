@@ -259,7 +259,6 @@ fn store_save_round_trip_with_conflict_and_verify() {
         matches!(verified, VerifiedOutcome::Committed(_)),
         "{verified:?}"
     );
-    #[cfg(target_os = "linux")]
     {
         let namespace = worker.namespace().unwrap();
         worker.shutdown().unwrap();
@@ -301,7 +300,6 @@ fn cancellation_is_typed_before_send() {
     worker.shutdown().unwrap();
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn notify_subscription_delivers_hints_and_retires() {
     let directory = tempfile::tempdir().unwrap();

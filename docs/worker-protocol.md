@@ -30,7 +30,7 @@ The baseline this release migrates is the post-0056 candidate:
 - The immutable 0057 archive has 75 claims but recorded dirty inputs.
   A second clean Linux x86_64 snapshot at `a05d84f` has 74 claims and
   six raw passing gates (`verification/baseline/0057-linux-evidence.json`);
-  it is local profile evidence, not macOS/aarch64 or full VF20
+  it is local profile evidence, not aarch64
   publication. FS-STORE is the additional worker-cutover claim.
 
 One worker integration owner controls protocol/context/identity/outcome

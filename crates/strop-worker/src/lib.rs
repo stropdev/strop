@@ -22,6 +22,5 @@
 //!   session state for one client lease, never a listener or editor state.
 
 pub mod exec;
-#[cfg(target_os = "linux")]
 pub mod notify;
 pub mod serve;

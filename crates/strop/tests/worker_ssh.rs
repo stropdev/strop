@@ -181,8 +181,7 @@ impl Fixture {
             format!("{base}{set_env}ForceCommand internal-sftp\n"),
         )
         .unwrap();
-        // A real peer socket reaches macOS BSM audit admission; `sshd -i`
-        // on a ProxyCommand pipe supplies UNKNOWN and fails before auth.
+        // A real listening sshd, not `sshd -i` on a ProxyCommand pipe.
         let sshd = Sshd::start(root, &server_config, "full");
         let sftp_sshd = Sshd::start(root, &sftp_config, "restricted");
         let config = root.join("ssh_config");

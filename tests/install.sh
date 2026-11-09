@@ -165,7 +165,7 @@ fi
 [ ! -e "$WORK/bin6/strop" ] || fail "installed from a foreign-target catalog"
 ok "catalog without a matching artifact refuses to install"
 
-# --- 7. Intel macOS refuses before any fetch or installation --------------
+# --- 7. A non-Linux x86_64 host refuses before any fetch or installation --------------
 mkdir -p "$WORK/shim-intel"
 cat > "$WORK/shim-intel/uname" <<'UNAME'
 #!/bin/sh
@@ -186,20 +186,20 @@ for machine in x86_64 amd64; do
     if run_install "$WORK/intel-$machine" "$WORK/intel-$machine.log" \
         PATH="$WORK/shim-intel:$PATH" STROP_TEST_MACHINE="$machine" \
         STROP_TEST_FETCHED="$WORK/fetched-$machine"; then
-        fail "Intel macOS unexpectedly installed for $machine"
+        fail "non-Linux x86_64 unexpectedly installed for $machine"
     fi
-    [ ! -e "$WORK/fetched-$machine" ] || fail "Intel macOS attempted a download"
-    [ ! -e "$WORK/intel-$machine" ] || fail "Intel macOS created an install directory"
+    [ ! -e "$WORK/fetched-$machine" ] || fail "non-Linux x86_64 attempted a download"
+    [ ! -e "$WORK/intel-$machine" ] || fail "non-Linux x86_64 created an install directory"
     if env PATH="$WORK/shim-intel:$PATH" STROP_TEST_MACHINE="$machine" \
         STROP_TEST_FETCHED="$WORK/fetched-zig-$machine" \
         sh "$ROOT/.github/scripts/install-zig.sh" "$WORK/zig-$machine" \
         >"$WORK/zig-$machine.log" 2>&1; then
-        fail "Intel macOS unexpectedly provisioned a compiler"
+        fail "non-Linux x86_64 unexpectedly provisioned a compiler"
     fi
-    [ ! -e "$WORK/fetched-zig-$machine" ] || fail "Intel macOS downloaded a compiler"
-    [ ! -e "$WORK/zig-$machine" ] || fail "Intel macOS created a compiler directory"
+    [ ! -e "$WORK/fetched-zig-$machine" ] || fail "non-Linux x86_64 downloaded a compiler"
+    [ ! -e "$WORK/zig-$machine" ] || fail "non-Linux x86_64 created a compiler directory"
 done
-ok "Intel macOS refuses before fetching or writing"
+ok "non-Linux x86_64 refuses before fetching or writing"
 
 for fixture in Darwin:arm64 Linux:aarch64 Linux:arm64; do
     system=${fixture%%:*}

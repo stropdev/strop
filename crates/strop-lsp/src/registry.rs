@@ -129,7 +129,7 @@ static EMBEDDED: LazyLock<Vec<EmbeddedServer>> = LazyLock::new(|| {
             name: "clangd",
             command: "clangd",
             args: vec![],
-            hint: "install clangd (brew install llvm / apt install clangd)",
+            hint: "install clangd (apt install clangd)",
         },
         EmbeddedServer {
             name: "pyright",
@@ -141,7 +141,7 @@ static EMBEDDED: LazyLock<Vec<EmbeddedServer>> = LazyLock::new(|| {
             name: "lua-language-server",
             command: "lua-language-server",
             args: vec![],
-            hint: "install lua-language-server (brew install lua-language-server)",
+            hint: "install lua-language-server",
         },
         EmbeddedServer {
             name: "gopls",

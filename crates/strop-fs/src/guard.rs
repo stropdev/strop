@@ -265,10 +265,7 @@ pub(crate) fn pin_identity(
     approved: &strop_workspace::Observation,
 ) -> Result<File, FsFailure> {
     use rustix::fs::{Mode, OFlags};
-    #[cfg(target_os = "linux")]
     let access = OFlags::PATH;
-    #[cfg(target_os = "macos")]
-    let access = OFlags::from_bits_retain(libc::O_EVTONLY as _);
     let file = rustix::fs::openat(
         &parent.file,
         name,

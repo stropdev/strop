@@ -23,20 +23,13 @@ fn mint(error_stage: &'static str) -> Result<u64, ServeError> {
 /// Stable observed boot and mount namespace on Linux. A missing source
 /// fails recovery closed as "unattested"; a hostname is not authority.
 fn namespace_identity() -> NamespaceIdentity {
-    #[cfg(target_os = "linux")]
     let identity = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
         .and_then(|boot| {
             std::fs::read_link("/proc/self/ns/mnt")
                 .map(|mount| format!("boot:{};mount:{}", boot.trim(), mount.display()))
         })
         .unwrap_or_else(|_| "unattested".into());
-    #[cfg(not(target_os = "linux"))]
-    let identity = "unattested".to_owned();
-    #[cfg(unix)]
-    // SAFETY: geteuid reads the process credential and accepts no pointers.
-    let principal = Some(unsafe { libc::geteuid() });
-    #[cfg(not(unix))]
-    let principal = None;
+    let principal = Some(rustix::process::geteuid().as_raw());
     NamespaceIdentity {
         identity,
         principal,
@@ -44,18 +37,13 @@ fn namespace_identity() -> NamespaceIdentity {
 }
 
 fn capabilities() -> Capabilities {
-    let native_fs = cfg!(any(target_os = "linux", target_os = "macos"));
     Capabilities {
         observe: true,
         list: true,
         read: true,
-        write: native_fs,
-        trash: native_fs,
-        notify: if cfg!(target_os = "linux") {
-            NotifyCoverage::Native
-        } else {
-            NotifyCoverage::Unsupported
-        },
+        write: true,
+        trash: true,
+        notify: NotifyCoverage::Native,
         exec_finite: cfg!(unix),
         exec_service: cfg!(unix),
         // WK12 owns PTY serving on unix: spawn/feed/resize/exit ride the
