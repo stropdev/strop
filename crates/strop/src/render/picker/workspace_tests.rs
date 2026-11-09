@@ -18,7 +18,7 @@ fn selected_band(grid: &ratatui::buffer::Buffer, width: u16, height: u16) -> (u1
     for y in 0..height {
         let mut edge = None;
         for x in 0..width {
-            if grid[(x, y)].bg == crate::render::select_bg() {
+            if grid[(x, y)].bg == crate::render::tokens().raised {
                 edge = Some(x);
             }
         }
@@ -44,15 +44,15 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
     editor.wait_picker();
 
     let grid = draw(&mut editor, 100, 30);
-    // near-full-frame card: 1-cell margins, leaving the status row free
-    assert_eq!(grid[(1, 0)].symbol(), "╭", "card starts at the left margin");
+    // near-full-frame card: columns − 4 at 100 columns and up (rule 9)
+    assert_eq!(grid[(2, 0)].symbol(), "╭", "card starts two cells in");
     assert_eq!(
-        grid[(98, 0)].symbol(),
+        grid[(97, 0)].symbol(),
         "╮",
         "card spans to the right margin"
     );
     assert_eq!(
-        grid[(1, 28)].symbol(),
+        grid[(2, 28)].symbol(),
         "╰",
         "card keeps the status row free"
     );
@@ -99,8 +99,8 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
         },
     }]);
     let grid = draw(&mut editor, 100, 30);
-    assert_eq!(grid[(1, 0)].symbol(), "╭");
-    assert_eq!(grid[(98, 0)].symbol(), "╮");
+    assert_eq!(grid[(2, 0)].symbol(), "╭");
+    assert_eq!(grid[(97, 0)].symbol(), "╮");
     let (band_edge, band_row) = selected_band(&grid, 100, 30);
     let prepared = editor.prepared_view().picker.expect("prepared symbols");
     let list = prepared.results.expect("symbol results");
@@ -113,7 +113,7 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
     editor.open_picker(strop_picker::Kind::RemoteAddress);
     let grid = draw(&mut editor, 100, 30);
     assert_ne!(
-        grid[(1, 0)].symbol(),
+        grid[(2, 0)].symbol(),
         "╭",
         "transient pickers stay floating"
     );
@@ -181,7 +181,8 @@ fn track_column(editor: &mut Editor, width: u16, height: u16) -> (u16, std::ops:
     )
 }
 
-/// One accent thumb on a quiet track; returns the thumb rows found.
+/// One muted thumb and nothing else in the reserved column (rule 4: no
+/// track); returns the thumb rows found.
 fn assert_track(
     grid: &ratatui::buffer::Buffer,
     track_x: u16,
@@ -191,22 +192,13 @@ fn assert_track(
     for y in rows {
         let cell = &grid[(track_x, y)];
         if cell.symbol() == "▮" {
-            assert_eq!(
-                cell.fg,
-                crate::render::accent(),
-                "thumb paints in the accent style"
-            );
+            assert_eq!(cell.fg, crate::render::tokens().muted, "thumb paints muted");
             thumbs.push(y);
         } else {
-            assert_eq!(cell.symbol(), "│", "quiet track cell at row {y}");
-            assert_eq!(
-                cell.fg,
-                crate::render::seed(strop_core::theme::current().border),
-                "track stays quiet at row {y}"
-            );
+            assert_eq!(cell.symbol(), " ", "no track: blank cell at row {y}");
         }
     }
-    assert_eq!(thumbs.len(), 1, "exactly one thumb cell in the track");
+    assert_eq!(thumbs.len(), 1, "exactly one thumb cell in the column");
     thumbs
 }
 
@@ -371,11 +363,11 @@ fn jump_preview_marks_the_live_buffer_destination_line() {
     assert!(
         rendered
             .iter()
-            .any(|line| line.contains("▶ 42 │ fn dispatch")),
+            .any(|line| line.contains("▌ 42 │ fn dispatch")),
         "jump marker on the live destination line: {rendered:?}"
     );
     assert_eq!(
-        rendered.iter().filter(|line| line.contains('▶')).count(),
+        rendered.iter().filter(|line| line.contains('▌')).count(),
         1,
         "exactly one jump destination marker"
     );
@@ -514,10 +506,11 @@ fn solver_card(area: ratatui::layout::Rect, kind: strop_picker::Kind) -> ratatui
         kind,
         Kind::Search | Kind::Files | Kind::Symbols | Kind::WorkspaceSymbols
     ) {
+        let margin = if area.width >= 100 { 2 } else { 0 };
         Rect {
-            x: area.x + 1,
+            x: area.x + margin,
             y: area.y,
-            width: area.width.saturating_sub(2),
+            width: area.width.saturating_sub(2 * margin),
             height: area.height.saturating_sub(1),
         }
     } else {

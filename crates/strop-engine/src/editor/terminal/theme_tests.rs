@@ -116,8 +116,8 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
         assert_eq!(editor.terminal_capture_enabled(), capture);
         assert_eq!(editor.private_terminal_view(), !capture);
 
-        editor.set_terminal_themes(ThemeId::Dark).unwrap();
-        let dark = Palette::for_theme(ThemeId::Dark);
+        editor.set_terminal_themes(ThemeId::Hone).unwrap();
+        let dark = Palette::for_theme(ThemeId::Hone);
         wait_for(&mut editor, |editor| {
             [first, second].iter().all(|document| {
                 editor
@@ -183,7 +183,7 @@ fn appearance_publication_does_not_consume_the_child_input_sequence() {
             break;
         }
     }
-    for theme in [ThemeId::Light, ThemeId::CatppuccinMocha, ThemeId::Nord] {
+    for theme in [ThemeId::Vellum, ThemeId::Carbide, ThemeId::Slate] {
         service.set_theme(theme).unwrap();
         let selected = Palette::for_theme(theme);
         loop {
@@ -224,8 +224,8 @@ fn appearance_publication_does_not_consume_the_child_input_sequence() {
         })
         .unwrap();
     while next("ordered resize").acknowledged_input < 2 {}
-    service.set_theme(ThemeId::StropInk).unwrap();
-    let ink = Palette::for_theme(ThemeId::StropInk);
+    service.set_theme(ThemeId::Slate).unwrap();
+    let ink = Palette::for_theme(ThemeId::Slate);
     loop {
         let update = next("appearance after resize");
         assert_eq!(update.acknowledged_input, 2);

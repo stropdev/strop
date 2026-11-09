@@ -150,6 +150,7 @@ pub fn run_script(
     {
         let text: String = serde_json::from_str(text).map_err(io::Error::other)?;
         let configuration = editor.config().clone();
+        let theme = editor.theme();
         let cwd = editor.cwd().to_owned();
         let state_dir = editor.state_dir().map(std::path::PathBuf::from);
         let message = editor.message().to_owned();
@@ -157,6 +158,7 @@ pub fn run_script(
         let terminal_keyboard = editor.terminal_keyboard_flags();
         *editor = Editor::new_in(strop_core::Buffer::from_text(&text), cwd);
         editor.set_config(configuration);
+        editor.set_theme(theme);
         editor.set_state_dir(state_dir);
         editor.set_message(message);
         editor.set_terminal_capture(terminal_capture);

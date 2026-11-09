@@ -20,7 +20,7 @@ fn narrower_than_the_gutter_keeps_the_margin_fixed() {
     assert_eq!(origin, 38);
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 5, 0, 6),
-        ["x", "x", "a", "b", "Z", "\u{2502}"],
+        ["x", "x", "a", "b", "Z", " "],
         "Z at the caret, origin {origin}"
     );
     terminal.backend_mut().assert_cursor_position((9, 0));
@@ -47,7 +47,7 @@ fn block_mode_highlights_the_rectangle() {
     let buf = terminal.backend().buffer();
     let bg = |x: u16, y: u16| buf[(x, y)].bg;
     // text starts after the 5-cell gutter ("▎  1 ")
-    let sel = crate::render::select_bg();
+    let sel = crate::render::tokens().selection;
     assert_eq!(bg(5, 0), sel, "block corner");
     assert_eq!(bg(6, 0), sel, "block col 2 row 0");
     assert_eq!(bg(5, 1), sel, "block row 1");
@@ -103,7 +103,7 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
         // not a visible cell. Assert the next visible positions, not that storage.
         assert_eq!(
             row_symbols(terminal.backend().buffer(), 7, 0, 4),
-            ["e\u{301}", "\u{fffd}", "Z", "\u{2502}"]
+            ["e\u{301}", "\u{fffd}", "Z", " "]
         );
         // the tab's clipped remainder is a blank, 界 renders whole (its
         // continuation cell stays untouched), ESC is the replacement
@@ -121,8 +121,9 @@ fn split_titles_show_the_space_w_jump_numbers() {
     let mut terminal = viewport_terminal(50, 6);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let titles = row_symbols(terminal.backend().buffer(), 0, 0, 50).join("");
-    assert!(titles.contains("1  [scratch]"), "{titles:?}");
-    assert!(titles.contains("2 ▌[scratch]"), "{titles:?}");
+    assert!(titles.contains("╭ 1 [scratch]"), "{titles:?}");
+    assert!(titles.contains("╭ 2 [scratch]"), "{titles:?}");
+    assert!(titles.contains('╮'), "{titles:?}");
 }
 
 #[test]
@@ -139,17 +140,17 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     );
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 5, 1, 10),
-        ["0", "1", "2", "3", "4", "5", "6", "7", "8", "\u{2502}"]
+        ["0", "1", "2", "3", "4", "5", "6", "7", "8", " "]
     );
     // the inactive pane's saved cursor (head 3 → cell 3) paints a
     // muted block, pane-local, through its own zero origin
     assert_eq!(
         terminal.backend().buffer()[(8, 1)].bg,
-        crate::render::seed(strop_core::theme::current().border)
+        crate::render::tokens().faint
     );
     assert_eq!(
         row_symbols(terminal.backend().buffer(), 21, 1, 10),
-        ["C", "D", "E", "F", "G", "H", "I", "J", "K", "\u{2502}"]
+        ["C", "D", "E", "F", "G", "H", "I", "J", "K", " "]
     );
     terminal.backend_mut().assert_cursor_position((29, 1));
     // 0064 §1: pull the pane-1 caret one column inside the reserved
@@ -166,9 +167,9 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     );
     assert_eq!(
         terminal.backend().buffer()[(28, 1)].bg,
-        crate::render::seed(strop_core::theme::current().border)
+        crate::render::tokens().faint
     );
-    assert_eq!(terminal.backend().buffer()[(30, 1)].symbol(), "\u{2502}");
+    assert_eq!(terminal.backend().buffer()[(30, 1)].symbol(), " ");
     terminal.backend_mut().resize(21, 5);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(
@@ -225,11 +226,11 @@ fn extra_carets_and_vertical_bounds_do_not_alias() {
     assert_eq!(terminal.backend().buffer()[(6, 0)].symbol(), "i");
     assert_eq!(
         terminal.backend().buffer()[(6, 0)].bg,
-        crate::render::text()
+        crate::render::tokens().text
     );
     assert_ne!(
         terminal.backend().buffer()[(4, 0)].bg,
-        crate::render::text()
+        crate::render::tokens().text
     );
     let area = ratatui::layout::Rect::new(2, 3, 10, 2);
     let origin = strop_core::id::DisplayColumn::new(6);
@@ -283,19 +284,19 @@ fn clipped_graphemes_keep_overlay_ranges_and_precedence() {
     );
     // a partially clipped CJK cluster is a styled blank that still
     // carries every overlay it intersects (block, search, …)
-    assert_eq!(grid[(0, 0)].bg, crate::render::select_bg());
-    assert_eq!(grid[(0, 0)].fg, crate::render::accent());
-    assert_eq!(grid[(1, 0)].bg, crate::render::preview_bg());
+    assert_eq!(grid[(0, 0)].bg, crate::render::tokens().selection);
+    assert_eq!(grid[(0, 0)].fg, crate::render::tokens().accent);
+    assert_eq!(grid[(1, 0)].bg, crate::render::tokens().preview);
     // The current ordinary search hit retains its underline now that
     // diagnostics no longer participate in source-cell underlining.
     assert!(grid[(1, 0)]
         .modifier
         .contains(ratatui::style::Modifier::UNDERLINED));
-    assert_eq!(grid[(2, 0)].bg, crate::render::flash_bg());
-    assert_eq!(grid[(3, 0)].bg, crate::render::base());
+    assert_eq!(grid[(2, 0)].bg, crate::render::tokens().flash);
+    assert_eq!(grid[(3, 0)].bg, crate::render::tokens().base);
     let right = clipped_row(&e, 3, 2, &style);
     assert_eq!(row_symbols(&right, 0, 0, 2), [" ", " "]);
-    assert_eq!(right[(1, 0)].bg, crate::render::select_bg());
+    assert_eq!(right[(1, 0)].bg, crate::render::tokens().selection);
 }
 
 #[test]
@@ -308,7 +309,7 @@ fn diff_background_and_annotation_use_absolute_cells() {
         text: b"unused".to_vec(),
         has_newline: true,
     };
-    let bg = super::super::diff::origin_bg(line.origin).unwrap();
+    let bg = super::super::diff::origin_bg(&crate::render::tokens(), line.origin).unwrap();
     let style = super::super::RowStyle {
         diff_line: Some(&line),
         emphasis: Some((3, 6)),
@@ -322,13 +323,13 @@ fn diff_background_and_annotation_use_absolute_cells() {
     );
     // the intra-line emphasis lands on the clipped 界 placeholder and
     // the row background pads in CELLS past the last glyph
-    assert_eq!(grid[(0, 0)].bg, super::super::diff::add_strong_bg());
+    assert_eq!(grid[(0, 0)].bg, crate::render::tokens().diff_add_strong_bg);
     assert_eq!(grid[(5, 0)].bg, bg);
     let e = Editor::new(Buffer::from_text("abcd\n"));
     let style = super::super::RowStyle {
         note: Some((
             "  ▍\t界Z".into(),
-            ratatui::style::Style::default().fg(crate::render::muted()),
+            ratatui::style::Style::default().fg(crate::render::tokens().muted),
         )),
         ..Default::default()
     };
@@ -336,7 +337,7 @@ fn diff_background_and_annotation_use_absolute_cells() {
     // the note starts at the line's ABSOLUTE end cell (4); its tab
     // expands from absolute stops (4→8), so scrolling keeps it aligned
     assert_eq!(row_symbols(&grid, 0, 0, 4), [" ", "界", " ", "Z"]);
-    assert_eq!(grid[(3, 0)].fg, crate::render::muted());
+    assert_eq!(grid[(3, 0)].fg, crate::render::tokens().muted);
 }
 
 #[test]
@@ -417,7 +418,7 @@ fn markdown_semantics_reach_the_real_cell_grid() {
         .unwrap();
     let grid = terminal.backend().buffer();
     assert_eq!(grid[(7, 0)].symbol(), "H");
-    assert_eq!(grid[(7, 0)].fg, crate::render::accent());
+    assert_eq!(grid[(7, 0)].fg, crate::render::tokens().accent);
     assert!(grid[(7, 0)].modifier.contains(Modifier::BOLD));
     assert_eq!(grid[(7, 2)].symbol(), "b");
     assert!(grid[(7, 2)].modifier.contains(Modifier::BOLD));
@@ -439,8 +440,9 @@ fn pane_scrollbar_carries_track_thumb_and_git_overview() {
     // row is the status line); the thumb sits at the top while the
     // viewport is at line 0, painted over the track.
     assert_eq!(grid[(39, 0)].symbol(), "\u{25ae}");
-    assert!((1..9).all(|y| grid[(39, y)].symbol() == "\u{2502}"));
-    // No hunks: no change spans anywhere in the track.
+    // no track (rule 4): the rest of the column is blank
+    assert!((1..9).all(|y| grid[(39, y)].symbol() == " "));
+    // No hunks: no change spans anywhere in the column.
     assert!((0..9).all(|y| grid[(39, y)].symbol() != "\u{258e}"));
 
     // Seed one addition at line 150: a green span appears, mapped
@@ -469,10 +471,7 @@ fn pane_scrollbar_carries_track_thumb_and_git_overview() {
         "\u{258e}",
         "the addition maps to its track row"
     );
-    assert_eq!(
-        grid[(39, 6)].fg,
-        crate::render::seed(strop_core::theme::current().class_string)
-    );
+    assert_eq!(grid[(39, 6)].fg, crate::render::tokens().diff_add);
 
     // Scrolling moves the thumb down — 0068 B2 contract: the thumb's
     // START is the viewport's fraction of the travel space
@@ -526,12 +525,16 @@ fn cursor_fade_paints_the_block_then_restores_the_unfaded_cursor() {
     let faded = &terminal.backend().buffer()[caret];
     assert_eq!(
         faded.bg,
-        crate::render::fade_mix(crate::render::base(), crate::render::text(), 50),
+        crate::render::style::fade_mix(
+            crate::render::tokens().base,
+            crate::render::tokens().text,
+            50
+        ),
         "half-faded block bg"
     );
     assert_eq!(
         faded.fg,
-        crate::render::fade_mix(unfaded.fg, crate::render::base(), 50),
+        crate::render::style::fade_mix(unfaded.fg, crate::render::tokens().base, 50),
         "half-faded block fg"
     );
 

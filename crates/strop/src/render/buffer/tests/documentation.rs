@@ -40,13 +40,13 @@ fn embedded_documentation_languages_reach_the_cell_grid() {
             let grid = terminal.backend().buffer();
             assert_eq!(
                 grid[(inset + code_column, code_row)].fg,
-                crate::render::class_color(strop_syntax::Class::Keyword),
+                crate::render::tokens().class(strop_syntax::Class::Keyword),
                 "{path} at width {width}: embedded keyword"
             );
             if let Some((column, row)) = prefix {
                 assert_eq!(
                     grid[(inset + column, row)].fg,
-                    crate::render::class_color(strop_syntax::Class::Comment),
+                    crate::render::tokens().class(strop_syntax::Class::Comment),
                     "{path} at width {width}: host comment prefix"
                 );
             }

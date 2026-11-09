@@ -5,6 +5,16 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::process::Command;
 use std::time::Duration;
 
+/// Terminal input: the `TERM` chip with the `F2  inspect` escape hint.
+fn terminal_input(screen: &str) -> bool {
+    screen.contains("  TERM  ") && screen.contains("F2  inspect")
+}
+
+/// Terminal inspection: the same chip, no input hint — `i` re-enters.
+fn terminal_inspection(screen: &str) -> bool {
+    screen.contains("  TERM  ") && !screen.contains("F2  inspect")
+}
+
 #[test]
 fn kitty_shifted_punctuation_opens_ex_commands() {
     let directory = tempfile::tempdir().unwrap();
@@ -18,7 +28,7 @@ fn kitty_shifted_punctuation_opens_ex_commands() {
         "terminal must request shifted alternate keys"
     );
     tui.send(b"\x1b[59:58;2u");
-    tui.until(|screen| screen.contains(": INPUT"));
+    tui.until(|screen| screen.contains("COMMAND"));
     tui.send(b"q\r");
     assert!(tui.wait_exit().success());
 }
@@ -30,9 +40,9 @@ fn real_f2_enters_terminal_inspection() {
     let mut tui = Tui::start(directory.path(), &trace);
     tui.until(|screen| screen.contains("NORMAL"));
     tui.send(b":terminal env PS1='STROP-PTY> ' /bin/sh -i\r");
-    tui.until(|screen| screen.contains("TERMINAL") && screen.contains("STROP-PTY>"));
+    tui.until(|screen| terminal_input(screen) && screen.contains("STROP-PTY>"));
     tui.send(b"\x1bOQ");
-    tui.until(|screen| screen.contains("SNAPSHOT"));
+    tui.until(terminal_inspection);
 }
 
 #[test]
@@ -49,7 +59,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     let mut tui = Tui::start(directory.path(), &trace);
     tui.until(|screen| screen.contains("NORMAL"));
     tui.send(b":terminal env PS1='STROP-PTY> ' /bin/sh -i\r");
-    tui.until(|screen| screen.contains("TERMINAL") && screen.contains("STROP-PTY>"));
+    tui.until(|screen| terminal_input(screen) && screen.contains("STROP-PTY>"));
     tui.send(b"printf x >> run-count; printf 'PTY-INPUT-OK\\n'\r");
     tui.until(|screen| line(screen, "PTY-INPUT-OK"));
     tui.send(b"printf '\\033[?2004lPASTE-READY\\n'; read first; read second; printf 'PASTE:%s|%s\\n' \"$first\" \"$second\"\r");
@@ -59,9 +69,9 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     assert!(!line(&held, "alpha") && !line(&held, "beta"));
     tui.send(b"\x1c");
     tui.send(b"\x0e");
-    tui.until(|screen| screen.contains("SNAPSHOT"));
+    tui.until(terminal_inspection);
     tui.send(b":terminal-paste\r");
-    tui.until(|screen| line(screen, "PASTE:alpha|beta") && screen.contains("TERMINAL"));
+    tui.until(|screen| line(screen, "PASTE:alpha|beta") && terminal_input(screen));
     tui.send(b"nvim --clean nested.txt\r");
     tui.until(|screen| {
         screen.contains("nested.txt") && screen.lines().any(|row| row.starts_with('~'))
@@ -71,7 +81,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1b");
     tui.until(|screen| !screen.contains("-- INSERT --") && screen.contains("NESTED-EDITOR-OK"));
     tui.send(b":wq\r");
-    tui.until(|screen| screen.contains("STROP-PTY>") && screen.contains("TERMINAL"));
+    tui.until(|screen| screen.contains("STROP-PTY>") && terminal_input(screen));
     assert_eq!(
         std::fs::read_to_string(directory.path().join("nested.txt")).unwrap(),
         "NESTED-EDITOR-OK\n"
@@ -83,11 +93,11 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
             && !screen.contains("STROP-PTY>")
     });
     tui.send(b"q");
-    tui.until(|screen| screen.contains("STROP-PTY>") && screen.contains("TERMINAL"));
+    tui.until(|screen| screen.contains("STROP-PTY>") && terminal_input(screen));
     tui.send(b"printf '\\033[2J\\033[HINTERRUPT-READY\\n'; cat\r");
     tui.until(|screen| line(screen, "INTERRUPT-READY"));
     tui.send(b"\x03");
-    tui.until(|screen| screen.contains("STROP-PTY>") && screen.contains("TERMINAL"));
+    tui.until(|screen| screen.contains("STROP-PTY>") && terminal_input(screen));
     // (raw Esc/Alt byte fidelity is asserted exactly by the od step below)
     tui.send(b"printf 'ESC-REMAINED\\n'\r");
     tui.send(b"stty raw -echo; printf 'BYTE-READY\\n'; dd bs=1 count=8 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nBYTE-DONE\\n'\r");
@@ -162,9 +172,9 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| line(screen, "MODE-DONE"));
     // F2 enters inspection directly at a calm prompt.
     tui.send(b"\x1bOQ");
-    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
+    tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     tui.send(b"i");
-    tui.until(|screen| screen.contains("TERMINAL"));
+    tui.until(terminal_input);
     // Sustained output (0055 §12): while a sixteen-KiB `yes` stream floods
     // the PTY, the editor still admits input and renders — the mode escape
     // lands mid-flood — and the bounded history drops the flood's head:
@@ -181,7 +191,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     // contract. The pinned-view proof is the mode chip: the transient
     // "snapshot" message is cleared by the very next update while the
     // flood streams.
-    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
+    tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     tui.send(b"i");
     let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>"));
     assert!(
@@ -192,7 +202,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| line(screen, "INSPECTION-READY"));
     tui.send(b"\x1c");
     tui.send(b"\x0e");
-    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
+    tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     File::options()
         .write(true)
         .custom_flags(libc::O_NONBLOCK)
@@ -235,7 +245,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"p");
     tui.until(|screen| !screen.contains("terminal #") && numbered_line(screen, "INSPECTION-READY"));
     tui.send(b":q!\r");
-    tui.until(|screen| screen.contains("SNAPSHOT") && screen.contains("terminal #"));
+    tui.until(|screen| terminal_inspection(screen) && screen.contains("terminal #"));
     tui.send(b":vs\ri");
     // 0064 §1 geometry: left pane cols 0..58, its track 58, divider 59,
     // right pane content 60..119, right track 119 — compare by range,
@@ -252,9 +262,9 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     // focus lands on the left editor pane (NORMAL), then returns to the
     // terminal pane and resumes live input with i.
     tui.send(b"\x1bOQ w l");
-    tui.until(|screen| screen.contains("SNAPSHOT") && !screen.contains("TERMINAL"));
+    tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     tui.send(b" w hi");
-    tui.until(|screen| screen.contains("TERMINAL"));
+    tui.until(terminal_input);
     tui.send(b"printf 'SIZE:'; stty size\r");
     tui.until(|screen| {
         // The 60-column right pane reserves one track column (0064 §1),
@@ -267,7 +277,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.until(|screen| {
         // split closed: no divider remains; the only reserved cell is
         // the single pane's own track at the last column (0064 §1).
-        screen.contains("TERMINAL")
+        terminal_input(screen)
             && !screen
                 .lines()
                 .take(29)
@@ -276,7 +286,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1c\x0e:qa\r");
     tui.until(|screen| screen.contains("Stop terminal session"));
     tui.send(b"\x1b[B\r");
-    tui.until(|screen| screen.contains("SNAPSHOT") && screen.contains("exited"));
+    tui.until(|screen| terminal_inspection(screen) && screen.contains("exited"));
     tui.send(b":qa\r");
     assert!(tui.wait_exit().success());
     // The flood never degraded the capture: the file says so itself.

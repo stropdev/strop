@@ -8,6 +8,7 @@ use super::*;
 /// blanks, never half a glyph; a zero-width cluster occupies no cell.
 pub(super) fn content_spans(
     editor: &Editor,
+    t: &Tokens,
     view: &PaneView,
     start: usize,
     text: ropey::RopeSlice<'_>,
@@ -35,7 +36,7 @@ pub(super) fn content_spans(
     let Some(checkpoint) =
         buf.layout_checkpoint(strop_core::id::LineIndex::new(row), view.hscroll, tab)
     else {
-        return vec![Span::styled("layout pending", Style::default().fg(muted()))];
+        return vec![Span::styled("layout pending", Style::default().fg(t.muted))];
     };
     if checkpoint.byte.get() > source.len_bytes() {
         return Vec::new();
@@ -61,7 +62,7 @@ pub(super) fn content_spans(
         let i = glyph.byte;
         let pos = start + i;
         let is_source = i < text.len_bytes();
-        let mut cell = Style::default().fg(style.row_fg.unwrap_or(crate::render::text()));
+        let mut cell = Style::default().fg(style.row_fg.unwrap_or(t.text));
         if let Some(bg) = style.row_bg {
             cell = cell.bg(bg);
         }
@@ -72,10 +73,10 @@ pub(super) fn content_spans(
             syn_idx += 1;
         }
         if let Some(line) = style.diff_line {
-            cell = cell.fg(diff::origin_fg(line.origin));
+            cell = cell.fg(diff::origin_fg(t, line.origin));
         }
         if is_source && syn_idx < style.syn_spans.len() && style.syn_spans[syn_idx].start <= pos {
-            cell = cell.patch(crate::render::syntax_style(&style.syn_spans[syn_idx]));
+            cell = cell.patch(t.syntax(&style.syn_spans[syn_idx]));
         }
         while decoration_index < style.decorations.len() && i >= decoration_end {
             decoration_index += 1;
@@ -91,8 +92,8 @@ pub(super) fn content_spans(
         if let (Some(line), Some((a, b))) = (style.diff_line, style.emphasis) {
             if a < i + grapheme.len() && i < b {
                 let bg = match line.origin {
-                    strop_git::LineOrigin::Addition => diff::add_strong_bg(),
-                    _ => diff::del_strong_bg(),
+                    strop_git::LineOrigin::Addition => t.diff_add_strong_bg,
+                    _ => t.diff_del_strong_bg,
                 };
                 cell = cell.bg(bg).add_modifier(Modifier::BOLD);
             }
@@ -110,7 +111,7 @@ pub(super) fn content_spans(
                     || style.extra_selections.iter().any(covers)
             };
             if selected {
-                cell = cell.bg(select_bg());
+                cell = cell.bg(t.selection);
             }
             // search hits light up (accent bold); the match under the
             // cursor — the "current" one n/N walks — wears an underline
@@ -122,7 +123,7 @@ pub(super) fn content_spans(
                 .get(hit_index)
                 .filter(|hit| hit.start.get() < pos + grapheme.len() && pos < hit.end.get())
             {
-                cell = cell.fg(accent()).add_modifier(Modifier::BOLD);
+                cell = cell.fg(t.accent).add_modifier(Modifier::BOLD);
                 if hit.start.get() <= view.cursor && view.cursor < hit.end.get() {
                     cell = cell.add_modifier(Modifier::UNDERLINED);
                 }
@@ -131,7 +132,7 @@ pub(super) fn content_spans(
             // both endpoints — under find/preview/flash, over the
             // selection and search layers
             if style.pair_first == Some(pos) || style.pair_second == Some(pos) {
-                cell = cell.bg(pair_bg()).add_modifier(Modifier::BOLD);
+                cell = cell.bg(t.pair).add_modifier(Modifier::BOLD);
             }
             if let Some(find) = style.find {
                 // leap-style: candidates bold-accent on the pending side
@@ -141,7 +142,7 @@ pub(super) fn content_spans(
                     pos > view.cursor
                 };
                 if row == cur_line && ahead && !grapheme.chars().all(|c| c.is_whitespace()) {
-                    cell = cell.fg(accent()).add_modifier(Modifier::BOLD);
+                    cell = cell.fg(t.accent).add_modifier(Modifier::BOLD);
                 }
             }
             if style
@@ -149,13 +150,13 @@ pub(super) fn content_spans(
                 .iter()
                 .any(|r| r.start.get() < pos + grapheme.len() && pos < r.end.get())
             {
-                cell = cell.fg(accent()).bg(preview_bg());
+                cell = cell.fg(t.accent).bg(t.preview);
             }
             if style
                 .flash
                 .is_some_and(|r| r.start.get() < pos + grapheme.len() && pos < r.end.get())
             {
-                cell = cell.bg(flash_bg());
+                cell = cell.bg(t.flash);
             }
         }
         let symbol = if !visible.complete || grapheme == "\t" {

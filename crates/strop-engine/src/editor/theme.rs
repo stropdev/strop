@@ -1,11 +1,23 @@
 //! The built-in palette selector. Config supplies the startup choice;
-//! `--theme` overrides it and `:theme` switches only this session.
-//! Existing terminals receive an asynchronous palette-default update.
+//! `--theme` overrides it and `:theme` switches only this session. The
+//! selection lives on the editor (0088 §3); existing terminals receive an
+//! asynchronous palette-default update.
 use super::Editor;
-use strop_core::theme::{self, ThemeId};
+use strop_core::theme::ThemeId;
 use strop_picker::{Item, Payload, Picker};
 
 impl Editor {
+    /// The palette every surface renders with right now.
+    pub fn theme(&self) -> ThemeId {
+        self.theme
+    }
+
+    /// The startup selection (config or `--theme`): no message, no
+    /// terminal refresh — nothing is running yet.
+    pub fn set_theme(&mut self, id: ThemeId) {
+        self.theme = id;
+    }
+
     /// `:theme` opens the selector; `:theme NAME` applies a registered
     /// palette. Unknown names leave the current choice untouched.
     pub(crate) fn theme_command(&mut self, arg: &str) {
@@ -17,14 +29,7 @@ impl Editor {
         match ThemeId::from_name(arg) {
             Some(id) => self.apply_theme(id),
             None => {
-                self.message = format!(
-                    "theme takes {} — not {arg:?}",
-                    ThemeId::ALL
-                        .iter()
-                        .map(|id| id.name())
-                        .collect::<Vec<_>>()
-                        .join(" or ")
-                );
+                self.message = format!("theme takes {} — not {arg:?}", ThemeId::choices());
             }
         }
     }
@@ -48,8 +53,8 @@ impl Editor {
     /// The one mutation path: selector rows and the direct argument
     /// land here alike.
     pub(crate) fn apply_theme(&mut self, id: ThemeId) {
-        theme::set_current(id);
-        self.message = match self.refresh_terminal_themes() {
+        self.theme = id;
+        self.message = match self.set_terminal_themes(id) {
             Ok(()) => format!("theme: {} palette", id.name()),
             Err(error) => format!("theme: {}; terminal refresh failed: {error}", id.name()),
         };

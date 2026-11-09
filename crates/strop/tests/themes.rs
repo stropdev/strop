@@ -1,5 +1,7 @@
-//! Theme selection runs in real child editors: process-global palette state
-//! cannot race another test, and assertions inspect actual rendered cells.
+//! Theme selection end to end: config, `--theme`, `:theme` and replay
+//! through real child editors, asserting on the actual rendered cells.
+//! The theme is session state on the editor (0088 §3), so these are
+//! journeys, not isolation workarounds.
 use serde_json::Value;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -92,17 +94,17 @@ fn every_registered_palette_renders_from_config_and_cli_override() {
             // With a flag, deliberately disagree with it in the config.
             let configured = if flag.is_none() {
                 id
-            } else if id == ThemeId::Light {
-                ThemeId::Dark
+            } else if id == ThemeId::Vellum {
+                ThemeId::Hone
             } else {
-                ThemeId::Light
+                ThemeId::Vellum
             };
             configure(dir.path(), configured.name());
             let (_, frames) = capture(dir.path(), SOURCE, flag);
             let frame = frames.last().expect("actual frame observation");
             assert_eq!(
                 cell(frame, 40, 5)[3],
-                color(id.palette().base),
+                color(id.palette().bg.base),
                 "{} background",
                 id.name()
             );
@@ -113,7 +115,7 @@ fn every_registered_palette_renders_from_config_and_cli_override() {
                 .expect("source text cell");
             assert_eq!(
                 sample[2],
-                color(id.palette().text),
+                color(id.palette().fg.text),
                 "{} source text",
                 id.name()
             );
@@ -124,30 +126,30 @@ fn every_registered_palette_renders_from_config_and_cli_override() {
 #[test]
 fn live_selector_accept_cancel_and_invalid_choice_preserve_session_ownership() {
     let dir = tempfile::tempdir().unwrap();
-    configure(dir.path(), "nord");
+    configure(dir.path(), "slate");
     let script = format!(
-        "{SOURCE}keys :theme<cr>\nsettle 5000\nkeys light\nsettle 5000\nkeys <esc><esc>\nframe\n\
-         keys :theme<cr>\nsettle 5000\nkeys strop-ink\nsettle 5000\nkeys <cr>\nframe\n\
+        "{SOURCE}keys :theme<cr>\nsettle 5000\nkeys vellum\nsettle 5000\nkeys <esc><esc>\nframe\n\
+         keys :theme<cr>\nsettle 5000\nkeys carbide\nsettle 5000\nkeys <cr>\nframe\n\
          keys :theme nonexistent-palette<cr>\nframe\nstate\n"
     );
-    let (output, frames) = capture(dir.path(), &script, Some("catppuccin-mocha"));
+    let (output, frames) = capture(dir.path(), &script, Some("paper-dark"));
     assert!(output.contains("nonexistent-palette"));
     let final_frame = frames.last().unwrap();
     assert_eq!(
         cell(final_frame, 40, 5)[3],
-        color(ThemeId::StropInk.palette().base)
+        color(ThemeId::Carbide.palette().bg.base)
     );
     // Opening/filtering/cancelling is not an uncommitted live preview.
     assert!(!frames
         .iter()
-        .any(|frame| cell(frame, 40, 5)[3] == color(ThemeId::Light.palette().base)));
+        .any(|frame| cell(frame, 40, 5)[3] == color(ThemeId::Vellum.palette().bg.base)));
     assert_eq!(
         std::fs::read_to_string(dir.path().join("config/strop/config.toml")).unwrap(),
-        "theme = \"nord\"\n"
+        "theme = \"slate\"\n"
     );
 
     // Replay must restore the effective CLI theme, not re-read config or
-    // default to dark; it also reproduces every subsequent theme switch.
+    // default to hone; it also reproduces every subsequent theme switch.
     let replay = successful(
         command(dir.path())
             .env("PATH", dir.path().join("no-native-executables"))
@@ -163,19 +165,19 @@ fn live_selector_accept_cancel_and_invalid_choice_preserve_session_ownership() {
 #[test]
 fn paper_variants_switch_through_picker_and_replay() {
     let dir = tempfile::tempdir().unwrap();
-    configure(dir.path(), "nord");
+    configure(dir.path(), "slate");
     let script = format!(
         "{SOURCE}keys :theme<cr>\nsettle 5000\nkeys paper\nsettle 5000\nkeys <cr>\nframe\n\
          keys :theme<cr>\nsettle 5000\nkeys paper-dark\nsettle 5000\nkeys <cr>\nframe\n\
-         keys :theme dark<cr>\nframe\n\
+         keys :theme hone<cr>\nframe\n\
          keys :theme<cr>\nsettle 5000\nkeys paper-dark\nsettle 5000\nkeys <cr>\nframe\nstate\n"
     );
-    let (_, frames) = capture(dir.path(), &script, Some("dark"));
+    let (_, frames) = capture(dir.path(), &script, Some("hone"));
     let expected = [
-        ThemeId::Dark,
+        ThemeId::Hone,
         ThemeId::Paper,
         ThemeId::PaperDark,
-        ThemeId::Dark,
+        ThemeId::Hone,
         ThemeId::PaperDark,
     ];
     let mut observed: Vec<_> = frames
@@ -184,14 +186,14 @@ fn paper_variants_switch_through_picker_and_replay() {
             expected
                 .iter()
                 .copied()
-                .find(|id| cell(frame, 40, 5)[3] == color(id.palette().base))
+                .find(|id| cell(frame, 40, 5)[3] == color(id.palette().bg.base))
         })
         .collect();
     observed.dedup();
     assert_eq!(observed, expected);
     assert_eq!(
         std::fs::read_to_string(dir.path().join("config/strop/config.toml")).unwrap(),
-        "theme = \"nord\"\n"
+        "theme = \"slate\"\n"
     );
 
     let replay = successful(
@@ -210,24 +212,27 @@ fn paper_variants_switch_through_picker_and_replay() {
 #[test]
 fn human_labels_and_canonical_names_choose_the_typed_registry_entry() {
     for (query, expected) in [
-        ("Catppuccin Mocha", ThemeId::CatppuccinMocha),
-        ("catppuccin-latte", ThemeId::CatppuccinLatte),
-        ("paper", ThemeId::Paper),
-        ("paper-dark", ThemeId::PaperDark),
+        ("Paper Dark", ThemeId::PaperDark),
+        ("carbide", ThemeId::Carbide),
+        ("vellum", ThemeId::Vellum),
+        ("Slate", ThemeId::Slate),
     ] {
         let dir = tempfile::tempdir().unwrap();
-        configure(dir.path(), "nord");
+        configure(dir.path(), "paper");
         let script =
             format!("{SOURCE}keys :theme<cr>\nsettle 5000\nkeys {query}<cr>\nsettle 5000\nframe\n");
-        let (_, frames) = capture(dir.path(), &script, Some("dark"));
+        let (_, frames) = capture(dir.path(), &script, Some("hone"));
         assert_eq!(
             cell(frames.last().unwrap(), 40, 5)[3],
-            color(expected.palette().base),
+            color(expected.palette().bg.base),
             "query {query:?}"
         );
     }
 }
 
+/// A deleted or misspelt theme: `--theme` refuses before editing; a
+/// config naming one falls back to the default with a warning that
+/// lists the six choices (0088 §3) and the editor stays usable.
 #[test]
 fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable() {
     let dir = tempfile::tempdir().unwrap();
@@ -236,7 +241,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
     let output = command(dir.path())
         .args([
             "--theme",
-            "nonexistent-palette",
+            "catppuccin-mocha",
             "--headless",
             "steps.keys",
             "source.txt",
@@ -244,14 +249,27 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
         .output()
         .unwrap();
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("hone, slate, carbide, vellum, paper, paper-dark"),
+        "{stderr}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.path().join("source.txt")).unwrap(),
         "keep\n"
     );
-    configure(dir.path(), "nonexistent-palette");
-    let (_, frames) = capture(dir.path(), SOURCE, None);
+    configure(dir.path(), "nord");
+    let (output, frames) = capture(dir.path(), &format!("{SOURCE}state\n"), None);
     assert_eq!(
         cell(frames.last().unwrap(), 40, 5)[3],
-        color(ThemeId::Dark.palette().base)
+        color(ThemeId::Hone.palette().bg.base)
+    );
+    assert!(
+        output.contains("nord"),
+        "the warning names the rejected theme: {output}"
+    );
+    assert!(
+        output.contains("hone"),
+        "the warning names the choices: {output}"
     );
 }

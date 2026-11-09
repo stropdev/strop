@@ -16,7 +16,7 @@ fn pair_cells(
     let mut cells = Vec::new();
     for y in 0..height {
         for x in 0..width {
-            if grid[(x, y)].bg == crate::render::pair_bg() {
+            if grid[(x, y)].bg == crate::render::tokens().pair {
                 cells.push((x, y));
             }
         }
@@ -106,7 +106,7 @@ fn moving_the_caret_off_leaves_no_stale_highlight() {
     let grid = terminal.backend().buffer();
     let stale = (0..6)
         .flat_map(|y| (0..40).map(move |x| (x, y)))
-        .filter(|&(x, y)| grid[(x, y)].bg == crate::render::pair_bg())
+        .filter(|&(x, y)| grid[(x, y)].bg == crate::render::tokens().pair)
         .count();
     assert_eq!(stale, 0, "no stale pair cells");
 }
@@ -195,7 +195,7 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
     let grid = terminal.backend().buffer();
     let cells: Vec<(u16, u16)> = (0..10)
         .flat_map(|y| (0..50).map(move |x| (x, y)))
-        .filter(|&(x, y)| grid[(x, y)].bg == crate::render::pair_bg())
+        .filter(|&(x, y)| grid[(x, y)].bg == crate::render::tokens().pair)
         .collect();
     assert_eq!(
         cells,

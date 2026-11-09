@@ -80,7 +80,9 @@ fn streaming_selection_and_repeated_resizes_keep_one_committed_policy() {
 
     for columns in [120, 80, 100, 120, 100] {
         let (list, preview) = split(&mut editor, columns, 30);
-        assert_eq!(list.width + preview.width, columns - 6);
+        // card margin (2 or 0) + border + padding on each side
+        let chrome = if columns >= 100 { 8 } else { 4 };
+        assert_eq!(list.width + preview.width, columns - chrome);
         assert_eq!(list.x + list.width, preview.x);
         if columns == 100 {
             assert_eq!((list, preview), initial);
@@ -136,7 +138,7 @@ fn symbol_status_rows_share_the_bounded_allocation() {
         "before {before:?}, after {after:?}"
     );
     assert_eq!(
-        after.width, 52,
+        after.width, 51,
         "status text remains bounded by the list cap"
     );
 }

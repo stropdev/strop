@@ -3,52 +3,54 @@
 Generated from the command table (`strop --dump-compat`).
 `✓` ships exactly; `(soon)` is a planned slot.
 
-## normal
+## Moving
 
 - `✓ h j k l` — move (never off the line)
 - `✓ w b e W B E` — word / WORD motions
 - `✓ zz zt zb` — center/top/bottom the cursor line
 - `✓ H M L` — top/middle/bottom visible line
-- `✓ ZZ` — write + close window
-- `✓ gv` — reselect last visual
-- `✓ gi` — insert at last insert
 - `✓ g;` — older change (changelist)
 - `✓ g,` — newer change (changelist)
 - `✓ ge gE { }` — word-end back / paragraph motions
 - `✓ 0 $ G %` — line/file/pair jumps
 - `✓ g<space>` — collection: open full source at caret
-- `✓ gb` — select next occurrence of word/selection
-- `✓ gB` — select all occurrences in buffer
 - `✓ gg` — top of file
 - `✓ enter` — line down, first non-blank (blame gutter: dive)
 - `✓ tab` — jump list forward (ctrl-i)
-- `✓ ctrl-r` — redo
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-^` — alternate buffer
-- `✓ q<a>` — record macro into register
-- `✓ @<a>` — play macro (count repeats)
 - `✓ gr` — references (LSP)
 - `✓ gI` — implementation (LSP)
 - `✓ gy` — type definition (LSP)
 - `✓ gD` — declaration (LSP)
-- `✓ ]d [d` — next/prev diagnostic
+- `✓ ]d` — next diagnostic
+- `✓ [d` — previous diagnostic
 - `✓ gd` — goto definition (LSP)
 - `✓ gs` — switch source/header (clangd)
 - `✓ f<c> F<c> t<c> T<c>` — find/till char (candidates light up)
-- `✓ :` — ex command line
-- `✓ / ?` — literal search forward / backward (live as you type or delete)
-- `✓ n` — next match
-- `✓ N` — previous match
-- `✓ ]f [f` — next / prev file card (collections)
-- `✓ ]e [e` — next / prev excerpt (collections; +/- context)
-- `✓ ]c [c` — next / prev git hunk
+- `✓ ]f` — next file card (collections)
+- `✓ [f` — previous file card (collections)
+- `✓ ]e` — next excerpt (collections; +/- context)
+- `✓ [e` — previous excerpt (collections; +/- context)
+- `✓ ]c` — next git hunk
+- `✓ [c` — previous git hunk
 - `✓ m<a>` — set mark at cursor
 - `✓ '<a> `<a>` — jump to mark
-- `✓ * #` — word under cursor, forward / backward
 - `✓ ; ,` — repeat find, same / reversed
 - `✓ |` — column motion (vim); pipe moved to space |
+- `✓ ^ _` — first non-blank
+
+## Editing
+
+- `✓ ZZ` — write + close window
+- `✓ gi` — insert at last insert
+- `✓ gb` — select next occurrence of word/selection
+- `✓ gB` — select all occurrences in buffer
+- `✓ ctrl-r` — redo
+- `✓ q<a>` — record macro into register
+- `✓ @<a>` — play macro (count repeats)
 - `✓ Q` — toggle cursor at point (multicursor)
-- `✓ d y c > <` — operators + motion/object; completed chords execute immediately, Visual selections inspect first
+- `✓ d y c > <` — operators + motion/object (live preview)
 - `✓ dd yy cc` — line delete/yank/change
 - `✓ D` — delete to line end
 - `✓ C` — change to line end
@@ -61,26 +63,14 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ p P` — paste after / before
 - `✓ r<c>` — replace char
 - `✓ J .` — join lines · repeat change
-- `✓ ^ _` — first non-blank
 - `✓ ~` — toggle case
 - `✓ S` — change line
 - `✓ u ctrl-r` — undo / redo (one unit per command)
 - `✓ "+y "+p "+P` — system clipboard: yank / paste after / before
 - `✓ "xy "xp` — named register: yank / paste
-- `✓ ctrl-v` — visual block
-- `✓ v V` — visual / visual-line
+- `✓ gv` — reselect last visual
 
-## visual
-
-- `✓ gb` — select next occurrence of word/selection
-- `✓ gB` — select all occurrences in buffer
-- `✓ d y c x > <` — operate on selection
-- `✓ ctrl-c` — toggle comments on selected lines
-- `✓ S<c>` — wrap selection in pair
-- `✓ i<a> a<a>` — objects select (vi[ works)
-- `✓ space y` — yank selection → clipboard
-
-## insert
+## Insert
 
 - `✓ ctrl-space` — code completion: language service + current source words
 - `✓ ctrl-x ctrl-o` — language-service completion
@@ -94,7 +84,28 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ enter` — new line (auto-indent); accept completion only after deliberate selection
 - `✓ } ] )` — closer on indent-only line aligns to its opener
 
-## leader
+## Visual
+
+- `✓ gb` — select next occurrence of word/selection
+- `✓ gB` — select all occurrences in buffer
+- `✓ gv` — reselect last visual
+- `✓ ctrl-v` — visual block
+- `✓ v V` — visual / visual-line
+- `✓ d y c x > <` — operate on selection
+- `✓ ctrl-c` — toggle comments on selected lines
+- `✓ S<c>` — wrap selection in pair
+- `✓ i<a> a<a>` — objects select (vi[ works)
+- `✓ space y` — yank selection → clipboard
+
+## Search
+
+- `✓ / ?` — literal search forward / backward (live as you type or delete)
+- `✓ n` — next match
+- `✓ N` — previous match
+- `✓ * #` — word under cursor, forward / backward
+- `✓ :noh` — clear the persistent search highlight
+
+## Leader (space)
 
 - `✓ space |` — pipe line/selection through shell (:! runs)
 - `✓ space e` — reveal source in its Directory buffer
@@ -116,7 +127,16 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ space u` — undo-tree browser
 - `✓ space c` — cursor on next line too (multicursor)
 
-## git
+## Panes
+
+- `✓ :vs :sp` — split vertical / horizontal
+- `✓ space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` — pane move / cycle / focus 1-9
+- `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
+- `✓ space w v / -` — pane split (vertical / horizontal)
+- `✓ space w q` — close pane (last → buffer)
+- `✓ ctrl-l` — redraw: full repaint when the terminal desyncs
+
+## Git
 
 - `✓ space g` — git…
 - `✓ space g l` — commit browser
@@ -132,28 +152,9 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ enter` — dive into the line's commit (blame gutter)
 - `✓ q` — close surface (readonly buffers)
 
-## ex+panes
+## Pickers
 
-- `✓ :w :q :q! :wq :w {file} :trust` — write / quit (force) / write-quit / write-as
-- `✓ :[range]s/a/b/[g] :N :% :N,Md :N,My` — substitute (buffer-search grammar + live preview) / goto line / ranged delete+yank
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
-- `✓ :e` — edit file
-- `✓ :help` — help buffer (this text — / searches it)
-- `✓ :theme` — choose a built-in interface palette
-- `✓ :jumps :symbols` — jumplist / document symbols picker
-- `✓ :noh` — clear the persistent search highlight
-- `✓ :format :rename` — format buffer / rename symbol: :rename NEW
-- `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
-- `✓ :qa :qall` — quit all (fails on unsaved; bang discards)
-- `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
-- `✓ :container-worker` — authorize a verified worker for the attached container; may write its private cache
-- `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
-- `✓ :vs :sp` — split vertical / horizontal
-- `✓ space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` — pane move / cycle / focus 1-9
-- `✓ ctrl-o / ctrl-i (tab)` — jump back / forward through the current pane's 100-entry jumplist; splits copy history, new jumps preserve newer entries, and project sessions restore it
-- `✓ space w v / -` — pane split (vertical / horizontal)
-- `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
-- `✓ space w q` — close pane (last → buffer)
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
@@ -161,12 +162,8 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ ctrl-r` — Search: toggle replacement; document: redo
 - `✓ enter` — Search Find: open source; With: prepare review
 - `✓ ctrl-o` — Search: collect included matches
-- `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
-- `✓ :fs :browse :filter` — filesystem actions, namespace-aware browsing and folder filtering
-- `✓ :apply-change :cancel-change :save-change` — review: apply text or filesystem changes, cancel, or save changed text
-- `✓ ctrl-l` — redraw: full repaint when the terminal desyncs
 
-## terminal
+## Terminal
 
 - `✓ :terminal :terminal-local :terminal-stop` — launch a local PTY, explicitly choose local context, or stop and retain output
 - `✓ ctrl-\ ctrl-n` — terminal input → editor Normal inspection; Esc stays with the child
@@ -175,3 +172,23 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ :terminal-paste :terminal-paste-cancel` — confirm or discard the scoped held multiline/control paste
 - `✓ :terminal-refresh` — reinstall the latest output into the pinned inspection snapshot (never auto-refreshes a selection)
 - `✓ ctrl-4 ctrl-n` — legacy Ctrl-\ Ctrl-N spelling from the outer terminal decoder
+
+## Ex commands
+
+- `✓ :` — ex command line
+- `✓ :w :q :q! :wq :w {file} :trust` — write / quit (force) / write-quit / write-as
+- `✓ :[range]s/a/b/[g] :N :% :N,Md :N,My` — substitute (buffer-search grammar + live preview) / goto line / ranged delete+yank
+- `✓ :e` — edit file
+- `✓ :help` — help buffer (this text — / searches it)
+- `✓ :theme` — choose a built-in interface palette
+- `✓ :jumps :symbols` — jumplist / document symbols picker
+- `✓ :format :rename` — format buffer / rename symbol: :rename NEW
+- `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
+- `✓ :qa :qall` — quit all (fails on unsaved; bang discards)
+- `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
+- `✓ :container-worker` — authorize a verified worker for the attached container; may write its private cache
+- `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
+- `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
+- `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
+- `✓ :fs :browse :filter` — filesystem actions, namespace-aware browsing and folder filtering
+- `✓ :apply-change :cancel-change :save-change` — review: apply text or filesystem changes, cancel, or save changed text

@@ -649,19 +649,23 @@ mod tests {
     fn picker_geometry_boundaries() {
         let area = CellRect::new(0, 0, 100, 30);
         let card = picker_card(area, strop_picker::Kind::Files);
-        assert_eq!(card, CellRect::new(1, 0, 98, 29));
+        // columns − 4 at 100 columns and up (0088 §2 rule 9)
+        assert_eq!(card, CellRect::new(2, 0, 96, 29));
         let inner = picker_inner(card);
-        assert_eq!(inner, CellRect::new(3, 1, 94, 27));
+        assert_eq!(inner, CellRect::new(4, 1, 92, 27));
         let (fields, content) = picker_field_split(inner, 2);
         assert_eq!(fields.height, 2);
-        assert_eq!(content, CellRect::new(3, 3, 94, 25));
+        assert_eq!(content, CellRect::new(4, 3, 92, 25));
         let (list, preview) = picker_split(area, strop_picker::Kind::Files, false).unwrap();
-        // 55/45 of 94: 51.7 rounds half-up to 52, preview takes the rest.
-        assert_eq!(list.width, 52);
-        assert_eq!(preview.unwrap().width, 42);
+        // 55/45 of 92: 50.6 rounds half-up to 51, preview takes the rest.
+        assert_eq!(list.width, 51);
+        assert_eq!(preview.unwrap().width, 41);
         // grep 60/40
         let (list, _) = picker_split(area, strop_picker::Kind::Search, false).unwrap();
-        assert_eq!(list.width, 56);
+        assert_eq!(list.width, 55);
+        // below 100 columns the card is full-bleed
+        let card = picker_card(CellRect::new(0, 0, 80, 24), strop_picker::Kind::Files);
+        assert_eq!(card, CellRect::new(0, 0, 80, 23));
         // narrow terminal stacks: list keeps >= 8 rows, preview bottom 8
         let narrow = CellRect::new(0, 0, 60, 30);
         let (list, preview) = picker_split(narrow, strop_picker::Kind::Files, false).unwrap();

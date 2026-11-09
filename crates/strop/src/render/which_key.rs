@@ -1,32 +1,41 @@
-//! Which-key overlay (0003 §3): shows while a leader prefix pends.
-//! Generated from keymap::BINDINGS (0003 §5.7) — no hand-maintained
-//! hint lists to drift against dispatch.
+//! Which-key overlay (0003 §3, 0088 §2): shows while a leader prefix
+//! pends. Generated from keymap::BINDINGS (0003 §5.7) — no hand-
+//! maintained hint lists to drift against dispatch. Rows are grouped in
+//! the keymap's curated section order (the same order `Space ?` uses),
+//! key ranges collapse (`1-9`, `a-z`), and ten or more rows flow into
+//! two columns (U9).
 
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::editor::Editor;
 use crate::keymap;
 
-use super::{accent, base, muted, select_bg, text};
+use super::card::{card_width, keycap, Card};
+use super::clip::{clip_end, width};
+use super::style::Tokens;
 
 /// Pending prefixes that show a card: (pending keys, card title).
 const PREFIXES: &[(&str, &str)] = &[
-    (" ", " space "),
-    (" w", " space w "),
-    (" g", " space g "),
-    ("g", " g "),
-    ("]", " ] "),
-    ("[", " [ "),
-    ("m", " mark "),
-    ("'", " mark jump "),
-    ("`", " mark jump "),
+    (" ", "space"),
+    (" w", "space w"),
+    (" g", "space g"),
+    ("g", "g"),
+    ("]", "]"),
+    ("[", "["),
+    ("m", "mark"),
+    ("'", "mark jump"),
+    ("`", "mark jump"),
 ];
 
-pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
+/// Ten rows or more flow into two columns.
+const TWO_COLUMNS_AT: usize = 10;
+const DESC_CAP: usize = 48;
+
+pub fn render_which_key(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     if editor.picker_open() {
         return;
     }
@@ -47,145 +56,168 @@ pub fn render_which_key(editor: &Editor, frame: &mut Frame) {
     } else {
         Vec::new()
     };
-    render_hints(frame, title, &hints, &marks);
+    let rows = rows(&hints, &marks);
+    render_rows(frame, t, title, &rows, super::echo::visible(editor));
 }
 
-fn render_hints(
-    frame: &mut Frame,
-    title: &str,
-    hints: &[keymap::Hint],
-    marks: &[(char, usize, String)],
-) {
-    let area = frame.area();
-    if area.width < 12 || area.height < 6 {
-        // nothing legible fits; a hard-clipped card would lie (0068 C1)
-        return;
-    }
-    // which-key discipline (which-key.nvim: the card breathes): bottom-
-    // center, fitted to content within bounds, one key column, 1-cell
-    // inner padding, descriptions ellipsized — never a mid-word cut
-    // against the border, and a "+N more" footer instead of a silent cut.
-    struct Row {
-        key: String,
-        key_live: bool,
-        desc: String,
-        desc_live: bool,
-    }
-    let mut rows: Vec<Row> = hints
-        .iter()
-        .map(|h| Row {
-            // Absorb tokens read as jargon (`<a>`); the card speaks the
-            // range the user can type.
-            key: if h.key == "<a>" {
-                "a-z".into()
-            } else {
-                h.key.clone()
-            },
-            key_live: h.live,
-            desc: format!("{}{}", h.desc, if h.live { "" } else { "  (soon)" }),
-            desc_live: h.live,
-        })
-        .collect();
-    if title.contains("mark") {
-        if marks.is_empty() {
-            rows.push(Row {
-                key: String::new(),
-                key_live: false,
-                desc: "no marks set".into(),
-                desc_live: false,
-            });
-        } else {
-            for (name, line, text) in marks {
-                rows.push(Row {
-                    key: name.to_string(),
-                    key_live: true,
-                    desc: format!(":{line}  {text}"),
-                    desc_live: false,
-                });
+struct Row {
+    key: String,
+    live: bool,
+    desc: String,
+}
+
+/// Rows in curated section order with ranges collapsed: hints whose
+/// keys are consecutive single digits (or letters) with one description
+/// become one `1-9` row, the way `<a>` already reads as `a-z`.
+fn rows(hints: &[keymap::Hint], marks: &[(char, usize, String)]) -> Vec<Row> {
+    let mut rows: Vec<Row> = Vec::with_capacity(hints.len());
+    for section in keymap::SECTIONS {
+        let mut range: Option<(char, char, usize)> = None; // (first, last, row index)
+        for hint in hints.iter().filter(|hint| hint.section == section.id) {
+            let single = hint
+                .key
+                .chars()
+                .next()
+                .filter(|_| hint.key.chars().count() == 1);
+            if let (Some(ch), Some((first, last, at))) = (single, range) {
+                if ch.is_ascii_digit() == first.is_ascii_digit()
+                    && ch as u32 == last as u32 + 1
+                    && rows[at].desc == hint.desc
+                {
+                    range = Some((first, ch, at));
+                    rows[at].key = format!("{first}-{ch}");
+                    continue;
+                }
             }
+            range = single
+                .filter(|ch| ch.is_ascii_digit())
+                .map(|ch| (ch, ch, rows.len()));
+            rows.push(Row {
+                key: if hint.key == "<a>" {
+                    "a-z".into()
+                } else {
+                    hint.key.clone()
+                },
+                live: hint.live,
+                desc: hint.desc.to_owned(),
+            });
         }
     }
-    let key_w = rows
-        .iter()
-        .map(|row| super::clip::width(&row.key))
-        .max()
-        .unwrap_or(1)
-        .max(1);
-    const DESC_CAP: usize = 60;
+    if !marks.is_empty() {
+        for (name, line, text) in marks {
+            rows.push(Row {
+                key: name.to_string(),
+                live: true,
+                desc: format!(":{line}  {text}"),
+            });
+        }
+    }
+    rows
+}
+
+/// A column's natural width: keycap(key + 2) + gap(1) + description.
+fn column_width(rows: &[Row]) -> (usize, usize) {
+    let key_w = rows.iter().map(|row| width(&row.key)).max().unwrap_or(1);
     let desc_w = rows
         .iter()
-        .map(|row| super::clip::width(&row.desc))
+        .map(|row| width(&row.desc) + if row.live { 0 } else { 7 })
         .max()
         .unwrap_or(1)
         .min(DESC_CAP);
-    // borders(2) + inner pad(2) + chip(key_w+2) + gap(2) + description
-    let wanted = 2 + 2 + (key_w + 2) + 2 + desc_w;
-    let max_w = area.width.saturating_sub(2).max(4);
-    let width = (wanted as u16).min(max_w).max(20.min(max_w));
-    let height = (rows.len() as u16 + 2)
-        .min(area.height.saturating_sub(2))
-        .max(3);
+    (key_w, key_w + 2 + 1 + desc_w)
+}
+
+fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], above_echo: bool) {
+    let area = frame.area();
+    if area.width < 12 || area.height < 6 || rows.is_empty() {
+        // nothing legible fits; a hard-clipped card would lie (0068 C1)
+        return;
+    }
+    let (_, single_w) = column_width(rows);
+    let columns = if rows.len() >= TWO_COLUMNS_AT && area.width as usize >= 2 * single_w + 9 {
+        2
+    } else {
+        1
+    };
+    // borders (2) + statusline + echo row + one row of breathing room
+    let reserved = 4 + u16::from(above_echo);
+    let per_column = rows.len().div_ceil(columns);
+    let body_budget = usize::from(area.height.saturating_sub(reserved)).max(1);
+    let shown_per_column = if per_column > body_budget {
+        body_budget.saturating_sub(1).max(1) // the footer takes a row
+    } else {
+        per_column
+    };
+    let overflow = rows.len().saturating_sub(shown_per_column * columns);
+    let body_rows = shown_per_column + usize::from(overflow > 0);
+    // each column is as wide as its own rows, not the widest overall
+    let slices: Vec<&[Row]> = (0..columns)
+        .map(|column| {
+            let start = (column * shown_per_column).min(rows.len());
+            let end = ((column + 1) * shown_per_column).min(rows.len());
+            &rows[start..end]
+        })
+        .collect();
+    let widths: Vec<(usize, usize)> = slices.iter().map(|rows| column_width(rows)).collect();
+    let wanted = 4 + widths.iter().map(|(_, w)| w).sum::<usize>() + (columns - 1) * 3;
+    let card_w = card_width(wanted, area.width).max((wanted as u16).min(area.width - 2));
+    let height = body_rows as u16 + 2;
     let card = Rect {
-        x: area.width.saturating_sub(width) / 2, // bottom-center
-        y: area.height.saturating_sub(height + 1),
-        width,
+        x: area.width.saturating_sub(card_w) / 2, // bottom-center
+        y: area
+            .height
+            .saturating_sub(height + 1 + u16::from(above_echo)),
+        width: card_w,
         height,
     };
-    frame.render_widget(Clear, card);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(muted()))
-        .style(Style::default().bg(base()))
-        .title(Span::styled(
-            title,
-            Style::default().fg(text()).add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(card);
-    frame.render_widget(block, card);
-
-    // 1-cell left pad + chip + 2-cell gap + 1-cell right pad: no text
-    // ever touches a border, ellipsis included
-    let desc_budget = usize::from(inner.width).saturating_sub(1 + (key_w + 2) + 2 + 1);
-    let visible = usize::from(inner.height);
-    let overflow = rows.len().saturating_sub(visible);
-    let shown = if overflow > 0 {
-        visible.saturating_sub(1)
-    } else {
-        rows.len()
-    };
-    let mut lines: Vec<Line> = Vec::with_capacity(shown + 1);
-    for row in rows.iter().take(shown) {
-        if row.key.is_empty() {
-            lines.push(Line::from(Span::styled(
-                format!(" {}", row.desc),
-                Style::default().fg(muted()),
-            )));
-            continue;
+    let inner = Card::new(title).render(frame, card, t);
+    let inner_w = usize::from(inner.width);
+    let mut lines: Vec<Line> = Vec::with_capacity(body_rows);
+    for index in 0..shown_per_column {
+        let mut spans = Vec::new();
+        let mut offset = 0usize;
+        for (column, slice) in slices.iter().enumerate() {
+            let Some(row) = slice.get(index) else {
+                break;
+            };
+            let (key_w, column_w) = widths[column];
+            if column > 0 {
+                offset += widths[column - 1].1 + 3;
+                let used: usize = spans.iter().map(|span: &Span| span.width()).sum();
+                spans.push(Span::raw(" ".repeat(offset.saturating_sub(used))));
+            }
+            let desc_budget = column_w
+                .min(inner_w.saturating_sub(offset))
+                .saturating_sub(key_w + 2 + 1);
+            let padded = format!("{:>key_w$}", row.key);
+            if row.live {
+                spans.push(keycap(&padded, t));
+            } else {
+                spans.push(Span::styled(
+                    format!(" {padded} "),
+                    Style::default().fg(t.muted).bg(t.raised),
+                ));
+            }
+            let desc = if row.live {
+                row.desc.clone()
+            } else {
+                format!("{} (soon)", row.desc)
+            };
+            spans.push(Span::styled(
+                format!(" {}", clip_end(&desc, desc_budget)),
+                if row.live {
+                    Style::default().fg(t.text)
+                } else {
+                    Style::default().fg(t.muted).add_modifier(Modifier::ITALIC)
+                },
+            ));
         }
-        let key_style = if row.key_live {
-            Style::default().fg(accent()).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(muted())
-        };
-        let desc_style = if row.desc_live {
-            Style::default().fg(text())
-        } else {
-            Style::default().fg(muted())
-        };
-        lines.push(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(format!(" {:>key_w$} ", row.key), key_style.bg(select_bg())),
-            Span::styled(
-                format!("  {}", super::clip::clip_end(&row.desc, desc_budget)),
-                desc_style,
-            ),
-        ]));
+        lines.push(Line::from(spans));
     }
     if overflow > 0 {
         lines.push(Line::from(Span::styled(
-            format!("  +{overflow} more"),
-            Style::default().fg(muted()),
+            format!("+{overflow} more"),
+            Style::default().fg(t.muted),
         )));
     }
     frame.render_widget(Paragraph::new(lines), inner);
@@ -242,14 +274,14 @@ mod tests {
         assert!(frame.contains(":2  let x = 1;"), "{frame}");
     }
 
-    /// No marks: the card says so instead of showing an empty list.
+    /// No marks: the card shows the range row alone.
     #[test]
-    fn mark_card_without_marks_says_so() {
+    fn mark_card_without_marks_shows_the_range() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text("m");
         let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
-        assert!(frame.contains("no marks set"), "{frame}");
         assert!(frame.contains("a-z"), "{frame}");
+        assert!(frame.contains("set mark at cursor"), "{frame}");
     }
 
     /// Prefix cards without table children render nothing (visual mode
@@ -261,6 +293,48 @@ mod tests {
         let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         assert!(frame.contains("yank selection → clipboard"));
         assert!(!frame.contains("file finder"));
+    }
+
+    /// U9: `space w` collapses the nine pane-focus digits into one row.
+    #[test]
+    fn pane_card_collapses_the_digit_range() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" w");
+        let frame = crate::headless::frame_string(&mut e, 100, 24).unwrap();
+        assert!(frame.contains("1-9"), "{frame}");
+        for digit in 2..=9 {
+            assert!(
+                !frame.contains(&format!(" {digit}  pane")),
+                "digit {digit} folded into the range: {frame}"
+            );
+        }
+    }
+
+    /// U9: the leader card at ten or more rows flows into two columns and
+    /// orders its rows by keymap section — the leader verbs before git.
+    #[test]
+    fn leader_card_flows_into_two_columns_in_section_order() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" ");
+        let frame = crate::headless::frame_string(&mut e, 140, 40).unwrap();
+        let hints = crate::keymap::children_of(" ", crate::editor::Mode::Normal).len();
+        let body = frame
+            .lines()
+            .filter(|line| line.contains("│") && !line.contains("╭"))
+            .count();
+        assert!(
+            body < hints,
+            "two columns: {body} rows for {hints} hints\n{frame}"
+        );
+        let files = frame
+            .lines()
+            .position(|line| line.contains("files"))
+            .unwrap();
+        let git = frame
+            .lines()
+            .position(|line| line.contains("git…"))
+            .unwrap();
+        assert!(files <= git, "leader rows precede the git prefix: {frame}");
     }
 
     /// 0068 C1 (the user complaint): descriptions never cut mid-word
@@ -298,7 +372,7 @@ mod tests {
     fn overflow_reads_a_more_footer() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text(" ");
-        let frame = crate::headless::frame_string(&mut e, 100, 8).unwrap();
+        let frame = crate::headless::frame_string(&mut e, 60, 8).unwrap();
         assert!(frame.contains("more"), "overflow footer: {frame}");
     }
 

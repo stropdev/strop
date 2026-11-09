@@ -1,0 +1,81 @@
+   1 //! The modeline: one quiet row at the bottom edge.                                                                                    
+   2 //!                                                                                                                                    
+   3 //! Every width is a display cell, never a character.                                                                                  
+   4                                                                                                                                        
+   5 use std::path::Path;                                                                                                                   
+   6                                                                                                                                        
+   7 /// Gather the row.                                                                                                                    
+   8 pub struct Modeline {                                                                                                                  
+   9 │   chip: String,                                                                                                                      
+  10 │   dirty: bool,                                                                                                                       
+  11 │   line: usize,                                                                                                                       
+  12 }                                                                                                                                      
+  13                                                                                                                                        
+  14 impl Modeline {                                                                                                                        
+  15 │   fn gather(path: &Path, line: usize) -> Self {                                                                                      
+  16 │   │   let chip = format!(" {} ", "NORMAL");                                                                                          
+  17 │   │   // the filename must survive truncation                                                                                        
+  18 │   │   Self { chip, dirty: path.exists(), line }                                                                                      
+  19 │   }                                                                                                                                  
+  20 }                                                                                                                                      
+~                                                                                                                                           
+~                                                                                                                                           
+~                                                                                                                                           
+~                                                                                                                                           
+~                                                                                                                                           
+~                                                                                                                                           
+~                     ╭ space ──────────────────────────────────────────────────────────────────────────────────────╮                       
+~                     │  |  pipe line/selection through shell (:! runs)    d  diagnostics picker                    │                       
+~                     │  e  reveal source in its Directory buffer          k  hover docs                            │                       
+~                     │  f  file finder                                    a  context actions (code / filesystem)   │                       
+~                     │  o  open remote destination                        s  document symbols picker               │                       
+~                     │  b  buffers (MRU)                                  S  workspace symbols picker              │                       
+~                     │  /  Search workspace (resume investigation)        j  jumplist picker                       │                       
+~                     │  R  Search with replacement                        u  undo-tree browser                     │                       
+~                     │  ?  help buffer                                    c  cursor on next line too (multicursor) │                       
+~                     │  y  yank motion → system clipboard                 w  pane move / cycle / focus 1-9         │                       
+~                     │  p  paste clipboard after                          g  git…                                  │                       
+~                     │  P  paste clipboard before                                                                  │                       
+~                     ╰─────────────────────────────────────────────────────────────────────────────────────────────╯                       
+PENDING   src/render/statusline.rs                                                                                            space  1:1  5%
+
+  0: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 51:#838a97/#1b1e24+i 83:#1b1e24/#1b1e24 1:reset/reset
+  1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#838a97/#15171c+i 131:reset/#15171c 1:reset/reset
+  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 53:#838a97/#15171c+i 81:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#c99ce0/#15171c 1:#e6e1d6/#15171c 3:#8ecdb8/#15171c 2:#9da3af/#15171c 4:#e6e1d6/#15171c 2:#9da3af/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 114:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:reset/reset
+  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 19:#838a97/#15171c+i 115:reset/#15171c 1:reset/reset
+  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#c99ce0/#15171c 1:#e6e1d6/#15171c 6:#c99ce0/#15171c 1:#e6e1d6/#15171c 8:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 113:reset/#15171c 1:reset/reset
+  8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c 1:#9da3af/#15171c 117:reset/#15171c 1:reset/reset
+  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 118:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 5:#8ecdb8/#15171c 1:#9da3af/#15171c 118:reset/#15171c 1:reset/reset
+ 11: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#9da3af/#15171c 133:reset/#15171c 1:reset/reset
+ 12: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:reset/reset
+ 13: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 4:#c99ce0/#15171c 1:#e6e1d6/#15171c 8:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 119:reset/#15171c 1:reset/reset
+ 14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 2:#c99ce0/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 4:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 1:#b4b8c2/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 5:#8ecdb8/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 2:#b4b8c2/#15171c 1:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 85:reset/#15171c 1:reset/reset
+ 15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 3:#c99ce0/#15171c 6:#e6e1d6/#15171c 1:#b4b8c2/#15171c 1:#e6e1d6/#15171c 6:#86b7d8/#15171c 1:#b4b8c2/#15171c 1:#9da3af/#15171c 6:#aec37f/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 8:#aec37f/#15171c 2:#9da3af/#15171c 89:reset/#15171c 1:reset/reset
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 39:#838a97/#15171c+i 87:reset/#15171c 1:reset/reset
+ 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 6:#e6e1d6/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 6:#e6e1d6/#15171c 3:#9da3af/#15171c 6:#e6e1d6/#15171c 1:#9da3af/#15171c 85:reset/#15171c 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#9da3af/#15171c 129:reset/#15171c 1:reset/reset
+ 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#9da3af/#15171c 133:reset/#15171c 1:reset/reset
+ 20: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
+ 21: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
+ 22: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
+ 23: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
+ 24: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
+ 25: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
+ 26: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 7:#e6e1d6/#1c1f25+b 87:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 27: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 44:#e6e1d6/#1c1f25 3:reset/#1c1f25 3:#e8a848/#23272f+b 19:#e6e1d6/#1c1f25 20:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 28: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 38:#e6e1d6/#1c1f25 9:reset/#1c1f25 3:#e8a848/#23272f+b 11:#e6e1d6/#1c1f25 28:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 29: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 12:#e6e1d6/#1c1f25 35:reset/#1c1f25 3:#e8a848/#23272f+b 36:#e6e1d6/#1c1f25 3:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 30: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 24:#e6e1d6/#1c1f25 23:reset/#1c1f25 3:#e8a848/#23272f+b 24:#e6e1d6/#1c1f25 15:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 31: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 14:#e6e1d6/#1c1f25 33:reset/#1c1f25 3:#e8a848/#23272f+b 25:#e6e1d6/#1c1f25 14:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 32: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 40:#e6e1d6/#1c1f25 7:reset/#1c1f25 3:#e8a848/#23272f+b 16:#e6e1d6/#1c1f25 23:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 33: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 24:#e6e1d6/#1c1f25 23:reset/#1c1f25 3:#e8a848/#23272f+b 18:#e6e1d6/#1c1f25 21:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 34: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 12:#e6e1d6/#1c1f25 35:reset/#1c1f25 3:#e8a848/#23272f+b 38:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 35: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 31:#e6e1d6/#1c1f25 16:reset/#1c1f25 3:#e8a848/#23272f+b 30:#e6e1d6/#1c1f25 9:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 36: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 22:#e6e1d6/#1c1f25 25:reset/#1c1f25 3:#e8a848/#23272f+b 5:#e6e1d6/#1c1f25 34:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 37: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 23:#e6e1d6/#1c1f25 66:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 38: 1:#4a5160/#15171c 21:reset/#15171c 95:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 39: 8:#15171c/#e8a848+b 2:reset/#1c1f25 11:#a8adb8/#1c1f25 13:#e6e1d6/#1c1f25 92:reset/#1c1f25 5:#e8a848/#1c1f25 2:reset/#1c1f25 7:#858c9a/#1c1f25

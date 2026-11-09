@@ -1,0 +1,49 @@
+╭ files ─────────────────────────────────────────────────────────────── 2 of 4 ╮
+│ ❯ mod▏                                                                       │
+│                                                                              │
+│ ▌ mod.rs     src/render/    │ src/render/mod.rs                              │
+│   remote.md  docs/          │  1 │ //! Rendering root.                       │
+│                             │  2 │ pub mod statusline;                       │
+│                             │  3 │                                           │
+│                             │  4 │ pub fn render() {                         │
+│                             │  5 │     statusline::render();                 │
+│                             │  6 │ }                                         │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+│                             │                                                │
+╰  enter  open   ↑↓  move   esc  close ────────────────────────────────────────╯
+ FILES    src/render/statusline.rs                                       1:1  5%
+
+  0: 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 72:#656d7b/#fdfbf6
+  1: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 2:#9a5a12/#fdfbf6 3:#262a30/#fdfbf6 1:#9a5a12/#fdfbf6 71:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  2: 1:#656d7b/#fdfbf6 78:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  3: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#9a5a12/#e5dfd0 1:reset/#e5dfd0 3:#9a5a12/#e5dfd0+b 3:#262a30/#e5dfd0 5:reset/#e5dfd0 11:#4b525c/#e5dfd0 3:reset/#e5dfd0 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 19:#4b525c/#fdfbf6 29:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  4: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 2:#262a30/#fdfbf6 2:#9a5a12/#fdfbf6+b 4:#262a30/#fdfbf6 1:#9a5a12/#fdfbf6+b 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 10:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 19:#262a30/#fdfbf6 23:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  5: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 19:#262a30/#fdfbf6 23:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  6: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 42:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  7: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 17:#262a30/#fdfbf6 25:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  8: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 25:#262a30/#fdfbf6 17:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  9: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 1:#262a30/#fdfbf6 41:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 10: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 11: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 12: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 13: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 14: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 15: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 16: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 17: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 18: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 19: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 20: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 21: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 22: 2:#656d7b/#fdfbf6 7:#9a5a12/#e5dfd0+b 7:#656d7b/#fdfbf6 4:#9a5a12/#e5dfd0+b 7:#656d7b/#fdfbf6 5:#9a5a12/#e5dfd0+b 48:#656d7b/#fdfbf6
+ 23: 8:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 39:reset/#f8f5ee 7:#b4b6b7/#f8f5ee

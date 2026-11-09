@@ -1,7 +1,8 @@
 //! Folder decoration preserves the real buffer prefix byte-for-byte. Metadata
 //! comes from the listing; selection/search/caret keep the shared text renderer.
 use crate::editor::Directory;
-use crate::render::{accent, diff, muted};
+use crate::render::diff;
+use crate::render::style::Tokens;
 use ratatui::{
     style::{Modifier, Style},
     text::Span,
@@ -13,6 +14,7 @@ use strop_workspace::{EntryKind, ListingState};
 mod tests;
 
 pub(super) fn row(
+    t: &Tokens,
     directory: &Directory,
     line: usize,
     text: ropey::RopeSlice<'_>,
@@ -22,7 +24,7 @@ pub(super) fn row(
         return None;
     }
     let text = text.to_string();
-    let quiet = Style::default().fg(muted());
+    let quiet = Style::default().fg(t.muted);
     if line == 0 {
         let boundary = directory.location.label().len();
         let (path, count) = text.split_at_checked(boundary)?;
@@ -38,19 +40,17 @@ pub(super) fn row(
                 Span::styled(path[..leaf].to_owned(), quiet),
                 Span::styled(
                     path[leaf..].to_owned(),
-                    Style::default()
-                        .fg(crate::render::text())
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(t.text).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(count.to_owned(), quiet),
             ],
-            row_bg: Some(diff::band_bg()),
+            row_bg: Some(t.surface),
         });
     }
     if line == 1 {
         let mut spans = vec![Span::styled(
             text,
-            Style::default().fg(if focused { accent() } else { muted() }),
+            Style::default().fg(if focused { t.accent } else { t.muted }),
         )];
         spans.push(Span::styled(
             if directory.parent().is_some() {
@@ -63,7 +63,7 @@ pub(super) fn row(
         spans.push(Span::styled("   ·   Enter open   Space a actions", quiet));
         return Some(diff::RowDecoration {
             spans,
-            row_bg: focused.then_some(diff::cursor_row_bg()),
+            row_bg: focused.then_some(t.cursorline),
         });
     }
     let entry = directory.entry(LineIndex::new(line))?;
@@ -77,10 +77,10 @@ pub(super) fn row(
         return None;
     }
     let color = match entry.observation.kind {
-        EntryKind::Directory => accent(),
-        EntryKind::SymbolicLink => crate::render::seed(strop_core::theme::current().class_function),
-        EntryKind::Unknown => muted(),
-        _ => crate::render::text(),
+        EntryKind::Directory => t.accent,
+        EntryKind::SymbolicLink => t.syn.function,
+        EntryKind::Unknown => t.muted,
+        _ => t.text,
     };
     let marked = directory.marked.contains_key(&entry.name);
     let label_style = if focused || marked || entry.observation.kind == EntryKind::Directory {
@@ -93,7 +93,7 @@ pub(super) fn row(
             Span::styled(label.to_owned(), label_style),
             Span::styled(metadata.to_owned(), quiet),
         ],
-        row_bg: (focused || marked).then_some(diff::cursor_row_bg()),
+        row_bg: (focused || marked).then_some(t.cursorline),
     })
 }
 

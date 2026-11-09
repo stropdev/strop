@@ -1,11 +1,20 @@
 //! Typed source rows, gutters, source syntax projection and pane overlays.
 use super::*;
 
+mod collection;
+use collection::CollectionProjection;
+
 /// Render one pane's rows: gutter, syntax/decoration, overlays, guides.
 /// Ordinary file and diff rows stream graphemes straight off the rope —
 /// no whole-line String, no layout vector; only decorated surfaces
 /// (help/log/stats) keep their existing owned styled text.
-pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: &PaneView) {
+pub(super) fn render_pane(
+    editor: &Editor,
+    t: &Tokens,
+    frame: &mut Frame,
+    area: Rect,
+    view: &PaneView,
+) {
     let rows = usize::from(area.height);
     let (cur_line, first, last) = {
         let buf = &editor.doc(view.doc).buf;
@@ -39,86 +48,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
     } else {
         &[]
     };
-    // Aggregate each visible source window once. Per-row requests used to
-    // supersede one another, leaving mixed-language collections uncolored.
-    let collection_rows: Vec<Option<crate::editor::CollectionRowInfo>> = (0..rows)
-        .map(|row| editor.collection_row_info(view.doc, view.view_top.saturating_add(row)))
-        .collect();
-    let mut windows: Vec<(DocumentId, usize, usize)> = Vec::new();
-    for info in collection_rows.iter().flatten() {
-        if let Some((source, start, end)) = info.source {
-            if let Some((_, first, last)) = windows.iter_mut().find(|(doc, ..)| *doc == source) {
-                *first = (*first).min(start);
-                *last = (*last).max(end);
-            } else {
-                windows.push((source, start, end));
-            }
-        }
-    }
-    let source_analyses: Vec<_> = windows
-        .into_iter()
-        .map(|(source, first, last)| {
-            (
-                source,
-                editor.document_analysis_cached(
-                    source,
-                    first,
-                    last,
-                    view.hscroll.get(),
-                    area.width as usize,
-                ),
-            )
-        })
-        .collect();
-    // Translate into view coordinates ONCE per frame (borrowed by the
-    // row loop, which must not re-admit jobs).
-    let view_buf = &editor.doc(view.doc).buf;
-    let translated_spans: Vec<Option<Vec<strop_syntax::Span>>> = collection_rows
-        .iter()
-        .enumerate()
-        .map(|(row, info)| {
-            let info = info.as_ref()?;
-            let (source, src_start, src_end) = info.source?;
-            let analysis = source_analyses
-                .iter()
-                .find(|(doc, _)| *doc == source)?
-                .1
-                .as_ref()?;
-            let row_start = view_buf.line_start(view.view_top.saturating_add(row));
-            Some(
-                analysis
-                    .spans
-                    .iter()
-                    .filter(|span| span.start < src_end && span.end > src_start)
-                    .map(|span| strop_syntax::Span {
-                        start: span.start.max(src_start) - src_start + row_start,
-                        end: span.end.min(src_end) - src_start + row_start,
-                        ..*span
-                    })
-                    .collect(),
-            )
-        })
-        .collect();
-    let translated_hits: Vec<Vec<strop_grammar::SearchMatch>> = collection_rows
-        .iter()
-        .enumerate()
-        .map(|(row, info)| {
-            let Some(info) = info else {
-                return Vec::new();
-            };
-            let Some((_, src_start, _)) = info.source else {
-                return Vec::new();
-            };
-            let row_start = view_buf.line_start(view.view_top.saturating_add(row));
-            info.source_matches
-                .iter()
-                .map(|(m, len)| strop_grammar::SearchMatch {
-                    start: strop_core::id::ByteOffset::new(row_start + (m - src_start)),
-                    end: strop_core::id::ByteOffset::new(row_start + (m - src_start) + len),
-                })
-                .collect()
-        })
-        .collect();
+    let collection = CollectionProjection::gather(editor, view, rows, area.width as usize);
     // matching delimiters (0051 §7 R09): the engine owns pairing
     // (source-aware, cancellable, collection-projected); this frame
     // only paints the endpoints that map into view bytes. Passive —
@@ -236,8 +166,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
     // 0051 R08: the fixed margins measure with the viewed document's
     // resolved width too — one setting, no render-side config shortcut.
     let margin_tab = editor.doc(view.doc).indent.width.max(1);
-    // :help rows color by the section they sit under (render/help.rs)
-    let mut help_section = String::new();
+    let help = buf.name.as_deref() == Some("help");
     let mut lines: Vec<Line> = Vec::with_capacity(rows);
     for row in 0..rows {
         let line_idx = view.view_top.saturating_add(row);
@@ -247,7 +176,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         let mut left: Vec<Span> = Vec::new();
         if let Some((tree, files, current)) = &sidebar {
             left.extend(fixed_spans(
-                diff::sidebar_row_spans(tree, files, current, line_idx, sidebar_focused),
+                diff::sidebar_row_spans(t, tree, files, current, line_idx, sidebar_focused),
                 sidebar_w,
                 margin_tab,
             ));
@@ -265,7 +194,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                     if repeats_prev {
                         diff::blame_blank()
                     } else {
-                        diff::blame_spans(bl, editor.tape().now().unix_seconds)
+                        diff::blame_spans(t, bl, editor.tape().now().unix_seconds)
                     }
                 }
                 None => diff::blame_blank(),
@@ -282,11 +211,11 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                     left.push(Span::raw(" ".repeat(number_width)));
                     left.push(Span::styled(
                         directory::empty_message(directory),
-                        Style::default().fg(muted()),
+                        Style::default().fg(t.muted),
                     ));
                 }
             } else {
-                left.push(Span::styled("~", Style::default().fg(muted())));
+                left.push(Span::styled("~", Style::default().fg(t.faint)));
             }
             lines.push(pad_row(Line::from(left), area.width));
             continue;
@@ -305,11 +234,11 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         style.syn_spans = syn_spans;
         style.search_hits = search_hits;
         // Collection body rows: source-projected syntax + query hits
-        if let Some(Some(_)) = collection_rows.get(row) {
-            if let Some(spans) = translated_spans.get(row).and_then(Option::as_deref) {
+        if let Some(Some(_)) = collection.rows.get(row) {
+            if let Some(spans) = collection.spans.get(row).and_then(Option::as_deref) {
                 style.syn_spans = spans;
             }
-            if let Some(hits) = translated_hits.get(row) {
+            if let Some(hits) = collection.hits.get(row) {
                 if !hits.is_empty() && search_hits.is_empty() {
                     style.search_hits = hits;
                 }
@@ -317,23 +246,21 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         }
         match editor.review_row(view.doc, line_idx) {
             Some(crate::editor::ReviewRow::Heading | crate::editor::ReviewRow::File) => {
-                style.row_fg = Some(accent())
+                style.row_fg = Some(t.accent)
             }
             Some(crate::editor::ReviewRow::Hunk) => {
-                style.row_fg = Some(muted());
-                style.row_bg = Some(diff::band_bg());
+                style.row_fg = Some(t.muted);
+                style.row_bg = Some(t.surface);
             }
             Some(crate::editor::ReviewRow::Removed) => {
-                style.row_fg = Some(diff::del_fg());
-                style.row_bg = diff::origin_bg(strop_git::LineOrigin::Deletion);
+                style.row_fg = Some(t.diff_del);
+                style.row_bg = diff::origin_bg(t, strop_git::LineOrigin::Deletion);
             }
             Some(crate::editor::ReviewRow::Added) => {
-                style.row_fg = Some(diff::add_fg());
-                style.row_bg = diff::origin_bg(strop_git::LineOrigin::Addition);
+                style.row_fg = Some(t.diff_add);
+                style.row_bg = diff::origin_bg(t, strop_git::LineOrigin::Addition);
             }
-            Some(crate::editor::ReviewRow::Warning) => {
-                style.row_fg = Some(severity_color(strop_lsp::Severity::Warning))
-            }
+            Some(crate::editor::ReviewRow::Warning) => style.row_fg = Some(t.warning),
             _ => {}
         }
         match surface.and_then(|surface| surface.diff_row(line_idx)) {
@@ -341,29 +268,30 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 // structural text uses the SAME fixed inset its caret
                 // would; the band is row background, the text scrolls
                 left.push(Span::raw(" ".repeat(number_width)));
-                let decorated = diff::structural_row(surface.unwrap(), line_idx);
+                let decorated = diff::structural_row(t, surface.unwrap(), line_idx);
                 style.row_bg = decorated.style.bg;
                 style.decorations = decorated.spans;
             }
             Some(crate::editor::DiffRow::Line(dl)) => {
                 left.extend(diff::diff_gutter(
+                    t,
                     dl,
                     line_idx == cur_line,
                     diff_digits(surface),
                 ));
                 style.diff_line = Some(dl);
                 style.emphasis = diff::emphasis_span(surface, line_idx);
-                style.row_bg = diff::origin_bg(dl.origin);
+                style.row_bg = diff::origin_bg(t, dl.origin);
             }
             None => {
                 let num_style = if line_idx == cur_line {
-                    Style::default().fg(accent())
+                    Style::default().fg(t.accent)
                 } else {
-                    Style::default().fg(muted())
+                    Style::default().fg(t.muted)
                 };
                 // Helix-grade gutter: a colored ▎ bar in the leftmost
                 // column — diagnostics first, then git signs
-                let (bar, bar_color) = gutter_mark(editor, view, line_idx);
+                let (bar, bar_color) = gutter_mark(editor, t, view, line_idx);
                 left.push(Span::styled(
                     bar,
                     Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
@@ -380,23 +308,18 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 // card borders mute, the gap rows whisper, and the top
                 // border's path carries the accent.
                 match editor.collection_row_kind(view.doc, line_idx) {
-                    Some(crate::editor::CollectionRow::Title) => {
-                        style.row_fg = Some(crate::render::text())
-                    }
+                    Some(crate::editor::CollectionRow::Title) => style.row_fg = Some(t.text),
                     Some(crate::editor::CollectionRow::CardTop(_)) => {
                         // 0049 §6: focus reads through the active card's
                         // border + path, not a selection-colored chip
-                        let focused = collection_rows
+                        let focused = collection
+                            .rows
                             .get(row)
                             .and_then(Option::as_ref)
                             .is_some_and(|info| info.card_active);
-                        style.row_fg = Some(if focused {
-                            crate::render::text()
-                        } else {
-                            muted()
-                        });
+                        style.row_fg = Some(if focused { t.text } else { t.muted });
                         let mut text = text.to_string();
-                        if let Some(info) = collection_rows.get(row).and_then(Option::as_ref) {
+                        if let Some(info) = collection.rows.get(row).and_then(Option::as_ref) {
                             if info.source_dirty {
                                 text.push_str(" · modified");
                             }
@@ -406,17 +329,17 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                         }
                         let pad = width.saturating_sub(crate::render::clip::width(&text) + 2);
                         let text = format!("{}─{}╮", text, "─".repeat(pad));
-                        style.decorations = collection_card_top_spans(&text);
+                        style.decorations = collection_card_top_spans(t, &text, focused);
                     }
                     Some(crate::editor::CollectionRow::Gap) => {
-                        style.row_fg = Some(muted());
+                        style.row_fg = Some(t.muted);
                     }
                     Some(crate::editor::CollectionRow::CardBottom) => {
-                        style.row_fg = Some(muted());
+                        style.row_fg = Some(t.faint);
                         let pad = width.saturating_sub(2);
                         style.decorations = vec![Span::styled(
                             format!("╰{}╯", "─".repeat(pad)),
-                            Style::default().fg(muted()),
+                            Style::default().fg(t.faint),
                         )];
                     }
                     _ => {}
@@ -424,6 +347,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 if let Some(row) = directory
                     .and_then(|source| {
                         directory::row(
+                            t,
                             source,
                             line_idx,
                             text,
@@ -431,22 +355,26 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                         )
                     })
                     .or_else(|| {
-                        diff::surface_list_row(surface, line_idx, width, line_idx == cur_line)
+                        diff::surface_list_row(t, surface, line_idx, width, line_idx == cur_line)
                     })
                 {
                     // the quiet cursor-row band rides under overlays
                     // (search/visual/flash still override per cell)
                     style.decorations = row.spans;
                     style.row_bg = row.row_bg;
-                } else if buf.name.as_deref() == Some("help") {
-                    // the :help buffer gets house-style color
-                    // (render/help.rs)
-                    let text = text.to_string();
-                    if text.starts_with('[') && text.ends_with(']') {
-                        help_section = text.trim_matches(['[', ']']).to_string();
-                    }
+                } else if help {
+                    // the help buffer gets house-style decoration
+                    // (render/help.rs): one accent, keycaps, no hues
                     style.decorations =
-                        crate::render::help::row_spans(&text, &help_section, width as u16);
+                        crate::render::help::row_spans(t, &text.to_string(), width as u16);
+                } else if view.overlays
+                    && line_idx == cur_line
+                    && surface.is_none()
+                    && editor.collection_row_kind(view.doc, line_idx).is_none()
+                {
+                    // the cursor line is painted in file buffers (rule 1);
+                    // selection/search/flash still override per cell
+                    style.row_bg = Some(t.cursorline);
                 }
             }
         }
@@ -460,7 +388,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 style.note = Some((
                     format!("  ▍ {shown}"),
                     Style::default()
-                        .fg(dim_color(severity_color(sev)))
+                        .fg(t.dim(t.severity(sev)))
                         .add_modifier(Modifier::ITALIC),
                 ));
             }
@@ -471,7 +399,9 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
             hscroll: DisplayColumn::new(0),
             ..*view
         };
-        if directory.is_some() {
+        // the band under a directory row or the cursor line covers the
+        // gutter too, so the row reads as one surface
+        if directory.is_some() || (view.overlays && line_idx == cur_line && !help) {
             if let Some(bg) = style.row_bg {
                 for span in &mut left {
                     span.style.bg = Some(bg);
@@ -480,6 +410,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         }
         left.extend(content_spans(
             editor,
+            t,
             if chrome { &fixed_view } else { view },
             start,
             text,
@@ -489,7 +420,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
         lines.push(pad_row(Line::from(left), area.width));
     }
     frame.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(base())),
+        Paragraph::new(lines).style(Style::default().bg(t.base)),
         area,
     );
     if let Some(analysis) = &analysis {
@@ -509,8 +440,7 @@ pub(super) fn render_pane(editor: &Editor, frame: &mut Frame, area: Rect, view: 
                 let at = (area.x + (inset + x) as u16, area.y + row as u16);
                 let cell = &mut frame.buffer_mut()[at];
                 if cell.symbol() == " " {
-                    cell.set_symbol("│")
-                        .set_fg(crate::render::seed(strop_core::theme::current().guide));
+                    cell.set_symbol("│").set_fg(t.guide);
                 }
             }
         }
@@ -528,7 +458,12 @@ fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
 }
 /// The sign column: diagnostics win over git signs (merged gutter,
 /// 0009), and only the pane's own buffer shows them.
-fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static str, Color) {
+fn gutter_mark(
+    editor: &Editor,
+    t: &Tokens,
+    view: &PaneView,
+    line_idx: usize,
+) -> (&'static str, Color) {
     if let Some(directory) = editor
         .doc(view.doc)
         .directory_metadata_ref()
@@ -536,20 +471,20 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
     {
         if let Some(entry) = directory.entry(strop_core::id::LineIndex::new(line_idx)) {
             if directory.marked.contains_key(&entry.name) {
-                return ("●", accent());
+                return ("●", t.accent);
             }
             if entry.error.is_some() {
-                return ("!", diff::del_fg());
+                return ("!", t.diff_del);
             }
         }
         if view.overlays && editor.doc(view.doc).buf.line_of(view.cursor) == line_idx {
-            return ("▸", accent());
+            return ("▌", t.accent);
         }
     }
     if let Some(sev) = editor.diag_severity_at(view.doc, line_idx + 1) {
         // severity dot (VSCode/gitui lesson: color reads faster than
         // letters) — the cursor line's EOL note carries the words
-        return ("●", severity_color(sev));
+        return ("●", t.severity(sev));
     }
     // git signs: + add, ~ change, - deletion below (only for the
     // working buffer — surfaces have no path, so no leak)
@@ -557,37 +492,22 @@ fn gutter_mark(editor: &Editor, view: &PaneView, line_idx: usize) -> (&'static s
         // the four states in one column: unstaged sign wins; staged-only
         // lines get the committed-adjacent tint (0014 wave 4)
         if editor.sign_at(line_idx + 1).is_none() && editor.sign_at_staged(line_idx + 1) {
-            return (
-                "▎",
-                dim_color(crate::render::seed(
-                    strop_core::theme::current().class_string,
-                )),
-            );
+            return ("▎", t.dim(t.diff_add));
         }
         match editor.sign_at(line_idx + 1) {
-            Some('+') => {
-                return (
-                    "▎",
-                    crate::render::seed(strop_core::theme::current().class_string),
-                )
-            }
-            Some('~') => return ("▎", accent()),
-            Some('-') => {
-                return (
-                    "▎",
-                    crate::render::seed(strop_core::theme::current().diag_error),
-                )
-            }
+            Some('+') => return ("▎", t.diff_add),
+            Some('~') => return ("▎", t.diff_change),
+            Some('-') => return ("▎", t.diff_del),
             _ => {}
         }
     }
-    (" ", muted())
+    (" ", t.muted)
 }
 
-/// A card top border's spans: the path in accent, the border and badges
-/// muted (0049 §6).
-fn collection_card_top_spans(text: &str) -> Vec<Span<'static>> {
-    let border = Style::default().fg(muted());
+/// A card top border's spans (0049 §6, rule 3): the path is the card
+/// title in `fg.text` bold, the border faint — muted on the active card.
+fn collection_card_top_spans(t: &Tokens, text: &str, focused: bool) -> Vec<Span<'static>> {
+    let border = Style::default().fg(if focused { t.muted } else { t.faint });
     match (text.find("╭─ "), text.find(" ──")) {
         (Some(lo), Some(hi)) => {
             let path_start = lo + "╭─ ".len();
@@ -595,7 +515,9 @@ fn collection_card_top_spans(text: &str) -> Vec<Span<'static>> {
                 Span::styled(text[..path_start].to_string(), border),
                 Span::styled(
                     text[path_start..hi].to_string(),
-                    Style::default().fg(accent()).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(if focused { t.text } else { t.secondary })
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(text[hi..].to_string(), border),
             ]

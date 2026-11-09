@@ -7,13 +7,9 @@ use strop_terminal::{
 };
 
 impl Editor {
-    /// Capture the selected theme, then let each existing service update its
-    /// native defaults and publish through the ordinary replay-owned mailbox.
-    pub(crate) fn refresh_terminal_themes(&mut self) -> Result<(), String> {
-        self.set_terminal_themes(strop_core::theme::current_id())
-    }
-
-    pub(super) fn set_terminal_themes(
+    /// Let each existing service update its native defaults to `theme` and
+    /// publish through the ordinary replay-owned mailbox.
+    pub(crate) fn set_terminal_themes(
         &mut self,
         theme: strop_core::theme::ThemeId,
     ) -> Result<(), String> {
@@ -141,7 +137,7 @@ impl Editor {
                     launch,
                     geometry,
                     keyboard,
-                    Some(Palette::strop()),
+                    Some(Palette::for_theme(self.theme)),
                     move |session| {
                         let _ = sender.send(session);
                     },

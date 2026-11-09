@@ -83,14 +83,14 @@ fn collection_bodies_project_syntax_and_paint_hits() {
     let kw = &grid[(fn_at as u16, 2)];
     assert_ne!(
         kw.fg,
-        crate::render::text(),
+        crate::render::tokens().text,
         "the keyword carries a syntax color, not plain text"
     );
     let hit_at = row2.find("send_request").unwrap();
     let hit = &grid[(hit_at as u16, 2)];
     assert_eq!(
         hit.fg,
-        crate::render::accent(),
+        crate::render::tokens().accent,
         "the query match paints amber in the excerpt"
     );
 }

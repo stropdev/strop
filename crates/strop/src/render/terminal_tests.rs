@@ -141,14 +141,20 @@ fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
     assert_eq!(cell(&screen, 5), "e\u{301}");
     assert_eq!(cell(&screen, 6), "\u{fffd}");
     assert_eq!(cell(&screen, 7), "Z");
-    assert_eq!(cell(&screen, 8), "\u{2502}");
+    assert!(
+        matches!(cell(&screen, 8).as_str(), "" | " "),
+        "blank reserved column"
+    );
     editor.set_head(0);
     screen.draw(&mut editor);
     screen.draw(&mut editor);
     assert_eq!(cell(&screen, 5), "a");
     assert_eq!(cell(&screen, 6), "b");
-    // scrolled to the head: the reserved track column stays painted
-    assert_eq!(cell(&screen, 8), "\u{2502}");
+    // scrolled to the head: the reserved column stays blank
+    assert!(
+        matches!(cell(&screen, 8).as_str(), "" | " "),
+        "blank reserved column"
+    );
 }
 
 /// 0065 goldens: a live fixture terminal in input or inspection state.
@@ -306,18 +312,21 @@ fn terminal_input_and_inspection_present_distinct_states() {
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
-    assert!(row.contains(" TERMINAL "), "{row}");
-    assert!(row.contains("F2 inspect"), "{row}");
-    assert!(row.contains("ctrl-\\ ctrl-n alternative"), "{row}");
-    let (x, _) = find_cell(&buffer, " TERMINAL ").unwrap();
-    assert_eq!(buffer[(x, statusline_y)].bg, super::terminal_chip());
+    assert!(row.contains("  TERM  "), "{row}");
+    assert!(row.contains(" F2  inspect"), "{row}");
+    assert!(row.contains(" ctrl-\\ ctrl-n  inspect"), "{row}");
+    let (x, _) = find_cell(&buffer, "  TERM  ").unwrap();
+    assert_eq!(
+        buffer[(x, statusline_y)].bg,
+        crate::render::tokens().mode_terminal
+    );
     // A pending escape names its completion instead of looking stuck.
     ctrl(&mut editor, '\\');
     terminal
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let row = row_text(terminal.backend().buffer(), statusline_y);
-    assert!(row.contains("any other key sends to child"), "{row}");
+    assert!(row.contains("sends to child"), "{row}");
     // F2 leaves directly to inspection, even while another prefix pends.
     editor.handle_app_event(crate::editor::events::AppEvent::Input(
         strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent::press(
@@ -336,9 +345,9 @@ fn terminal_input_and_inspection_present_distinct_states() {
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
-    assert!(row.contains(" SNAPSHOT "), "{row}");
-    let (x, _) = find_cell(&buffer, " SNAPSHOT ").unwrap();
-    assert_eq!(buffer[(x, statusline_y)].bg, super::accent());
+    assert!(row.contains("  TERM  "), "{row}");
+    let (x, _) = find_cell(&buffer, "  TERM  ").unwrap();
+    assert_eq!(buffer[(x, statusline_y)].bg, crate::render::tokens().accent);
 }
 
 /// 0065 S3: indexed, RGB and default cell colors resolve through the
@@ -357,15 +366,13 @@ fn terminal_content_uses_the_strop_palette_on_both_views() {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
         let idx = find_cell(&buffer, "idx").expect("indexed row");
-        assert_eq!(
-            buffer[idx].fg,
-            expected(strop_core::theme::current().ansi16[1])
-        );
+        let palette = editor.theme().palette();
+        assert_eq!(buffer[idx].fg, expected(palette.ansi16[1]));
         let rgb = find_cell(&buffer, "rgb").expect("truecolor row");
         assert_eq!(buffer[rgb].fg, ratatui::style::Color::Rgb(1, 2, 3));
         let def = find_cell(&buffer, "def").expect("default row");
-        assert_eq!(buffer[def].fg, expected(strop_core::theme::current().text));
-        assert_eq!(buffer[def].bg, expected(strop_core::theme::current().base));
+        assert_eq!(buffer[def].fg, expected(palette.fg.text));
+        assert_eq!(buffer[def].bg, expected(palette.bg.base));
     };
     editor.feed_text("i");
     assert_palette(&mut editor, &mut terminal);
@@ -397,7 +404,7 @@ fn terminal_palette_reaches_the_physical_screen() {
             })
         })
         .expect("indexed row on the physical screen");
-    let theme = strop_core::theme::current().ansi16[1];
+    let theme = editor.theme().palette().ansi16[1];
     assert_eq!(
         screen.physical.screen().cell(y, x).unwrap().fgcolor(),
         vt100::Color::Rgb(theme.r, theme.g, theme.b)

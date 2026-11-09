@@ -1,18 +1,23 @@
 //! The picker's source preview: windowed, syntax-spanned, header first
-//! (0050: filename:line identifies before parent/root details).
+//! (0050: filename:line identifies before parent/root details). One
+//! faint rule separates it from the list; the header is the
+//! workspace-relative path (0088 §2).
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
-use super::super::{accent, base, muted, pair_bg, select_bg, syntax_style};
+use super::super::style::Tokens;
 
-pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
+pub(super) fn render_preview(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
     let Some((title, focus_line, source)) = editor.picker_preview_cached() else {
-        frame.render_widget(Paragraph::new("").style(Style::default().bg(base())), area);
+        frame.render_widget(
+            Paragraph::new("").style(Style::default().bg(t.surface)),
+            area,
+        );
         return;
     };
     let visible = area.height.saturating_sub(1) as usize;
@@ -41,6 +46,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
                     width,
                 );
                 highlight_lines_owned(
+                    t,
                     &rope,
                     analysis.as_ref().map(|a| a.spans.as_slice()),
                     focus_line,
@@ -71,6 +77,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
                     width,
                 );
                 highlight_lines_owned(
+                    t,
                     &rope,
                     analysis.as_ref().map(|a| a.spans.as_slice()),
                     focus_line,
@@ -83,7 +90,7 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
         }
         PreviewSource::Loading => vec![Line::from(Span::styled(
             " loading…",
-            Style::default().fg(muted()),
+            Style::default().fg(t.muted),
         ))],
         PreviewSource::Failed(error) => vec![Line::from(format!("preview: {error}"))],
         PreviewSource::Cancelled(reason) => {
@@ -91,23 +98,59 @@ pub(super) fn render_preview(editor: &Editor, frame: &mut Frame, area: Rect) {
         }
     };
 
+    let title = relative_title(editor, &title);
+    // the filename ends the path: clip from the start so it survives
     let block = Block::default()
         .borders(Borders::LEFT)
-        .border_style(Style::default().fg(pair_bg()))
-        .style(Style::default().bg(crate::render::seed(strop_core::theme::current().surface)))
+        .border_style(Style::default().fg(t.faint))
+        .style(Style::default().bg(t.surface))
         .title(Span::styled(
             format!(
                 " {} ",
-                super::super::clip::clip_end(&title, area.width.saturating_sub(2) as usize)
+                super::super::clip::clip_start(&title, area.width.saturating_sub(2) as usize)
             ),
-            Style::default().fg(muted()),
+            Style::default().fg(t.secondary),
         ));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/// The header names the file relative to the workspace: an absolute
+/// title under the editor's root loses the root prefix, anything else
+/// (remote authority, outside paths) keeps its full form.
+fn relative_title(editor: &Editor, title: &str) -> String {
+    let root = editor.cwd().to_string_lossy();
+    let root = root.trim_end_matches('/');
+    if let Some((name, context)) = title.split_once("  ") {
+        // `name  parent` headers: the parent under the root is noise
+        let context = context.trim();
+        if context == root
+            || context
+                .strip_prefix(root)
+                .is_some_and(|rest| rest.starts_with('/'))
+        {
+            let rest = context
+                .strip_prefix(root)
+                .unwrap_or("")
+                .trim_start_matches('/');
+            return if rest.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{rest}/{name}")
+            };
+        }
+    }
+    title
+        .strip_prefix(root)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .filter(|rest| !rest.is_empty())
+        .map_or_else(|| title.to_owned(), str::to_owned)
+}
+
 use strop_engine::editor::prepare::{preview_source_lines, preview_window};
 
+#[allow(clippy::too_many_arguments)]
 fn highlight_lines_owned(
+    t: &Tokens,
     rope: &ropey::Rope,
     spans: Option<&[strop_syntax::Span]>,
     focus_line: Option<usize>,
@@ -138,38 +181,34 @@ fn highlight_lines_owned(
         let text = text.byte_slice(..end);
         let first_span = spans.partition_point(|span| span.end <= start);
         let focused = focus_line == Some(line + 1);
+        let row_bg = if focused { t.raised } else { t.surface };
         let mut spans_out = Vec::new();
-        let number_style = Style::default().fg(if focused {
-            crate::render::text()
-        } else {
-            muted()
-        });
+        let number_style = Style::default().fg(if focused { t.text } else { t.muted });
         let number_style = if focused {
-            number_style.add_modifier(ratatui::style::Modifier::BOLD)
+            number_style.add_modifier(Modifier::BOLD)
         } else {
             number_style
         };
         if gutter > 0 {
-            let mut marker = Style::default().fg(accent());
-            if focused {
-                marker = marker
-                    .add_modifier(ratatui::style::Modifier::BOLD)
-                    .bg(select_bg());
-            }
-            spans_out.push(Span::styled(if focused { "▶" } else { " " }, marker));
+            // the focused line wears the one selected-row idiom (rule 5)
+            spans_out.push(super::super::card::row_marker(focused, t));
         }
         if gutter == digits + 5 {
             spans_out.push(Span::styled(
                 format!(" {:>digits$}", line + 1),
                 number_style,
             ));
-            spans_out.push(Span::styled(" │ ", Style::default().fg(muted())));
+            spans_out.push(Span::styled(" │ ", Style::default().fg(t.faint)));
         } else if gutter == digits + 2 {
             spans_out.push(Span::styled(
                 format!("{:>digits$} ", line + 1),
                 number_style,
             ));
         }
+        // style runs, not a span per grapheme (A2): consecutive cells with
+        // one style share one span
+        let mut run = String::new();
+        let mut run_style: Option<Style> = None;
         for (placement, grapheme) in RopeGraphemes::new(text, tab) {
             if placement.cell.get() >= code_width {
                 break;
@@ -179,37 +218,35 @@ fn highlight_lines_owned(
                 continue;
             };
             let pos = start + placement.byte;
-            let mut style = Style::default()
-                .fg(crate::render::text())
-                .bg(crate::render::seed(strop_core::theme::current().surface));
+            let mut style = Style::default().fg(t.text).bg(row_bg);
             if let Some(span) = spans[first_span..]
                 .iter()
                 .take_while(|span| span.start <= pos)
                 .filter(|span| pos < span.end)
                 .min_by_key(|span| span.end - span.start)
             {
-                style = style.patch(syntax_style(span));
-            }
-            if focus_line == Some(line + 1) {
-                style = style.bg(select_bg());
+                style = style.patch(t.syntax(span));
             }
             if matched.is_some_and(|range| range.start.get() <= pos && pos < range.end.get()) {
-                style = style
-                    .fg(accent())
-                    .add_modifier(ratatui::style::Modifier::BOLD);
+                style = style.fg(t.accent).add_modifier(Modifier::BOLD);
             }
-            let symbol = if !visible.complete || grapheme == "\t" {
-                " ".repeat(visible.width)
+            if run_style.is_some_and(|current| current != style) {
+                spans_out.push(Span::styled(
+                    std::mem::take(&mut run),
+                    run_style.take().unwrap_or_default(),
+                ));
+            }
+            run_style = Some(style);
+            if !visible.complete || grapheme == "\t" {
+                run.extend(std::iter::repeat_n(' ', visible.width));
             } else {
-                printable_grapheme(&grapheme).to_owned()
-            };
-            spans_out.push(Span::styled(symbol, style));
+                run.push_str(printable_grapheme(&grapheme));
+            }
         }
-        out.push(Line::from(spans_out).style(Style::default().bg(if focused {
-            select_bg()
-        } else {
-            crate::render::seed(strop_core::theme::current().surface)
-        })));
+        if let Some(style) = run_style {
+            spans_out.push(Span::styled(run, style));
+        }
+        out.push(Line::from(spans_out).style(Style::default().bg(row_bg)));
     }
     out
 }
@@ -218,6 +255,10 @@ fn highlight_lines_owned(
 mod tests {
     use super::*;
     use strop_core::Buffer;
+
+    fn tokens() -> Tokens {
+        Tokens::new(strop_core::theme::ThemeId::Hone)
+    }
 
     #[test]
     fn file_and_search_previews_number_source_lines_and_mark_only_the_hit() {
@@ -238,7 +279,7 @@ mod tests {
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).unwrap();
             terminal
-                .draw(|frame| render_preview(&editor, frame, frame.area()))
+                .draw(|frame| render_preview(&editor, &tokens(), frame, frame.area()))
                 .unwrap();
             let grid = terminal.backend().buffer();
             let lines: Vec<String> = (0..8)
@@ -246,10 +287,10 @@ mod tests {
                 .collect();
             if search {
                 assert!(
-                    lines.iter().any(|line| line.contains("▶ 100 │ needle")),
+                    lines.iter().any(|line| line.contains("▌ 100 │ needle")),
                     "{lines:?}"
                 );
-                assert_eq!(lines.iter().filter(|line| line.contains('▶')).count(), 1);
+                assert_eq!(lines.iter().filter(|line| line.contains('▌')).count(), 1);
                 assert!(
                     lines.iter().any(|line| line.contains("  99 │ plain")),
                     "{lines:?}"
@@ -259,15 +300,21 @@ mod tests {
                     lines.iter().any(|line| line.contains("   1 │ plain")),
                     "{lines:?}"
                 );
-                assert!(lines.iter().all(|line| !line.contains('▶')));
+                assert!(lines.iter().all(|line| !line.contains('▌')));
             }
+            // the header is the workspace-relative path, never the root
+            assert!(lines[0].contains(" source.txt"), "{lines:?}");
+            assert!(
+                !lines[0].contains(&root.path().to_string_lossy().to_string()),
+                "{lines:?}"
+            );
         }
     }
 
     #[test]
     fn workspace_symbols_preview_points_at_the_declaration_line() {
         // 0063 §2: the workspace tier shares the symbols pane shape —
-        // numbered gutter, one ▶ marker on the declaration line.
+        // numbered gutter, one ▌ marker on the declaration line.
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("lib.rs");
         let text = format!("{}fn dispatch() {{}}\n", "filler\n".repeat(41));
@@ -299,7 +346,7 @@ mod tests {
             .map(|y| (preview.x..100).map(|x| grid[(x, y)].symbol()).collect())
             .collect();
         assert!(
-            right.iter().any(|line| line.contains("▶ 42 │")),
+            right.iter().any(|line| line.contains("▌ 42 │")),
             "declaration marker on line 42: {right:?}"
         );
     }
@@ -327,7 +374,7 @@ mod tests {
             },
         }]);
         // The real full-screen picker workspace: the wider preview pane must
-        // carry the numbered gutter, the ▶ marker on the symbol's line and
+        // carry the numbered gutter, the ▌ marker on the symbol's line and
         // the divider — exactly the rootle-style shape, at its prepared width.
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
@@ -340,31 +387,31 @@ mod tests {
             .map(|y| (preview.x..100).map(|x| grid[(x, y)].symbol()).collect())
             .collect();
         assert!(
-            right.iter().any(|line| line.contains("▶ 42 │")),
+            right.iter().any(|line| line.contains("▌ 42 │")),
             "symbol marker on line 42: {right:?}"
         );
         assert_eq!(
-            right.iter().filter(|line| line.contains('▶')).count(),
+            right.iter().filter(|line| line.contains('▌')).count(),
             1,
-            "exactly one marker"
+            "exactly one marker in the preview"
         );
         assert!(
             right.iter().any(|line| line.contains("│ fn dispatch")),
             "divider then content: {right:?}"
         );
+        let t = tokens();
         let mut marker = None;
         for x in preview.x..100 {
             for y in 0..30u16 {
-                if grid[(x, y)].symbol() == "▶" {
+                if grid[(x, y)].symbol() == "▌" {
                     marker = Some((x, y));
                 }
             }
         }
         let (marker_x, marker_y) = marker.unwrap();
         let marker = &grid[(marker_x, marker_y)];
-        assert_eq!(marker.fg, crate::render::accent());
-        assert!(marker.modifier.contains(ratatui::style::Modifier::BOLD));
-        assert_eq!(marker.bg, crate::render::select_bg());
+        assert_eq!(marker.fg, t.accent);
+        assert_eq!(marker.bg, t.raised);
     }
 
     #[test]
@@ -373,7 +420,8 @@ mod tests {
         for width in 0..16 {
             let window = preview_window(&rope, Some(1), 10);
             assert_eq!(window, 0..1);
-            let lines = highlight_lines_owned(&rope, None, Some(1), window, width, 4, None);
+            let lines =
+                highlight_lines_owned(&tokens(), &rope, None, Some(1), window, width, 4, None);
             assert_eq!(lines.len(), 1);
             assert!(lines[0].width() <= width);
         }

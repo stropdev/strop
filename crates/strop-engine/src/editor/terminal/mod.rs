@@ -152,6 +152,7 @@ impl Editor {
 #[cfg(any(test, feature = "test-support"))]
 fn fixture_frame(
     session: SessionId,
+    theme: strop_core::theme::ThemeId,
     rows: &[(&str, strop_terminal::model::Style)],
     revision: u64,
     origin: u64,
@@ -226,7 +227,7 @@ fn fixture_frame(
             blinking: false,
             shape: CursorShape::Block,
         },
-        palette: Arc::new(Palette::strop()),
+        palette: Arc::new(Palette::for_theme(theme)),
         history_rows: 0,
         available_history_rows: 0,
         history_limited: false,
@@ -265,7 +266,7 @@ impl Editor {
         phase: Phase,
     ) -> DocumentId {
         let session = self.terminals.next_session().unwrap();
-        let frame = fixture_frame(session, rows, 1, 0);
+        let frame = fixture_frame(session, self.theme, rows, 1, 0);
         let geometry = frame.geometry;
         let mut document =
             super::Document::output(strop_core::Buffer::from_snapshot(frame.projection.clone()));
@@ -318,7 +319,7 @@ impl Editor {
         self.apply_terminal_update(strop_terminal::model::Update {
             session,
             phase,
-            frame: Some(fixture_frame(session, rows, revision, origin)),
+            frame: Some(fixture_frame(session, self.theme, rows, revision, origin)),
             effects: Vec::new(),
             acknowledged_input: 0,
             warning: None,
