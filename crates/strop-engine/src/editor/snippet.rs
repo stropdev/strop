@@ -174,10 +174,11 @@ impl Editor {
                 // then SPENT: its ranges collapse, so later typing is
                 // never re-deleted.
                 let ranges = session.active_ranges();
-                let non_empty: Vec<(usize, usize)> =
+                let mut non_empty: Vec<(usize, usize)> =
                     ranges.into_iter().filter(|(a, b)| a < b).collect();
+                non_empty.sort_unstable();
                 if !non_empty.is_empty() {
-                    let mut edits: Vec<strop_core::Replacement> = non_empty
+                    let edits: Vec<strop_core::Replacement> = non_empty
                         .iter()
                         .map(|&(start, end)| {
                             strop_core::Replacement::new(
@@ -186,7 +187,6 @@ impl Editor {
                             )
                         })
                         .collect();
-                    edits.sort_by_key(|edit| (edit.range.start, edit.range.end));
                     let _ = self.apply(
                         self.current(),
                         self.buf().revision(),
@@ -195,21 +195,19 @@ impl Editor {
                             undo_open: true,
                         },
                     );
-                    // the deletion moves every later stop back, matching
-                    // the transaction's descending application order —
-                    // and collapses the deleted ranges to their (shifted)
-                    // starts, which is exactly where cursors belong.
-                    {
-                        let ranges = non_empty.clone();
-                        self.snippet_map(|offset| {
-                            let mut mapped = offset;
-                            for &(start, end) in ranges.iter().rev() {
-                                mapped =
-                                    strop_kernel::editmap::map_position(mapped, start, end, start);
-                            }
-                            mapped
-                        });
-                    }
+                    // the deletion moves every later stop back — the
+                    // transaction applies the batch back to front, so its
+                    // journal is the batch descending — and collapses the
+                    // deleted ranges to their (shifted) starts, which is
+                    // exactly where cursors belong.
+                    let journal: Vec<(usize, usize, usize)> = non_empty
+                        .iter()
+                        .rev()
+                        .map(|&(start, end)| (start, end, start))
+                        .collect();
+                    self.snippet_map(|offset| {
+                        strop_kernel::editmap::map_through_edits(offset, &journal)
+                    });
                     let Some(session) = self.snippet.as_mut() else {
                         return SnippetKeyOutcome::PassThrough;
                     };

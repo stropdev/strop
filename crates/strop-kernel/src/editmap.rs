@@ -12,9 +12,10 @@
 //! - `validate_batch` accepts exactly the batches production can apply in
 //!   reverse order: strictly ascending starts, each edit in bounds, no edit
 //!   reaching into the next. Each refusal names a real defect of the input;
-//! - folding `map_position` over an accepted batch in production's reverse
-//!   application order equals mapping once against the original coordinates
-//!   (composition).
+//! - `map_through_edits` folds `map_position` over a journal in application
+//!   order, monotonically; over the journal of an accepted batch (its edits
+//!   applied back to front) it equals classifying the anchor once against the
+//!   original coordinates (composition).
 
 /// Map one anchor through one edit that replaced `start..old_end` with text
 /// now ending at `new_end` (= `start` + replacement length). Right
@@ -27,6 +28,21 @@ pub fn map_position(position: usize, start: usize, old_end: usize, new_end: usiz
     } else {
         start
     }
+}
+
+/// Map one anchor through a journal of edits `(start, old_end, new_end)`
+/// in application order: each edit addresses the buffer the previous ones
+/// left. A batch `validate_batch` accepted is applied back to front, so its
+/// journal is the batch in descending order.
+pub fn map_through_edits(position: usize, edits: &[(usize, usize, usize)]) -> usize {
+    let mut mapped = position;
+    let mut k = 0;
+    while k < edits.len() {
+        let edit = edits[k];
+        mapped = map_position(mapped, edit.0, edit.1, edit.2);
+        k += 1;
+    }
+    mapped
 }
 
 /// Why a batch of `(start, end)` byte ranges cannot be applied.
@@ -79,6 +95,16 @@ mod tests {
         assert_eq!(map_position(10, 4, 8, 6), 8);
         // pure insertion at 4 of 3 bytes: an anchor at 4 moves right
         assert_eq!(map_position(4, 4, 4, 7), 7);
+    }
+
+    #[test]
+    fn journals_map_in_application_order() {
+        // batch (0..4 -> ""), (6..8 -> "x"), journaled back to front
+        let journal = [(6, 8, 7), (0, 4, 0)];
+        assert_eq!(map_through_edits(7, &journal), 2);
+        assert_eq!(map_through_edits(9, &journal), 4);
+        assert_eq!(map_through_edits(2, &journal), 0);
+        assert_eq!(map_through_edits(5, &[]), 5);
     }
 
     #[test]

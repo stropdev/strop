@@ -206,3 +206,44 @@ What landed, and where it departs from §6 as first written:
   shell's startup on developer machines (2/10 on the 0.52.0 base) while
   passing in Docker's `sh`. The three interactive-shell tests now run
   `:terminal exec /bin/sh`.
+
+### 9.1 0.54 additions (0087 P1, P2, P4; 0088 §4)
+
+- **The journal fold moved inward (P1, K1).** `editmap::map_through_edits(position,
+  &[(start, old_end, new_end)])` folds `map_position` over a journal in
+  application order — an explicit forward loop over the slice. It is the only
+  pointwise remap through a journal: `editor/transact.rs` (marks, selections,
+  navigation records, collection hit anchors — one call over the whole
+  journal), collection rebuilds (`view_positions.rs`) and snippet stops
+  (`snippet.rs`, whose ranges are now sorted before the batch is built, so the
+  journal really is the batch descending). Collection excerpt *spans* and
+  match retention stay per edit: they are span rules, not the point fold.
+  Completion acceptance (`acceptance.rs`) was checked and does not fold
+  `map_position`; it only calls `validate_batch`. The forward loop is shaped by
+  production, which journals edits in the order it applies them, so a
+  multi-batch journal needs no reversal; a single accepted batch applied back
+  to front journals as the batch reversed.
+- **Theorems over the extracted function.** `map_through_edits_spec` (the
+  loop computes the `mapSpec` fold), `map_through_edits_monotone`, and
+  `map_through_edits_composition`: for a journal that is a `Chain3` batch
+  reversed, with `p + Σ new_end ≤ Usize.max`, the result is `directMap`. The
+  old `batch_map_composition` claim is gone; `batchMap` survives only as the
+  `Nat` proof device the composition reduces to (`batchMap_eq_directMap`).
+  Claims: 11 → 13. Mutant `journal-reversed` (iterate the journal back to
+  front) must break `map_through_edits_loop_spec`.
+- **P2.** Both `validate_batch` callers `debug_assert!` the `(start, end)`
+  order of the pairs they just sorted; the typed `Unsorted` refusal stays.
+- **P4.** `proofs/gate.sh` refuses a `pub mod` in `strop-kernel/src/lib.rs`
+  that `[package.metadata.charon] start_from` does not name, and a
+  `start_from` entry that is not a module.
+- **K2 deferred to 0.55** (0088 §4: "else first item of 0.55"). The
+  operated-span decision is not one function in production today — each
+  resolver arm builds its own span, inclusive ends are `byte + 1`,
+  `ceil_boundary(+1)` or explicit object bounds, and visual mode repeats the
+  linewise rule. Moving a three-way selection over precomputed bounds into the
+  kernel would prove a restatement while the arms keep their own arithmetic.
+  What makes it fit: first make each arm return data (`cursor`, `target`,
+  shape, or an explicit object span) and normalise in one place against the
+  buffer's grapheme end, land the differential cases (`d$ dj dk d} dG v$d
+  Vjd`, `dl` on a multibyte grapheme) with that refactor, then move the single
+  normaliser inward.
