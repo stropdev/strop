@@ -263,7 +263,7 @@ fn completion_held_language_keeps_physical_typing_resize_and_split_live() {
     )
     .unwrap();
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../verification/completion_server.py")
+        .join("tests/fixtures/completion_server.py")
         .canonicalize()
         .unwrap();
     let socket = root.join("control.sock");

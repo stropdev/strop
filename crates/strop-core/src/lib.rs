@@ -3,9 +3,7 @@
 
 mod buffer;
 pub mod cohortguard;
-pub mod commands;
 pub mod diagnostics;
-pub mod editmap;
 pub mod frontend_input;
 pub mod history;
 pub mod id;

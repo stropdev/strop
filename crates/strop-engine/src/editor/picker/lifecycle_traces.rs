@@ -9,9 +9,9 @@
 //! seams are driven directly, streams hand-armed like the established
 //! worker-lifecycle tests (deterministic — no rg, no sleeps).
 //!
-//! The publication decisions under test are the verified kernel's
-//! (`strop_core::searchguard`): each guard site below calls it, so a
-//! trace that passes here exercises the same function Verus proves.
+//! The publication decisions under test are `strop_core::searchguard`'s:
+//! each guard site below calls it, and the traces mirror
+//! specs/SearchLifecycle.tla.
 
 #[cfg(test)]
 mod tests {
@@ -279,20 +279,6 @@ mod tests {
             "CompletionHonest: a truncated completion stays visibly incomplete"
         );
         assert!(glue.picker.error.is_none(), "a bound hit is not a failure");
-        // The kernel decision agrees with the model's completeF clause:
-        // honest iff the live generation's terminal AND no truncation.
-        let gen = g1.request.get();
-        assert!(!strop_core::searchguard::completion_is_honest(
-            gen, gen, true
-        ));
-        assert!(strop_core::searchguard::completion_is_honest(
-            gen, gen, false
-        ));
-        assert!(!strop_core::searchguard::completion_is_honest(
-            gen - 1,
-            gen,
-            false
-        ));
     }
 
     /// Trace: WarmStart ×3 (pre-filled), WarmEnqueue ×3 — exactly one

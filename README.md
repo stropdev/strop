@@ -112,11 +112,22 @@ Details, content-privacy knobs and the input-only script extraction:
 [docs/terminal-and-scripting.md](docs/terminal-and-scripting.md).
 **Inspect logs before sharing** — they contain keys, commands and paths.
 
-## Code signing policy
+## How it is checked
 
-Public Windows executables and installers are approved manually and signed
-through SignPath Foundation. The policy, privacy statement, build/provenance
-controls and named approver live in [SECURITY.md](SECURITY.md).
+The vim grammar is checked against Neovim itself by a differential harness.
+At the centre sits a small, dependency-free kernel (`crates/strop-kernel`) that
+Charon/Aeneas translate to Lean 4. It is proved there: how cursors, marks and
+selections move through an edit, which edit batches are safe to apply, and the
+worker wire's frame bounds. Calibration mutants show each theorem actually
+constrains the code. Everything further out is covered by tests that drive the
+real binary over real sshd and Docker. The design is
+[plans/0086](plans/0086-verified-foundation.md); the claim list is what
+`docker compose run --build --rm proofs` prints.
+
+## Security
+
+Report vulnerabilities privately; the policy and privacy statement live in
+[SECURITY.md](SECURITY.md).
 
 ## Links
 

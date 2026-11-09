@@ -33,10 +33,6 @@ pub enum Command {
     ExportMetadata {
         trace: PathBuf,
     },
-    /// `--ui-stdio`: the bounded UI protocol backend on stdin/stdout
-    /// (0056 AR09); executed early like replay/export — stdout carries
-    /// frames only.
-    UiStdio,
     Help,
     /// Built-in theme attribution, also retained in source packages.
     ThemeLicenses,
@@ -201,13 +197,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     command = Some(Command::ReplayFull { trace });
                     continue;
                 }
-                "--ui-stdio" => {
-                    if command.is_some() || replay.is_some() || headless {
-                        return Err("--ui-stdio conflicts with other launch modes".into());
-                    }
-                    command = Some(Command::UiStdio);
-                    continue;
-                }
                 "--export-metadata" => {
                     let trace = args
                         .next()
@@ -309,10 +298,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     command = Some(Command::ExportMetadata { trace });
                     continue;
                 }
-                "ui-stdio" if command.is_none() && !headless && replay.is_none() => {
-                    command = Some(Command::UiStdio);
-                    continue;
-                }
                 "licenses" if command.is_none() && !headless && replay.is_none() => {
                     command = Some(Command::ThemeLicenses);
                     continue;
@@ -394,14 +379,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 .into(),
         );
     }
-    // The protocol backend runs early like replay/export: no file
-    // operand (clients open through admitted actions), no trace flags
-    // (startup returns before trace setup).
-    if matches!(&command, Some(Command::UiStdio))
-        && (trace_path.is_some() || content == ContentPolicy::Full || operand.is_some())
-    {
-        return Err("--ui-stdio takes no operand and records no log; unset STROP_LOG".into());
-    }
     let command = match (command, replay, headless) {
         (Some(command), None, false) => command,
         (None, Some(trace), false) if operand.is_none() => Command::Replay { trace },
@@ -460,10 +437,6 @@ mod tests {
         assert!(matches!(
             parse(&["bench", "startup"]).unwrap().command,
             Command::Bench { scenario } if scenario == "startup"
-        ));
-        assert!(matches!(
-            parse(&["ui-stdio"]).unwrap().command,
-            Command::UiStdio
         ));
         assert!(matches!(
             parse(&["export", "t.jsonl"]).unwrap().command,
@@ -536,10 +509,6 @@ mod tests {
         assert!(matches!(
             parse(&["--replay-script", "t.jsonl"]).unwrap().command,
             Command::Replay { .. }
-        ));
-        assert!(matches!(
-            parse(&["--ui-stdio"]).unwrap().command,
-            Command::UiStdio
         ));
         assert!(matches!(
             parse(&["--licenses"]).unwrap().command,

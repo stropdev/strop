@@ -57,7 +57,17 @@ pub enum Handler {
 }
 
 /// The one-char absorber flavors.
-pub use strop_core::commands::AbsorbKind;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AbsorbKind {
+    Replace,
+    MarkSet,
+    MarkJump,
+    Find,
+    /// q<a> — toggle macro recording into register a.
+    MacroRecord,
+    /// @<a> — replay register a's macro.
+    MacroPlay,
+}
 
 /// One binding as it appears in `Space ?` / which-key AND in dispatch
 /// (0008 stage 2: one table). `id` is the stable command identity —
@@ -71,7 +81,9 @@ pub struct Binding {
     pub handler: Handler,
 }
 
-pub const SECTIONS: &[&str] = strop_core::commands::SECTIONS;
+pub const SECTIONS: &[&str] = &[
+    "normal", "visual", "insert", "leader", "git", "ex+panes", "terminal",
+];
 
 include!("bindings_adapter.rs");
 

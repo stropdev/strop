@@ -11,11 +11,9 @@
 
 use std::io::{self, Read, Write};
 
-pub use strop_core::worker::frame_policy::{MAX_BODY_BYTES, MAX_HEADER_BYTES};
+pub use strop_kernel::frame::{MAX_BODY_BYTES, MAX_HEADER_BYTES};
 
-use strop_core::worker::frame_policy::{
-    body_admitted, frame_ready, header_admitted, MAX_BUFFER_OFFSET,
-};
+use strop_kernel::frame::{body_admitted, frame_ready, header_admitted};
 
 /// A framing violation. Frame-level corruption poisons the stream — the
 /// next boundary is unknowable — so the peer reports this typed error
@@ -73,12 +71,12 @@ impl FrameDecoder {
     }
 
     /// Take one complete frame body, if one is buffered. The bounds and
-    /// completeness decisions are the verified framing kernels.
+    /// completeness decisions are the proved kernel admissions
+    /// (`strop_kernel::frame`).
     pub fn next_frame(&mut self) -> Result<Option<Vec<u8>>, FrameError> {
         let Some(header_end) = find(&self.buffer, b"\r\n\r\n") else {
             return Ok(None);
         };
-        debug_assert!(header_end <= MAX_BUFFER_OFFSET);
         if !header_admitted(header_end) {
             return Err(FrameError::HeaderTooLarge {
                 limit: MAX_HEADER_BYTES,
@@ -91,7 +89,6 @@ impl FrameDecoder {
                 actual: length,
             });
         }
-        debug_assert!(self.buffer.len() <= MAX_BUFFER_OFFSET);
         let start = header_end + 4;
         if !frame_ready(header_end, length, self.buffer.len()) {
             return Ok(None);

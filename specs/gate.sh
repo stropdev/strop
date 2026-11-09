@@ -34,19 +34,6 @@ if [ "$violations" != "$expected" ]; then
 fi
 
 echo "editor model gate: bounded checks clean; freshness mutant rejected"
-sh specs/ssh-gate.sh
-sh specs/remote-gate.sh
-sh specs/save-gate.sh
-sh specs/change-gate.sh
+# plans/0086: the three TLC models on probation as counterexample finders.
 sh specs/search-gate.sh
-sh specs/recovery-gate.sh
-sh specs/lsp-gate.sh
-sh specs/completion-gate.sh
-sh specs/terminal-gate.sh
-sh specs/devcontainer-gate.sh
-sh specs/install-gate.sh
-sh specs/notify-gate.sh
-# 0057 VF14: the UI-stdio session model (UiSession.tla).
-sh specs/ui-gate.sh
 sh specs/worker-session-gate.sh
-sh specs/worker-deploy-gate.sh

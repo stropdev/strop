@@ -317,10 +317,7 @@ fn shutdown_settles_owned_work_without_waiting_for_service_liveness() {
 /// event is a one-shot fact — a full semantic lane must backpressure the
 /// forwarder, never strand the event. Pre-fix, a storm-full lane refused
 /// the forwarded picker-ranking `Stopped`, the forwarder died and
-/// `picker_ranking.retiring` wedged shutdown past its jobs budget. This
-/// is the registered kill test for the `forward-drop-refused` mutant
-/// (verification/mutants.json): armed, the forwarder drops on refusal
-/// and the marker below never arrives.
+/// `picker_ranking.retiring` wedged shutdown past its jobs budget.
 #[test]
 fn forwarded_semantic_event_survives_a_full_lane() {
     let (tx, rx) = channel();

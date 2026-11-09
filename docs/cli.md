@@ -20,7 +20,6 @@ the common case stays `strop file.rs`.
 | `strop headless SCRIPT [FILE]` | run the scripted driver over a file |
 | `strop replay TRACE` | replay a session trace (`--script` extracts a driver script) |
 | `strop export TRACE` | export a trace's metadata (privacy-safe, not replayable) |
-| `strop ui-stdio` | UI protocol backend on stdin/stdout |
 | `strop config` | show the config file and its current values |
 | `strop update` | self-update (`--check` only checks) |
 | `strop bench [SCENARIO]` | run the performance-gate scenarios |
@@ -29,7 +28,7 @@ the common case stays `strop file.rs`.
 | `strop help` | print help |
 
 Every command also has its original flag spelling (`--licenses`,
-`--replay-script`, `--ui-stdio`, …); scripts and muscle memory keep working.
+`--replay-script`, …); scripts and muscle memory keep working.
 
 ## Options
 

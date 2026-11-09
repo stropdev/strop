@@ -1,0 +1,17 @@
+[package]
+name = "strop-kernel"
+description = "strop ring-0 kernel (plans/0086): pure decisions in plain safe Rust, translated to Lean 4 by Charon/Aeneas and proved under proofs/"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# No dependencies, by construction (plans/0086 §4): no IO, no floats, no
+# `dyn`, `no_std` + `alloc`.
+[dependencies]
+
+# Read by Charon when the `proofs` gate translates this crate
+# (proofs/extract.sh): translation starts from the proved modules.
+[package.metadata.charon]
+start_from = ["strop_kernel::editmap", "strop_kernel::frame", "strop_kernel::generation"]

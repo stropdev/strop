@@ -55,7 +55,9 @@ fn real_pty_delayed_output_preserves_selection_yank_until_refresh_or_return() {
     use strop_core::frontend_input::Input;
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
-    editor.feed_text(":terminal\r");
+    // A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
+    // bracketed paste, which changes whether a multiline paste is held.
+    editor.feed_text(":terminal exec /bin/sh\r");
     let document = editor.current();
     drain_until(
         &mut editor,
@@ -98,7 +100,9 @@ fn real_pty_paste_review_decisions_are_redacted_and_ticket_scoped() {
     use strop_core::frontend_input::Input;
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
-    editor.feed_text(":terminal\r");
+    // A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
+    // bracketed paste, which changes whether a multiline paste is held.
+    editor.feed_text(":terminal exec /bin/sh\r");
     let document = editor.current();
     drain_until(
         &mut editor,
@@ -201,7 +205,9 @@ fn real_pty_hidden_session_quit_review_focus_stop_and_return_do_not_implicitly_k
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
     let origin = editor.current();
-    editor.feed_text(":terminal\r");
+    // A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
+    // bracketed paste, which changes whether a multiline paste is held.
+    editor.feed_text(":terminal exec /bin/sh\r");
     let terminal = editor.current();
     drain_until(
         &mut editor,

@@ -5,7 +5,6 @@ mod headless;
 mod render;
 mod replay;
 mod terminal;
-mod ui_stdio;
 mod update;
 
 use strop_engine::{config, editor, files, keymap, session};
@@ -57,12 +56,6 @@ fn launch() -> Result<(), Box<dyn Error>> {
             let source = io::BufReader::new(std::fs::File::open(trace)?);
             strop_trace::export::metadata(source, &mut io::stdout().lock())?;
             return Ok(());
-        }
-        cli::Command::UiStdio => {
-            // Early like replay/export (0056 AR09): stdout is reserved
-            // for protocol frames from the first byte; bounded
-            // diagnostics go to stderr.
-            return ui_stdio::run(options.theme);
         }
         _ => {}
     }
@@ -143,10 +136,8 @@ fn execute(
         cli::Command::Update { check_only } => update::update(check_only)?,
         cli::Command::Bench { scenario } => bench::run(&scenario)?,
         cli::Command::Replay { trace } => replay::write_script(&trace, &mut io::stdout().lock())?,
-        cli::Command::ReplayFull { .. }
-        | cli::Command::ExportMetadata { .. }
-        | cli::Command::UiStdio => {
-            return Err("replay/export/ui-stdio must run outside live startup".into());
+        cli::Command::ReplayFull { .. } | cli::Command::ExportMetadata { .. } => {
+            return Err("replay/export must run outside live startup".into());
         }
         cli::Command::Headless {
             script,
@@ -353,7 +344,6 @@ fn print_help() {
                 "export",
                 "export a trace's metadata (privacy-safe, not replayable)",
             ),
-            ("ui-stdio", "UI protocol backend on stdin/stdout"),
             ("config", "show the config file and its current values"),
             ("update", "self-update (--check only checks)"),
             ("bench", "run the performance-gate scenarios"),

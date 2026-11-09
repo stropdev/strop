@@ -7,7 +7,6 @@ use std::sync::{
 pub mod cache_record;
 pub mod deploy_policy;
 mod effect;
-pub mod frame_policy;
 pub mod recovery_policy;
 pub mod session;
 pub use effect::spawn_effect;

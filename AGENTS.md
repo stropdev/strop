@@ -66,6 +66,31 @@ agent or human working in this repo.
 - After landing a feature that pushed a file past the ceiling, the
   follow-up split is part of the same change — not someday.
 
+## Verification (plans/0086)
+
+strop follows the ring design: a pure, dependency-free kernel
+(`crates/strop-kernel`, `no_std`, no IO) is translated to Lean 4 by
+Charon/Aeneas and proved in `proofs/` — theorems are about the shipped code,
+never a hand-written copy. Each ring outward (protocol machines, host
+adapters, untrusted edges, the product) is checked a cheaper way: property
+tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
+
+- **Code moves inward to gain guarantees.** Proving something means moving
+  the decision into `strop-kernel` (moved, not copied; production calls it),
+  stating the theorem, adding it to `proofs/Audit.lean`'s claims and a
+  mutant to `proofs/mutants.py` that must break it.
+- **Kernel shape:** plain safe Rust, no dependencies, no closures or iterator
+  adaptors in proved code, explicit loops over slices. After changing it run
+  `sh proofs/refresh.sh` and commit `proofs/Extracted/` — the gate refuses
+  drift between the crate and the committed translation.
+- **The survival rule:** an artefact stays only if it is a machine-checked
+  proof about shipped code, a test of behaviour a user can see, or a
+  counterexample finder with a recorded catch. No evidence inventories,
+  digest receipts, freezes or re-pin commits. The three TLC models in
+  `specs/` are on probation until 0.55.
+- **Every lane blocks.** A gate that may fail without stopping a release is
+  deleted, not tolerated.
+
 ## Release gates
 
 "Cut a release" means **publicly available**, not "tag pushed" or "draft
@@ -74,16 +99,16 @@ against the exact local artifact and live public surfaces. Partial progress is
 exactly that: partial. The authoritative procedure is `plans/0079` and
 `.github/scripts/release-local.sh`.
 
-1. **Local qualification**: a clean committed Linux/WSL checkout passes the
-   Compose `test` gate, release fixtures, changed-feature smoke, static artifact
-   checks and freeze `--check`. The supported release artifact is
-   `x86_64-unknown-linux-musl`; macOS, Linux aarch64 and native Windows releases
-   are out of scope. Deep model/proof lanes run in CI or on explicit request;
-   never claim an unrun lane passed.
+1. **Local qualification**: a clean committed Linux/WSL checkout whose GitHub
+   `ci` run is green (test, model, ssh-pythonfree, container-test) passes the
+   Compose `test`, `model` and `proofs` gates, the release fixtures, a
+   changed-feature smoke and the static artifact checks. `proofs` runs locally
+   because its toolchain image does not fit a hosted runner. The supported
+   release artifact is `x86_64-unknown-linux-musl`; every other platform is
+   out of scope. Never claim an unrun lane passed.
 2. **GitHub release**: `gh release view v<x.y.z>` — exists publicly and latest,
-   with the Linux tarball, checksum, completion evidence and `catalog.json`
-   built locally from the tagged source. The dispatch-only `release` workflow
-   is policy guidance, not publication evidence.
+   with the Linux tarball, checksum and `catalog.json` built locally from the
+   tagged source.
 3. **Public installation**: the live catalog matches the local facts and
    `install.sh` installs the public tarball into a fresh directory; the installed
    `strop --version` reports the new version. crates.io and Homebrew are

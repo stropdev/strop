@@ -1,5 +1,4 @@
-//! Filesystem notifications, editor half (0058 §2 amendments 2026-09-14/16;
-//! specs/Notify.tla correspondence). The worker beside the files owns
+//! Filesystem notifications, editor half (0058 §2 amendments 2026-09-14/16). The worker beside the files owns
 //! native watching; the editor owns application of observations to
 //! documents, Directory buffers, Git signs and the search baseline.
 //!

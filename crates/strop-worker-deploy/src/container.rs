@@ -141,14 +141,13 @@ fn env_value(env: &[String], key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// The image platform's catalog target: WK05's Linux worker is the
-/// static musl artifact for the image's architecture (musl-static runs
-/// on any Linux libc). Anything else is no-artifact truth, surfaced by
-/// the caller as a typed refusal.
+/// The image platform's catalog target: the static musl worker runs on
+/// any Linux/amd64 libc. strop releases no other worker, so every other
+/// platform is no-artifact truth, surfaced by the caller as a typed
+/// refusal before any upload.
 fn catalog_target(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("linux", "amd64") => Some("x86_64-unknown-linux-musl"),
-        ("linux", "arm64") => Some("aarch64-unknown-linux-musl"),
         _ => None,
     }
 }
@@ -597,15 +596,12 @@ mod tests {
     }
 
     #[test]
-    fn platform_maps_to_the_musl_catalog_targets() {
+    fn only_linux_amd64_has_a_released_worker() {
         assert_eq!(
             catalog_target("linux", "amd64"),
             Some("x86_64-unknown-linux-musl")
         );
-        assert_eq!(
-            catalog_target("linux", "arm64"),
-            Some("aarch64-unknown-linux-musl")
-        );
+        assert_eq!(catalog_target("linux", "arm64"), None);
         assert_eq!(catalog_target("linux", "riscv64"), None);
         assert_eq!(catalog_target("windows", "amd64"), None);
     }
