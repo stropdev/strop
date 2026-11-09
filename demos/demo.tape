@@ -131,7 +131,10 @@ Space
 Type "g"
 Type "b"
 Sleep 2s
-Type "x"
+# the same chord toggles the blame gutter off
+Space
+Type "g"
+Type "b"
 Sleep 400ms
 Type "jjj"
 Sleep 300ms
@@ -140,17 +143,19 @@ Type "g"
 Type "y"
 Sleep 1.2s
 
-# splits: :vs shares the buffer; C-w w cycles panes
+# splits: :vs shares the buffer; Space w w cycles panes
 Type ":vs"
 Enter
 Sleep 1.6s
 Type "jjj"
 Sleep 500ms
-# C-w w cycles panes (C-w is a prefix, like vim)
-Ctrl+w
+# Space w is the pane leader (Ctrl-W is not bound)
+Space
+Type "w"
 Type "w"
 Sleep 1
-Ctrl+w
+Space
+Type "w"
 Type "w"
 Sleep 1.2s
 Type ":q"
