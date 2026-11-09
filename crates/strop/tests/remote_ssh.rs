@@ -24,7 +24,7 @@ fn ssh_required(test: &str) -> bool {
     if !required {
         // Straight to stderr: libtest captures eprintln!, which would hide it.
         writeln!(
-            std::io::stderr(),
+            std::io::stderr().lock(),
             "skipped {test}: set STROP_REQUIRE_SSH_TESTS=1 to run the OpenSSH journey"
         )
         .unwrap();

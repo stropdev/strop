@@ -55,7 +55,7 @@ fn serial() -> Option<ScopedFixture> {
     if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
         // Straight to stderr: libtest captures eprintln!, which would hide it.
         writeln!(
-            std::io::stderr(),
+            std::io::stderr().lock(),
             "skipped worker_ssh journey at {}: set STROP_REQUIRE_SSH_TESTS=1 to run it",
             std::panic::Location::caller()
         )

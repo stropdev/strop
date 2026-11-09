@@ -509,7 +509,7 @@ fn differential_vs_nvim() {
         );
         // Straight to stderr: libtest captures eprintln!, which would hide it.
         writeln!(
-            std::io::stderr(),
+            std::io::stderr().lock(),
             "differential: nvim not installed — skipped (set STROP_REQUIRE_NVIM=1 to require it)"
         )
         .unwrap();
