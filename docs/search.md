@@ -22,8 +22,8 @@ hidden:exclude ignored:include text:"-test.rs"
 kind:function parse AND NOT wrap
 ```
 
-- `language:NAME` — file language (`strop --licenses`-style names, e.g.
-  `rust`, `cpp`, `python`).
+- `language:NAME` — file language (the names `Space ?` lists under
+  Languages, e.g. `rust`, `cpp`, `python`).
 - `path:SUBSTRING` — substring of the workspace-relative path (no leading `/`);
   case follows the query's case mode.
 - `fpath:SUBSEQUENCE` — fuzzy scope over the full workspace-relative path;

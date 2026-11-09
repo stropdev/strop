@@ -1,0 +1,81 @@
+  ╭ files ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 2 of 4 ╮  
+  │ ❯ mod▏                                                                                                                               │  
+  │                                                                                                                                      │  
+  │ ▌ mod.rs     src/render/    │ src/render/mod.rs                                                                                      │  
+  │   remote.md  docs/          │  1 │ //! Rendering root.                                                                               │  
+  │                             │  2 │ pub mod statusline;                                                                               │  
+  │                             │  3 │                                                                                                   │  
+  │                             │  4 │ pub fn render() {                                                                                 │  
+  │                             │  5 │     statusline::render();                                                                         │  
+  │                             │  6 │ }                                                                                                 │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+  │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ │                             │                                                                                                        │  
+~ ╰  enter  open   ↑↓  move   esc  close ────────────────────────────────────────────────────────────────────────────────────────────────╯  
+ FILES    src/render/statusline.rs                                                                                                   1:1  5%
+
+  0: 1:#464b54/#17191f+b 1:#73572f/#17191f 1:#858c9a/#1c1f25 7:#e6e1d6/#1c1f25+b 128:#858c9a/#1c1f25 1:#17191f/#17191f 1:reset/reset
+  1: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 2:#e8a848/#1c1f25 3:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 127:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  2: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 134:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  3: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 1:reset/#23272f 3:#e8a848/#23272f+b 3:#e6e1d6/#23272f 5:reset/#23272f 11:#a8adb8/#23272f 3:reset/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 19:#a8adb8/#1c1f25 85:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  4: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 2:#e6e1d6/#1c1f25 2:#e8a848/#1c1f25+b 4:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25+b 2:reset/#1c1f25 5:#a8adb8/#1c1f25 10:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 19:#e6e1d6/#1c1f25 79:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  5: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 19:#e6e1d6/#1c1f25 79:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  6: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 98:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  7: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 17:#e6e1d6/#1c1f25 81:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  8: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 25:#e6e1d6/#1c1f25 73:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  9: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 1:#e6e1d6/#1c1f25 97:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 10: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 11: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 12: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 13: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 14: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 15: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 16: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 17: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 18: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 19: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 20: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 21: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 22: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 23: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 24: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 25: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 26: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 27: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 28: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 29: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 30: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 31: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 32: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 33: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 34: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 35: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 36: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 37: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 29:reset/#1c1f25 1:#4a5160/#1c1f25 104:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 38: 1:#2c303a/#15171c 1:reset/#15171c 2:#858c9a/#1c1f25 7:#e8a848/#23272f+b 7:#858c9a/#1c1f25 4:#e8a848/#23272f+b 7:#858c9a/#1c1f25 5:#e8a848/#23272f+b 104:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+ 39: 8:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 99:reset/#17191f 7:#464b54/#17191f
