@@ -9,6 +9,7 @@ mod edit_tests;
 mod hardening_tests;
 mod indent_tests;
 mod keybinds_tests;
+mod ratchet_tests;
 mod register_tests;
 mod reviewer_battery;
 mod scratch_tests;
