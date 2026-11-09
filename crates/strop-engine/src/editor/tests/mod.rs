@@ -4,6 +4,7 @@
 pub use super::*;
 
 mod alignment_tests;
+mod decline_tests;
 mod edit_tests;
 mod hardening_tests;
 mod indent_tests;
