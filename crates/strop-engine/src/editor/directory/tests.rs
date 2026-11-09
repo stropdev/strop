@@ -137,3 +137,43 @@ fn failed_refresh_retains_the_directory_instead_of_publishing_empty_success() {
     assert_eq!(editor.buf().text(), before.as_str());
     assert!(editor.directory().unwrap().stale.is_some());
 }
+
+#[test]
+fn ex_edit_from_a_directory_resolves_against_cwd_like_vim() {
+    // 0088 U2: from `child/`, `:e other.txt` is the cwd's file — not a new
+    // `child/other.txt` built from the Directory buffer's path.
+    let (root, mut editor) = fixture();
+    editor.feed_text(":e child<cr>");
+    editor.wait_io().unwrap();
+    assert!(editor.directory().is_some());
+    editor.feed_text(":e other.txt<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(
+        editor.buf().path.as_deref(),
+        Some(root.path().join("other.txt").as_path())
+    );
+    assert_eq!(editor.buf().text(), "outside\n");
+    assert!(
+        !editor.message().contains("[new file]"),
+        "an existing file is not announced as new: {}",
+        editor.message()
+    );
+}
+
+#[test]
+fn ex_edit_of_a_missing_path_says_new_file() {
+    let (root, mut editor) = fixture();
+    editor.feed_text(":e child<cr>");
+    editor.wait_io().unwrap();
+    editor.feed_text(":e fresh.txt<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(
+        editor.buf().path.as_deref(),
+        Some(root.path().join("fresh.txt").as_path())
+    );
+    assert!(
+        editor.message().contains("[new file]") && editor.message().contains("fresh.txt"),
+        "{}",
+        editor.message()
+    );
+}
