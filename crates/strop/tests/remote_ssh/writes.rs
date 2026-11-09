@@ -1,13 +1,9 @@
 use super::*;
 use std::os::unix::fs::MetadataExt;
 
-fn required() -> bool {
-    std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() == Some(std::ffi::OsStr::new("1"))
-}
-
 #[test]
 fn remote_edit_save_refresh_preserves_native_path_mode_and_time() {
-    if !required() {
+    if !ssh_required("remote_edit_save_refresh_preserves_native_path_mode_and_time") {
         return;
     }
     let fixture = Fixture::new();
@@ -42,7 +38,9 @@ fn remote_edit_save_refresh_preserves_native_path_mode_and_time() {
 
 #[test]
 fn remote_conflict_keeps_local_edits_and_write_quit_target_cannot_overwrite_original() {
-    if !required() {
+    if !ssh_required(
+        "remote_conflict_keeps_local_edits_and_write_quit_target_cannot_overwrite_original",
+    ) {
         return;
     }
     let fixture = Fixture::new();

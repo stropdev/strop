@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn remote_rename_preserves_dirty_text_and_requires_fresh_write_authority() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("remote_rename_preserves_dirty_text_and_requires_fresh_write_authority") {
         return;
     }
     let fixture = Fixture::new();
@@ -53,7 +53,7 @@ fn remote_rename_preserves_dirty_text_and_requires_fresh_write_authority() {
 
 #[test]
 fn remote_creation_and_copy_publish_the_explicit_version_without_clobbering() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("remote_creation_and_copy_publish_the_explicit_version_without_clobbering") {
         return;
     }
     let fixture = Fixture::new();
@@ -99,7 +99,7 @@ fn remote_creation_and_copy_publish_the_explicit_version_without_clobbering() {
 
 #[test]
 fn remote_directory_emptied_by_strop_can_be_removed_and_replayed() {
-    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+    if !ssh_required("remote_directory_emptied_by_strop_can_be_removed_and_replayed") {
         return;
     }
     let fixture = Fixture::new();
