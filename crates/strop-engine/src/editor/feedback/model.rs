@@ -99,10 +99,7 @@ impl FeedbackOwner {
                 document.index(),
                 document.generation()
             ),
-            Self::Remote {
-                endpoint,
-                incarnation,
-            } => format!("{endpoint} (workspace incarnation {incarnation})"),
+            Self::Remote { endpoint, .. } => endpoint.to_string(),
             Self::RemoteControls => "remote connections".into(),
             Self::Terminal {
                 session,

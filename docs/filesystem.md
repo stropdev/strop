@@ -7,9 +7,9 @@ goes to its parent. `Space a` lists the actions valid here: in a directory
 the filesystem operations, in a file its operations plus any code actions
 the language server offers, all in one **actions** list.
 
-Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
-hosts where the native worker is admitted (restricted/SFTP-only hosts
-remain read-only):
+Filesystem mutations use **Review → Apply → Receipt** on the local
+filesystem. On an SSH host they are refused: files there are edited and
+saved one at a time, and anything else runs in the host's terminal.
 
 ```vim
 :fs create nested/new.txt
@@ -50,13 +50,12 @@ conflicting targets refuse instead of guessing which file a row represents.
 ## Relocation and barriers
 
 Confirmed relocation keeps source text, history and document identity.
-Remote relocation revokes old write authority; use `:remote edit` again
-before saving the renamed buffer. Pending saves and unconfirmed operations
+Pending saves and unconfirmed operations
 block conflicting work. Receipts survive leaving the view; verification
 never blindly retries a mutation.
 
 Local saves/save-as and local filesystem mutations use a conservative
-per-editor write barrier, including parent aliases. Let an admitted save
+per-editor write barrier, including parent aliases. Let a pending save
 finish before applying a local filesystem review, and resolve unconfirmed
 receipts before saving. Move verification and recovery require the recorded
 post-publication version: finding the same inode at a pathname is not

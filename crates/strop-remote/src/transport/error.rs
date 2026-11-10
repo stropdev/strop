@@ -196,7 +196,7 @@ impl Fault {
         Self::new(
             stage,
             RemoteFailureKind::Stopped,
-            "the connection was stopped (disconnect or last lease released)",
+            "the connection was closed (disconnected, or no file there is open)",
         )
     }
 
@@ -336,8 +336,8 @@ impl RemoteError {
                  deadline; check reachability and file size",
             ),
             RemoteFailureKind::Stopped => Some(
-                "the session was closed by disconnect or by releasing its last \
-                 lease; retrying establishes a fresh connection",
+                "the connection was closed by a disconnect or because no file \
+                 there is open any more; retrying connects again",
             ),
             RemoteFailureKind::NotConnected => Some(
                 "no authenticated session exists for this endpoint: open a \

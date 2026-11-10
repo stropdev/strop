@@ -36,10 +36,10 @@ viewport and lands in NORMAL mode. An exited session stays readable with
 its exit status; `:terminal` starts a new one.
 
 The shell is `$SHELL` (or `/bin/sh`) in the current directory, running in
-the editor process. In an SSH directory with an admitted worker the
-session runs on that host as the remote user's login shell (`$SHELL -l`)
-and keeps the endpoint in its name; SSH without an admitted worker
-refuses. **Open local terminal** / `:terminal-local` is a deliberate
+the editor process. In a file or directory on a connected SSH host the
+session is that host's login shell (`$SHELL -l`, through `ssh -tt` on a
+local PTY, so Ctrl-C and window size reach it) and keeps the endpoint in
+its name; a host that is not connected refuses. **Open local terminal** / `:terminal-local` is a deliberate
 local choice, never a fallback against a remote-looking path. For a
 container, run `docker exec -it <container> sh` in a terminal. The
 displayed launch directory is the one selected at launch and does not
@@ -101,7 +101,7 @@ settle covers admission/transport/frame barriers, not arbitrary command
 execution. Script completion explicitly closes and drains its owned
 terminal sessions.
 
-Headless `:trust` uses the same explicit per-project/endpoint consent and
+Headless `:trust` uses the same explicit per-project consent and
 `XDG_STATE_HOME` (or `$HOME/.local/state`) store as the TUI. It does not
 restore or automatically persist editor sessions. Project configuration
 never grants itself permission to execute commands.

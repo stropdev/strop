@@ -39,14 +39,8 @@ PY
 }
 
 catalog() {
-    protocol=$(sed -n 's/^pub const PROTOCOL_VERSION: u32 = \([0-9][0-9]*\);$/\1/p' \
-        crates/strop-worker-protocol/src/message.rs)
-    min_editor=$(sed -n 's/^pub const MIN_EDITOR_VERSION: &str = "\([^"]*\)";$/\1/p' \
-        crates/strop-worker-deploy/src/lib.rs)
-    [ -n "$protocol" ] && [ -n "$min_editor" ]
     python3 .github/scripts/release-catalog.py catalog \
-        --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json" \
-        --worker-protocol "$protocol" --worker-min-editor "$min_editor"
+        --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json"
 }
 
 case "$COMMAND" in
@@ -90,7 +84,6 @@ package)
     printf 'fn main() { let x = 1; }\n' > "$WORK/smoke.rs"
     printf 'frame\n' > "$WORK/smoke.txt"
     "$BINARY" --headless "$WORK/smoke.txt" "$WORK/smoke.rs" | grep -q "fn main"
-    timeout 15 "$BINARY" --worker-stdio </dev/null
     catalog
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
     echo "qualified local release directory: $DIST"

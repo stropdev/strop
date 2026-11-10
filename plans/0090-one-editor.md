@@ -250,3 +250,84 @@ for remote work. "Similar ergonomics" must hold over a WAN, so the worker is del
 only after open is pipelined to two round trips and the open/save/search rows pass
 again at **50 ms RTT** (`DELAY_MS=25`). The numbers go here beside the loopback run.
 
+
+**WAN condition met (measured 2026-11-10).** Open was pipelined, then re-measured on the
+same container, host and method as the gate run above (the same bench, worker side still
+present, so the comparison is like for like).
+
+What changed in the exec path: an open is two round trips — OPEN and STAT in the first
+flight; every READ, a one-byte read past the end (the file grew), FSTAT (the handle's
+attributes must match the STAT's) and CLOSE in the second, with CLOSE's status still
+checked. A file that changed under the read is read again. A save is three — LSTAT with the
+temporary's OPEN, then the WRITEs with CLOSE and the mode SETSTAT, then the rename with the
+published attributes. A first pass sent the read's tail only after the last read reply had
+arrived (three round trips): it passed at 50 ms RTT by 0.9 ms (+99.1 / +98.1 against
++100), so the tail now rides the same flight as the reads; the table below is that final
+shape.
+
+`DELAY_MS=25` (50 ms RTT; netem 25 ms each way on loopback), N = 30 after 3 warmup,
+nearest-rank p50/p95 in ms, warm connection. First connect from the earlier pass (N = 3
+after 3 warmup; each worker sample is three minutes at this delay):
+
+| Operation | worker p50 / p95 | exec p50 / p95 | Δ p50 / p95 | Gate | Result |
+|---|---|---|---|---|---|
+| open a 1 MB file | 54.5 / 56.1 | 104.0 / 104.8 | +49.5 / +48.7 | ≤ +100 ms | PASS |
+| save a 1 MB file | 147.9 / 168.8 | 156.2 / 204.1 | +8.3 / +35.3 | ≤ +100 ms | PASS |
+| `rg --json` first result | 53.7 / 54.5 | 107.5 / 108.8 | +53.8 / +54.4 | ≤ +150 ms | PASS |
+| `rg --json` complete | 104.7 / 105.6 | 113.9 / 115.9 | +9.2 / +10.3 | — | info |
+| `git log -n 50 -- file` | 71.8 / 72.6 | 109.7 / 112.3 | +37.9 / +39.8 | ≤ +150 ms | PASS |
+| `git blame --porcelain` | 71.8 / 72.0 | 111.7 / 112.4 | +40.0 / +40.5 | ≤ +150 ms | PASS |
+| LSP attach | 101.9 / 102.3 | 154.4 / 155.3 | +52.5 / +53.0 | — | info |
+| LSP round trip after attach | 50.7 / 50.9 | 50.5 / 50.7 | −0.2 / −0.2 | ≤ +50 ms | PASS |
+| `:terminal` keystroke echo | 50.7 / 50.8 | 50.6 / 50.8 | −0.1 / −0.0 | ≤ +20 ms p95 | PASS |
+| first connect, fresh host | 183,614 / 183,901 | 928 / 956 | −182,686 | faster | PASS |
+
+Loopback, same build: open 4.9 / 6.3 → 4.1 / 4.7, save 19.3 / 25.0 → 5.5 / 6.5, `rg`
+first result 3.4 / 3.9 → 6.7 / 7.6, `git log` 21.6 / 21.7 → 9.1 / 9.9, `git blame`
+21.6 / 21.8 → 10.6 / 11.7, LSP round trip 0.5 / 0.6 → 0.3 / 0.4, echo 0.6 / 0.7 → 0.5 /
+0.5 (worker → exec, p50 / p95); every gate row passes. The exec journeys (argv/cwd quoting,
+atomic save with the changed-on-disk refusal, listing) passed over the same sshd.
+
+Reading it: exec now costs one round trip more than the worker for open and for a process
+spawn (the channel open on the master), comfortably inside every budget at 50 ms RTT; the
+first open budget is crossed only past roughly 100 ms RTT. The worker remains unusable to
+connect at this latency (three minutes per fresh host).
+
+### 0.56 record
+
+Shipped (the worker deleted in the change that moved the editor, per §5):
+
+- **Local in process.** `LocalFs` (`editor/namespace/local.rs`) calls the strop-fs kernel
+  directly — observation, whole reads, listings, reviewed batches, document Store and
+  verification — under one execution context. The inotify watcher moved from the worker into
+  `strop_fs::notify` and runs on one editor thread that subscribes, settles onto the notify
+  queue and pumps hints. Git and language servers spawn with `Command`; terminals run on the
+  in-process PTY whose launch/supervision moved (not copied) from `strop-worker` into
+  `strop-terminal/src/pty/`.
+- **Remote over one master.** `RemoteClient`'s per-endpoint actor authenticates the master
+  (`ExecHost::connect`, cancellable) and runs its SFTP session as a channel on it;
+  `RemoteClient::save` (Expect: Unchanged stamp / Any for `:w!` / Absent for save-as),
+  `host()` (connects on a job when needed) and `connected_host()` (no I/O, for the input
+  path) feed rg, git, LSP and terminals. Masters the client started are stopped when it
+  drops. A remote terminal is `ssh -tt` on a local PTY with typeahead held until the first
+  output byte.
+- **One consent.** `:remote worker`, `:remote edit`, `:remote verify` and remote `:trust`
+  are gone; a connected host is editable and a remote project layer's server runs there.
+- **Deleted.** `strop-worker`, `strop-worker-client`, `strop-worker-deploy`,
+  `strop-worker-protocol`, `worker_catalog.rs`, `bootstrap.rs`, `worker_transport.rs`,
+  `deploy_provider.rs`, `selection.rs`, the remote follow/view machinery, the worker-only
+  failure enums and `map_client`, the capability gating that only modelled worker
+  admission, strop-core's worker cache/deploy/session/recovery policies, `--worker-stdio`
+  and its release smoke step, the catalog's `worker` manifest, the kernel `frame` module
+  with its theorems, Audit claims and mutants, and the `WorkerSession` TLC model.
+- **R8 decided: `--tail/--range/--follow` and `:tail/:range/:follow/:unfollow` are cut.**
+  Reimplementing them over SFTP (ranged reads, polling follow, window-relative line
+  numbers) would have kept the window type through the document model, completion, Git,
+  LSP and the statusline for a log-reading niche that `ssh host tail -f FILE | strop -`
+  covers. Owner check stays open as a question on the 0.56 PR.
+- **Remote file operations refused.** `:fs` batches on an SSH host were worker-only; they
+  are a typed refusal pointing at the host's terminal.
+- **Lanes.** `ssh-pythonfree` now runs the exec journeys against a real listening sshd and
+  the editor journeys (`remote_ssh`: open, edit, save, changed-on-disk refusal, `:w!`,
+  save-as, search, `Space g l`, terminal with Ctrl-C and typeahead, failure refusals)
+  through the real binary. `ssh-bench` is an exec-only latency bench (opt-in).

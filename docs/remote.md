@@ -1,41 +1,28 @@
 # SSH and remote editing
 
-Remote files are first-class: real buffers, real identity, never a local
-lookalike. The short version:
+Remote files are real buffers with their own identity, never a local
+lookalike. strop reaches a host with plain OpenSSH: nothing is installed
+there.
 
 ```sh
-strop +120 ssh://user@devbox/var/log/app.log
-strop --tail 65536 ssh://devbox/var/log/app.log
-strop --range 1048576:65536 ssh://devbox/var/log/app.log
-strop --follow ssh://devbox/var/log/app.log
-strop remote "ssh://user@devbox:2222/~/project/src/lib.rs"
 strop ssh://devbox/etc/
+strop +120 ssh://user@devbox/var/log/app.log
+strop remote "ssh://user@devbox:2222/~/project/src/lib.rs"
 ```
 
 `strop remote URL` and `--remote URL` are the same command — see
-[cli.md](cli.md).
-
-Remote files open read-only by default: motions, `/`/`?`, visual selection,
-yank and splits work unchanged. Escape cancels an open or stops following;
-`:e!` refreshes the snapshot. Follow sticks to EOF only while you stay
-there. Shrink, replacement and changed overlap produce a visible reset;
-size/mtime alone are not file identity. The modeline identifies partial
-byte windows, whose line numbers are window-relative.
+[cli.md](cli.md). `-R` opens read-only, as for a local file.
 
 ## Connecting
 
-Press **Space o** or run **`:remote`** to choose a known/connected
-destination or select **Add a host**. Enter `host`, `user@host:port`, or a
-complete SSH path. Enter is the connection action; opening the chooser does not authenticate.
-New hosts start at `/`; successful directory choices are remembered
-privately. `:remote home` uses negotiated remote-home expansion;
-`:remote root` returns to `/`.
+Press **Space o** or run **`:remote`** to choose a known or connected
+destination, or select **Add a host** and enter `host`,
+`user@host:port` or a complete SSH path. Opening the chooser does not
+authenticate; Enter connects. New hosts start at `/`; directories you
+choose are remembered privately. `:remote home` browses the home
+directory the server reports; `:remote root` returns to `/`.
 
 ```vim
-:tail 65536 ssh://devbox/var/log/app.log
-:range 1048576 65536 ssh://devbox/var/log/app.log
-:follow
-:unfollow
 :browse ssh://devbox/
 :filter app
 :remote connect ssh://devbox
@@ -44,105 +31,67 @@ privately. `:remote home` uses negotiated remote-home expansion;
 :remote clear
 ```
 
+**A connected host is editable.** Logging in is the one consent: there is
+no separate step to edit files, run Git, search or open a terminal there.
+
+OpenSSH supplies aliases, keys, agent and `ProxyJump` from your
+`~/.ssh/config`. Authentication is noninteractive: host keys must already
+be trusted and a key or agent must answer without a prompt; otherwise the
+refusal carries ssh's own words and a hint. strop runs one OpenSSH master
+per host (`ControlMaster`, socket in a private directory under
+`$XDG_RUNTIME_DIR`), so every later read, save, search or terminal is a
+channel on it rather than a new login. Masters strop started stop when it
+exits; after a crash they expire on their own after ten idle minutes.
+
 Directory listings are searchable real buffers with kind, POSIX
 permissions, server-reported byte size and native filename columns.
-Missing attributes show `?`, distinct from mode `000` and size zero.
-Directory sizes are not recursive totals. Links and special entries have
-distinct type markers. Enter opens an entry; `-`, Backspace or `../`
-returns to the parent and restores the selected child. `:filter` narrows
-names; an empty filter restores the full listing.
+Missing attributes show `?`. Listings include hidden entries and do not
+evaluate ignore files. Enter opens an entry; `-`, Backspace or `../`
+returns to the parent and restores the selected child. Tab completes SSH
+hosts and paths without starting authentication: remote candidates need
+a live connection or a cached listing. Percent-encode reserved path
+bytes (`%20`, `%23`, `%25`); native Unix filenames stay intact. Files are
+read whole, up to 256 MiB of UTF-8 text.
 
-SSH listings include hidden entries and do not evaluate
-ignore files; the modeline names this fixed policy. Plain Ex open operands
-keep their local meaning outside Directory buffers; inside Directory they
-use that directory's captured namespace. Explicit `file://` and `ssh://`
-locations select the namespace regardless of the current view. Tab
-completes SSH hosts and paths without starting authentication: remote
-candidates need a live authorized connection or cached data. Connections
-are shared by endpoint and held by documents or explicit `:remote connect`
-pins; clear/disconnect retires them without touching external SSH masters.
+## Saving
 
-OpenSSH supplies aliases, keys, agent and ProxyJump configuration. Host
-keys must already be trusted; authentication is noninteractive.
-Percent-encode reserved path bytes (`%20`, `%23`, `%25`); native Unix
-filenames stay intact. Reads are bounded to 256 MiB of UTF-8 text;
-range/tail edges exclude incomplete UTF-8 characters. Home expansion
-requires the server's `expand-path@openssh.com` extension.
+**`:w`** uploads the buffer to a temporary name beside the file, gives it
+the file's permission bits and renames it over the original, so readers
+never see a half-written file. A symlink is saved through to its target.
 
-## Explicit remote editing
+- If the file on the host changed since it was read (its size or
+  modification time moved), `:w` is refused and your edits stay:
+  **`:e!`** reloads the host's version, **`:w!`** replaces it anyway.
+- **`:w PATH`** or **`:w ssh://…`** writes a copy (a relative path is
+  beside the file) and never replaces an existing file; `:w! PATH` does.
+- Saves run off the input thread; a reply for an older revision never
+  clears newer unsaved edits.
 
-On a complete, non-following file snapshot, run **`:remote edit`**. The
-editor verifies the displayed content against the server and grants this
-document write authority. Edit normally, then use **`:w`** or **`:wq`**.
-Saves run off the input thread; a receipt for an older revision never
-clears newer unsaved edits.
+Limits, stated plainly: there is no cross-process lock (as in vim, a
+writer racing the final check wins); SFTP modification times are whole
+seconds, so a same-size rewrite within the second of the read goes
+unnoticed; ownership is not carried over when another user's file is
+replaced. File operations — create, rename, copy, delete — are not
+offered on a host; run them in its terminal.
 
-The write path checks content and metadata, stages inside a private 0700
-transaction directory, preserves mode/ownership/mtime/extended attributes,
-atomically replaces the file, and syncs the file and changed directories.
-Unsupported preservation refuses the save. It requires an owned regular
-single-link file and exact stored path spelling. Symlinked ancestor
-directories are resolved and revalidated; a symlink as the final component
-is refused. Edited snapshots remain bounded to 256 MiB. Protocol
-lock/staging paths are reserved; private lock files remain to keep a stable
-lock identity — do not delete active locks.
+## Search, Git, language servers, terminal
 
-**Concurrency is cooperative, not universal compare-and-swap.** Strop's
-remote-save participants share a lock. Completed changes by other programs
-are detected before commit, but a nonparticipating writer can race the
-final check/rename window. `:w!` never bypasses that conflict check or
-grants authority to a read-only snapshot. Escape in normal mode requests
-cancellation. If a save may have crossed rename, local edits stay dirty and
-the outcome is explicitly unconfirmed. **`:remote verify`** uses the frozen
-prepared attempt and any available receipt to reobserve and sync matching
-saved content, including after a worker restart in the same Linux
-boot/mount namespace and principal. It never blindly overwrites or
-retries. Missing evidence or a changed namespace remains unconfirmed.
-Conflicts preserve local edits. Successful `:e!` refresh revokes the
-permit; pending/unconfirmed saves must settle or be verified first. A
-failed refresh does not discard edits or permissions. Forced close may
-leave an unconfirmed remote outcome and a private orphan stage.
+They run **on the host**, as commands on the connection:
 
-Remote contents and write permits are never restored from persisted
-sessions. See the [remote-save contract and safety
-limits](../plans/0040-remote-editing-and-saving.md).
+- **`Space /`** searches the remote workspace with `rg` on the host.
+- **Git** signs, log (`Space g l`), blame and diffs run `git` there.
+- A language server starts on the host when it is installed there; the
+  configuration comes from your local `languages.toml` and the project's
+  `.strop/languages.toml` on the host.
+- **`:terminal`** and **Space t** in a remote file or directory open your
+  login shell on the host in that directory (`ssh -tt` on a local PTY, so
+  Ctrl-C and window size work; keys typed before the shell answers are
+  kept). `:terminal-local` is the explicit local alternative.
 
-## Remote services
-
-Full-file snapshots support remote LSP diagnostics, hover,
-definition/references and source/header navigation, plus Git context,
-staged/unstaged diffs, log, blame and commit/file navigation once the
-endpoint has an admitted worker. Run **`:remote worker [URI]`** to
-authorize a verified worker without granting a file write permit, or
-**`:remote edit`** on a complete snapshot to admit the worker and
-separately verify edit authority. Services run **on the remote host**,
-never against a local lookalike path. Project-command trust is scoped to
-the endpoint and remote root (`:trust`). Partial windows and following
-refuse full-document language services; Git mutations, remote save-as and
-arbitrary shell/filter commands remain unsupported.
-
-SFTP browsing and ranged reads need no remote worker or Python. Protected
-editing, Git, LSP and search run through a verified native worker in the
-selected namespace; worker admission may write a private executable cache
-on that host. With that admission, **`:terminal`** and **Space a → Terminal
-here** also run an interactive PTY on the remote host, with the endpoint and
-launch directory retained in the modeline, pane title, buffer list and
-`:explain`. **`:terminal-local`** remains the explicit host-local alternative.
-Without a worker, terminal execution refuses rather than starting locally.
-A restricted/SFTP-only account remains read-only, with typed
-refusals instead of Python, shell, SFTP-write or local-path fallbacks. The
-worker artifact must match the target and protocol; a foreign-target
-artifact can be supplied with `STROP_WORKER_BINARY`. Git/LSP also need
-their respective programs in the remote workspace. Owned process groups
-are cleaned up when the worker observes lease loss; network partitions
-delay detection, descendants creating new sessions can escape the group,
-and a killed worker cannot guarantee cleanup.
-
-`strop-remote` owns SFTP and the SSH worker transport; the editor owns
-views, write permits and replay. See the [workspace
-contract](../plans/0036-remote-workspace-execution.md), [protocol
-evidence](../plans/0034-ssh-log-buffers.md) and the [prioritized remote
-roadmap](../plans/0035-remote-workflow-roadmap.md).
+`rg`, `git` and the language server must be installed on the host. Each
+command runs through your login shell there (sshd's `$SHELL -c`), so a
+heavy shell startup file slows every search and Git query; csh-family
+login shells are not supported for commands with special characters.
 
 ## Containers
 
