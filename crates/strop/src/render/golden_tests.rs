@@ -119,6 +119,24 @@ fn each(name: &str, scene: impl Fn(&mut Editor) -> Settle) {
     }
 }
 
+/// 0091 B10: the first screen a new user reads, pinned — every line on
+/// it must be true of the binary.
+#[test]
+fn welcome_card() {
+    for theme in THEMES {
+        for size in SIZES {
+            let root = workspace();
+            let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+            editor.set_theme(theme);
+            let grid = frame(&mut editor, &mut settle_analysis(), size);
+            assert_golden(
+                &format!("welcome-{}-{}x{}", theme.name(), size.0, size.1),
+                &grid,
+            );
+        }
+    }
+}
+
 #[test]
 fn editor_and_statusline() {
     each("editor", |editor| {

@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="logo.svg" width="480" alt="strop — an editor card mid ci[, the pending cut tinted, a razor peeking over the edge">
-  <h3>see the cut before you make it.</h3>
-  <p>Neovim's hands · Helix's spine · rootle's eyes · GitLens' memory</p>
+  <img src="logo.svg" width="480" alt="strop">
+  <h3>A modal text editor with Vim's keys.</h3>
+  <p>One static binary. File finder, project search and replace, git and language servers are built in.</p>
   <p>
     <a href="https://strop.dev">strop.dev</a> ·
     <a href="https://github.com/stropdev/strop/releases">what's new</a>
@@ -10,24 +10,25 @@
 
 ![strop demo](demos/demo.gif)
 
-**strop** is a modal text editor in Rust with Vim-style commands, project
-search, git surfaces and operator previews. Composition windows such as
-`d/pattern` preview their affected ranges; completed object chords such as
-`ci[` execute at the completing key rather than pausing for an inspection
-step. Operator previews and execution consume the same resolver — the
-preview cannot lie.
+**strop** is a modal text editor written in Rust. It uses Vim's commands —
+a tested subset that is still growing; [docs/vim-compat.md](docs/vim-compat.md)
+lists what is there. There are no plugins to install: finding files, searching
+and replacing across a project, git blame and history, and language servers
+come with the binary.
 
-| Interaction | Inspection contract |
+## What you see before a change happens
+
+Most Vim commands run the moment you finish typing them, here as in Vim.
+A few longer ones show what they will change first:
+
+| Command | What you see before it runs |
 | --- | --- |
-| `dw`, `ci[`, `dfx`, `.` | Execute at the completing key; there is no guaranteed inspection interval. |
-| `vi[` then `c`, other Visual selections | Inspect the selection before applying the operator. |
-| `d/pattern` while composing | Live affected range and motion semantics before Enter; Esc once enters field Normal, Esc again cancels. |
-| `:s` while composing | Live before/after text, replacement count and scope before Enter. |
-| Project replace, filesystem and machine edits | Review exact targets before Apply; saving is a separate action. |
-| Macros and arbitrary child/shell execution | No general effect preview. |
-
-The tagline covers these explicit inspection boundaries, not a post-edit flash
-for every completed Vim chord.
+| `dw`, `ci[`, `dfx`, `.` | Nothing. They run at the last key, as in Vim. |
+| `vi[` then `c`, and other Visual selections | The selection, before you press the operator. |
+| `d/pattern` while you type the pattern | The range that will be deleted, until Enter. |
+| `:s` while you type it | The changed lines, before and after, and how many. |
+| Project replace, file operations | Every change as a diff. You apply it, then save, as separate steps. |
+| Macros, shell commands | Nothing. |
 
 ## Install
 
@@ -56,6 +57,7 @@ Q                            multicursor      Space c              cursor below
 
 Space  f files · o remote · b buffers · / Search · R replace · ? help
 Space w  - horizontal · v vertical · 1-9 focus · h/j/k/l/w move · q close
+Ctrl-W   h j k l w W p move · s v n split · c q o close · = equal
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
 

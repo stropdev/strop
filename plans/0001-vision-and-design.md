@@ -45,6 +45,12 @@ execute at the completing key. Visual selection, composed search,
 substitution and reviewed multi-file changes are the inspect-first paths.
 The original post-edit dot-repeat flash is not a cancellation opportunity.
 
+> **Superseded.** The table below is kept as history and does not describe
+> the product: a completed operator+motion has already executed, so the
+> first, second and sixth rows are frames that are never drawn.
+> [0091](0091-editor-critique-0.56.md) §3.1 is the measured table of what is
+> shown before commit and what is not.
+
 | Input class | Preview quality |
 |---|---|
 | motions + text objects + counts (`dw`, `ci[`, `y3j`, `d%`) | perfect, updates per keystroke |

@@ -198,9 +198,19 @@ fn render_welcome(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         .map(|(key, desc)| clip::width(key) + 2 + 1 + clip::width(desc) + 3)
         .sum();
     let tagline = "see the cut before you make it.";
-    let note = "git signs paint the gutter · ci[ previews the cut";
+    // Only keys that do what the card says (0091 B10).
+    let note = "space f finds a file · space / searches the project";
     let content = keys_row.max(clip::width(note)).max(clip::width(tagline)) + 4;
-    let (w, h) = (card::card_width(content, area.width), 9u16);
+    // The card is alone on an empty screen: it takes the width its lines
+    // need (clipping the first thing a user reads helps nobody) and
+    // falls back to the 60 % rule only on terminals too narrow for that.
+    let fits = u16::try_from(content)
+        .ok()
+        .filter(|content| content + 4 <= area.width);
+    let (w, h) = (
+        fits.unwrap_or_else(|| card::card_width(content, area.width)),
+        9u16,
+    );
     if area.width < w + 4 || area.height < h + 4 {
         return;
     }
