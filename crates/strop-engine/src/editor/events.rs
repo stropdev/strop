@@ -131,17 +131,6 @@ impl Editor {
         if let Some(rx) = self.resolution.rx.take() {
             forward(rx, tx.clone(), AppEvent::Resolution);
         }
-        if let Some(rx) = self.notify.take_rx() {
-            let queue = std::sync::Arc::clone(&self.notify.queue);
-            let tx = tx.clone();
-            std::thread::spawn(move || {
-                while let Ok(event) = rx.recv() {
-                    if queue.push_event(event) && tx.send_blocking(AppEvent::Notify).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
         self.connect_picker_stream(&tx);
         for srv in &mut self.lsp_servers {
             let rx = std::mem::replace(&mut srv.rx, std::sync::mpsc::channel().1);
@@ -231,9 +220,6 @@ impl Editor {
             self.completion_after_action();
         }
         self.schedule_deferred_input();
-        // 0058 S7: a worker restart kills the subscription with its
-        // session; observe the lease (cheap, no I/O) before staleness.
-        self.notify_observe_lease();
         // Coalesced draft checkpointing (0056 AR04): cheap staleness check
         // after every event; captures only what actually moved.
         self.recovery_after_event();
@@ -320,15 +306,8 @@ impl Editor {
         self.stop_all_terminals();
         self.stop_remote_work();
         self.close_picker();
-        // 0058 S7: the subscription dies with the session — typed
-        // retirement on the lease, then the lease drop reaps the worker.
-        if let Some(subscription) = self.notify.subscription.take() {
-            let worker = self.filesystem.worker().clone();
-            std::thread::spawn(move || {
-                let (token, _handle) = strop_core::worker::CancelToken::standalone();
-                let _ = worker.unsubscribe(&token, subscription);
-            });
-        }
+        // The watcher thread stops with the session.
+        self.notify.stop();
         if let Some(source) = self.picker_source.as_ref() {
             source.close();
         }

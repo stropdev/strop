@@ -87,12 +87,6 @@ impl Editor {
                 return;
             }
         };
-        if remote_file.is_some() && !self.remote_window_complete() {
-            // a partial window's line numbers are window-relative: no
-            // full-file hunk coordinates exist to show (0036)
-            self.clear_hunk_view();
-            return;
-        }
         let key = HunkKey {
             document: doc,
             revision,
@@ -133,9 +127,7 @@ impl Editor {
             let workdir = context.repo.workdir().to_path_buf();
             let head_sha = context.head_sha.clone();
             let rel = context.repo.rel_of(remote.path());
-            // The endpoint's admitted worker lease when the session
-            // holds one (0058 WK10); read-only, never deploying.
-            let workers = self.remote.workers.clone();
+            let client = self.remote_client();
             self.launch_git_job(
                 "git-hunks-remote",
                 "git.hunks",
@@ -153,14 +145,22 @@ impl Editor {
                         );
                     };
                     let text = snapshot.to_string();
-                    let lease = workers.get(&endpoint);
+                    let host = match client.host(&endpoint, &cancel) {
+                        Ok(host) => host,
+                        Err(error) => {
+                            return Outcome::failed(
+                                strop_core::worker::FailureKind::Unavailable,
+                                error.to_string(),
+                            )
+                        }
+                    };
                     match strop_git::remote::gutter(
                         &endpoint,
                         &workdir,
                         head_sha.as_deref(),
                         &rel,
                         &text,
-                        lease.as_ref(),
+                        &host,
                         &cancel,
                     ) {
                         Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
@@ -290,12 +290,6 @@ impl Editor {
     /// `]c` / `[c`: jump to the next/previous changed line. An explicit
     /// command retries a previously failed diff; render never does.
     pub(crate) fn jump_hunk(&mut self, forward: bool) {
-        // a partial remote window has no full-file coordinates to jump
-        // by — the honest refusal, not "no more hunks"
-        if self.remote_file().is_some() && !self.remote_window_complete() {
-            self.message = "partial remote snapshot — hunks need a full window".into();
-            return;
-        }
         self.hunk_load.retry_failed();
         self.refresh_hunks();
         let cur = self.buf().line_of(self.head()) + 1;

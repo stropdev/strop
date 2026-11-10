@@ -1,14 +1,14 @@
-//! Physical-connection lifecycle for the pooled actors: spawn the dedicated
-//! ssh(1) sftp subsystem connection, convert its pipes into a private
+//! Physical-connection lifecycle for the pooled actors: spawn the SFTP
+//! channel on the endpoint's master, convert its pipes into a private
 //! current-thread Tokio runtime, negotiate the session under the job's
 //! cancellation, and reap the child on every exit path — failure, deadline,
 //! cancellation and panic unwinding included. One actor owns a
 //! [`Physical`] at a time; nothing here is ever visible to the editor.
 
-use super::error::{Fault, ReadFailureKind, ReadStage, RemoteReadError};
+use super::error::{Fault, RemoteError, RemoteFailureKind, RemoteStage};
 use super::session;
 use super::stderr;
-use super::wire::ReadOnlySftp;
+use super::wire::Sftp;
 use crate::pool::StopSignal;
 use std::cell::Cell;
 use std::process::Command;
@@ -29,10 +29,9 @@ pub(crate) struct Physical {
     pub(crate) epoch: u64,
     pub(crate) runtime: Runtime,
     pub(crate) child: OwnedProcess,
-    pub(crate) codec: ReadOnlySftp<ChildStdin, ChildStdout>,
+    pub(crate) codec: Sftp<ChildStdin, ChildStdout>,
     log: stderr::SharedTail,
     pub(crate) drain: Option<JoinHandle<()>>,
-    pub(crate) advertised: super::wire::Advertised,
 }
 
 impl Physical {
@@ -50,7 +49,7 @@ impl Physical {
         stop: &StopSignal,
         epoch: u64,
         remote: &str,
-    ) -> Result<Self, RemoteReadError> {
+    ) -> Result<Self, RemoteError> {
         // The runtime exists before the child: pipe registration happens
         // under `enter()` so the runtime's IO driver owns every pipe, and
         // dropping the runtime — on any path — is what releases them.
@@ -60,9 +59,9 @@ impl Physical {
         {
             Ok(runtime) => runtime,
             Err(error) => {
-                return Err(RemoteReadError::bare(
-                    ReadStage::Spawn,
-                    ReadFailureKind::Io,
+                return Err(RemoteError::bare(
+                    RemoteStage::Spawn,
+                    RemoteFailureKind::Io,
                     format!("private tokio runtime: {error}"),
                 )
                 .remote(remote))
@@ -72,12 +71,12 @@ impl Physical {
             Ok(child) => child,
             Err(failure) => {
                 let kind = if token.is_cancelled() {
-                    ReadFailureKind::Cancelled
+                    RemoteFailureKind::Cancelled
                 } else {
-                    ReadFailureKind::Spawn
+                    RemoteFailureKind::Spawn
                 };
                 return Err(
-                    RemoteReadError::bare(ReadStage::Spawn, kind, failure.message).remote(remote),
+                    RemoteError::bare(RemoteStage::Spawn, kind, failure.message).remote(remote)
                 );
             }
         };
@@ -90,22 +89,21 @@ impl Physical {
             Ok(pipes) => pipes,
             Err(fault) => return Err(diagnose(runtime, child, log, None, fault, remote)),
         };
-        let stage = Cell::new(ReadStage::Connect);
+        let stage = Cell::new(RemoteStage::Connect);
         let negotiated = runtime.block_on(session::guarded(
-            ReadOnlySftp::connect(stdin, stdout),
+            Sftp::connect(stdin, stdout),
             token,
             stop,
             &stage,
         ));
         match negotiated {
-            Ok((codec, advertised)) => Ok(Self {
+            Ok(codec) => Ok(Self {
                 epoch,
                 runtime,
                 child,
                 codec,
                 log,
                 drain: Some(drain),
-                advertised,
             }),
             Err(fault) => Err(diagnose(runtime, child, log, Some(drain), fault, remote)),
         }
@@ -114,12 +112,20 @@ impl Physical {
     /// Tear the connection down: kill the process group, reap the leader
     /// (revoke-before-reap), give stderr a bounded final drain, then drop
     /// codec and runtime so the pipes are released. Never blocks unbounded.
-    pub(crate) fn retire(mut self) -> Result<(), RemoteReadError> {
+    pub(crate) fn retire(mut self) -> Result<(), RemoteError> {
         self.child.terminate().map_err(|failure| {
-            RemoteReadError::bare(ReadStage::Teardown, ReadFailureKind::Io, failure.message)
+            RemoteError::bare(
+                RemoteStage::Teardown,
+                RemoteFailureKind::Io,
+                failure.message,
+            )
         })?;
         self.child.wait().map_err(|failure| {
-            RemoteReadError::bare(ReadStage::Teardown, ReadFailureKind::Io, failure.message)
+            RemoteError::bare(
+                RemoteStage::Teardown,
+                RemoteFailureKind::Io,
+                failure.message,
+            )
         })?;
         // The drain task completes at EOF — when ssh and its local
         // descendants are gone — so a killed group needs only the bounded
@@ -128,16 +134,16 @@ impl Physical {
             self.runtime
                 .block_on(async { tokio::time::timeout(STDERR_DRAIN, drain).await })
                 .map_err(|error| {
-                    RemoteReadError::bare(
-                        ReadStage::Teardown,
-                        ReadFailureKind::Deadline,
+                    RemoteError::bare(
+                        RemoteStage::Teardown,
+                        RemoteFailureKind::Deadline,
                         error.to_string(),
                     )
                 })?
                 .map_err(|error| {
-                    RemoteReadError::bare(
-                        ReadStage::Teardown,
-                        ReadFailureKind::Io,
+                    RemoteError::bare(
+                        RemoteStage::Teardown,
+                        RemoteFailureKind::Io,
                         error.to_string(),
                     )
                 })?;
@@ -155,15 +161,15 @@ fn convert(
 ) -> Result<(ChildStdin, ChildStdout, JoinHandle<()>), Fault> {
     let missing = |what: &str| {
         Fault::new(
-            ReadStage::Connect,
-            ReadFailureKind::Io,
+            RemoteStage::Connect,
+            RemoteFailureKind::Io,
             format!("{what} pipe missing"),
         )
     };
     let rejected = |what: &str, error: std::io::Error| {
         Fault::new(
-            ReadStage::Connect,
-            ReadFailureKind::Io,
+            RemoteStage::Connect,
+            RemoteFailureKind::Io,
             format!("{what}: {error}"),
         )
     };
@@ -189,7 +195,7 @@ fn diagnose(
     drain: Option<JoinHandle<()>>,
     fault: Fault,
     remote: &str,
-) -> RemoteReadError {
+) -> RemoteError {
     // A child that already failed on its own keeps its real exit line;
     // a live one is terminated first — `wait` only follows a signal or
     // an observed exit, never a live child.
@@ -208,10 +214,10 @@ fn diagnose(
     }
     drop(child);
     drop(runtime);
-    let mut error = RemoteReadError::fault(remote, fault)
+    let mut error = RemoteError::fault(remote, fault)
         .stderr(log.lock().render())
         .exit(exit);
-    if error.kind() == ReadFailureKind::Connect {
+    if error.kind() == RemoteFailureKind::Connect {
         error.refine_connect();
     }
     error

@@ -126,31 +126,21 @@ impl Editor {
     pub(crate) fn note_unconfirmed_save(
         &mut self,
         document: DocumentId,
-        remote: bool,
         revision: BufferRevision,
         detail: String,
     ) {
         self.record(FeedbackEvent {
             severity: FeedbackSeverity::Warning,
-            owner: FeedbackOwner::Save { document, remote },
-            kind: FeedbackKind::Save,
-            summary: if remote {
-                "remote save unconfirmed — verify".into()
-            } else {
-                "local save unconfirmed — verify".into()
+            owner: FeedbackOwner::Save {
+                document,
+                remote: false,
             },
+            kind: FeedbackKind::Save,
+            summary: "local save unconfirmed — verify".into(),
             detail,
-            reference: Some(if remote {
-                FeedbackReference::RemoteStore { document, revision }
-            } else {
-                FeedbackReference::LocalStore { document, revision }
-            }),
+            reference: Some(FeedbackReference::LocalStore { document, revision }),
             actions: vec![
-                TypedAction::VerifySave {
-                    document,
-                    revision,
-                    remote,
-                },
+                TypedAction::VerifySave { document, revision },
                 TypedAction::Dismiss,
             ],
         });
@@ -163,40 +153,8 @@ impl Editor {
         );
     }
 
-    pub(crate) fn note_remote_edit_failure(&mut self, document: DocumentId, detail: String) {
-        self.record(FeedbackEvent {
-            severity: FeedbackSeverity::Failure,
-            owner: FeedbackOwner::Save {
-                document,
-                remote: true,
-            },
-            kind: FeedbackKind::RemoteEditAdmission,
-            summary: "remote edit admission failed".into(),
-            detail,
-            reference: None,
-            actions: vec![TypedAction::Dismiss],
-        });
-    }
-
-    pub(crate) fn resolve_remote_edit_feedback(&mut self, document: DocumentId) {
-        self.feedback.resolve_owner(
-            &FeedbackOwner::Save {
-                document,
-                remote: true,
-            },
-            FeedbackKind::RemoteEditAdmission,
-        );
-    }
-
     pub(crate) fn note_remote_failure(&mut self, operation: &RemoteControl, detail: String) {
         let (owner, incarnation, retry, kind, summary) = match operation {
-            RemoteControl::AdmitWorker(endpoint) => (
-                self.remote_feedback_owner(endpoint),
-                self.remote_incarnation(endpoint).unwrap_or(0),
-                true,
-                FeedbackKind::WorkerAdmission,
-                format!("remote worker admission failed for {endpoint}"),
-            ),
             RemoteControl::Connect(endpoint) | RemoteControl::Disconnect(endpoint) => (
                 self.remote_feedback_owner(endpoint),
                 self.remote_incarnation(endpoint).unwrap_or(0),
@@ -233,9 +191,6 @@ impl Editor {
 
     pub(crate) fn note_remote_recovered(&mut self, operation: &RemoteControl) {
         match operation {
-            RemoteControl::AdmitWorker(endpoint) => self
-                .feedback
-                .resolve_remote(endpoint, FeedbackKind::WorkerAdmission),
             RemoteControl::Connect(endpoint) | RemoteControl::Disconnect(endpoint) => self
                 .feedback
                 .resolve_remote(endpoint, FeedbackKind::Connection),
@@ -243,33 +198,5 @@ impl Editor {
                 .feedback
                 .resolve_owner(&FeedbackOwner::RemoteControls, FeedbackKind::Connection),
         }
-    }
-
-    pub(crate) fn note_remote_connection_lost(
-        &mut self,
-        endpoint: &RemoteEndpoint,
-        detail: String,
-    ) {
-        let incarnation = self.remote_incarnation(endpoint).unwrap_or(0);
-        self.record(FeedbackEvent {
-            severity: FeedbackSeverity::Failure,
-            owner: self.remote_feedback_owner(endpoint),
-            kind: FeedbackKind::WorkerConnection,
-            summary: format!("remote worker connection lost for {endpoint}"),
-            detail,
-            reference: None,
-            actions: vec![
-                TypedAction::RetryRemote {
-                    operation: RemoteControl::Connect(endpoint.clone()),
-                    incarnation,
-                },
-                TypedAction::Dismiss,
-            ],
-        });
-    }
-
-    pub(crate) fn note_remote_worker_recovered(&mut self, endpoint: &RemoteEndpoint) {
-        self.feedback
-            .resolve_remote(endpoint, FeedbackKind::WorkerConnection);
     }
 }

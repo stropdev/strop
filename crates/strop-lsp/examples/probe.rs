@@ -10,17 +10,13 @@ fn main() {
         return;
     };
     let root = std::path::Path::new("/tmp/lsp-proj");
-    let Some(binary) = std::env::var_os("STROP_WORKER_BINARY") else {
-        eprintln!("set STROP_WORKER_BINARY to the matching strop executable");
-        return;
-    };
     let client = strop_lsp::Client::spawn(
         &spec,
         strop_lsp::Workspace::Local {
             root: root.to_path_buf(),
         },
         tx,
-        Some(strop_worker_client::Worker::spawn_program(binary)),
+        spec.local_command(root),
     );
     let client = match client {
         Ok(client) => client,

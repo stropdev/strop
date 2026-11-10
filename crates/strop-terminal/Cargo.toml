@@ -5,24 +5,24 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Owned terminal sessions (in-process or worker PTY) and bounded VT snapshots for strop"
+description = "Owned terminal sessions (in-process PTY, local or over ssh) and bounded VT snapshots for strop"
 build = "build.rs"
 include = ["Cargo.toml", "src/**", "native/**", "vendor/**", "build.rs"]
 
 [dependencies]
 strop-core = { path = "../strop-core", version = "0.55.0" }
-strop-worker-client = { path = "../strop-worker-client", version = "0.55.0" }
-strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.55.0" }
-strop-worker = { path = "../strop-worker", version = "0.55.0" }
+strop-remote = { path = "../strop-remote", version = "0.55.0" }
 ropey = "1"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 thiserror = "2"
 imbl = { version = "7", features = ["serde"] }
 parking_lot = "0.12"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["pipe", "termios"] }
+rustix-openpty = "=0.2.0"
 libc = "0.2"
-
-
 
 [build-dependencies]
 cc = "1"
@@ -30,3 +30,4 @@ flate2 = "1"
 tar = "0.4"
 
 [dev-dependencies]
+tempfile = "3"

@@ -1,7 +1,6 @@
 use super::*;
 
 use crate::editor::test_support::remote::{document, snapshot_editor as editor};
-use strop_remote::ReadSelection;
 
 #[test]
 fn workspace_picker_selects_the_exact_remote_project_root() {
@@ -26,85 +25,14 @@ fn workspace_picker_selects_the_exact_remote_project_root() {
 }
 
 #[test]
-fn follow_moves_the_eof_cursor_but_not_marks_or_jump_history() {
-    let mut e = editor("first\nend\n");
-    let id = e.current();
-    let old_tail = 8; // final character of "end"
-    e.set_head(old_tail);
-    e.feed_text("ma");
-    e.push_jump();
-    e.publish_source_snapshot(id, document("first\nend\nnew\n", ReadSelection::Full), true)
-        .unwrap();
-    assert_eq!(e.head(), 12); // final character of the appended "new"
-    e.jump_back();
-    assert_eq!(e.head(), old_tail);
-    e.feed_text("`a");
-    assert_eq!(e.head(), old_tail);
-}
-
-#[test]
-fn remote_worker_consent_does_not_grant_a_file_write_permit() {
-    let mut e = editor("read-only\n");
-    let endpoint = e.remote_endpoint().unwrap().clone();
-    e.feed_text(":remote worker<cr>");
-    assert_eq!(e.message, "admitting verified remote worker");
-    assert!(e.remote.controls.values().any(
-        |key| matches!(&key.operation, RemoteControl::AdmitWorker(target) if target == &endpoint)
-    ));
-    assert!(e.remote.workers.get(&endpoint).is_none());
-    assert!(e.cur().remote_metadata().unwrap().write.is_none());
-    assert!(e.buf().readonly);
-    e.workspaces
-        .select_root(strop_workspace::ResourceLocation::remote(
-            endpoint,
-            "/repo".into(),
-        ))
-        .unwrap();
-    e.open_explain();
-    assert!(e
-        .buf()
-        .text()
-        .to_string()
-        .contains("worker admission requested; SFTP browsing remains available"));
-}
-
-#[test]
-fn browsing_does_not_become_eof_stickiness() {
-    let mut e = editor("first\nend\n");
-    let id = e.current();
-    e.set_head(1);
-    e.publish_source_snapshot(id, document("first\nend\nnew\n", ReadSelection::Full), true)
-        .unwrap();
-    assert_eq!(e.head(), 1);
-}
-
-#[test]
 fn refresh_clamps_the_column_within_the_original_line() {
     let mut e = editor("abcdefgh\nsecond\nthird\n");
     let id = e.current();
     e.set_head(6);
-    e.publish_source_snapshot(
-        id,
-        document("x\nsecond\nthird\n", ReadSelection::Full),
-        false,
-    )
-    .unwrap();
+    e.publish_source_snapshot(id, document("x\nsecond\nthird\n"))
+        .unwrap();
     assert_eq!(e.buf().line_of(e.head()), 0);
     assert_eq!(e.head(), 0);
-}
-
-#[test]
-fn shrink_clamps_browsing_to_a_real_grapheme() {
-    let mut e = editor("first\nold tail\n");
-    let id = e.current();
-    e.set_head(8);
-    e.publish_source_snapshot(id, document("e\u{301}\n", ReadSelection::Full), true)
-        .unwrap();
-    assert_eq!(
-        e.head(),
-        0,
-        "neither the virtual EOF row nor a combining codepoint is a cursor target"
-    );
 }
 
 #[test]
@@ -124,17 +52,11 @@ fn same_path_snapshots_never_share_cached_gutters() {
             request: None,
         },
     );
-    // A tail may cover an entire small file. Same path, line count and buffer
-    // revision still do not make two captured contents the same document.
-    let tail = e
-        .docs
-        .try_insert(document(
-            "uvwxyz\n",
-            ReadSelection::Tail(ReadLimit::new(7).unwrap()),
-        ))
-        .unwrap();
+    // Same path, line count and buffer revision still do not make two
+    // captured contents the same document.
+    let other = e.docs.try_insert(document("uvwxyz\n")).unwrap();
     assert!(e.blame_gutter_for(full).is_some());
-    assert!(e.blame_gutter_for(tail).is_none());
+    assert!(e.blame_gutter_for(other).is_none());
 }
 
 #[test]

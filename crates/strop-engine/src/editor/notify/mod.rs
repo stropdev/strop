@@ -1,5 +1,6 @@
-//! Filesystem notifications, editor half (0058 §2 amendments 2026-09-14/16). The worker beside the files owns
-//! native watching; the editor owns application of observations to
+//! Filesystem notifications, editor half (0058 §2 amendments 2026-09-14/16).
+//! A watcher thread owns native watching of the local directory
+//! (`strop_fs::notify`); the editor owns application of observations to
 //! documents, Directory buffers, Git signs and the search baseline.
 //!
 //! - **Events are hints.** A hint triggers observation/reconciliation —
@@ -9,7 +10,7 @@
 //! - **Identity.** A subscription's authority is its (session, scope,
 //!   generation) triple; events stamped by a superseded identity are
 //!   dropped, never acted on (StaleIdentityNeverActs).
-//! - **Bounded flow.** Worker events land in [`NotifyQueue`], a bounded
+//! - **Bounded flow.** Watcher events land in [`NotifyQueue`], a bounded
 //!   coalescing buffer; the event-loop wake is a pure hint (AR06-legal:
 //!   the state lives here). Queue/hint-set bounds and native overflows
 //!   coalesce into a conservative rescan obligation — the only sign of

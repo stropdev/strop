@@ -202,10 +202,10 @@ fn gutters_and_sidebar_render() {
     assert!(frame.contains("▌b.rs"), "marker follows ]f: {frame}");
 }
 
-/// A remote snapshot's search, yank and readonly commands use the real
+/// A remote file's search, yank, edit and readonly commands use the real
 /// buffer, and the frame shows the remote identity.
 #[test]
-fn snapshot_search_yank_and_readonly_commands_use_the_real_buffer() {
+fn remote_search_yank_edit_and_readonly_commands_use_the_real_buffer() {
     use strop_engine::editor::test_support::remote::{io_editor as editor, open};
     use strop_engine::editor::DocumentSource;
 
@@ -214,18 +214,15 @@ fn snapshot_search_yank_and_readonly_commands_use_the_real_buffer() {
     editor.feed_text("/needle<cr>yy");
     assert_eq!(editor.buf().line_of(editor.head()), 1);
     assert_eq!(editor.register(None).text, "needle detail\n");
-    editor.feed_text(":set noro<cr>dd");
-    assert_eq!(editor.buf().text(), "first\nneedle detail\nlast\n");
+    editor.feed_text("dd");
+    assert_eq!(editor.buf().text(), "first\nlast\n");
+    editor.feed_text(":set ro<cr>");
     assert!(editor.buf().readonly);
-    editor.feed_text(":w! /would-write-locally<cr>");
-    assert!(
-        !editor.io_pending(),
-        "write is refused, never pending on a worker"
-    );
-    assert!(editor.message().contains("remote"));
+    editor.feed_text("u");
+    assert_eq!(editor.buf().text(), "first\nlast\n", "readonly refuses edits");
     assert!(editor.buf().path.is_none());
     assert!(matches!(editor.cur().source, DocumentSource::Remote(_)));
-    editor.feed(Key::Esc); // dismiss the long write error before inspecting identity
+    editor.feed(Key::Esc);
     let frame = crate::headless::frame_string(&mut editor, 100, 8).unwrap();
     assert!(frame.contains("ssh:fixture"));
     assert!(frame.contains("app.log"));
@@ -243,7 +240,6 @@ fn narrow_remote_modeline_retains_source_identity_during_status_messages() {
     let modeline = frame.lines().last().unwrap();
     assert!(modeline.contains("ssh:fixture"), "{modeline}");
     assert!(modeline.contains("app.log"), "{modeline}");
-    assert!(modeline.contains("[RO]"), "{modeline}");
 }
 
 /// regression (0.3.3 user crash): Space R, type a query, type more —

@@ -7,7 +7,7 @@ use std::fmt;
 /// Where a remote read stopped. Retained so diagnostics name the phase
 /// instead of a bare transport error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ReadStage {
+pub enum RemoteStage {
     /// Starting the local ssh(1) client.
     Spawn,
     /// Negotiating the SFTP session: connection, authentication, host
@@ -28,7 +28,7 @@ pub enum ReadStage {
     Session,
 }
 
-impl ReadStage {
+impl RemoteStage {
     fn as_str(self) -> &'static str {
         match self {
             Self::Spawn => "spawn",
@@ -43,7 +43,7 @@ impl ReadStage {
     }
 }
 
-impl fmt::Display for ReadStage {
+impl fmt::Display for RemoteStage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
@@ -52,7 +52,7 @@ impl fmt::Display for ReadStage {
 /// What went wrong, classified far enough to act on. Auth, trust and
 /// install problems carry hints; the rest are honest transport facts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ReadFailureKind {
+pub enum RemoteFailureKind {
     /// The local ssh(1) executable could not be started.
     Spawn,
     /// Noninteractive authentication failed (BatchMode refuses prompts).
@@ -102,12 +102,16 @@ pub enum ReadFailureKind {
     HomeUnsupported,
     /// The total connection/read/close deadline elapsed.
     Deadline,
+    /// A save found the file changed since it was read.
+    Changed,
+    /// A save-as found a file already at the destination.
+    Exists,
     /// Process supervision is unavailable on this platform.
     #[cfg(not(unix))]
     Unsupported,
 }
 
-impl ReadFailureKind {
+impl RemoteFailureKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Spawn => "local ssh unavailable",
@@ -133,25 +137,27 @@ impl ReadFailureKind {
             Self::TooManyEntries => "too many directory entries",
             Self::HomeUnsupported => "home expansion unavailable",
             Self::Deadline => "deadline exceeded",
+            Self::Changed => "changed on disk",
+            Self::Exists => "file exists",
             #[cfg(not(unix))]
             Self::Unsupported => "unsupported platform",
         }
     }
 }
 
-impl fmt::Display for ReadFailureKind {
+impl fmt::Display for RemoteFailureKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
 }
 
 /// The failure a worker sees before diagnostics are attached. The
-/// orchestrator turns it into a [`RemoteReadError`] with stderr, exit
+/// orchestrator turns it into a [`RemoteError`] with stderr, exit
 /// status and the remote URI.
 #[derive(Debug, Clone)]
 pub(crate) struct Fault {
-    stage: ReadStage,
-    kind: ReadFailureKind,
+    stage: RemoteStage,
+    kind: RemoteFailureKind,
     detail: String,
     /// Set when even handle cleanup failed: the physical connection is
     /// suspect and must be discarded, whatever the primary kind says.
@@ -159,7 +165,11 @@ pub(crate) struct Fault {
 }
 
 impl Fault {
-    pub(crate) fn new(stage: ReadStage, kind: ReadFailureKind, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        stage: RemoteStage,
+        kind: RemoteFailureKind,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             stage,
             kind,
@@ -171,25 +181,29 @@ impl Fault {
     /// Session establishment failed; the orchestrator refines the kind
     /// once ssh's retained stderr is available.
     pub(crate) fn connect(detail: impl Into<String>) -> Self {
-        Self::new(ReadStage::Connect, ReadFailureKind::Connect, detail)
+        Self::new(RemoteStage::Connect, RemoteFailureKind::Connect, detail)
     }
 
-    pub(crate) fn cancelled(stage: ReadStage) -> Self {
-        Self::new(stage, ReadFailureKind::Cancelled, "the read was cancelled")
-    }
-
-    pub(crate) fn stopped(stage: ReadStage) -> Self {
+    pub(crate) fn cancelled(stage: RemoteStage) -> Self {
         Self::new(
             stage,
-            ReadFailureKind::Stopped,
+            RemoteFailureKind::Cancelled,
+            "the read was cancelled",
+        )
+    }
+
+    pub(crate) fn stopped(stage: RemoteStage) -> Self {
+        Self::new(
+            stage,
+            RemoteFailureKind::Stopped,
             "the connection was stopped (disconnect or last lease released)",
         )
     }
 
-    pub(crate) fn deadline(stage: ReadStage) -> Self {
+    pub(crate) fn deadline(stage: RemoteStage) -> Self {
         Self::new(
             stage,
-            ReadFailureKind::Deadline,
+            RemoteFailureKind::Deadline,
             "connection, transfer or close exceeded the total deadline",
         )
     }
@@ -214,16 +228,12 @@ impl Fault {
         .poisoned()
     }
     /// The kind plus whether the connection must be discarded.
-    pub(crate) fn disposition(&self) -> (ReadFailureKind, bool) {
+    pub(crate) fn disposition(&self) -> (RemoteFailureKind, bool) {
         (self.kind, self.poison)
     }
 
     /// The bounded detail text (diagnostic data, never authority).
-    pub(crate) fn detail(&self) -> &str {
-        &self.detail
-    }
-
-    fn into_parts(self) -> (ReadStage, ReadFailureKind, String) {
+    fn into_parts(self) -> (RemoteStage, RemoteFailureKind, String) {
         (self.stage, self.kind, self.detail)
     }
 }
@@ -232,19 +242,23 @@ impl Fault {
 /// to act: stage, classification, detail, bounded ssh stderr, the child's
 /// exit line when observed, and a hint for fixable causes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemoteReadError {
+pub struct RemoteError {
     remote: String,
-    stage: ReadStage,
-    kind: ReadFailureKind,
+    stage: RemoteStage,
+    kind: RemoteFailureKind,
     detail: String,
     stderr: Option<String>,
     exit: Option<String>,
 }
 
-impl RemoteReadError {
+impl RemoteError {
     /// A failure with no diagnostics to attach (early exit, unsupported
     /// platform, spawn refusal).
-    pub(crate) fn bare(stage: ReadStage, kind: ReadFailureKind, detail: impl Into<String>) -> Self {
+    pub(crate) fn bare(
+        stage: RemoteStage,
+        kind: RemoteFailureKind,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             remote: String::new(),
             stage,
@@ -282,63 +296,68 @@ impl RemoteReadError {
         self
     }
 
-    pub fn kind(&self) -> ReadFailureKind {
+    pub fn kind(&self) -> RemoteFailureKind {
         self.kind
     }
 
     /// Cancellation is reported so callers can prefer their own outcome.
     pub fn is_cancellation(&self) -> bool {
-        self.kind == ReadFailureKind::Cancelled
+        self.kind == RemoteFailureKind::Cancelled
     }
 
     /// An actionable instruction, when one exists.
     pub fn hint(&self) -> Option<&'static str> {
         match self.kind {
-            ReadFailureKind::Spawn => {
+            RemoteFailureKind::Spawn => {
                 Some("install the OpenSSH client; strop runs ssh(1) found on PATH")
             }
-            ReadFailureKind::Auth => Some(
+            RemoteFailureKind::Auth => Some(
                 "strop authenticates noninteractively: load the key into ssh-agent \
                  or configure it in ~/.ssh/config, then verify `ssh` to the host \
                  answers without any prompt",
             ),
-            ReadFailureKind::Trust => Some(
+            RemoteFailureKind::Trust => Some(
                 "connect to the host once outside strop to establish trust, or \
                  repair its known_hosts entry; strop never accepts an unknown or \
                  changed host key",
             ),
-            ReadFailureKind::Subsystem => {
+            RemoteFailureKind::Subsystem => {
                 Some("the remote sshd must offer the SFTP subsystem (internal-sftp)")
             }
-            ReadFailureKind::TooLarge => Some(
+            RemoteFailureKind::TooLarge => Some(
                 "remote snapshots are capped at 256 MiB in memory; read a \
                  smaller file or tail it on the host",
             ),
-            ReadFailureKind::InvalidUtf8 => {
+            RemoteFailureKind::InvalidUtf8 => {
                 Some("strop buffers are text; this remote file is not valid UTF-8")
             }
-            ReadFailureKind::Deadline => Some(
+            RemoteFailureKind::Deadline => Some(
                 "connection, transfer and close must finish within the total \
                  deadline; check reachability and file size",
             ),
-            ReadFailureKind::Stopped => Some(
+            RemoteFailureKind::Stopped => Some(
                 "the session was closed by disconnect or by releasing its last \
                  lease; retrying establishes a fresh connection",
             ),
-            ReadFailureKind::NotConnected => Some(
+            RemoteFailureKind::NotConnected => Some(
                 "no authenticated session exists for this endpoint: open a \
                  remote location or connect explicitly first — completion and \
                  browsing of cached entries never authenticate on their own",
             ),
-            ReadFailureKind::TooManyEntries => {
+            RemoteFailureKind::Changed => Some(
+                "another program changed the file since it was read: reload \
+                 it with :e!, or overwrite it with :w!",
+            ),
+            RemoteFailureKind::Exists => Some("use :w! to overwrite it"),
+            RemoteFailureKind::TooManyEntries => {
                 Some("the directory exceeds the browseable entry cap; narrow the path")
             }
-            ReadFailureKind::HomeUnsupported => Some(
+            RemoteFailureKind::HomeUnsupported => Some(
                 "the server does not advertise expand-path@openssh.com; address \
                  the file by its absolute path instead of `~`",
             ),
             #[cfg(not(unix))]
-            ReadFailureKind::Unsupported => Some("remote reads require Unix process supervision"),
+            RemoteFailureKind::Unsupported => Some("remote reads require Unix process supervision"),
             _ => None,
         }
     }
@@ -347,14 +366,14 @@ impl RemoteReadError {
     /// protocol detail are both known. ssh's stderr wording is its
     /// documented diagnostic surface, not an implementation detail of strop.
     pub(crate) fn refine_connect(&mut self) {
-        debug_assert_eq!(self.kind, ReadFailureKind::Connect);
+        debug_assert_eq!(self.kind, RemoteFailureKind::Connect);
         let mut haystack = format!("{}\n{}", self.detail, self.stderr.as_deref().unwrap_or(""));
         haystack.make_ascii_lowercase();
         self.kind = classify_connect(&haystack);
     }
 }
 
-fn classify_connect(haystack: &str) -> ReadFailureKind {
+fn classify_connect(haystack: &str) -> RemoteFailureKind {
     const AUTH: &[&str] = &[
         "permission denied",
         "authentication failed",
@@ -379,34 +398,43 @@ fn classify_connect(haystack: &str) -> ReadFailureKind {
     ];
     const SUBSYSTEM: &[&str] = &["subsystem request failed"];
     if TRUST.iter().any(|needle| haystack.contains(needle)) {
-        return ReadFailureKind::Trust;
+        return RemoteFailureKind::Trust;
     }
     if AUTH.iter().any(|needle| haystack.contains(needle)) {
-        return ReadFailureKind::Auth;
+        return RemoteFailureKind::Auth;
     }
     if SUBSYSTEM.iter().any(|needle| haystack.contains(needle)) {
-        return ReadFailureKind::Subsystem;
+        return RemoteFailureKind::Subsystem;
     }
     if NETWORK.iter().any(|needle| haystack.contains(needle)) {
-        return ReadFailureKind::Network;
+        return RemoteFailureKind::Network;
     }
-    ReadFailureKind::Connect
+    RemoteFailureKind::Connect
 }
 
-impl fmt::Display for RemoteReadError {
+impl fmt::Display for RemoteError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.remote.is_empty() {
+        let subject: &dyn fmt::Display = if self.remote.is_empty() {
+            &self.kind
+        } else {
+            &self.remote
+        };
+        // Transport faults name the phase they broke in; refusals the
+        // user can act on read as the plain sentence.
+        if matches!(
+            self.kind,
+            RemoteFailureKind::Protocol
+                | RemoteFailureKind::Io
+                | RemoteFailureKind::ShortRead
+                | RemoteFailureKind::Deadline
+        ) {
             write!(
                 formatter,
-                "remote read failed at {}: {}",
+                "{subject}: {} failed: {}",
                 self.stage, self.detail
             )?;
         } else {
-            write!(
-                formatter,
-                "remote read of {} failed at {}: {}",
-                self.remote, self.stage, self.detail
-            )?;
+            write!(formatter, "{subject}: {}", self.detail)?;
         }
         if let Some(stderr) = &self.stderr {
             write!(formatter, "\nssh stderr: {stderr}")?;
@@ -421,14 +449,14 @@ impl fmt::Display for RemoteReadError {
     }
 }
 
-impl std::error::Error for RemoteReadError {}
+impl std::error::Error for RemoteError {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn refined(detail: &str, stderr: &str) -> ReadFailureKind {
-        let mut error = RemoteReadError::fault("ssh://host/file", Fault::connect(detail))
+    fn refined(detail: &str, stderr: &str) -> RemoteFailureKind {
+        let mut error = RemoteError::fault("ssh://host/file", Fault::connect(detail))
             .stderr(Some(stderr.to_owned()));
         error.refine_connect();
         error.kind()
@@ -439,7 +467,7 @@ mod tests {
         // ssh(1) prints this for unknown and changed keys under BatchMode.
         assert_eq!(
             refined("", "Host key verification failed."),
-            ReadFailureKind::Trust
+            RemoteFailureKind::Trust
         );
     }
 
@@ -447,7 +475,7 @@ mod tests {
     fn batchmode_auth_failure_is_auth() {
         assert_eq!(
             refined("", "user@host: Permission denied (publickey)."),
-            ReadFailureKind::Auth
+            RemoteFailureKind::Auth
         );
     }
 
@@ -455,7 +483,7 @@ mod tests {
     fn missing_subsystem_is_named() {
         assert_eq!(
             refined("", "subsystem request failed on channel 0"),
-            ReadFailureKind::Subsystem
+            RemoteFailureKind::Subsystem
         );
     }
 
@@ -466,7 +494,7 @@ mod tests {
                 "",
                 "ssh: connect to host devbox port 22: Connection refused"
             ),
-            ReadFailureKind::Network
+            RemoteFailureKind::Network
         );
     }
 
@@ -474,7 +502,7 @@ mod tests {
     fn unclassified_stays_connect() {
         assert_eq!(
             refined("hello message invalid", ""),
-            ReadFailureKind::Connect
+            RemoteFailureKind::Connect
         );
     }
 
@@ -484,17 +512,17 @@ mod tests {
         // actionable classification.
         assert_eq!(
             refined("", "Host key verification failed.\nPermission denied."),
-            ReadFailureKind::Trust
+            RemoteFailureKind::Trust
         );
     }
 
     #[test]
     fn display_carries_context_without_invented_hint() {
-        let error = RemoteReadError::fault(
+        let error = RemoteError::fault(
             "ssh://devbox/var/log/app.log",
             Fault::new(
-                ReadStage::Transfer,
-                ReadFailureKind::ShortRead,
+                RemoteStage::Transfer,
+                RemoteFailureKind::ShortRead,
                 "expected 10 bytes, received 4",
             ),
         )
@@ -511,7 +539,7 @@ mod tests {
 
     #[test]
     fn cancellation_is_identifiable() {
-        let error = RemoteReadError::fault("ssh://h/f", Fault::cancelled(ReadStage::Transfer));
+        let error = RemoteError::fault("ssh://h/f", Fault::cancelled(RemoteStage::Transfer));
         assert!(error.is_cancellation());
     }
 }

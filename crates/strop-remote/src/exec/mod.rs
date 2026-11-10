@@ -1,7 +1,7 @@
 //! Remote work over plain `ssh` exec (plan 0090 §5): one multiplexed
-//! OpenSSH connection per endpoint, quoted argv on the host, and file
-//! reads/writes/listings over SFTP on the same connection. Nothing of
-//! strop is installed on the host.
+//! OpenSSH connection per endpoint and quoted argv on the host; the
+//! pooled SFTP session ([`crate::RemoteClient`]) is one more channel on
+//! the same connection. Nothing of strop is installed on the host.
 //!
 //! The master authenticates once (`ssh -M -N -f`, `ControlPersist`) on a
 //! socket in a private 0700 directory the caller owns; every exec,
@@ -11,10 +11,7 @@
 //! the crate's one safety policy ([`crate::ssh`]): `BatchMode=yes` and
 //! `StrictHostKeyChecking=yes` mean an unknown host key or a password
 //! prompt is a typed refusal carrying ssh's own words, never a hang.
-mod files;
 mod quote;
-
-pub use files::{Expect, ListedEntry, Loaded, RemoteFiles, Stamp};
 
 use crate::ssh::{multiplexed_argv, Mux};
 use std::ffi::OsStr;
@@ -23,6 +20,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use strop_core::process::OwnedProcess;
+use strop_core::worker::CancelToken;
 use strop_workspace::RemoteEndpoint;
 
 /// How long an idle master outlives its last channel.
@@ -41,19 +40,14 @@ pub enum ExecError {
     Spawn(#[source] io::Error),
     #[error("ssh to {endpoint} failed: {detail}")]
     Connect { endpoint: String, detail: String },
-    #[error("{0}")]
-    Sftp(String),
-    #[error("{} changed on disk since it was read (read {expected}, now {})", path.display(), found.map_or_else(|| "absent".to_string(), |stamp| stamp.to_string()))]
-    ChangedOnDisk {
-        path: PathBuf,
-        expected: Stamp,
-        found: Option<Stamp>,
-    },
-    #[error("{} already exists", path.display())]
-    Exists { path: PathBuf },
+    #[error("connecting to {endpoint} was cancelled")]
+    Cancelled { endpoint: String },
 }
 
-/// One endpoint's multiplexed connection.
+/// One endpoint's multiplexed connection: the names of its control
+/// socket and log. Cloning never connects; the master is the background
+/// `ssh` process those names lead to.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecHost {
     endpoint: RemoteEndpoint,
     socket: PathBuf,
@@ -64,8 +58,13 @@ impl ExecHost {
     /// Reuse the endpoint's live master or authenticate a new one. The
     /// call returns once authentication finished (ssh forks only after
     /// it), so every failure — unknown host key, refused key, network —
-    /// is reported here with ssh's own diagnostics.
-    pub fn connect(endpoint: &RemoteEndpoint, control_dir: &Path) -> Result<Self, ExecError> {
+    /// is reported here with ssh's own diagnostics. Cancelling `token`
+    /// kills an authentication still in flight.
+    pub fn connect(
+        endpoint: &RemoteEndpoint,
+        control_dir: &Path,
+        token: &CancelToken,
+    ) -> Result<Self, ExecError> {
         ensure_private_dir(control_dir)?;
         let name = socket_name(endpoint);
         let socket = control_dir.join(&name);
@@ -102,19 +101,27 @@ impl ExecHost {
             persist: PERSIST,
             log: &host.log,
         };
-        let status = Command::new("ssh")
+        let mut command = Command::new("ssh");
+        command
             .args(multiplexed_argv(endpoint, &master))
             .arg("--")
             .arg(endpoint.host())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(ExecError::Spawn)?;
-        if !status.success() {
-            return Err(host.failure(&status.to_string()));
+            .stderr(Stdio::null());
+        let mut process = OwnedProcess::spawn(&mut command, token)
+            .map_err(|failure| ExecError::Spawn(io::Error::other(failure.message)))?;
+        let status = process.wait();
+        if token.is_cancelled() {
+            return Err(ExecError::Cancelled {
+                endpoint: endpoint.to_string(),
+            });
         }
-        Ok(host)
+        match status {
+            Ok(status) if status.success() => Ok(host),
+            Ok(status) => Err(host.failure(&status.to_string())),
+            Err(failure) => Err(host.failure(&failure.message)),
+        }
     }
 
     pub fn endpoint(&self) -> &RemoteEndpoint {
@@ -159,18 +166,19 @@ impl ExecHost {
         self.channel(true, argv, cwd)
     }
 
-    /// One SFTP session on the master.
-    pub fn files(&self) -> Result<RemoteFiles, ExecError> {
+    /// The SFTP subsystem as one channel on the master, all three pipes
+    /// for the caller.
+    pub(crate) fn sftp_command(&self) -> Command {
         let mut command = self.client(false);
         command
             .arg("-s")
             .arg("--")
             .arg(self.endpoint.host())
-            .arg("sftp");
-        RemoteFiles::start(command).map_err(|error| match error {
-            ExecError::Sftp(detail) => self.failure(&detail),
-            other => other,
-        })
+            .arg("sftp")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
     }
 
     /// Stop the master (`ssh -O exit`); channels in flight end with it.
@@ -203,7 +211,7 @@ impl ExecHost {
         (!tail.is_empty()).then(|| tail.to_string())
     }
 
-    fn failure(&self, fallback: &str) -> ExecError {
+    pub(crate) fn failure(&self, fallback: &str) -> ExecError {
         ExecError::Connect {
             endpoint: self.endpoint.to_string(),
             detail: self.diagnostics().unwrap_or_else(|| fallback.to_string()),

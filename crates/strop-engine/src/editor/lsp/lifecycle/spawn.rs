@@ -16,21 +16,16 @@ impl Editor {
                 abs: doc.path.clone(),
                 cwd: self.cwd.clone(),
                 git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
-                worker: self.filesystem.worker().clone(),
             },
             // The remote client is a cheap clone routed to the owned
             // session actor; the document's lease keeps it connected.
-            // The endpoint's admitted worker lease rides along when the
-            // session holds one (0058 WK10): read-only, never deploying.
             Filesystem::Remote(_) => {
                 let Some(file) = self.remote_file().cloned() else {
                     return;
                 };
-                let worker = self.remote.workers.get(file.endpoint());
                 attach::DiscoverPlace::Remote {
                     file,
                     client: self.remote_client(),
-                    worker,
                 }
             }
         };

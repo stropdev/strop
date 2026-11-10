@@ -133,7 +133,7 @@ impl Editor {
                 {
                     source.marked = marks;
                 }
-                match self.publish_source_snapshot(key.document, opened.document, false) {
+                match self.publish_source_snapshot(key.document, opened.document) {
                     Err(error) if focused => self.message = error.to_string(),
                     Ok(()) if retained && focused => {
                         self.message =

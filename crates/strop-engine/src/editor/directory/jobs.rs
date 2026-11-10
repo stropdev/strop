@@ -46,8 +46,7 @@ impl Editor {
             }
         }
         let client = self.remote_client();
-        let worker = self.filesystem.worker().clone();
-        let remote = self.remote.workers.clone();
+        let local = self.filesystem.local().clone();
         let tx = self.io.tx.clone();
         let handle = worker::spawn(
             "directory-update",
@@ -68,8 +67,7 @@ impl Editor {
                     } else {
                         if task == DirectoryTask::Reload {
                             let listed = crate::editor::namespace::list(
-                                &worker,
-                                &remote,
+                                &local,
                                 &source.location,
                                 &client,
                                 &token,

@@ -1,30 +1,24 @@
-//! Editor-side remote workspace ownership. Transport actors live in strop-remote;
-//! this module owns view intent, periodic reads, explicit connections and browsing.
+//! Editor-side remote workspace ownership. Transport actors live in
+//! strop-remote; this module owns explicit connections, browsing and
+//! saves. A connected host is editable: the SSH login is the one consent.
 mod chooser;
 mod commands;
 mod controls;
-pub(super) mod follow;
 mod history;
 pub(crate) mod save;
 #[cfg(test)]
 mod tests;
-pub mod view;
-pub(crate) mod workers;
 
 use super::document::DocumentSource;
-use super::io::Opened;
-use super::{Document, Editor};
+use super::Editor;
 use std::collections::HashMap;
-use strop_core::id::{BufferRevision, DocumentId};
+use strop_core::id::DocumentId;
 use strop_core::worker::{Completion, Ticket, WorkerId};
-use strop_remote::{ConnectionLease, ReadLimit, RemoteClient};
+use strop_remote::{ConnectionLease, RemoteClient};
 use strop_workspace::{RemoteEndpoint, RemoteFile};
-pub use view::RemoteView;
 
 pub(crate) struct RemoteState {
     client: RemoteClient,
-    pub(crate) workers: workers::RemoteWorkers,
-    following: HashMap<DocumentId, FollowOwner>,
     controls: HashMap<WorkerId, ControlKey>,
     pins: HashMap<RemoteEndpoint, ConnectionLease>,
     choices: Option<Ticket<super::picker::PickerId>>,
@@ -36,8 +30,6 @@ impl Default for RemoteState {
     fn default() -> Self {
         Self {
             client: RemoteClient::new(),
-            workers: workers::RemoteWorkers::default(),
-            following: HashMap::new(),
             controls: HashMap::new(),
             pins: HashMap::new(),
             choices: None,
@@ -52,49 +44,11 @@ impl RemoteState {
     pub(crate) fn control_pending(&self) -> bool {
         !self.controls.is_empty()
     }
-
-    pub(super) fn worker_requested(&self, endpoint: &RemoteEndpoint) -> bool {
-        self.controls.values().any(|key| {
-            matches!(&key.operation, RemoteControl::AdmitWorker(selected) if selected == endpoint)
-        })
-    }
 }
 
-struct FollowOwner {
-    ticket: Ticket<FollowKey>,
-    read: Option<WorkerId>,
-    limit: ReadLimit,
-}
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct FollowKey {
-    pub document: DocumentId,
-}
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct FollowReadKey {
-    pub document: DocumentId,
-    pub owner: WorkerId,
-    pub revision: BufferRevision,
-}
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub enum FollowChange {
-    Appended,
-    Reset,
-    Shrank,
-}
-#[derive(serde::Serialize, serde::Deserialize)]
-pub enum FollowUpdate {
-    Unchanged,
-    Window {
-        opened: Box<Opened>,
-        change: FollowChange,
-    },
-}
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RemoteControl {
     Connect(RemoteEndpoint),
-    /// Explicitly admit a verified worker without granting a file's
-    /// write permit. Git/LSP can then use it independently of :remote edit.
-    AdmitWorker(RemoteEndpoint),
     Disconnect(RemoteEndpoint),
     DisconnectAll,
     Connections,
@@ -112,19 +66,15 @@ pub enum ControlResult {
         #[serde(skip)]
         lease: Option<ConnectionLease>,
     },
-    WorkerReady(RemoteEndpoint),
     Disconnected,
     Listing(String),
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum RemoteEvent {
-    Tick(Ticket<FollowKey>),
-    Timer(Completion<FollowKey, ()>),
-    Read(Box<Completion<FollowReadKey, FollowUpdate>>),
     Control(Completion<ControlKey, ControlResult>),
     Choices(Completion<super::picker::PickerId, chooser::RemoteChoices>),
     DestinationWritten(Completion<RemoteFile, ()>),
-    Write(Box<Completion<save::RemoteWriteKey, save::RemoteWriteResult>>),
+    Write(Box<Completion<save::RemoteWriteKey, strop_remote::Stamp>>),
 }
 
 impl Editor {
@@ -150,33 +100,16 @@ impl Editor {
                     .and_then(strop_git::GitContext::endpoint)
             })
     }
-    pub(crate) fn remote_window_complete(&self) -> bool {
-        self.cur()
-            .remote_metadata()
-            .is_some_and(|source| source.window.is_complete())
-            && !self.remote_following(self.current())
-    }
-    pub fn remote_following(&self, document: DocumentId) -> bool {
-        self.remote.following.contains_key(&document)
-    }
     pub(crate) fn remote_work_pending(&self) -> bool {
         !self.remote.controls.is_empty()
             || self.remote.choices.is_some()
             || self.remote.destination_write.is_some()
             || !self.remote.destination_queue.is_empty()
             || self.remote.writes.pending()
-            || self
-                .remote
-                .following
-                .values()
-                .any(|owner| owner.read.is_some())
     }
     pub(crate) fn handle_remote_event(&mut self, event: RemoteEvent) {
         match event {
             RemoteEvent::Write(completion) => self.remote_write_done(*completion),
-            RemoteEvent::Tick(ticket) => self.remote_follow_tick(ticket),
-            RemoteEvent::Timer(completion) => self.remote_follow_timer_done(completion),
-            RemoteEvent::Read(completion) => self.remote_follow_read(*completion),
             RemoteEvent::Control(completion) => self.remote_control_done(completion),
             RemoteEvent::Choices(completion) => self.remote_choices_done(completion),
             RemoteEvent::DestinationWritten(completion) => {
@@ -185,10 +118,6 @@ impl Editor {
         }
     }
     pub(crate) fn stop_remote_work(&mut self) {
-        let documents: Vec<_> = self.remote.following.keys().copied().collect();
-        for document in documents {
-            self.stop_remote_follow(document);
-        }
         self.remote.pins.clear();
     }
 }

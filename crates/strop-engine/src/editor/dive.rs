@@ -153,7 +153,7 @@ impl Editor {
         let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
         let captured_hunks = self.hunks.clone();
-        let workers = self.remote.workers.clone();
+        let client = self.remote_client();
         self.launch_git_job(
             "git-dive",
             "git.dive",
@@ -177,17 +177,19 @@ impl Editor {
                     },
                     DiveTarget::CommitFiles { sha } => {
                         // numstat is one bounded run on either backend
-                        let lease = super::git_memory::repo_lease(&workers, &repo);
-                        let exec =
-                            match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
-                                Ok(exec) => exec,
-                                Err(error) => {
-                                    return Outcome::failed(
-                                        strop_core::worker::FailureKind::Unavailable,
-                                        error.to_string(),
-                                    );
-                                }
-                            };
+                        let host = super::git_memory::repo_host(&client, &repo, &cancel);
+                        let exec = match host.and_then(|host| {
+                            strop_git::GitExec::for_target(&repo, host.as_ref())
+                                .map_err(|error| error.to_string())
+                        }) {
+                            Ok(exec) => exec,
+                            Err(error) => {
+                                return Outcome::failed(
+                                    strop_core::worker::FailureKind::Unavailable,
+                                    error.to_string(),
+                                );
+                            }
+                        };
                         match strop_git::memory::show_stat(&exec, &cancel, sha) {
                             Ok(files) => Outcome::Success(DiveData::Files(PreparedFiles::new(
                                 sha.clone(),
@@ -222,14 +224,17 @@ impl Editor {
                             }
                         }
                         strop_git::RepoTarget::Remote { endpoint, workdir } => {
-                            let lease = workers.get(endpoint);
+                            let host = match client.host(endpoint, &cancel) {
+                                Ok(host) => host,
+                                Err(error) => {
+                                    return Outcome::failed(
+                                        strop_core::worker::FailureKind::Unavailable,
+                                        error.to_string(),
+                                    )
+                                }
+                            };
                             match strop_git::remote::commit_file_diff(
-                                endpoint,
-                                workdir,
-                                sha,
-                                path,
-                                lease.as_ref(),
-                                &cancel,
+                                endpoint, workdir, sha, path, &host, &cancel,
                             ) {
                                 Ok(diff) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
                                     strop_core::layout::printable_text(path.to_string_lossy())

@@ -4,6 +4,7 @@
 //! `.strop/languages.toml` > XDG `~/.config/strop/languages.toml` >
 //! embedded.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -32,6 +33,24 @@ impl ServerSpec<'_> {
     /// metadata check stats it directly instead of scanning PATH.
     pub fn absolute_command(&self) -> bool {
         Path::new(self.command).is_absolute()
+    }
+
+    /// The server's argv: command, then its arguments.
+    pub fn argv(&self) -> Vec<&OsStr> {
+        let mut argv = Vec::with_capacity(1 + self.args.len());
+        argv.push(OsStr::new(self.command));
+        for arg in self.args {
+            argv.push(OsStr::new(arg.as_str()));
+        }
+        argv
+    }
+
+    /// The server as a local process in `root` — what
+    /// [`crate::Client::spawn`] runs for a local workspace.
+    pub fn local_command(&self, root: &Path) -> std::process::Command {
+        let mut command = std::process::Command::new(self.command);
+        command.args(self.args).current_dir(root);
+        command
     }
 }
 

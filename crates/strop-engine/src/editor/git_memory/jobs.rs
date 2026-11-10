@@ -61,18 +61,19 @@ pub(crate) fn repo_or_unavailable(workdir: &Path) -> Result<strop_git::Repo, Fai
     })
 }
 
-/// The already-admitted worker for exactly this repository namespace.
-/// Local Git stays in-process; a missing SSH lease refuses typed at
-/// GitExec admission.
-pub(crate) fn repo_lease(
-    remote: &crate::editor::remote::workers::RemoteWorkers,
+/// The host a repository's Git runs on: none for a local worktree, the
+/// endpoint's connection (made on this job when there is none) for SSH.
+pub(crate) fn repo_host(
+    client: &strop_remote::RemoteClient,
     repo: &RepoTarget,
-) -> Option<strop_worker_client::Worker> {
+    cancel: &strop_core::worker::CancelToken,
+) -> Result<Option<strop_remote::exec::ExecHost>, String> {
     match repo {
-        RepoTarget::Remote { endpoint, .. } => {
-            remote.get(endpoint).map(|worker| worker.worker().clone())
-        }
-        RepoTarget::Local { .. } => None,
+        RepoTarget::Remote { endpoint, .. } => client
+            .host(endpoint, cancel)
+            .map(Some)
+            .map_err(|error| error.to_string()),
+        RepoTarget::Local { .. } => Ok(None),
     }
 }
 

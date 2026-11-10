@@ -1,5 +1,6 @@
 //! Owned filesystem behavior over strop-workspace's pure resource contracts.
-//! All functions performing native work are worker-only. No frontend types or
+//! All functions performing native work run on jobs, never on input or
+//! render. No frontend types or
 //! background task is created merely by constructing a plan or inspecting data.
 #[cfg(not(target_os = "linux"))]
 compile_error!("strop-fs supports Linux only; the release target is x86_64-unknown-linux-musl");
@@ -15,6 +16,7 @@ mod adversarial;
 mod attributes;
 mod guard;
 pub mod local;
+pub mod notify;
 mod stage;
 #[cfg(test)]
 mod tests;

@@ -542,11 +542,11 @@ impl Editor {
     }
 }
 
-/// Where one terminal's PTY runs (0090 §4). A local directory spawns the
-/// PTY in the editor process; an SSH workspace rides its already-admitted
-/// worker lease (deploy is consent-gated and blocking, so a terminal never
-/// triggers it from the input path — an endpoint without a live lease is
-/// a typed refusal). No remote path ever falls back to the host.
+/// Where one terminal's PTY runs (0090 §4): always a PTY in the editor
+/// process; for an SSH workspace it runs `ssh -tt` on the endpoint's
+/// connection. Connecting can block, so a terminal never starts one from
+/// the input path — an endpoint that is not connected is a typed refusal.
+/// No remote path ever falls back to a local shell.
 fn terminal_target(
     editor: &Editor,
     location: &strop_workspace::ResourceLocation,
@@ -554,15 +554,13 @@ fn terminal_target(
     match &location.filesystem {
         strop_workspace::Filesystem::Local => Ok(Target::Local),
         strop_workspace::Filesystem::Remote(endpoint) => editor
-            .remote
-            .workers
-            .get(endpoint)
-            .map(|worker| Target::Worker(worker.worker().clone()))
+            .remote_client()
+            .connected_host(endpoint)
+            .map(Target::Remote)
             .ok_or_else(|| {
                 format!(
-                    "no admitted worker on {endpoint}: interactive terminals there need one \
-                     (a worker-admitting remote action admits it); \
-                     use :terminal-local for an explicit local shell"
+                    "not connected to {endpoint}: open a file there or :remote connect {endpoint}; \
+                     :terminal-local starts a local shell"
                 )
             }),
     }

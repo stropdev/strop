@@ -74,3 +74,65 @@ fn startup_accepts_the_latest_theme_but_closed_services_reject_it() {
         Err(Error::Closed)
     ));
 }
+
+/// A whole local session through the public service: input reaches the
+/// child, its output reaches the frame, and the recorded exit settles
+/// the phase only after the output that preceded it.
+#[test]
+fn a_local_session_echoes_input_and_settles_with_its_exit_code() {
+    let (notify, notified) = mpsc::channel();
+    let launch = Launch {
+        program: "/bin/sh".into(),
+        arguments: vec![
+            "-c".into(),
+            r#"read line; printf 'got:%s' "$line"; exit 3"#.into(),
+        ],
+        directory: "/".into(),
+        environment: Vec::new(),
+    };
+    let geometry = Geometry {
+        columns: 40,
+        rows: 5,
+        revision: 1,
+    };
+    let mut service = Service::start(
+        SessionId::new(7),
+        Target::Local,
+        launch,
+        geometry,
+        0,
+        None,
+        move |session| {
+            let _ = notify.send(session);
+        },
+    )
+    .unwrap();
+    service.input(Input::Text("hello\r".into())).unwrap();
+    let mut text = String::new();
+    let mut acknowledged = 0;
+    let phase = loop {
+        notified
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the session never settled");
+        let Some(update) = service.take_update() else {
+            continue;
+        };
+        acknowledged = acknowledged.max(update.acknowledged_input);
+        if let Some(frame) = &update.frame {
+            text = frame.projection.to_string();
+        }
+        if !update.phase.live() {
+            break update.phase;
+        }
+    };
+    assert_eq!(
+        phase,
+        Phase::Exited {
+            code: Some(3),
+            signal: None
+        }
+    );
+    assert!(text.contains("got:hello"), "{text:?}");
+    assert!(acknowledged >= 1, "the input was never acknowledged");
+    service.stop();
+}

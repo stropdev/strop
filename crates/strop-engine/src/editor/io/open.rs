@@ -1,22 +1,18 @@
-//! Worker-only resource inspection and opening. Directories never enter a file reader.
+//! Resource inspection and opening on a job: the local filesystem in
+//! process, SSH over the endpoint's SFTP session. Directories never
+//! enter a file reader.
 use super::{Document, FileTarget, Opened};
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 use strop_core::Buffer;
+use strop_workspace::operation::FsFailureKind;
 use strop_workspace::ResourceLocation;
 
 pub(super) struct OpenRead {
     pub target: FileTarget,
     pub browse: bool,
     pub requires_file: bool,
-    pub selection: strop_remote::ReadSelection,
     pub client: strop_remote::RemoteClient,
-    /// The session's local worker lease (0058 WK04): local reads,
-    /// observations and listings ride it — no in-process twin.
-    pub worker: strop_worker_client::Worker,
-    /// The session's remote worker leases (0058 WK07): SSH workspaces
-    /// whose host admitted a worker read/list/observe through it; every
-    /// other host keeps the read-only SFTP path byte-identically.
-    pub remote: crate::editor::remote::workers::RemoteWorkers,
+    pub local: crate::editor::namespace::LocalFs,
     pub previous_directories: Vec<super::super::Directory>,
     pub reveal: Option<ResourceLocation>,
 }
@@ -27,23 +23,20 @@ impl OpenRead {
         }
         match &self.target {
             FileTarget::Local(path) => {
-                // WK04: observation, listing and content all ride the
-                // local worker lease; the editor keeps no in-process
-                // filesystem path for user resources.
                 let location = ResourceLocation::local(path.clone());
                 let observed = match self
-                    .worker
-                    .observe(cancel, vec![location.clone()])
+                    .local
+                    .observe(cancel, std::slice::from_ref(&location))
                     .map(|mut observations| observations.pop())
                 {
                     Ok(Some(observation)) => observation,
                     Ok(None) => {
                         return Outcome::failed(
                             FailureKind::Protocol,
-                            "worker answered an empty observation batch",
+                            "an observation batch came back empty",
                         )
                     }
-                    Err(error) if error.is_cancellation() => {
+                    Err(error) if error.kind == FsFailureKind::Cancelled => {
                         return Outcome::Cancelled(CancelReason::OwnerClosed)
                     }
                     Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
@@ -77,16 +70,16 @@ impl OpenRead {
                                 "browse requires a directory",
                             );
                         }
-                        let payload = match self.worker.read(cancel, location, 0, None) {
+                        let payload = match self.local.read(cancel, &location) {
                             Ok(payload) => payload,
-                            Err(error) if error.is_cancellation() => {
+                            Err(error) if error.kind == FsFailureKind::Cancelled => {
                                 return Outcome::Cancelled(CancelReason::OwnerClosed)
                             }
                             Err(error) => {
                                 return Outcome::failed(FailureKind::Io, error.to_string())
                             }
                         };
-                        let rope = match ropey::Rope::from_reader(payload) {
+                        let rope = match ropey::Rope::from_reader(payload.as_slice()) {
                             Ok(rope) => rope,
                             Err(error) => {
                                 return Outcome::failed(FailureKind::Io, error.to_string())
@@ -125,9 +118,8 @@ impl OpenRead {
             }
             FileTarget::Remote(location) => {
                 if self.browse {
-                    // Absolute directories route worker-or-SFTP inside
-                    // namespace::list; home-relative locations resolve
-                    // through the SFTP path as before.
+                    // Home-relative locations resolve through the
+                    // session's own expansion below.
                     if let Some(file) = location.absolute_file() {
                         let resource = ResourceLocation::remote(
                             location.endpoint().clone(),
@@ -136,30 +128,18 @@ impl OpenRead {
                         return self.list(resource, cancel);
                     }
                 }
-                // WK07: an admitted endpoint with a live lease reads
-                // through its worker; anything else keeps the SFTP path
-                // (home-relative locations resolve only there).
-                if let Some(file) = location.absolute_file() {
-                    if let Some(worker) = self
-                        .remote
-                        .get(location.endpoint())
-                        .filter(|worker| worker.worker().session().is_some())
-                    {
-                        return self.open_remote_worker(&worker, file, cancel);
-                    }
-                }
                 let result = if self.browse {
                     self.client
                         .list(location, cancel)
                         .map(strop_remote::RemoteResource::Directory)
                 } else {
-                    self.client.open(location, self.selection, cancel)
+                    self.client.open(location, cancel)
                 };
                 match result {
                     Ok(strop_remote::RemoteResource::File(snapshot)) => {
                         let canonical = FileTarget::Remote(snapshot.file.clone().into());
                         Outcome::Success(Opened {
-                            document: Document::remote_snapshot(*snapshot, self.selection),
+                            document: Document::remote_snapshot(*snapshot),
                             canonical,
                         })
                     }
@@ -185,55 +165,8 @@ impl OpenRead {
             }
         }
     }
-    /// Open one absolute remote file through the endpoint's admitted
-    /// worker: observe, read the selection window and build the same
-    /// remote document shape the SFTP path builds (read-only buffer;
-    /// editability stays with the permit flow).
-    fn open_remote_worker(
-        &self,
-        worker: &strop_remote::worker_transport::RemoteWorker,
-        file: &strop_workspace::RemoteFile,
-        cancel: &CancelToken,
-    ) -> Outcome<Opened> {
-        use strop_remote::worker_transport::RemoteReadFailure;
-        let location = ResourceLocation::remote(file.endpoint().clone(), file.path().to_path_buf());
-        let result = worker.read_selection(cancel, location, &self.selection);
-        let (text, window) = match result {
-            Ok(loaded) => loaded,
-            Err(RemoteReadFailure::Client(error)) if error.is_cancellation() => {
-                return Outcome::Cancelled(CancelReason::OwnerClosed)
-            }
-            Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-        };
-        let mut buffer = Buffer::from_text(&text);
-        // A remote snapshot is never writable; provenance beyond this
-        // flag is the caller's document identity.
-        buffer.readonly = true;
-        let canonical = FileTarget::Remote(file.clone().into());
-        Outcome::Success(Opened {
-            document: Document::remote(
-                buffer,
-                super::super::document::RemoteDocument {
-                    file: file.clone(),
-                    window,
-                    selection: self.selection,
-                    connection: None,
-                    return_to: None,
-                    write: None,
-                },
-            ),
-            canonical,
-        })
-    }
-
     fn list(&self, location: ResourceLocation, cancel: &CancelToken) -> Outcome<Opened> {
-        match super::super::namespace::list(
-            &self.worker,
-            &self.remote,
-            &location,
-            &self.client,
-            cancel,
-        ) {
+        match super::super::namespace::list(&self.local, &location, &self.client, cancel) {
             Ok(listed) => directory_opened(
                 listed,
                 &self.previous_directories,
@@ -326,7 +259,7 @@ pub(crate) fn filetime_to_systemtime(stamp: strop_workspace::FileTime) -> std::t
 }
 
 /// The exact inverse of [`filetime_to_systemtime`]: the editor's mtime
-/// baseline crosses into the Store intent as kernel evidence (0058 WK09).
+/// baseline crosses into the Store intent as kernel evidence.
 /// Nanoseconds stay a positive offset from the seconds floor, matching
 /// the kernel's timespec encoding.
 pub(crate) fn systemtime_to_filetime(stamp: std::time::SystemTime) -> strop_workspace::FileTime {

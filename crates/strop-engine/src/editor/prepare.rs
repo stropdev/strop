@@ -54,8 +54,6 @@ pub struct ViewEpoch {
 pub enum WindowBounds {
     /// Full source window available; decorations (if any) cached.
     Complete,
-    /// Remote partial window: line numbers are window-relative (0036).
-    Partial,
     /// Visible-window analysis admitted but not yet cached.
     Loading,
     /// The document's revision moved past this prepared window.
@@ -424,12 +422,6 @@ impl Editor {
         if pane.is_stale(document.buf.revision()) {
             return WindowBounds::Stale;
         }
-        if document
-            .remote_metadata()
-            .is_some_and(|source| !source.window.is_complete())
-        {
-            return WindowBounds::Partial;
-        }
         if self.window_analysis_pending(pane, document) {
             return WindowBounds::Loading;
         }
@@ -550,7 +542,6 @@ impl Editor {
             context.repo.workdir().hash(&mut stamp);
         }
         self.git_view.get().hash(&mut stamp);
-        self.remote_window_complete().hash(&mut stamp);
         stamp.finish()
     }
 }

@@ -47,12 +47,10 @@ pub(super) fn classify(
     })
 }
 
-/// All namespace authorities captured at one prompt moment; missing
-/// authority stays on the established read-only SFTP path.
+/// The filesystems captured at one prompt moment.
 pub(super) struct Sources<'a> {
     pub client: &'a RemoteClient,
-    pub worker: &'a strop_worker_client::Worker,
-    pub remote: &'a crate::editor::remote::workers::RemoteWorkers,
+    pub local: &'a crate::editor::namespace::LocalFs,
 }
 
 pub(super) fn run(
@@ -61,21 +59,14 @@ pub(super) fn run(
     sources: Sources<'_>,
     cancel: &worker::CancelToken,
 ) -> Outcome<RemoteCompletionResult> {
-    // Completion never authenticates: a bound lease is reused, or the
-    // read-only SFTP path serves without provisioning.
-    let listed = match crate::editor::namespace::list(
-        sources.worker,
-        sources.remote,
-        &location,
-        sources.client,
-        cancel,
-    ) {
-        Ok(listed) => listed,
-        Err(error) if error.kind == strop_workspace::operation::FsFailureKind::Cancelled => {
-            return Outcome::Cancelled(CancelReason::OwnerClosed)
-        }
-        Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-    };
+    let listed =
+        match crate::editor::namespace::list(sources.local, &location, sources.client, cancel) {
+            Ok(listed) => listed,
+            Err(error) if error.kind == strop_workspace::operation::FsFailureKind::Cancelled => {
+                return Outcome::Cancelled(CancelReason::OwnerClosed)
+            }
+            Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+        };
     let mut items = Vec::new();
     let mut limited = !listed.directory.snapshot.state.is_complete();
     for entry in listed.directory.snapshot.entries.iter() {

@@ -183,17 +183,15 @@ impl Editor {
             }
         }
         let tx = self.io.tx.clone();
-        // WK09: the write itself rides the session's local worker lease
-        // as a Store intent — the same protected-save kernel the remote
-        // worker serves, never an in-process filesystem path.
-        let worker = self.filesystem.worker().clone();
+        // The write is a Store intent through the checked kernel.
+        let local = self.filesystem.local().clone();
         let plan = {
             let mut plan = work.into_plan();
             // A plain `:w` names the buffer's own path; a CLI-opened
             // missing file keeps the relative name it was given, and the
             // store guard requires an absolute target. Resolve against
             // the editor's cwd (launch-time — no :cd exists) at this
-            // admission site: the worker thread reads no process state.
+            // admission site: the job reads no process state.
             // `origin` stays untouched — save acceptance keys on it.
             if !plan.target.is_absolute() {
                 plan.target = self.cwd.join(&plan.target);
@@ -205,14 +203,13 @@ impl Editor {
             move |outcome| {
                 let _ = tx.send(IoEvent::Save(Box::new(Completion { ticket, outcome })));
             },
-            move |token| store_document(plan, worker, close, focus, &token),
+            move |token| store_document(plan, &local, close, focus, &token),
         );
         self.worker_handles.insert(request, handle);
         true
     }
 
-    /// Verify a frozen unconfirmed store instead of rewriting (0058
-    /// WK09): the next `:w` after an unconfirmed outcome reconciles
+    /// Verify a frozen unconfirmed store instead of rewriting: the next `:w` after an unconfirmed outcome reconciles
     /// first. Verification never writes; after `Unchanged` an explicit
     /// fresh `:w` is the user's retry.
     pub(crate) fn request_store_verification(&mut self, document: DocumentId) -> bool {
@@ -251,30 +248,23 @@ impl Editor {
             }
         }
         let tx = self.io.tx.clone();
-        let worker = self.filesystem.worker().clone();
+        let local = self.filesystem.local().clone();
         let handle = worker::spawn(
             "strop-save-verify",
             move |outcome| {
                 let _ = tx.send(IoEvent::Save(Box::new(Completion { ticket, outcome })));
             },
-            move |token| {
-                let dispatch = crate::editor::namespace::StoreDispatch::Local(worker);
-                match dispatch.verify_store_recovered(
-                    attempt.receipt.clone(),
-                    attempt.namespace.clone(),
-                    &token,
-                ) {
-                    Ok(verified) => Outcome::Success(SaveOutcome::Verified {
-                        attempt: Box::new(attempt),
-                        verified,
-                    }),
-                    Err(error)
-                        if error.kind == strop_workspace::operation::FsFailureKind::Cancelled =>
-                    {
-                        Outcome::Cancelled(worker::CancelReason::Dismissed)
-                    }
-                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
+            move |token| match local.verify_recovered(&token, &attempt.receipt) {
+                Ok(verified) => Outcome::Success(SaveOutcome::Verified {
+                    attempt: Box::new(attempt),
+                    verified,
+                }),
+                Err(error)
+                    if error.kind == strop_workspace::operation::FsFailureKind::Cancelled =>
+                {
+                    Outcome::Cancelled(worker::CancelReason::Dismissed)
                 }
+                Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
             },
         );
         self.worker_handles.insert(request, handle);
@@ -282,7 +272,7 @@ impl Editor {
     }
 
     /// A committed store receipt — direct or proven by verification —
-    /// retires exactly like the in-process writer's (0058 WK09).
+    /// retires the saved revision.
     pub(super) fn accept_store_receipt(&mut self, key: &SaveKey, receipt: SaveReceipt) {
         self.resolve_save_feedback(key.document, false);
         let Some(document) = self.docs.get_mut(key.document) else {
@@ -323,7 +313,7 @@ impl Editor {
         }
     }
 
-    /// Reconcile one verified store attempt (0058 WK09): a committed
+    /// Reconcile one verified store attempt: a committed
     /// outcome adopts the observed baseline and retires the revision once;
     /// unchanged preserves dirty text for an explicit retry; unknown stays
     /// frozen and keeps blocking rewrites.
@@ -364,7 +354,6 @@ impl Editor {
                     format!("write outcome still unconfirmed: {detail}; :w verifies again");
                 self.note_unconfirmed_save(
                     key.document,
-                    false,
                     attempt.revision,
                     format!("write outcome still unconfirmed: {detail}; :w verifies again"),
                 );
@@ -382,14 +371,13 @@ impl Editor {
     }
 }
 
-/// One local document save through the worker (0058 WK09): prepare the
-/// Store intent, apply the frozen content and classify the receipt —
-/// committed, refused, cancelled, or unconfirmed with frozen evidence
-/// retained. Conflict/uncertainty semantics are the in-process writer's
-/// exactly; the kernel does the filesystem work.
+/// One local document save: prepare the Store intent, apply the frozen
+/// content and classify the receipt — committed, refused, cancelled, or
+/// unconfirmed with frozen evidence retained. The kernel does the
+/// filesystem work.
 fn store_document(
     plan: strop_core::SavePlan,
-    worker: strop_worker_client::Worker,
+    local: &crate::editor::namespace::LocalFs,
     close: bool,
     focus: u64,
     token: &worker::CancelToken,
@@ -427,16 +415,11 @@ fn store_document(
             displayed: None,
         }),
     };
-    let dispatch = crate::editor::namespace::StoreDispatch::Local(worker.clone());
-    let operation = match dispatch.prepare_store(intent, token) {
+    let operation = match local.prepare_store(token, intent) {
         Ok(operation) => operation,
         Err(error) if error.kind == FsFailureKind::Cancelled => {
             return Outcome::Cancelled(worker::CancelReason::Dismissed);
         }
-        Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-    };
-    let namespace = match worker.namespace() {
-        Ok(namespace) => namespace,
         Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
     };
     let attempt = |receipt: strop_workspace::operation::StepReceipt| {
@@ -448,21 +431,10 @@ fn store_document(
             close,
             force: plan.force,
             focus,
-            namespace: namespace.clone(),
             receipt,
         })
     };
-    let receipt = match dispatch.apply_store(operation, &bytes, token) {
-        crate::editor::namespace::StoreOutcome::Refused(error)
-            if error.kind == FsFailureKind::Cancelled =>
-        {
-            return Outcome::Cancelled(worker::CancelReason::Dismissed);
-        }
-        crate::editor::namespace::StoreOutcome::Refused(error) => {
-            return Outcome::failed(FailureKind::Io, error.to_string());
-        }
-        crate::editor::namespace::StoreOutcome::Receipt(receipt) => *receipt,
-    };
+    let receipt = local.apply_store(token, operation, plan.text.clone());
     match &receipt.outcome {
         StepOutcome::Committed {
             destination_after,

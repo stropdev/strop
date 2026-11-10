@@ -124,10 +124,6 @@ impl Editor {
         let directory = self.directory().is_some();
         let draft = self.filename_draft(self.current()).is_some();
         let local = scope.filesystem == strop_workspace::Filesystem::Local;
-        let available = |capability| {
-            self.namespace_capability_for(&scope, capability, Some(self.current()))
-                .available()
-        };
         ACTIONS
             .iter()
             .enumerate()
@@ -137,11 +133,9 @@ impl Editor {
                 ":w" | "discard" | "copies stored" | "copies buffer" | "deletes permanent" => draft,
                 "operations" | "verify" | "path" => true,
                 "refresh" => directory,
-                "terminal" => {
-                    directory && !draft && available(crate::editor::WorkspaceCapability::Terminal)
-                }
+                "terminal" => directory && !draft,
                 ":terminal-local" => !draft && !local,
-                "search" => directory && available(crate::editor::WorkspaceCapability::Search),
+                "search" => directory,
                 "mark" | "unmark" | "edit" => directory && !draft,
                 _ => !draft,
             })

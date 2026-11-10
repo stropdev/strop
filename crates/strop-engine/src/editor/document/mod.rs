@@ -12,7 +12,6 @@ mod directory;
 pub use directory::Directory;
 pub use remote::RemoteDocument;
 mod snapshot;
-pub(crate) use snapshot::last_position;
 
 pub use super::jumps::JumpRecord;
 pub use surfaces::{DiffRow, DocumentSource, Surface};
@@ -488,10 +487,9 @@ impl Editor {
                 affected_collections.push(*id);
             }
         }
-        self.revoke_remote_write(closed);
+        self.drop_remote_write(closed);
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
-        self.stop_remote_follow(closed);
         self.cancel_directory_filter(closed);
         self.lsp_close_document(closed);
         self.shell_document_closed(closed);

@@ -1,5 +1,5 @@
 //! strop-lsp: the LSP client. async-lsp transport (0009 §2.1), tokio on
-//! a worker thread, the editor sees a channel of typed events — never an
+//! its own thread per client, the editor sees a channel of typed events — never an
 //! async type, never an await in the input path (0001 §5.6).
 pub mod completion;
 pub mod languages;

@@ -17,17 +17,12 @@ use std::{
 use strop_core::worker::{
     self, CancelHandle, CancelReason, CancelToken, Failure, FailureKind, Outcome, PreparedWork,
 };
-use strop_remote::worker_transport::RemoteWorker;
+use strop_remote::exec::ExecHost;
 use strop_workspace::{Filesystem, ResourceLocation};
 
-pub type WorkerAdmission = Box<dyn FnOnce(&CancelToken) -> Result<RemoteWorker, Failure> + Send>;
-
-/// Authority for a non-local search. SSH may explicitly admit its worker on
-/// this source thread; there is no host fallback.
-pub enum SearchWorker {
-    Admitted(RemoteWorker),
-    Admit(WorkerAdmission),
-}
+/// Where a non-local search runs: resolved on the source thread (it may
+/// connect), never on input. There is no local fallback.
+pub type SearchHost = Box<dyn FnOnce(&CancelToken) -> Result<ExecHost, Failure> + Send>;
 
 const STALL_TIMEOUT: Duration = Duration::from_secs(20);
 const STALL_WARNING: &str = "source made no batch progress for 20s; cancelled the stalled request";
@@ -336,7 +331,7 @@ impl SourceWorker {
         policy: SelectionPolicy,
         root: ResourceLocation,
         snapshots: Vec<SourceSnapshot>,
-        lease: Option<SearchWorker>,
+        host: Option<SearchHost>,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
         let cache = Arc::clone(&self.shared.cache);
@@ -346,20 +341,22 @@ impl SourceWorker {
             }
             Filesystem::Remote(_) => {
                 let _remote_work = tx.remote_work();
-                let admitted = match lease {
-                    Some(SearchWorker::Admitted(worker)) => Some(worker),
-                    Some(SearchWorker::Admit(admit)) => match admit(&token) {
-                        Ok(worker) => Some(worker),
-                        Err(failure) => {
-                            return Outcome::Failed {
-                                failure,
-                                partial: None,
-                            }
+                let host = match host.map(|resolve| resolve(&token)) {
+                    Some(Ok(host)) => host,
+                    Some(Err(failure)) => {
+                        return Outcome::Failed {
+                            failure,
+                            partial: None,
                         }
-                    },
-                    None => None,
+                    }
+                    None => {
+                        return Outcome::failed(
+                            FailureKind::Unavailable,
+                            "remote search needs the host's connection",
+                        )
+                    }
                 };
-                super::remote::run_search(query, policy, root, snapshots, admitted, &tx, token)
+                super::remote::run_search(query, policy, root, snapshots, &host, &tx, token)
             }
         })
     }

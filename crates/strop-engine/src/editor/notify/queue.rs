@@ -1,5 +1,5 @@
-//! The bounded landing zone between the worker's reader thread and the
-//! event loop: records, the coalescing queue, and the reload job key.
+//! The bounded landing zone between the watcher thread and the event
+//! loop: records, the coalescing queue, and the reload job key.
 use std::collections::VecDeque;
 
 use parking_lot::Mutex;
@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::Outcome;
-use strop_worker_protocol::message::NotifyCoverage;
-use strop_worker_protocol::{Event, NotifyHint, Subscription};
-use strop_workspace::ResourceLocation;
+use strop_fs::notify::{Event, NotifyHint, Subscription};
 
 /// Queued records awaiting a drain turn (0056 AR06 semantic bound for
 /// this lane). A full lane latches the conservative rescan obligation.
@@ -21,7 +19,7 @@ const MAX_HINTS: usize = 512;
 /// queue so application order never depends on a cross-channel race.
 #[derive(Serialize, Deserialize)]
 pub(crate) enum Record {
-    /// The subscribe job settled (typed outcome, never a guessed state).
+    /// The subscription settled (typed outcome, never a guessed state).
     Settled(Outcome<SubscribedScope>),
     /// Advisory freshness hints for one subscription generation.
     Hints {
@@ -33,20 +31,12 @@ pub(crate) enum Record {
     /// The initial scan completed (the boundary is positional: FIFO
     /// order against the subscription's own hints).
     Boundary { subscription: Subscription },
-    /// A remote scope's subscribe job settled (WK07): the root it
-    /// belongs to travels with the outcome — subscription identity
-    /// alone never decides placement.
-    RemoteSettled {
-        root: ResourceLocation,
-        outcome: Outcome<SubscribedScope>,
-    },
 }
 
 /// A settled subscription, recorded only in consented full-content replay.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct SubscribedScope {
     pub subscription: Subscription,
-    pub coverage: NotifyCoverage,
     /// Relative native path of this process's own trace output, if it
     /// lives below this watched root. Never suppress unrelated files.
     pub owned_trace: Option<Vec<u8>>,
@@ -64,8 +54,8 @@ struct QueueState {
     owned_trace: Option<(Subscription, Vec<u8>)>,
 }
 
-/// The bounded landing zone between the worker's reader thread (via the
-/// forwarding sink) and the event loop. Producers record state here, so
+/// The bounded landing zone between the watcher thread and the event
+/// loop. Producers record state here, so
 /// the `AppEvent::Notify` wake hint may legally coalesce.
 pub(crate) struct NotifyQueue {
     state: Mutex<QueueState>,
@@ -101,7 +91,6 @@ impl NotifyQueue {
                 self.push_record(Record::Boundary { subscription });
                 true
             }
-            Event::ExecExit { .. } | Event::ExecInput { .. } => false,
         }
     }
 
@@ -148,7 +137,7 @@ impl NotifyQueue {
 
     pub(crate) fn push_record(&self, record: Record) {
         let mut state = self.state.lock();
-        if matches!(&record, Record::Settled(_) | Record::RemoteSettled { .. }) {
+        if matches!(&record, Record::Settled(_)) {
             state.settlements.push_back(record);
             return;
         }

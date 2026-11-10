@@ -28,8 +28,6 @@ pub enum ReadonlyReason {
     Filesystem,
     /// `:set ro` or `:view`.
     Command,
-    /// A remote snapshot without write authority (`:remote edit` grants it).
-    RemoteAuthority,
     /// A git memory surface — content derived from history.
     GitSurface,
     /// Transient named output (help, `:!`, the undo browser, `:explain`).

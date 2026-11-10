@@ -53,15 +53,11 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("view", "open readonly"),
     ("set", "readonly option: ro/noro"),
     ("noh", "clear the persistent search highlight"),
-    ("tail", "remote tail: :tail [BYTES] URI"),
-    ("range", "remote range: :range START BYTES URI"),
-    ("follow", "follow remote EOF: :follow [URI]"),
-    ("unfollow", "stop remote following"),
     ("browse", "browse remote directory: :browse [URI]"),
     ("filter", "filter remote directory by literal filename"),
     (
         "remote",
-        "choose remote destination; edit/verify/root/home/connect/disconnect/clear/list",
+        "choose remote destination; root/home/connect/disconnect/clear/list",
     ),
     ("trust", "authorize the pending endpoint/project command"),
     (

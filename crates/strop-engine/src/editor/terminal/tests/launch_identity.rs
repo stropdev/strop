@@ -142,7 +142,7 @@ fn terminal_start_trace_retains_location_and_terminal_local_stays_local() {
 }
 
 #[test]
-fn unadmitted_remote_terminal_never_falls_back_to_the_host() {
+fn unconnected_remote_terminal_never_falls_back_to_the_host() {
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
     let origin = editor.current();
@@ -156,7 +156,9 @@ fn unadmitted_remote_terminal_never_falls_back_to_the_host() {
     assert_eq!(editor.current(), origin);
     assert!(editor.terminals.entries.is_empty());
     assert!(
-        editor.message.contains("no admitted worker"),
+        editor
+            .message
+            .contains("not connected to ssh://fixture.example"),
         "{}",
         editor.message
     );

@@ -71,26 +71,9 @@ pub fn io(event: &crate::editor::io::IoEvent) {
         IoEvent::Remote(event) => {
             use crate::editor::remote::RemoteEvent;
             match event {
-                RemoteEvent::Tick(ticket) => {
-                    json!({"service":"remote","result":"follow_tick","ticket":ticket})
-                }
-                RemoteEvent::Timer(value) => completion("remote", "follow_clock", value),
-                RemoteEvent::Read(value) => completion("remote", "follow_read", value),
                 RemoteEvent::Control(value) => completion("remote", "control", value),
                 RemoteEvent::Choices(value) => completion("remote", "destinations", value),
-                RemoteEvent::Write(value) => {
-                    let mut record = completion("remote", "write", value);
-                    if let strop_core::worker::Outcome::Success(
-                        crate::editor::remote::save::RemoteWriteResult::Refused(error),
-                    ) = &value.outcome
-                    {
-                        record["outcome"] = outcome(&strop_core::worker::Outcome::<()>::failed(
-                            strop_core::worker::FailureKind::Io,
-                            error.to_string(),
-                        ));
-                    }
-                    record
-                }
+                RemoteEvent::Write(value) => completion("remote", "write", value),
                 RemoteEvent::DestinationWritten(value) => {
                     completion("remote", "destination_write", value)
                 }

@@ -2,6 +2,8 @@
 mod admission;
 mod codec;
 mod indent;
+#[cfg(test)]
+mod local_tests;
 pub(super) mod native;
 mod navigation;
 pub(crate) mod open;
@@ -11,8 +13,6 @@ mod save;
 mod session;
 #[cfg(test)]
 mod store_tests;
-#[cfg(test)]
-mod worker_tests;
 use super::{Document, Editor};
 use crate::files::FileTarget;
 use std::collections::HashMap;
@@ -39,10 +39,6 @@ pub enum OpenIntent {
         child: strop_workspace::ResourceLocation,
     },
     RemoteDestination,
-    RemoteView {
-        view: super::remote::RemoteView,
-        line: Option<LineIndex>,
-    },
     Grep {
         line: LineIndex,
         column: ByteColumn,
@@ -60,16 +56,10 @@ pub enum OpenIntent {
 }
 impl OpenIntent {
     fn requires_file(&self) -> bool {
-        match self {
-            Self::AtLine { .. }
-            | Self::Grep { .. }
-            | Self::SearchHit(_)
-            | Self::LspLocation { .. } => true,
-            Self::RemoteView { view, line } => {
-                line.is_some() || *view != super::remote::RemoteView::default()
-            }
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::AtLine { .. } | Self::Grep { .. } | Self::SearchHit(_) | Self::LspLocation { .. }
+        )
     }
 }
 
@@ -80,7 +70,6 @@ pub struct OpenKey {
     pub revision: BufferRevision,
     pub focus: u64,
     pub intent: OpenIntent,
-    pub selection: strop_remote::ReadSelection,
 }
 
 pub struct Opened {
@@ -118,7 +107,6 @@ pub struct StoreAttempt {
     pub close: bool,
     pub force: bool,
     pub focus: u64,
-    pub namespace: strop_worker_protocol::NamespaceIdentity,
     pub receipt: strop_workspace::operation::StepReceipt,
 }
 
@@ -238,12 +226,7 @@ impl Editor {
                         self.message = format!(
                             "write outcome unconfirmed: {detail}; :w verifies before any rewrite"
                         );
-                        self.note_unconfirmed_save(
-                            key.document,
-                            false,
-                            revision,
-                            self.message.clone(),
-                        );
+                        self.note_unconfirmed_save(key.document, revision, self.message.clone());
                     }
                     Outcome::Success(SaveOutcome::Verified { attempt, verified }) => {
                         self.store_verified(&key, *attempt, verified);
@@ -255,10 +238,7 @@ impl Editor {
                             .store_attempt(key.document)
                             .map(|attempt| attempt.revision)
                         {
-                            self.note_unconfirmed_save(
-                                key.document,
-                                false,
-                                revision,
+                            self.note_unconfirmed_save(key.document, revision,
                                 format!(
                                     "verification failed: {}; the original write remains unconfirmed",
                                     failure.message
@@ -374,12 +354,11 @@ impl Editor {
                 .saves
                 .values()
                 .any(|ticket| ticket.request == request)
-            || self.io.native.get(&request).is_some_and(|key| {
-                matches!(
-                    key.operation,
-                    native::Operation::Trust { .. } | native::Operation::TrustRemote { .. }
-                )
-            })
+            || self
+                .io
+                .native
+                .get(&request)
+                .is_some_and(|key| matches!(key.operation, native::Operation::Trust { .. }))
     }
     pub fn io_status(&self) -> Option<&'static str> {
         if let Some(status) = self.remote_write_status() {

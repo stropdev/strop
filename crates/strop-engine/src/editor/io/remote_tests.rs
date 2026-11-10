@@ -7,15 +7,13 @@ use crate::editor::test_support::remote::{deliver, io_editor as editor, open, ti
 use strop_workspace::RemoteFile;
 
 #[test]
-fn remote_readonly_open_names_the_next_commands_once() {
+fn an_opened_remote_file_is_editable() {
     let mut editor = editor("origin\n");
     open(&mut editor, "remote\n");
-    assert_eq!(
-        editor.message,
-        "remote is read-only — :remote edit to edit; :remote worker for search/Git/LSP"
-    );
-    editor.feed_text("j");
-    assert!(editor.message.is_empty());
+    assert!(!editor.buf().readonly);
+    editor.feed_text("ix<esc>");
+    assert_eq!(editor.buf().text(), "xremote\n");
+    assert!(editor.buf().is_dirty());
 }
 
 #[test]
@@ -82,7 +80,7 @@ fn closing_the_only_remote_snapshot_quits_without_a_dead_current_document() {
     let mut editor = editor("");
     open(&mut editor, "log\n");
     assert_eq!(editor.docs.len(), 1);
-    editor.feed_text("q");
+    editor.feed_text(":q<cr>");
     assert!(editor.should_quit);
     assert!(editor.docs.is_empty());
 }

@@ -1,12 +1,11 @@
-//! WK09 pins: document save (`:w`) rides the worker Store intent — the
-//! same protected-save kernel for local and admitted remote namespaces.
-//! Conflict (baseline moved), permission preservation, same-size content
-//! change and uncertainty→verify semantics match the in-process writer's
-//! behavior exactly, with frozen evidence retained while unconfirmed.
+//! Document save (`:w`) is a Store intent through the checked kernel:
+//! conflict (baseline moved), permission preservation, same-size content
+//! change and uncertainty→verify semantics, with frozen evidence retained
+//! while unconfirmed.
 
 use super::*;
-use crate::editor::namespace::{StoreDispatch, StorePrepared};
 use strop_core::Buffer;
+use strop_workspace::operation::PreparedOperation;
 use strop_workspace::operation::{OperationIntent, OperationKind, StepOutcome, StepReceipt};
 
 fn store_intent(editor: &Editor, path: &std::path::Path) -> OperationIntent {
@@ -40,12 +39,13 @@ fn inject_unconfirmed(
     editor: &mut Editor,
     document: DocumentId,
     path: &std::path::Path,
-) -> StorePrepared {
-    let dispatch = StoreDispatch::Local(editor.filesystem.worker().clone());
+) -> PreparedOperation {
     let (token, _handle) = strop_core::worker::CancelToken::standalone();
-    let operation = dispatch
-        .prepare_store(store_intent(editor, path), &token)
-        .expect("the store prepares against the real worker");
+    let operation = editor
+        .filesystem
+        .local()
+        .prepare_store(&token, store_intent(editor, path))
+        .expect("the store prepares");
     let attempt = StoreAttempt {
         revision: editor.buf().revision(),
         origin: editor.buf().path.clone(),
@@ -54,10 +54,9 @@ fn inject_unconfirmed(
         close: false,
         force: false,
         focus: editor.focus_epoch,
-        namespace: editor.filesystem.worker().namespace().unwrap(),
         receipt: StepReceipt {
             step: 0,
-            operation: operation.operation.clone(),
+            operation: operation.clone(),
             outcome: StepOutcome::Unconfirmed {
                 detail: "simulated lost receipt".into(),
                 observed_destination: None,
@@ -70,7 +69,6 @@ fn inject_unconfirmed(
     let revision = editor.buf().revision();
     editor.note_unconfirmed_save(
         document,
-        false,
         revision,
         "simulated lost receipt; verify before any rewrite".into(),
     );
@@ -78,7 +76,7 @@ fn inject_unconfirmed(
 }
 
 #[test]
-fn local_save_rides_the_worker_store_intent() {
+fn local_save_is_a_store_intent() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("note.txt");
     std::fs::write(&path, "before\n").unwrap();
@@ -94,52 +92,6 @@ fn local_save_rides_the_worker_store_intent() {
         "the committed store retires the revision"
     );
     assert_eq!(editor.message, "written");
-    assert!(editor.filesystem.worker().session().is_some());
-}
-
-#[test]
-fn stale_prepared_store_cannot_publish_after_worker_respawns() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("note.txt");
-    std::fs::write(&path, "before\n").unwrap();
-    let mut editor = Editor::new(Buffer::from_text(""));
-    editor.open_fixture(&path).unwrap();
-    editor.feed_text("Oafter<esc>");
-    let worker = editor.filesystem.worker().clone();
-    let dispatch = StoreDispatch::Local(worker.clone());
-    let (token, _handle) = strop_core::worker::CancelToken::standalone();
-    let stale = dispatch
-        .prepare_store(store_intent(&editor, &path), &token)
-        .unwrap();
-    let old_session = stale.session;
-    worker.shutdown().unwrap();
-    worker.health(&token).unwrap();
-    assert_ne!(worker.session(), Some(old_session));
-    match dispatch.apply_store(stale, b"after\nbefore\n", &token) {
-        crate::editor::namespace::StoreOutcome::Refused(error) => {
-            assert_eq!(
-                error.kind,
-                strop_workspace::operation::FsFailureKind::Conflict
-            );
-        }
-        crate::editor::namespace::StoreOutcome::Receipt(receipt) => {
-            panic!("stale Store must refuse before publication: {receipt:?}");
-        }
-    }
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");
-    let fresh = dispatch
-        .prepare_store(store_intent(&editor, &path), &token)
-        .unwrap();
-    match dispatch.apply_store(fresh, b"after\nbefore\n", &token) {
-        crate::editor::namespace::StoreOutcome::Receipt(receipt) => {
-            assert!(receipt.outcome.is_committed(), "{receipt:?}");
-        }
-        crate::editor::namespace::StoreOutcome::Refused(error) => {
-            panic!("new-session Store should commit: {error}");
-        }
-    }
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "after\nbefore\n");
-    worker.shutdown().unwrap();
 }
 
 #[test]
@@ -229,7 +181,7 @@ fn save_preserves_permissions_through_the_atomic_replace() {
     assert_eq!(
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
         0o640,
-        "permissions survive the worker store"
+        "permissions survive the store"
     );
 }
 
@@ -329,16 +281,13 @@ fn a_late_committed_store_reconciles_the_source_once() {
     let document = editor.open_fixture(&path).unwrap();
     editor.feed_text("Omine<esc>");
     let operation = inject_unconfirmed(&mut editor, document, &path);
-    let dispatch = StoreDispatch::Local(editor.filesystem.worker().clone());
     let (token, _handle) = strop_core::worker::CancelToken::standalone();
-    match dispatch.apply_store(operation, b"mine\nbefore\n", &token) {
-        crate::editor::namespace::StoreOutcome::Receipt(receipt) => {
-            assert!(matches!(receipt.outcome, StepOutcome::Committed { .. }));
-        }
-        crate::editor::namespace::StoreOutcome::Refused(error) => {
-            panic!("native Store must land before its receipt is lost: {error}");
-        }
-    }
+    let receipt = editor.filesystem.local().apply_store(
+        &token,
+        operation,
+        ropey::Rope::from_str("mine\nbefore\n"),
+    );
+    assert!(matches!(receipt.outcome, StepOutcome::Committed { .. }));
     assert!(editor.request_save_document(document, None, false, false));
     editor.wait_io().unwrap();
     assert_eq!(

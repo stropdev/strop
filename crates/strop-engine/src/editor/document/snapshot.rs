@@ -19,7 +19,6 @@ impl Editor {
         &mut self,
         document: DocumentId,
         mut replacement: Document,
-        following: bool,
     ) -> Result<(), SnapshotError> {
         let retain_draft = self
             .doc(document)
@@ -56,27 +55,12 @@ impl Editor {
             return Ok(());
         }
         let before = self.doc(document).buf.snapshot();
-        let old_window = self
-            .doc(document)
-            .remote_metadata()
-            .map(|source| source.window);
-        let new_window = replacement.remote_metadata().map(|source| source.window);
         let old_directory = self.doc(document).directory_metadata_ref().cloned();
         let new_directory = replacement.directory_metadata_ref().cloned();
         let after = replacement.buf.snapshot();
-        let old_tail = following.then(|| last_position(&before));
         let content_tail = last_position(&after);
-        let new_tail = following.then_some(content_tail);
-        let view_rows = self.view_rows();
         let position = |offset: usize| {
-            let offset = if following {
-                let old_start = old_window.map_or(0, |window| window.start().get());
-                let new_start = new_window.map_or(0, |window| window.start().get());
-                old_start
-                    .saturating_add(offset as u64)
-                    .saturating_sub(new_start)
-                    .min(after.len_bytes() as u64) as usize
-            } else {
+            let offset = {
                 let offset = offset.min(before.len_bytes());
                 let line = before.byte_to_line(offset);
                 let column = offset - before.line_to_byte(line);
@@ -110,7 +94,6 @@ impl Editor {
             .map(|(index, pane)| {
                 (
                     index,
-                    old_tail == Some(pane.sels.primary().head),
                     before.line_to_byte(pane.view_top.min(before.len_lines().saturating_sub(1))),
                 )
             })
@@ -138,17 +121,8 @@ impl Editor {
                 }
             }
         }
-        for (index, was_tail, old_top) in views {
-            let pane = &mut self.panes[index];
-            pane.view_top = if let Some(tail) = new_tail.filter(|_| was_tail) {
-                pane.sels.set_head(tail);
-                pane.desired_column = None;
-                after
-                    .byte_to_line(tail)
-                    .saturating_sub(view_rows.saturating_sub(1))
-            } else {
-                after.byte_to_line(position(old_top))
-            };
+        for (index, old_top) in views {
+            self.panes[index].view_top = after.byte_to_line(position(old_top));
         }
         if !self.docs.is_empty() && self.current() == document {
             self.clamp_cursor();
@@ -156,7 +130,7 @@ impl Editor {
         Ok(())
     }
 }
-pub(crate) fn last_position(rope: &Rope) -> usize {
+fn last_position(rope: &Rope) -> usize {
     let mut line = rope.len_lines().saturating_sub(1);
     if line > 0 && rope.line_to_byte(line) == rope.len_bytes() {
         line -= 1;

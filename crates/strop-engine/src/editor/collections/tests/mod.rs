@@ -242,14 +242,9 @@ fn remote_sources_join_readonly_collections() {
         Buffer::from_text(remote_text),
         crate::editor::document::RemoteDocument {
             file: strop_workspace::RemoteFile::parse("ssh://fixture/repo/app.log").unwrap(),
-            window: strop_remote::RemoteWindow::resolve(
-                &strop_remote::ReadSelection::Full,
-                strop_remote::RemoteSize::new(remote_text.len() as u64),
-            ),
-            selection: strop_remote::ReadSelection::Full,
+            stamp: strop_remote::Stamp { size: 1, mtime: 1 },
             connection: None,
             return_to: None,
-            write: None,
         },
     );
     e.docs.try_insert(remote_doc).unwrap();

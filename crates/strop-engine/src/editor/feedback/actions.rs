@@ -76,29 +76,16 @@ impl Editor {
         match action {
             TypedAction::Dismiss => true,
             TypedAction::RetrySave(retry) => self.save_retry_valid(retry),
-            TypedAction::VerifySave {
-                document,
-                revision,
-                remote,
-            } => {
-                if self.docs.get(*document).is_none() {
-                    return false;
-                }
-                if *remote {
-                    self.remote
-                        .writes
-                        .unconfirmed_revision(*document)
-                        .is_some_and(|current| current == *revision)
-                        && !self.remote.writes.pending_for(*document)
-                } else {
-                    self.io
+            TypedAction::VerifySave { document, revision } => {
+                self.docs.get(*document).is_some()
+                    && self
+                        .io
                         .store_attempt(*document)
                         .is_some_and(|attempt| attempt.revision == *revision)
-                        && !self.io.save_pending_for(*document)
-                        && !self
-                            .filesystem
-                            .blocks_namespace(&strop_workspace::Filesystem::Local)
-                }
+                    && !self.io.save_pending_for(*document)
+                    && !self
+                        .filesystem
+                        .blocks_namespace(&strop_workspace::Filesystem::Local)
             }
             TypedAction::RetryRemote {
                 operation,
@@ -110,10 +97,6 @@ impl Editor {
                 match operation {
                     RemoteControl::Connect(endpoint) => {
                         self.remote_incarnation(endpoint).unwrap_or(0) == *incarnation
-                    }
-                    RemoteControl::AdmitWorker(endpoint) => {
-                        self.remote_incarnation(endpoint).unwrap_or(0) == *incarnation
-                            && self.remote.workers.get_ready(endpoint).is_none()
                     }
                     _ => false,
                 }
@@ -134,11 +117,6 @@ impl Editor {
         let remote = matches!(&document.source, DocumentSource::Remote(_));
         if remote {
             !self.remote.writes.pending_for(retry.document)
-                && self
-                    .remote
-                    .writes
-                    .unconfirmed_revision(retry.document)
-                    .is_none()
         } else {
             !self.io.save_pending_for(retry.document)
                 && self.io.store_attempt(retry.document).is_none()
@@ -187,21 +165,8 @@ impl Editor {
                     );
                 }
             }
-            TypedAction::VerifySave {
-                document,
-                remote: false,
-                ..
-            } => {
+            TypedAction::VerifySave { document, .. } => {
                 self.request_store_verification(document);
-            }
-            TypedAction::VerifySave {
-                document,
-                remote: true,
-                ..
-            } => {
-                if let Err(error) = self.verify_remote_save_document(document) {
-                    self.message = error;
-                }
             }
             TypedAction::RetryRemote { operation, .. } => {
                 self.request_remote_control(operation);
@@ -230,10 +195,7 @@ impl Editor {
     pub(crate) fn feedback_kind_label(kind: FeedbackKind) -> &'static str {
         match kind {
             FeedbackKind::Save => "save",
-            FeedbackKind::RemoteEditAdmission => "remote edit admission",
             FeedbackKind::Connection => "connection",
-            FeedbackKind::WorkerConnection => "worker connection",
-            FeedbackKind::WorkerAdmission => "worker admission",
             FeedbackKind::TerminalProcess => "terminal process",
             FeedbackKind::TerminalHostControl => "terminal host control",
         }

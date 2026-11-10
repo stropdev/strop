@@ -2,10 +2,10 @@
 #   docker compose run --build --rm test            # fmt + clippy -D warnings + cargo test + Loom
 #   docker compose run --build --rm proofs          # Lean proofs over the kernel translation
 #   docker compose run --build --rm model           # TLC probation models
-#   docker compose run --build --rm ssh-pythonfree  # real sshd, no Python on the host
+#   docker compose run --build --rm ssh-pythonfree  # editing over real sshd, no Python on the host
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
 #   docker compose run --build --rm bench           # perf scenarios (measurement, not a gate)
-#   docker compose run --build --rm ssh-bench       # worker vs ssh exec (0090 §5, measurement)
+#   docker compose run --build --rm ssh-bench       # remote latency over ssh (0090 §7, measurement)
 # Every service above except bench and ssh-bench is a blocking gate.
 
 services:
@@ -18,18 +18,17 @@ services:
     # exists, the gate passed. The command is just a confirmation.
     command: 'echo "gate passed: fmt + clippy -D warnings + cargo test + loom"'
 
-  # The OpenSSH fixture deploys and launches the native worker inside a
-  # Python-free image; the full test image intentionally has python3 for
-  # other integration suites.
+  # The editor over a real sshd inside a Python-free image; the full test
+  # image intentionally has python3 for other integration suites.
   ssh-pythonfree:
     build:
       context: .
       dockerfile: Dockerfile
       target: ssh-pythonfree
-    command: 'echo "gate passed: real SSH native worker without Python"'
+    command: 'echo "gate passed: remote editing over real SSH without Python"'
 
-  # Plan 0090 §5 go/no-go numbers: -e DELAY_MS=10 adds netem delay each
-  # way on loopback. Measurement, not a gate.
+  # Plan 0090 §7 remote latency: -e DELAY_MS=25 adds netem delay each
+  # way on loopback (50 ms RTT). Measurement, not a gate.
   ssh-bench:
     build:
       context: .
@@ -40,7 +39,6 @@ services:
     environment:
       - DELAY_MS
       - STROP_SSH_EXEC_BENCH_N
-      - STROP_SSH_EXEC_BENCH_CONNECTS
 
   model:
     build:

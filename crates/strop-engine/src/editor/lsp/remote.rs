@@ -1,13 +1,14 @@
-//! Remote LSP discovery over read-only SFTP metadata plus an admitted
-//! endpoint worker for Git root and service execution. The editor's
-//! local filesystem, local project layer and Python supervisor never
-//! stand in for remote authority. All I/O is on the discovery job.
+//! Remote LSP discovery: the project layer is read over SFTP, the root
+//! comes from `git` on the host, and the server runs there as a channel
+//! on the endpoint's connection. The editor's local filesystem and local
+//! project layer never stand in for the host. All I/O is on the
+//! discovery job.
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 
 use strop_core::worker::CancelToken;
-use strop_remote::worker_transport::RemoteWorker;
-use strop_remote::{ReadFailureKind, ReadLimit, ReadSelection, RemoteClient, RemoteOffset};
+use strop_remote::exec::ExecHost;
+use strop_remote::{RemoteClient, RemoteFailureKind};
 use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 use super::attach::{AttachDecision, AttachRecord, DiscoverInput, LiveTransport};
@@ -45,33 +46,21 @@ fn fetch_small(
         Ok(file) => file,
         Err(error) => return Fetch::Failed(format!("not a canonical remote path: {error}")),
     };
-    let selection = match ReadLimit::new(CONFIG_READ_LIMIT_BYTES) {
-        Ok(length) => ReadSelection::Range {
-            start: RemoteOffset::new(0),
-            length,
-        },
-        Err(error) => return Fetch::Failed(error.to_string()),
-    };
-    match client.read(&RemoteLocation::from(file), selection, token) {
-        Ok(snapshot) if snapshot.window.is_complete() => {
-            Fetch::Found(snapshot.buffer.text().to_string().into_bytes())
-        }
-        Ok(_) => {
-            Fetch::Failed("remote language configuration exceeds its bounded read limit".into())
-        }
+    match client.read(&RemoteLocation::from(file), CONFIG_READ_LIMIT_BYTES, token) {
+        Ok(snapshot) => Fetch::Found(snapshot.buffer.text().to_string().into_bytes()),
         Err(error) => match error.kind() {
-            ReadFailureKind::NotFound => Fetch::Missing,
-            ReadFailureKind::Cancelled => Fetch::Cancelled,
+            RemoteFailureKind::NotFound => Fetch::Missing,
+            RemoteFailureKind::Cancelled => Fetch::Cancelled,
             // The connection, not the candidate, failed: stopping the
             // search must be a typed refusal — never a "no config"
             // guess.
-            ReadFailureKind::Auth
-            | ReadFailureKind::Trust
-            | ReadFailureKind::Network
-            | ReadFailureKind::Connect
-            | ReadFailureKind::Deadline
-            | ReadFailureKind::Spawn
-            | ReadFailureKind::Subsystem => Fetch::Transport(error.to_string()),
+            RemoteFailureKind::Auth
+            | RemoteFailureKind::Trust
+            | RemoteFailureKind::Network
+            | RemoteFailureKind::Connect
+            | RemoteFailureKind::Deadline
+            | RemoteFailureKind::Spawn
+            | RemoteFailureKind::Subsystem => Fetch::Transport(error.to_string()),
             // The candidate exists but is unusable (unreadable, not
             // UTF-8, too large, wrong type): a malformed layer.
             _ => Fetch::Failed(error.to_string()),
@@ -131,42 +120,36 @@ fn find_project_layer(
     }
 }
 
-/// A trusted project layer owns its root. Without one, only an
-/// already-admitted endpoint worker may query Git; no Python probe
-/// or guessed local repository path. Git's own no-repository result
-/// falls back to the trigger directory, while transport loss stays
-/// a typed discovery failure.
+/// A project layer owns its root. Without one, `git` on the host finds
+/// it; git's own no-repository result falls back to the trigger
+/// directory, while transport loss stays a typed discovery failure.
 fn workspace_root(
     endpoint: &RemoteEndpoint,
     parent: &Path,
-    worker: Option<&RemoteWorker>,
+    host: &ExecHost,
     token: &CancelToken,
 ) -> Result<PathBuf, String> {
-    let Some(worker) = worker else {
-        return Ok(parent.to_path_buf());
-    };
-    strop_git::remote::discover(endpoint, parent, Some(worker), token)
+    strop_git::remote::discover(endpoint, parent, host, token)
         .map(|found| found.unwrap_or_else(|| parent.to_path_buf()))
         .map_err(|error| error.to_string())
 }
 
 /// Remote attach discovery: fetch the remote project layer → resolve
 /// the spec through local-XDG + remote-project layers → remote root →
-/// remote trust → remote executability → spawn on the endpoint.
+/// spawn on the endpoint. A connected host is trusted: the SSH login is
+/// the consent, so a remote project layer's command runs there.
 /// `None` means the attempt was cancelled; everything else is a record
 /// the editor reports identically live and replayed.
 pub(super) fn discover(
     input: &DiscoverInput,
     file: &RemoteFile,
     client: &RemoteClient,
-    worker: &Option<RemoteWorker>,
     token: &CancelToken,
 ) -> Option<AttachRecord> {
     let DiscoverInput {
         ticket,
         ext,
         language,
-        state_dir,
         xdg,
         transport,
         ..
@@ -232,7 +215,11 @@ pub(super) fn discover(
             .and_then(Path::parent)
             .map(Path::to_path_buf)
             .unwrap_or_else(|| parent.clone()),
-        None => match workspace_root(&endpoint, &parent, worker.as_ref(), token) {
+        None => match client
+            .host(&endpoint, token)
+            .map_err(|error| error.to_string())
+            .and_then(|host| workspace_root(&endpoint, &parent, &host, token))
+        {
             Ok(root) => root,
             Err(_) if token.is_cancelled() => return None,
             Err(reason) => {
@@ -257,57 +244,25 @@ pub(super) fn discover(
         ));
     };
     let name = spec.name.to_string();
-    // 5. A remote project layer naming a command is executable content
-    //    from another host: the existing trust gate, keyed by endpoint
-    //    + remote root — never by a path that could alias a local one.
-    if spec.project_executable {
-        match crate::session::is_trusted_remote(state_dir.as_deref(), &endpoint, &root) {
-            Ok(true) => {}
-            Ok(false) => {
-                return Some(record(
-                    None,
-                    name,
-                    root,
-                    AttachDecision::TrustRequired {
-                        command: spec.command.to_string(),
-                    },
-                    layers,
-                ))
-            }
-            Err(error) => {
-                return Some(record(
-                    None,
-                    name,
-                    root,
-                    AttachDecision::TrustError {
-                        error: error.to_string(),
-                    },
-                    layers,
-                ))
-            }
+    let host = match client.host(&endpoint, token) {
+        Ok(host) => host,
+        Err(_) if token.is_cancelled() => return None,
+        Err(error) => {
+            return Some(record(
+                None,
+                name,
+                root,
+                AttachDecision::RemoteIo {
+                    reason: error.to_string(),
+                },
+                layers,
+            ))
         }
-    }
-    // 6. The worker owns actual server launch/readiness. An unadmitted
-    // host refuses at Client::spawn; a missing program is classified by
-    // the worker's real exec attempt, never by a shell or local probe.
-    if worker
-        .as_ref()
-        .is_some_and(|lease| lease.endpoint() != &endpoint)
-    {
-        return Some(record(
-            None,
-            name,
-            root,
-            AttachDecision::RemoteIo {
-                reason: "remote LSP lease belongs to a different endpoint".into(),
-            },
-            layers,
-        ));
-    }
+    };
     if token.is_cancelled() {
         return None;
     }
-    // 7. Spawn in the endpoint's namespace with the bound lease.
+    // 5. Spawn on the host; a missing program is the host's own answer.
     let (tx, rx) = channel();
     match Client::spawn(
         &spec,
@@ -316,7 +271,7 @@ pub(super) fn discover(
             root: root.clone(),
         },
         tx,
-        worker.as_ref().map(|lease| lease.worker().clone()),
+        host.command(&spec.argv(), Some(&root)),
     ) {
         Ok(client) => {
             let server = client.id();

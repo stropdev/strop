@@ -1,5 +1,5 @@
 //! Completion has an independent bounded request owner, but uses the same
-//! synchronized document table, ordered wire and native worker-backed socket.
+//! synchronized document table, ordered wire and socket.
 mod registry;
 mod run;
 use registry::AdmissionError;

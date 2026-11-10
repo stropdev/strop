@@ -1,5 +1,7 @@
-//! Real OpenSSH authentication + SFTP, over a private inetd connection: no
-//! network, real HOME, host key discovery or sleeps. Required by Docker's gate.
+//! The editor over real OpenSSH (plan 0090 §5): open, edit, save with the
+//! changed-on-disk refusal, search, Git and a terminal on the host, over
+//! a private inetd connection — no network, real HOME, host key
+//! discovery or sleeps. Required by the Docker gates.
 #![cfg(unix)]
 use std::ffi::{OsStr, OsString};
 use std::io::Write as _;
@@ -9,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 #[path = "remote_ssh/filesystem.rs"]
 mod filesystem;
+#[path = "remote_ssh/git.rs"]
+mod git;
 #[path = "remote_ssh/search.rs"]
 mod search;
 #[path = "remote_ssh/terminal.rs"]
@@ -35,7 +39,6 @@ fn ssh_required(test: &str) -> bool {
 struct Fixture {
     directory: tempfile::TempDir,
     path: OsString,
-    artifact: Option<PathBuf>,
 }
 fn quoted(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
@@ -56,8 +59,6 @@ impl Fixture {
             .unwrap();
         let root = directory.path();
         std::fs::create_dir(root.join("bin")).unwrap();
-        let cache_base = root.join("cache-base");
-        std::fs::create_dir(&cache_base).unwrap();
         for name in ["host", "client", "denied"] {
             successful(
                 Command::new("ssh-keygen")
@@ -71,9 +72,8 @@ impl Fixture {
         let username = String::from_utf8(successful(Command::new("id").arg("-un")).stdout).unwrap();
         let server = root.join("sshd_config");
         std::fs::write(&server, format!(
-            "HostKey {}\nAuthorizedKeysFile {}\nStrictModes no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin yes\nLogLevel ERROR\nSubsystem sftp internal-sftp\nSetEnv XDG_CACHE_HOME={}\n",
+            "HostKey {}\nAuthorizedKeysFile {}\nStrictModes no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin yes\nLogLevel ERROR\nSubsystem sftp internal-sftp\n",
             root.join("host").display(), root.join("authorized_keys").display(),
-            cache_base.display()
         )).unwrap();
         // sshd -i speaks the REAL SSH protocol on stdin/stdout. OpenSSH's
         // ProxyCommand connects it without a network port or readiness race.
@@ -95,40 +95,24 @@ impl Fixture {
         )
         .unwrap();
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
-        // The deployable worker artifact (WK07): debug binaries exceed
-        // the deployment stage's byte bound, so the fixture deploys a
-        // stripped copy of this exact build, advertised through the
-        // administrator-provisioned supply override.
-        let artifact = root.join("strop-worker");
-        std::fs::copy(env!("CARGO_BIN_EXE_strop"), &artifact).unwrap();
-        let stripped = Command::new("strip").arg(&artifact).status();
-        let artifact = match stripped {
-            Ok(status) if status.success() => Some(artifact),
-            _ => None,
-        };
         let mut paths = vec![root.join("bin")];
         paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
         let path = std::env::join_paths(paths).unwrap();
-        Self {
-            directory,
-            path,
-            artifact,
-        }
+        Self { directory, path }
     }
     fn root(&self) -> &Path {
         self.directory.path()
     }
     fn run(&self, args: &[OsString]) -> String {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_strop"));
-        if let Some(artifact) = &self.artifact {
-            command.env("STROP_WORKER_BINARY", artifact);
-        }
-        let output = command
+        let output = Command::new(env!("CARGO_BIN_EXE_strop"))
             .current_dir(self.root())
             .env("PATH", &self.path)
             .env("HOME", self.root().join("home"))
             .env("XDG_CONFIG_HOME", self.root().join("config"))
             .env("XDG_STATE_HOME", self.root().join("state"))
+            // The private control sockets: the editor stops the masters
+            // it started when it exits.
+            .env("XDG_RUNTIME_DIR", self.root().join("run"))
             .env_remove("STROP_LOG")
             .args(args)
             .output()
@@ -189,7 +173,7 @@ fn openssh_reads_native_names_and_replay_needs_no_ssh() {
     let target = uri("fixture:2222", &path);
     let steps = fixture.script(
         "read.steps",
-        "settle\nkeys /needle<cr>yy\nstate\nframe\nkeys :set noro<cr>dd\nstate\nkeys :q<cr>\n",
+        "settle\nkeys /needle<cr>yy\nstate\nframe\nkeys dd\nstate\nkeys :q!<cr>\n",
     );
     let trace = fixture.root().join("read.jsonl");
     let output = fixture.run(&[
@@ -203,7 +187,10 @@ fn openssh_reads_native_names_and_replay_needs_no_ssh() {
     let states = states(&output);
     assert_eq!(states[0]["line"], 6001);
     assert_eq!(states[1]["line"], 6001);
-    assert!(!states[1]["dirty"].as_bool().unwrap());
+    assert!(
+        states[1]["dirty"].as_bool().unwrap(),
+        "a connected host is editable"
+    );
     assert!(output.contains("needle 日本語"));
     // The capture is complete and replay consumes no external client at all.
     std::fs::remove_file(fixture.root().join("bin/ssh")).unwrap();
@@ -279,86 +266,7 @@ fn openssh_failures_keep_the_current_buffer_and_explain_the_cause() {
         states(&large)[0]["message"]
             .as_str()
             .unwrap()
-            .contains("snapshot cap"),
+            .contains("exceeds"),
         "{large}"
     );
-}
-
-#[test]
-fn explicit_remote_worker_enables_services_without_a_file_write_permit() {
-    if !ssh_required("explicit_remote_worker_enables_services_without_a_file_write_permit") {
-        return;
-    }
-    let fixture = Fixture::new();
-    let path = fixture.root().join("read-only.txt");
-    std::fs::write(&path, b"unchanged\n").unwrap();
-    let output = fixture.open(
-        &uri("fixture", &path),
-        "settle\nkeys :remote worker<cr>\nsettle\nstate\nkeys iFORBIDDEN<esc>\nstate\n",
-    );
-    let observed = states(&output);
-    let message = observed[0]["message"].as_str().unwrap();
-    assert!(
-        message.contains("verified remote worker")
-            && message.contains("ready for ssh://fixture")
-            && message.contains("at /"),
-        "{output}"
-    );
-    assert_eq!(observed[0]["dirty"], false);
-    assert_eq!(observed[1]["dirty"], false);
-    assert_eq!(std::fs::read(&path).unwrap(), b"unchanged\n");
-
-    // A second real editor session must run the product admission
-    // collector, not just the direct worker-client maintenance fixture.
-    // The first receipt supplies the exact selected endpoint identity.
-    use sha2::{Digest, Sha256};
-    use strop_core::worker::cache_record::{CacheReceipt, OBJECTS_DIR, RECEIPTS_DIR};
-
-    let installed = PathBuf::from(message.rsplit_once(" at ").unwrap().1);
-    assert_eq!(
-        installed.parent().unwrap().file_name().unwrap(),
-        OBJECTS_DIR
-    );
-    let cache = installed.parent().unwrap().parent().unwrap();
-    assert!(cache.starts_with(fixture.root().join("cache-base")));
-    let current_receipt: CacheReceipt = serde_json::from_slice(
-        &std::fs::read(cache.join(RECEIPTS_DIR).join(format!(
-            "{}.json",
-            installed.file_name().unwrap().to_str().unwrap()
-        )))
-        .unwrap(),
-    )
-    .unwrap();
-    let old_bytes = b"old SSH worker build";
-    let old_sha = Sha256::digest(old_bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let old_path = cache.join(OBJECTS_DIR).join(&old_sha);
-    std::fs::write(&old_path, old_bytes).unwrap();
-    std::fs::set_permissions(&old_path, std::fs::Permissions::from_mode(0o500)).unwrap();
-    let old_receipt_path = cache.join(RECEIPTS_DIR).join(format!("{old_sha}.json"));
-    let old_receipt = CacheReceipt {
-        version: "0.34.0".into(),
-        object_sha256: old_sha,
-        object_bytes: old_bytes.len() as u64,
-        ..current_receipt
-    };
-    std::fs::write(&old_receipt_path, serde_json::to_vec(&old_receipt).unwrap()).unwrap();
-    std::fs::set_permissions(&old_receipt_path, std::fs::Permissions::from_mode(0o600)).unwrap();
-
-    let second = fixture.open(
-        &uri("fixture", &path),
-        "settle\nkeys :remote worker<cr>\nsettle\nstate\n",
-    );
-    assert!(
-        states(&second)[0]["message"]
-            .as_str()
-            .unwrap()
-            .contains("verified remote worker"),
-        "{second}"
-    );
-    assert!(!old_path.exists());
-    assert!(!old_receipt_path.exists());
-    assert!(installed.exists());
 }

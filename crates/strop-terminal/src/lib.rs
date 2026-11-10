@@ -1,8 +1,9 @@
-//! Owned terminal emulation, transport and immutable text/cell projections.
-//! A local session's PTY runs in this process (0090 §4); a remote one
-//! belongs to the namespace's admitted worker (0058 WK12). Frontend state
-//! never owns child handles — it enqueues intents on a service and takes
-//! immutable updates; emulation stays here.
+//! Owned terminal emulation, PTY supervision and immutable text/cell
+//! projections. Every session's PTY runs in this process (0090 §4): a
+//! local shell directly, a remote one as `ssh -tt` on the endpoint's
+//! multiplexed connection. Frontend state never owns child handles — it
+//! enqueues intents on a service and takes immutable updates; emulation
+//! stays here.
 #[cfg(unix)]
 pub mod client;
 pub mod launch;
@@ -10,6 +11,8 @@ pub mod launch;
 mod local;
 pub mod model;
 mod projection;
+#[cfg(unix)]
+mod pty;
 #[cfg(unix)]
 pub mod service;
 #[cfg(unix)]
@@ -33,7 +36,7 @@ pub enum Error {
     Capacity(&'static str),
     #[error("terminal protocol refused: {0}")]
     Protocol(String),
-    #[error("terminal input queue is full; input was not admitted")]
+    #[error("terminal input queue is full; input was not accepted")]
     InputFull,
     #[error("terminal session is no longer running")]
     Closed,

@@ -1,4 +1,4 @@
-//! Real SFTP subsystem over private pipes: reuse, queued cancellation and final
+//! A real SFTP server over private pipes: reuse, queued cancellation and final
 //! lease cleanup. No network, authentication configuration, HOME or sleeps.
 use super::*;
 use crate::test_support::in_worker;
@@ -26,7 +26,7 @@ fn queued(
     lease: &ConnectionLease,
     token: &CancelToken,
     path: &Path,
-) -> Receiver<Result<Reply, RemoteReadError>> {
+) -> Receiver<Result<Reply, RemoteError>> {
     let (reply, receiver) = std::sync::mpsc::channel();
     lease
         .inner
@@ -39,13 +39,13 @@ fn queued(
                 location: RemoteFile::from_path(lease.endpoint().clone(), path.to_owned())
                     .unwrap()
                     .into(),
-                selection: ReadSelection::Full,
+                max: 1024,
             },
         })
         .unwrap_or_else(|_| panic!("actor admission closed"));
     receiver
 }
-fn expect_text(receiver: Receiver<Result<Reply, RemoteReadError>>, expected: &str) {
+fn expect_text(receiver: Receiver<Result<Reply, RemoteError>>, expected: &str) {
     match receiver
         .recv_timeout(Duration::from_secs(10))
         .unwrap()
@@ -53,7 +53,6 @@ fn expect_text(receiver: Receiver<Result<Reply, RemoteReadError>>, expected: &st
     {
         Reply::Snapshot(snapshot) => {
             assert_eq!(snapshot.buffer.text(), expected);
-            assert!(snapshot.buffer.readonly);
         }
         _ => panic!("read did not return a snapshot"),
     }
@@ -76,6 +75,7 @@ fn queued_cancel_preserves_shared_stream_and_last_lease_reaps() {
             jobs,
             stop: stop.clone(),
             status: status.clone(),
+            host: Arc::default(),
         });
         let lease = ConnectionLease { inner };
         let starts = Arc::new(AtomicUsize::new(0));
@@ -84,14 +84,15 @@ fn queued_cancel_preserves_shared_stream_and_last_lease_reaps() {
             receiver,
             stop: stop.clone(),
             status,
-            spawner: Box::new(move || {
+            host: Arc::default(),
+            connector: Box::new(move |_| {
                 spawned.fetch_add(1, Ordering::SeqCst);
                 let mut command = Command::new(&subsystem);
                 command
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
-                command
+                Ok((None, command))
             }),
         };
         // A real worker's cancellation token, cancelled while its job is queued.

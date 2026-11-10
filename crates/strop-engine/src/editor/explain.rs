@@ -30,44 +30,14 @@ impl Editor {
             );
         }
 
-        text.push_str("\n[workers]\n");
-        for (_, context) in self.workspaces.iter() {
-            match &context.filesystem {
-                strop_workspace::Filesystem::Local => {
-                    let state = match self.filesystem.worker().session() {
-                        Some(session) => format!("ready (incarnation {})", session.incarnation),
-                        None => "configured; not connected or worker lost".into(),
-                    };
-                    let _ = writeln!(text, "  local       {state}");
-                }
-                strop_workspace::Filesystem::Remote(endpoint) => {
-                    let state = match self.remote.workers.get_ready(endpoint) {
-                        Some(ready) => {
-                            let connection = match ready.worker.worker().session() {
-                                Some(session) => {
-                                    format!("connected (incarnation {})", session.incarnation)
-                                }
-                                None => "artifact verified; service not connected".into(),
-                            };
-                            format!(
-                                "{connection}; {} / {} / sha256:{} at {}",
-                                env!("CARGO_PKG_VERSION"),
-                                ready.target,
-                                ready.artifact.sha256,
-                                strop_core::layout::printable_text(&ready.artifact.path)
-                            )
-                        }
-                        None if self.remote.worker_requested(endpoint) => {
-                            "worker admission requested; SFTP browsing remains available".into()
-                        }
-                        None if self.remote.workers.admitting(endpoint) => {
-                            "worker deployment in progress; SFTP browsing remains available".into()
-                        }
-                        None => "SFTP browsing only; :remote worker [URI] for services".into(),
-                    };
-                    let _ = writeln!(text, "  {endpoint}  {state}");
-                }
-            }
+        text.push_str("\n[connections]\n");
+        let mut connected = self.remote_client().connections();
+        connected.sort_by_key(ToString::to_string);
+        if connected.is_empty() {
+            text.push_str("  none\n");
+        }
+        for endpoint in connected {
+            let _ = writeln!(text, "  {endpoint}  connected over ssh");
         }
 
         text.push_str("\n[current document]\n");
@@ -398,9 +368,6 @@ impl Editor {
             Some(strop_core::ReadonlyReason::Command) => {
                 "set by :set ro / :view — :set noro restores editing"
             }
-            Some(strop_core::ReadonlyReason::RemoteAuthority) => {
-                "remote snapshot without write authority — :remote edit grants it"
-            }
             Some(strop_core::ReadonlyReason::GitSurface) => {
                 "git surface — content is derived from history"
             }
@@ -538,14 +505,13 @@ mod tests {
         assert!(text.contains("phase     running"), "{text}");
     }
 
-    /// 0056 AR14: a remote snapshot names its authority source; AR08:
-    /// the effects section follows the document's ssh target.
+    /// AR08: the effects section follows the document's ssh target, and
+    /// a connected host is listed.
     #[test]
-    fn explain_names_remote_readonly_source_and_ssh_target() {
+    fn explain_names_the_ssh_target() {
         use crate::editor::document::RemoteDocument;
         let file = strop_workspace::RemoteFile::parse("ssh://fixture/work/file.txt").unwrap();
         let endpoint = file.endpoint().clone();
-        let selection = strop_remote::ReadSelection::Full;
         let mut e = Editor::new(Buffer::from_text("local\n"));
         let document = e
             .docs
@@ -553,14 +519,9 @@ mod tests {
                 Buffer::from_text("before\n"),
                 RemoteDocument {
                     file,
-                    window: strop_remote::RemoteWindow::resolve(
-                        &selection,
-                        strop_remote::RemoteSize::new(7),
-                    ),
-                    selection,
+                    stamp: strop_remote::Stamp { size: 1, mtime: 1 },
                     connection: None,
                     return_to: None,
-                    write: None,
                 },
             ))
             .unwrap();
@@ -573,15 +534,8 @@ mod tests {
         e.switch_to(document);
         e.open_explain();
         let text = e.buf().text().to_string();
-        assert!(
-            text.contains("remote snapshot without write authority — :remote edit grants it"),
-            "{text}"
-        );
         assert!(text.contains("target        ssh"), "{text}");
-        assert!(
-            text.contains("SFTP browsing only; :remote worker [URI] for services"),
-            "{text}"
-        );
+        assert!(text.contains("[connections]\n  none"), "{text}");
         assert!(
             text.contains("remote drafts not persisted without :recover consent remote"),
             "{text}"

@@ -29,21 +29,13 @@ mod tests;
 /// later offline Tab still completes from the last observed truth.
 const CACHE_DIRS: usize = 32;
 
-/// Commands whose final argument is a remote URI, and how many numeric
-/// arguments may precede it (`(min, max)`). `w`/`wq` refuse remote
-/// targets outright (execution refuses them too), so they are absent
-/// here and answered with an honest message instead.
-fn remote_operand_shape(command: &str) -> Option<(usize, usize)> {
-    match command {
-        "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit" | "browse" | "follow" => {
-            Some((0, 0))
-        }
-        // `:tail [BYTES] URI` — the byte count is optional.
-        "tail" => Some((0, 1)),
-        // `:range START BYTES URI` — both numbers required.
-        "range" => Some((2, 2)),
-        _ => None,
-    }
+/// Commands whose one argument is a remote URI. `w`/`wq` are absent and
+/// answered with an honest message instead.
+fn takes_remote_operand(command: &str) -> bool {
+    matches!(
+        command,
+        "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit" | "browse"
+    )
 }
 
 /// Which local question a completion asked. Pure serde data — the
@@ -250,9 +242,7 @@ impl Editor {
             (cmd, rest)
         };
         let tokens = rest.split(' ').filter(|token| !token.is_empty());
-        let remote = rest.starts_with("ssh://")
-            || (matches!(cmd, "tail" | "range")
-                && tokens.clone().any(|token| token.starts_with("ssh://")));
+        let remote = rest.starts_with("ssh://");
         let (query, prefix_body) = if remote {
             let Some(operand) = tokens
                 .clone()
@@ -266,20 +256,11 @@ impl Editor {
                 self.message = "remote save-as completion is unsupported".into();
                 return true;
             }
-            let Some((min, max)) = (if filesystem {
-                Some((0, 0))
-            } else {
-                remote_operand_shape(cmd)
-            }) else {
+            if !filesystem && !takes_remote_operand(cmd) {
                 return false;
-            };
-            let leading = tokens.count().saturating_sub(1);
-            if leading < min || leading > max {
-                self.message = match cmd {
-                    "range" => ":range needs START BYTES before the URI".into(),
-                    "tail" => ":tail takes at most one byte count before the URI".into(),
-                    _ => format!(":{cmd} takes no argument before the URI"),
-                };
+            }
+            if tokens.count() > 1 {
+                self.message = format!(":{cmd} takes no argument before the URI");
                 return true;
             }
             let prefix = body[..body.len() - operand.len()].to_owned();
@@ -420,8 +401,7 @@ impl Editor {
         let sources = completion_host_sources();
         let history = self.remote_history();
         let client = self.remote_client();
-        let worker = self.filesystem.worker().clone();
-        let remote = self.remote.workers.clone();
+        let local = self.filesystem.local().clone();
         let tx = self.remote_completion.tx.clone();
         let handle = worker::spawn(
             "strop-remote-complete",
@@ -436,8 +416,7 @@ impl Editor {
                     sources,
                     history,
                     client,
-                    worker,
-                    remote,
+                    local,
                 };
                 run_completion(job, cancel)
             },
@@ -640,8 +619,7 @@ struct CompletionJob {
     sources: HostSources,
     history: Vec<HostCandidate>,
     client: RemoteClient,
-    worker: strop_worker_client::Worker,
-    remote: crate::editor::remote::workers::RemoteWorkers,
+    local: crate::editor::namespace::LocalFs,
 }
 
 /// The authority region of a canonical URI, for the connect

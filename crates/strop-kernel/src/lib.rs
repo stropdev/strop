@@ -13,5 +13,4 @@
 extern crate alloc;
 
 pub mod editmap;
-pub mod frame;
 pub mod generation;

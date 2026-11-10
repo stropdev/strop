@@ -383,31 +383,3 @@ fn trust_rejects_unusable_native_paths() {
             || !is_trusted(Some(&state), &bad).unwrap()
     );
 }
-
-#[test]
-fn remote_trust_is_endpoint_scoped() {
-    // 0057 VF15: a trust grant names (endpoint, root) — a different
-    // endpoint with the same path, and a local path with the same
-    // spelling, are both untrusted.
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state");
-    let endpoint_a = strop_workspace::RemoteEndpoint::parse("ssh://a.example").unwrap();
-    let endpoint_b = strop_workspace::RemoteEndpoint::parse("ssh://b.example").unwrap();
-    let root = PathBuf::from("/srv/project");
-    let file_a = strop_workspace::RemoteFile::from_path(endpoint_a.clone(), root.clone()).unwrap();
-    trust_remote(Some(&state), &file_a).unwrap();
-    assert!(is_trusted_remote(Some(&state), &endpoint_a, &root).unwrap());
-    assert!(
-        !is_trusted_remote(Some(&state), &endpoint_b, &root).unwrap(),
-        "another endpoint's namespace is not covered"
-    );
-    assert!(
-        !is_trusted(Some(&state), &root).unwrap(),
-        "a remote grant never authorizes the local path spelling"
-    );
-    // And the reverse: a local grant never leaks into the endpoint.
-    let dir2 = tempfile::tempdir().unwrap();
-    let state2 = dir2.path().join("state");
-    trust(Some(&state2), &root).unwrap();
-    assert!(!is_trusted_remote(Some(&state2), &endpoint_a, &root).unwrap());
-}

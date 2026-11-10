@@ -215,16 +215,6 @@ impl Editor {
             self.message = "Search requires an absolute workspace root".into();
             return;
         }
-        if let super::super::namespace::CapabilityDecision::Unavailable { reason, next_step } = self
-            .namespace_capability_for(
-                &scope.root,
-                super::super::namespace::WorkspaceCapability::Search,
-                None,
-            )
-        {
-            self.message = format!("{reason}; {next_step}");
-            return;
-        }
         if replacement && scope.root.filesystem != Filesystem::Local {
             self.message = "SSH Search is read-only; With and Review are unavailable".into();
             return;

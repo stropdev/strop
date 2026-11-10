@@ -1,10 +1,11 @@
-//! Bounded frontend handle. The PTY runs in-process or on the namespace's
-//! worker (see [`Target`]); the VT and session state stay on this crate's
-//! service thread. Callers only enqueue intents or take immutable updates.
+//! Bounded frontend handle. The PTY runs in this process — a local shell
+//! or `ssh -tt` to a remote one (see [`Target`]); the VT and session state
+//! stay on this crate's service thread. Callers only enqueue intents or
+//! take immutable updates.
+mod actor;
 mod mailbox;
 #[cfg(test)]
 mod tests;
-mod worker;
 pub use crate::transport::Target;
 use crate::{
     launch::Launch,
@@ -97,11 +98,11 @@ pub struct Service {
     stopped: bool,
 }
 impl Service {
-    /// Start one session on `target`: a local PTY in this process (0090
-    /// §4), or the namespace's worker lease (0058 WK12), whose stream hook
-    /// nudges this service's wake on output. The caller (the engine)
-    /// selected the namespace; a remote refusal is typed, never a guessed
-    /// local launch.
+    /// Start one session running `launch` on `target` (0090 §4): a local
+    /// shell, or a remote one over the endpoint's multiplexed ssh
+    /// connection. The PTY's output nudges this service's wake. The caller
+    /// (the engine) chose the target; nothing here falls back from a
+    /// remote target to a local launch.
     pub fn start(
         session: SessionId,
         target: Target,
@@ -122,25 +123,22 @@ impl Service {
         }
         let (sender, receiver) = mpsc::sync_channel(MAX_COMMANDS);
         let (wake, listening) =
-            UnixDatagram::pair().map_err(|error| io_error("create terminal worker wake", error))?;
+            UnixDatagram::pair().map_err(|error| io_error("create terminal wake", error))?;
         wake.set_nonblocking(true)
-            .map_err(|error| io_error("configure terminal worker wake", error))?;
+            .map_err(|error| io_error("configure terminal wake", error))?;
         listening
             .set_nonblocking(true)
-            .map_err(|error| io_error("configure terminal worker wake", error))?;
-        if let Target::Worker(worker) = &target {
-            crate::client::install_wake_hook(worker);
-        }
+            .map_err(|error| io_error("configure terminal wake", error))?;
         let nudge = wake
             .try_clone()
-            .map_err(|error| io_error("retain terminal stream wake", error))?;
+            .map_err(|error| io_error("retain terminal output wake", error))?;
         let mailbox = Arc::new(Mailbox::new(session, notify));
         let budget = Arc::new(Budget::default());
         let outcome_mailbox = mailbox.clone();
         let outcome_budget = budget.clone();
-        let work = worker::Start {
+        let work = actor::Start {
             session,
-            target: Some(target),
+            target,
             launch,
             geometry,
             keyboard,
@@ -263,7 +261,7 @@ impl Service {
         match self.wake.send(&[1]) {
             Ok(_) => Ok(()),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(()),
-            Err(error) => Err(io_error("wake terminal after input admission", error)),
+            Err(error) => Err(io_error("wake terminal after input", error)),
         }
     }
 }

@@ -170,7 +170,6 @@ impl Editor {
             }
         }
         for (document, old, destination) in &affected {
-            self.stop_remote_follow(*document);
             self.cancel_directory_filter(*document);
             self.lsp_close_document(*document);
             self.revoke_git_requests_for(*document);
@@ -178,20 +177,6 @@ impl Editor {
             self.analysis
                 .forget(super::super::analysis::AnalysisTarget::Document(*document));
             if let Some(destination) = destination {
-                if let Filesystem::Remote(endpoint) = &destination.filesystem {
-                    if self.doc(*document).remote_metadata().is_some() {
-                        match strop_workspace::RemoteFile::from_path(
-                            endpoint.clone(),
-                            destination.path.clone(),
-                        ) {
-                            Ok(file) => self.relocate_remote_binding(*document, file),
-                            Err(error) => {
-                                self.message = format!("relocation binding refused: {error}");
-                                continue;
-                            }
-                        }
-                    }
-                }
                 let directory = self.doc(*document).directory_metadata_ref().is_some();
                 if directory {
                     let header = format!("{}\n", destination.label());
@@ -230,7 +215,7 @@ impl Editor {
                     }
                 }
             } else {
-                self.revoke_remote_write(*document);
+                self.drop_remote_write(*document);
                 if let Some(entry) = self.docs.get_mut(*document) {
                     entry.buf.detach_file_binding();
                     entry.buf.name = Some(format!("detached {} — original removed", old.label()));

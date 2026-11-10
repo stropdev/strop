@@ -35,26 +35,15 @@ impl Editor {
                     .into();
             return;
         }
-        let selection = match &intent {
-            OpenIntent::RemoteView { view, .. } => view.selection(),
-            OpenIntent::Refresh => self
-                .cur()
-                .remote_metadata()
-                .map_or(strop_remote::ReadSelection::Full, |source| source.selection),
-            _ => strop_remote::ReadSelection::Full,
-        };
         let requires_file = intent.requires_file();
         let browse = matches!(
             intent,
             OpenIntent::Browse | OpenIntent::DirectoryParent { .. }
         ) || (matches!(intent, OpenIntent::Refresh) && self.directory().is_some());
         if !matches!(target, FileTarget::Remote(_))
-            && matches!(
-                intent,
-                OpenIntent::RemoteView { .. } | OpenIntent::RemoteDestination
-            )
+            && matches!(intent, OpenIntent::RemoteDestination)
         {
-            self.message = "range/tail/follow views require a remote target".into();
+            self.message = "a remote destination requires a remote target".into();
             return;
         }
         let path = match target {
@@ -62,13 +51,10 @@ impl Editor {
             remote => remote,
         };
         self.cancel_open(worker::CancelReason::Superseded);
-        let existing = self.docs.iter().find_map(|(id, document)| {
-            (document.matches_target(&path)
-                && document
-                    .remote_metadata()
-                    .is_none_or(|source| source.selection == selection))
-            .then_some(id)
-        });
+        let existing = self
+            .docs
+            .iter()
+            .find_map(|(id, document)| document.matches_target(&path).then_some(id));
         if let Some(id) = existing.filter(|&id| {
             !matches!(intent, OpenIntent::Refresh)
                 && (!matches!(
@@ -105,7 +91,6 @@ impl Editor {
             revision: self.buf().revision(),
             focus: self.focus_epoch,
             intent,
-            selection,
         };
         if !matches!(key.intent, OpenIntent::CollectionSource { .. }) {
             self.io.navigation = Some(request);
@@ -126,8 +111,7 @@ impl Editor {
             }
         }
         let work = super::open::OpenRead {
-            worker: self.filesystem.worker().clone(),
-            remote: self.remote.workers.clone(),
+            local: self.filesystem.local().clone(),
             previous_directories: {
                 let mut previous: Vec<_> = self
                     .docs
@@ -147,7 +131,6 @@ impl Editor {
             target: path,
             browse,
             requires_file,
-            selection,
             client: self.remote_client(),
             reveal: match &ticket.key.intent {
                 OpenIntent::DirectoryParent { child } => Some(child.clone()),
@@ -241,20 +224,6 @@ impl Editor {
                         );
                         self.run_motion("^");
                     }
-                    OpenIntent::RemoteView { view, line } => {
-                        if let Some(line) = line {
-                            self.set_head(
-                                self.buf()
-                                    .line_start(line.get().min(self.buf().last_content_line())),
-                            );
-                            self.run_motion("^");
-                        } else if view.follow_limit().is_some() {
-                            self.set_head(super::super::document::last_position(self.buf().text()));
-                        }
-                        if let Some(limit) = view.follow_limit() {
-                            self.start_remote_follow(document, limit);
-                        }
-                    }
                     OpenIntent::Grep { line, column } => {
                         let line = line.get().min(self.buf().last_content_line());
                         let offset = self
@@ -296,7 +265,6 @@ impl Editor {
         match completion.outcome {
             Outcome::Success(mut opened) => {
                 if matches!(key.intent, OpenIntent::Refresh) {
-                    self.revoke_remote_write(key.origin);
                     self.finish_refresh(key.origin, opened.document);
                     return;
                 }
@@ -304,16 +272,11 @@ impl Editor {
                     opened.document.set_return_point(self.jump_record());
                 }
                 let existing = self.docs.iter().find_map(|(id, document)| {
-                    (document.matches_target(&opened.canonical)
-                        && document
-                            .remote_metadata()
-                            .is_none_or(|source| source.selection == key.selection))
-                    .then_some(id)
+                    document.matches_target(&opened.canonical).then_some(id)
                 });
                 let id = if let Some(id) = existing {
                     if self.doc(id).directory_metadata_ref().is_some() {
-                        if let Err(error) = self.publish_source_snapshot(id, opened.document, false)
-                        {
+                        if let Err(error) = self.publish_source_snapshot(id, opened.document) {
                             self.message = error.to_string();
                             return;
                         }
@@ -390,31 +353,16 @@ impl Editor {
                     OpenIntent::Switch { .. } | OpenIntent::Split { .. }
                 );
                 self.finish_open(id, key.intent);
-                if self.current() == id {
-                    if matches!(&key.path, FileTarget::Remote(_)) && self.buf().readonly {
-                        self.message = if matches!(
-                            self.buf().readonly_reason,
-                            Some(strop_core::ReadonlyReason::RemoteAuthority)
-                        ) {
-                            "remote is read-only — :remote edit to edit; :remote worker for search/Git/LSP"
-                        } else {
-                            "remote browse is read-only — :remote worker for search/Git/LSP; :remote edit applies to files"
-                        }
-                        .into();
-                    } else if matches!(&key.path, FileTarget::Local(_))
-                        && user_open
-                        && matches!(self.cur().source, super::super::DocumentSource::File)
-                        && self.buf().disk_stamp().is_none()
-                    {
-                        // Vim's `"name" [New]`: the path did not exist, so an
-                        // empty buffer was opened and only `:w` creates it.
-                        self.message = format!("\"{}\" [new file]", self.cur().label(&self.cwd));
-                    }
+                if self.current() == id
+                    && matches!(&key.path, FileTarget::Local(_))
+                    && user_open
+                    && matches!(self.cur().source, super::super::DocumentSource::File)
+                    && self.buf().disk_stamp().is_none()
+                {
+                    // Vim's `"name" [New]`: the path did not exist, so an
+                    // empty buffer was opened and only `:w` creates it.
+                    self.message = format!("\"{}\" [new file]", self.cur().label(&self.cwd));
                 }
-                // WK07: an opened remote workspace on an admitted
-                // endpoint gains a notify subscription through its
-                // worker lease; unadmitted hosts never deploy.
-                self.start_remote_notifications();
             }
             Outcome::Failed { failure, .. } => {
                 if let OpenIntent::CollectionSource { owner } = key.intent {

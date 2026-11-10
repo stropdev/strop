@@ -106,7 +106,7 @@ fn dismissal_is_presentation_only_and_completion_still_resolves() {
     let mut editor = Editor::new(Buffer::from_text("dirty\n"));
     let document = editor.current();
     let revision = editor.buf().revision();
-    editor.note_unconfirmed_save(document, false, revision, "lost local receipt".into());
+    editor.note_unconfirmed_save(document, revision, "lost local receipt".into());
     let id = editor.feedback()[0].id();
 
     editor.invoke_feedback_action(id, 1);

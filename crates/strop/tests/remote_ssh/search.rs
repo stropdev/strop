@@ -26,10 +26,6 @@ fn search_here_preserves_ssh_identity_through_preview_open_collection_and_replay
         "--log-content".into(),
     ]);
     let observed = states(&output);
-    assert!(observed[0]["message"]
-        .as_str()
-        .unwrap()
-        .contains("read-only"));
     assert_eq!(observed[1]["register"], "REMOTE needle 日本語\n");
     assert!(
         output.contains("ssh://fixture"),
