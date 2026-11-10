@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **File names have one look** (plans/0088 §2, "File names"): the directory in the secondary ink ending in its `/`, the name in the text ink — bold where it heads something (grep group headers, pane titles, the preview header, the recovery card, a directory's own path) and regular in lists (files, buffers, diagnostics, Git file lists, the statusline). Grep group headers are ruled: name, a faint leader, the hit count.
+
 ## 0.56.0 — 2026-11-10
 
 ### Changed

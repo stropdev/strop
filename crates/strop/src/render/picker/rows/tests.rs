@@ -103,10 +103,66 @@ fn file_headers_name_the_relative_path_and_hit_count() {
     let location = strop_workspace::ResourceLocation::local(PathBuf::from("/w/docs/remote.md"));
     let line = file_header(&t, &location, std::path::Path::new("/w"), Some(3), 60);
     let text = line_text(&line);
-    assert!(text.starts_with(" docs/remote.md"), "{text:?}");
-    assert!(text.trim_end().ends_with('3'), "{text:?}");
+    assert!(text.starts_with(" docs/remote.md ───"), "{text:?}");
+    assert!(text.trim_end().ends_with("─ 3"), "{text:?}");
     assert!(!text.contains("/w/"), "workspace-relative: {text:?}");
     assert_eq!(line.width(), 60);
+    // a ruled heading: directory secondary, name bold text, leader faint
+    let style = |needle: &str| {
+        line.spans
+            .iter()
+            .find(|s| s.content.as_ref() == needle)
+            .unwrap_or_else(|| panic!("{needle:?} in {text:?}"))
+            .style
+    };
+    assert_eq!(style("docs/").fg, Some(t.secondary));
+    assert_eq!(style("remote.md").fg, Some(t.text));
+    assert!(style("remote.md").add_modifier.contains(Modifier::BOLD));
+    let leader = line
+        .spans
+        .iter()
+        .find(|s| s.content.contains('─'))
+        .expect("leader");
+    assert_eq!(leader.style.fg, Some(t.faint));
+    // too tight for a leader: the gap is plain and the name is whole
+    let tight = file_header(&t, &location, std::path::Path::new("/w"), Some(3), 20);
+    let tight_text = line_text(&tight);
+    assert_eq!(tight_text, " docs/remote.md   3 ");
+    assert!(!tight_text.contains('─'));
+}
+
+#[test]
+fn buffer_rows_split_the_directory_from_the_name_and_keep_terminals_whole() {
+    let t = t();
+    let mut arena: strop_core::id::Arena<strop_core::id::DocumentKind, ()> =
+        strop_core::id::Arena::default();
+    let file = Item {
+        badge: None,
+        text: "crates/strop/src/render/card.rs".into(),
+        payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+    };
+    let line = buffer_row(&t, &file, &[], 60, false);
+    assert_eq!(
+        line_text(&line).trim_end(),
+        "  crates/strop/src/render/card.rs"
+    );
+    let dir = &line.spans[2];
+    let name = &line.spans[3];
+    assert_eq!(dir.content, "crates/strop/src/render/");
+    assert_eq!(dir.style.fg, Some(t.secondary));
+    assert_eq!(name.content, "card.rs");
+    assert_eq!(name.style.fg, Some(t.text));
+    assert!(!name.style.add_modifier.contains(Modifier::BOLD));
+    let terminal = Item {
+        badge: Some("!".into()),
+        text: "term:///w//1:sh · running".into(),
+        payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+    };
+    let line = buffer_row(&t, &terminal, &[], 60, false);
+    assert_eq!(line.spans[2].content, "term:///w//1:sh");
+    assert_eq!(line.spans[2].style.fg, Some(t.text));
+    assert_eq!(line.spans[3].content, " · running");
+    assert_eq!(line.spans[3].style.fg, Some(t.muted));
 }
 
 #[test]

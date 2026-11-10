@@ -10,6 +10,7 @@ use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
+use super::super::file_name::{self, Role};
 use super::super::style::Tokens;
 
 pub(super) fn render_preview(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
@@ -100,18 +101,31 @@ pub(super) fn render_preview(editor: &Editor, t: &Tokens, frame: &mut Frame, are
 
     let title = relative_title(editor, &title);
     // the filename ends the path: clip from the start so it survives
+    let title = super::super::clip::clip_start(&title, area.width.saturating_sub(2) as usize);
     let block = Block::default()
         .borders(Borders::LEFT)
         .border_style(Style::default().fg(t.faint))
         .style(Style::default().bg(t.surface))
-        .title(Span::styled(
-            format!(
-                " {} ",
-                super::super::clip::clip_start(&title, area.width.saturating_sub(2) as usize)
-            ),
-            Style::default().fg(t.secondary),
-        ));
+        .title(Line::from(header_spans(&title, t)));
     frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+/// ` dir/name:line ` in the heading idiom (0088 §2 "File names"): the
+/// directory secondary, the name bold, a trailing `:line` secondary.
+fn header_spans(title: &str, t: &Tokens) -> Vec<Span<'static>> {
+    let (path, line) = match title.rsplit_once(':') {
+        Some((path, line)) if !line.is_empty() && line.bytes().all(|b| b.is_ascii_digit()) => {
+            (path, &title[path.len()..])
+        }
+        _ => (title, ""),
+    };
+    let mut spans = vec![Span::raw(" ")];
+    spans.extend(file_name::spans(path, Role::Heading, t));
+    spans.push(Span::styled(
+        format!("{line} "),
+        Style::default().fg(t.secondary),
+    ));
+    spans
 }
 
 /// The header names the file relative to the workspace: an absolute

@@ -84,7 +84,7 @@ fn folder_rows_align_metadata_and_keep_selection_and_marks_visible() {
     assert_eq!(grid[(5, 2)].fg, crate::render::tokens().accent);
     assert_eq!(grid[(5, 3)].fg, crate::render::tokens().text);
     assert_eq!(grid[(34, 3)].fg, crate::render::tokens().muted);
-    assert_eq!(grid[(5, 0)].fg, crate::render::tokens().muted);
+    assert_eq!(grid[(5, 0)].fg, crate::render::tokens().secondary);
     assert!(grid[(16, 0)].modifier.contains(Modifier::BOLD));
     editor.feed_text(":fs mark\rj");
     let marked = frame(&mut editor, 80, 9);

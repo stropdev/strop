@@ -48,6 +48,18 @@ and draws chrome through one primitive module (`render/card.rs`). Nothing in
    `columns − 4` at ≥ 100 columns and full-bleed below.
 10. **Hints are whole chords or nothing**, everywhere.
 
+**Amendment 2026-11-10 — File names.** A path is two inks, through one helper
+(`render/file_name.rs`): the directory is context in `fg.secondary`, ending in
+its own `/`; the basename is the identity in `fg.text`. The name is **bold where
+it is a heading** — a grep group header, a pane title, the preview header, the
+recovery card's subject, a directory buffer's own path — and regular inside a
+list (files, buffers, diagnostics, git file lists, the statusline). Clipping
+spends the directory first, from the left, so the name survives. A grep group
+header is a *ruled heading*: name, a `fg.faint` leader `───`, the hit count in
+`fg.secondary` — the same grammar as a pane title in its border, so grouping
+reads without relying on how a terminal draws bold. File names are never
+chips (rule 6 stands), never the accent (rule 2), never a syntax ink.
+
 Messages get their own **echo row** above the statusline, present only while a
 message is live, ordered by severity (error > warning > info). Errors stay until
 the next keypress; info expires (4 s or first keypress). The statusline has no

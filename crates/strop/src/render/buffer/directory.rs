@@ -2,6 +2,7 @@
 //! comes from the listing; selection/search/caret keep the shared text renderer.
 use crate::editor::Directory;
 use crate::render::diff;
+use crate::render::file_name;
 use crate::render::style::Tokens;
 use ratatui::{
     style::{Modifier, Style},
@@ -35,12 +36,14 @@ pub(super) fn row(
                 slash + 1
             }
         });
+        // the listing's own path in the heading idiom (0088 §2 "File
+        // names"): parents secondary, the leaf bold
         return Some(diff::RowDecoration {
             spans: vec![
-                Span::styled(path[..leaf].to_owned(), quiet),
+                Span::styled(path[..leaf].to_owned(), file_name::dir_style(t)),
                 Span::styled(
                     path[leaf..].to_owned(),
-                    Style::default().fg(t.text).add_modifier(Modifier::BOLD),
+                    file_name::name_style(file_name::Role::Heading, t),
                 ),
                 Span::styled(count.to_owned(), quiet),
             ],

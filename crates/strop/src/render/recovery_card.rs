@@ -4,7 +4,7 @@
 //! is chosen.
 
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -13,6 +13,7 @@ use crate::editor::{Editor, InputOwner};
 
 use super::card::{card_width, keycap, Card, Hint};
 use super::clip::{clip_start, width};
+use super::file_name;
 use super::style::Tokens;
 
 const CHOICES: [(&str, &str); 4] = [
@@ -69,11 +70,10 @@ pub(super) fn render(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         .hints(HINTS)
         .render(frame, rect, t);
     let cells = usize::from(inner.width);
+    // the card's subject in the heading idiom (0088 §2 "File names")
+    let path = clip_start(&offer.path, cells);
     let mut lines = vec![
-        Line::from(Span::styled(
-            clip_start(&offer.path, cells).into_owned(),
-            Style::default().fg(t.text).add_modifier(Modifier::BOLD),
-        )),
+        Line::from(file_name::spans(&path, file_name::Role::Heading, t).to_vec()),
         Line::from(Span::styled(
             super::clip::clip_end(summary, cells).into_owned(),
             Style::default().fg(t.secondary),

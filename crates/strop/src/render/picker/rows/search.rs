@@ -11,6 +11,7 @@ use super::super::window::{match_window, replacement_window};
 use super::{emphasis, finish, generic_row, plain, relative_label};
 use crate::render::card::row_marker;
 use crate::render::clip;
+use crate::render::file_name;
 use crate::render::style::Tokens;
 
 /// Distinct files among the included Search hits.
@@ -29,8 +30,12 @@ pub(in crate::render::picker) fn file_count(picker: &strop_picker::Picker) -> us
 
 // ---- Search rows ------------------------------------------------------------
 
-/// One header per file group (U7): the workspace-relative path in text,
-/// the file's hit count in secondary at the right edge, on the surface.
+/// One header per file group (U7), a ruled heading: the file name in
+/// the heading idiom (directory secondary, name bold), a faint leader
+/// to the file's hit count in secondary at the right edge — the same
+/// grammar as a pane title in its border. The path clips from the
+/// start so the name survives; the leader takes whatever is left and
+/// yields to a plain gap before the name does.
 pub(super) fn file_header(
     t: &Tokens,
     location: &strop_workspace::ResourceLocation,
@@ -42,14 +47,20 @@ pub(super) fn file_header(
     let count = hits.map(|hits| hits.to_string()).unwrap_or_default();
     let budget = usize::from(width).saturating_sub(count.chars().count() + 3);
     let label = clip::clip_start(&label, budget.max(4));
-    let pad = usize::from(width).saturating_sub(1 + clip::width(&label) + count.len() + 1);
-    let spans = vec![
-        plain(" ", Style::default()),
-        plain(label.into_owned(), Style::default().fg(t.text)),
-        plain(" ".repeat(pad.max(1)), Style::default()),
-        plain(count, Style::default().fg(t.secondary)),
-        plain(" ", Style::default()),
-    ];
+    let gap = usize::from(width).saturating_sub(1 + clip::width(&label) + count.len() + 1);
+    let mut spans = vec![plain(" ", Style::default())];
+    spans.extend(file_name::spans(&label, file_name::Role::Heading, t));
+    // ` ─── ` needs five cells to read as a leader; less is a plain gap
+    if gap >= 5 {
+        spans.push(plain(
+            format!(" {} ", "─".repeat(gap - 2)),
+            Style::default().fg(t.faint),
+        ));
+    } else {
+        spans.push(plain(" ".repeat(gap.max(1)), Style::default()));
+    }
+    spans.push(plain(count, Style::default().fg(t.secondary)));
+    spans.push(plain(" ", Style::default()));
     finish(t, spans, width, false)
 }
 

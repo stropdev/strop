@@ -39,7 +39,7 @@ $
                                                                                                                                             
 TERMINAL  term:///work//1:sh                                                                                     ctrl-\ ctrl-n  NORMAL   1:1
 
-  0: 2:#aeb3ba/#f6f2e9 2:#656d7b/#f6f2e9 24:#656d7b/#f6f2e9+b 112:#aeb3ba/#f6f2e9
+  0: 2:#aeb3ba/#f6f2e9 13:#656d7b/#f6f2e9 13:#656d7b/#f6f2e9+b 112:#aeb3ba/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#8a510f/#f6f2e9 1:#696d77/#aeb3ba+i 50:#696d77/#f6f2e9+i 83:reset/#f6f2e9 1:#656d7b/#f6f2e9
   2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 131:reset/#f6f2e9 1:#656d7b/#f6f2e9
   3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 53:#696d77/#f6f2e9+i 81:reset/#f6f2e9 1:#656d7b/#f6f2e9

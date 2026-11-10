@@ -23,7 +23,7 @@
 ~                                      │~                                       
  NORMAL   src/render/statusline.rs                                      9:1  45%
 
-  0: 2:#aeb3ba/#f6f2e9 2:#656d7b/#f6f2e9 24:#656d7b/#f6f2e9+b 12:#aeb3ba/#f6f2e9 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 24:#262a30/#f6f2e9+b 12:#656d7b/#f6f2e9
+  0: 2:#aeb3ba/#f6f2e9 13:#656d7b/#f6f2e9 13:#656d7b/#f6f2e9+b 12:#aeb3ba/#f6f2e9 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 11:#4b525c/#f6f2e9 13:#262a30/#f6f2e9+b 12:#656d7b/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 33:#696d77/#f6f2e9+i 1:reset/reset 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 34:#696d77/#f6f2e9+i 1:reset/reset
   2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 30:reset/#f6f2e9 1:reset/reset 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 31:reset/#f6f2e9 1:reset/reset
   3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 33:#696d77/#f6f2e9+i 1:reset/reset 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 34:#696d77/#f6f2e9+i 1:reset/reset

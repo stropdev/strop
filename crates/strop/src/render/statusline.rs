@@ -27,6 +27,7 @@ use crate::editor::Editor;
 
 use super::card::{hint_spans, Hint};
 use super::clip::{clip_end, width};
+use super::file_name;
 use super::style::Tokens;
 
 mod chip;
@@ -205,16 +206,15 @@ impl Modeline {
             ));
             spans.push(Span::raw(" "));
         }
+        // the file-name idiom (0088 §2 "File names"), row weight: the
+        // modeline is one quiet row, not a heading
         if !self.dir.is_empty() {
-            spans.push(Span::styled(
-                self.dir.as_str(),
-                Style::default().fg(t.secondary),
-            ));
+            spans.push(Span::styled(self.dir.as_str(), file_name::dir_style(t)));
         }
         if !self.name.is_empty() {
             spans.push(Span::styled(
                 self.name.as_str(),
-                Style::default().fg(t.text),
+                file_name::name_style(file_name::Role::Row, t),
             ));
         }
         if self.dirty {
