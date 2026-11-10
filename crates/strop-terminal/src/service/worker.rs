@@ -21,7 +21,7 @@ use strop_core::worker::CancelToken;
 
 pub(super) struct Start {
     pub session: SessionId,
-    pub worker: strop_worker_client::Worker,
+    pub target: Option<crate::transport::Target>,
     pub launch: Launch,
     pub geometry: Geometry,
     pub keyboard: u8,
@@ -37,7 +37,7 @@ pub(super) struct Start {
     pub budget: Arc<Budget>,
 }
 impl Start {
-    pub fn run(self, token: CancelToken) -> Update {
+    pub fn run(mut self, token: CancelToken) -> Update {
         if token.is_cancelled() {
             return empty_update(
                 self.session,
@@ -62,9 +62,16 @@ impl Start {
                 )
             }
         };
+        let Some(target) = self.target.take() else {
+            return empty_update(
+                self.session,
+                Phase::Failed("terminal target already consumed".into()),
+                None,
+            );
+        };
         let client = match Client::spawn(
             self.session,
-            self.worker.clone(),
+            target,
             &self.launch,
             self.geometry,
             crate::client::EmulationSettings {

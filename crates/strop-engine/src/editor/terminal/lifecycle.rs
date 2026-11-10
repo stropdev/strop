@@ -4,6 +4,7 @@ use strop_core::Buffer;
 use strop_terminal::{
     launch::Launch,
     model::{Effect, Palette, Update, MAX_COLUMNS, MAX_ROWS, MAX_SESSIONS},
+    service::Target,
 };
 
 impl Editor {
@@ -62,8 +63,8 @@ impl Editor {
         location: strop_workspace::ResourceLocation,
         command: &str,
     ) {
-        let worker = match terminal_worker(self, &location) {
-            Ok(worker) => worker,
+        let target = match terminal_target(self, &location) {
+            Ok(target) => target,
             Err(message) => {
                 self.message = message;
                 return;
@@ -158,7 +159,7 @@ impl Editor {
             || {
                 Service::start(
                     session,
-                    worker,
+                    target,
                     launch,
                     geometry,
                     keyboard,
@@ -541,23 +542,22 @@ impl Editor {
     }
 }
 
-/// The worker owning one terminal's namespace (0058 WK12): the local
-/// namespace rides the session's local worker lease; an SSH workspace
-/// rides its already-admitted endpoint lease (deploy is consent-gated and
-/// blocking, so a terminal never triggers it from the input path — an
-/// endpoint without a live lease is a typed refusal); no path falls back
-/// to the host.
-fn terminal_worker(
+/// Where one terminal's PTY runs (0090 §4). A local directory spawns the
+/// PTY in the editor process; an SSH workspace rides its already-admitted
+/// worker lease (deploy is consent-gated and blocking, so a terminal never
+/// triggers it from the input path — an endpoint without a live lease is
+/// a typed refusal). No remote path ever falls back to the host.
+fn terminal_target(
     editor: &Editor,
     location: &strop_workspace::ResourceLocation,
-) -> Result<strop_worker_client::Worker, String> {
+) -> Result<Target, String> {
     match &location.filesystem {
-        strop_workspace::Filesystem::Local => Ok(editor.filesystem.worker().clone()),
+        strop_workspace::Filesystem::Local => Ok(Target::Local),
         strop_workspace::Filesystem::Remote(endpoint) => editor
             .remote
             .workers
             .get(endpoint)
-            .map(|worker| worker.worker().clone())
+            .map(|worker| Target::Worker(worker.worker().clone()))
             .ok_or_else(|| {
                 format!(
                     "no admitted worker on {endpoint}: interactive terminals there need one \

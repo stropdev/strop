@@ -8,7 +8,7 @@
 - **NORMAL on a terminal is a live buffer**: output lands as it arrives and the view follows it while the cursor is on the last line — `k`, `Ctrl-U` or a search stop following, `G` resumes — instead of a pinned snapshot that needed an explicit refresh.
 - **`TERMINAL` is its own mode chip**; NORMAL on a terminal buffer is plain `NORMAL`, with no `[RO]` and no hint row. Terminal buffers are named `term://{cwd}//{N}:{program}` in `Space b`, pane titles and the modeline.
 - **`:q` hides a running terminal, `:bd!` stops it**; `:qa` with running sessions is one notice (`N terminals running — :qa! stops them`) instead of a picker, and `:qa!` stops them and quits.
-- **Remote terminals start the user's login shell** (`$SHELL -l` on the host) instead of `/bin/sh`.
+- **Local terminals run their PTY in the editor process** instead of on the local worker: no worker round trip between a keystroke and the shell. Remote (SSH) sessions keep the worker path and start the user's login shell (`$SHELL -l` on the host) instead of `/bin/sh`.
 
 ### Added
 

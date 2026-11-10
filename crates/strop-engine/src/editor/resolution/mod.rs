@@ -77,7 +77,15 @@ struct Pending {
     purpose: ResolutionPurpose,
     cancel: Arc<AtomicBool>,
     macro_depth: usize,
+    /// Re-issues against a live terminal buffer whose output moved the
+    /// revision under the resolver (0090 §4); bounded so a flood cannot
+    /// pin the input queue forever.
+    retries: u8,
 }
+
+/// Re-resolutions a live terminal buffer gets before its deferred input
+/// is dropped like any other stale delivery.
+const LIVE_RETRIES: u8 = 8;
 pub enum DeferredInput {
     Key(Key),
     GeneratedKey {
@@ -458,6 +466,7 @@ impl Editor {
             purpose,
             cancel: cancel.clone(),
             macro_depth: self.macro_depth,
+            retries: 0,
         });
         match self.tape.request("grammar.resolve", &ticket) {
             Ok(false) => return true,
@@ -535,6 +544,27 @@ impl Editor {
                 }
             };
         if !current {
+            // A terminal buffer is live (0090 §4): its own output moves the
+            // revision under a motion. That is not a changed source the
+            // user caused, so the motion is resolved again on the new text
+            // and the keys typed behind it stay queued — never dropped.
+            let live_terminal = !self.finishing
+                && !self.docs.is_empty()
+                && self.current() == key.document
+                && self.active_pane == key.pane
+                && self.buf().revision() != key.revision
+                && self.terminal_document(key.document).is_some()
+                && matches!(key.operation, Operation::Grammar(_))
+                && pending.retries < LIVE_RETRIES;
+            if live_terminal {
+                let cursors = self.all_cursors();
+                self.defer_operation(key.operation, cursors, pending.purpose);
+                if let Some(again) = self.resolution.pending.as_mut() {
+                    again.retries = pending.retries + 1;
+                    again.macro_depth = pending.macro_depth;
+                }
+                return;
+            }
             self.resolution.queue.clear();
             if !self.finishing {
                 self.message =

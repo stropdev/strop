@@ -485,6 +485,59 @@ fn re_entry_restores_the_view_and_lands_in_normal() {
     assert_eq!(line(&editor), 30);
 }
 
+/// A live terminal buffer moves its revision under a deferred motion.
+/// The motion is resolved again on the new text and the keys typed
+/// behind it are kept — `i` still lands in TERMINAL mode — instead of
+/// being dropped as a stale delivery (0090 §4).
+#[test]
+fn output_under_a_pending_motion_keeps_the_typed_keys() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    let rows: Vec<String> = (0..200)
+        .map(|index| format!("row {index:03} {}", "x".repeat(60)))
+        .collect();
+    let refs: Vec<(&str, Style)> = rows
+        .iter()
+        .map(|row| (row.as_str(), Style::default()))
+        .collect();
+    let id = editor.terminal_fixture(&refs, Phase::Running);
+    editor.resolution.enabled = true;
+    assert!(
+        editor.buf().len_bytes() > 4096,
+        "large enough to resolve asynchronously"
+    );
+    editor.feed(Key::Char('i'));
+    to_normal(&mut editor);
+    editor.feed_text("gg");
+    editor.feed(Key::Char('j'));
+    assert!(
+        editor.resolution.blocked(),
+        "the motion resolves off the input thread"
+    );
+    editor.feed(Key::Char('i'));
+    assert!(!editor.terminal_input_active(), "i waits behind the motion");
+    // Output lands while the motion is in flight.
+    let mut more: Vec<&str> = rows.iter().map(String::as_str).collect();
+    more.push("row 200 fresh");
+    publish(&mut editor, id, &more, 2, 0);
+    while editor.resolution.pending() {
+        if !editor.resolution.blocked() && !editor.resolution.queue.is_empty() {
+            editor.resume_deferred_input();
+        } else {
+            let event = editor
+                .resolution
+                .rx
+                .as_ref()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .expect("grammar worker settles");
+            editor.handle_resolution(event);
+        }
+    }
+    assert!(editor.terminal_input_active(), "{}", editor.message);
+    assert!(!editor.message.contains("cancelled"), "{}", editor.message);
+}
+
 /// 0090 §4 (0089 B7/T7): `:qa` with running sessions is one notice, no
 /// picker; `:qa!` stops them and quits.
 #[test]
