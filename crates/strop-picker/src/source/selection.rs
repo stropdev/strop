@@ -70,7 +70,10 @@ pub fn walk(
         .git_exclude(effective.respect_ignore);
     builder
         .git_global(effective.respect_ignore)
-        .parents(effective.respect_ignore);
+        .parents(effective.respect_ignore)
+        // Directory order is the filesystem's; sorting by name makes the
+        // file finder and search list the same tree the same way everywhere.
+        .sort_by_file_name(|a, b| a.cmp(b));
     for result in builder.build() {
         if cancelled() {
             return Ok(());

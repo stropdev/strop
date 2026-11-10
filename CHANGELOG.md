@@ -23,6 +23,7 @@
 - **Leader commands that decline now say why** (symbols or hover without a language server, an empty undo tree).
 - **No "Dev container discovery completed" notice** when no dev container exists.
 - **Terminal sessions number from 1** in each editor instead of from a process-wide counter.
+- **The file finder and search list files in name order**, the same on every filesystem, instead of the directory's raw order.
 
 ### Proofs
 

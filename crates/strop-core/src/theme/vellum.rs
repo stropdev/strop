@@ -2,7 +2,8 @@
 //! cast, so it stays distinct from Paper (0087 §4.3). The surface is one
 //! step lighter than the base and the raised plane one step deeper, so
 //! the ladder measures 1.08 / 1.19 against the base; the selection is
-//! `#d1c9b3` (1.48:1) and the comment `#696d77` to clear 4.5:1.
+//! `#d1c9b3` (1.48:1), the comment `#696d77` to clear 4.5:1, and the accent
+//! `#8a510f` so keycaps (accent on raised) clear 4.5:1 too.
 
 use super::{hex, Backgrounds, Diagnostics, Diffs, Foregrounds, Modes, Syntax, Theme};
 
@@ -29,12 +30,12 @@ pub const VELLUM: Theme = Theme {
         guide: hex(0xd8d3c8),
         on_accent: hex(0xf6f2e9),
     },
-    accent: hex(0x9a5a12),
+    accent: hex(0x8a510f),
     mode: Modes {
         insert: hex(0x3f7a3a),
         visual: hex(0x6a3faa),
         replace: hex(0xb03a3a),
-        pending: hex(0x9a5a12),
+        pending: hex(0x8a510f),
         terminal: hex(0x1f6f7a),
     },
     diag: Diagnostics {
@@ -54,7 +55,7 @@ pub const VELLUM: Theme = Theme {
         r#type: hex(0x1f6e5c),
         string: hex(0x4e6f22),
         number: hex(0x9c4a22),
-        constant: hex(0x9a5a12),
+        constant: hex(0x8a510f),
         attribute: hex(0x7a5a14),
         operator: hex(0x4b525c),
         punctuation: hex(0x656d7b),
@@ -62,7 +63,7 @@ pub const VELLUM: Theme = Theme {
         variable: hex(0x262a30),
         property: hex(0x3a3f47),
         namespace: hex(0x1f6e5c),
-        heading: hex(0x9a5a12),
+        heading: hex(0x8a510f),
         link: hex(0x2a6a94),
         code: hex(0x4e6f22),
     },
@@ -78,7 +79,7 @@ pub const VELLUM: Theme = Theme {
         hex(0x656d7b),
         hex(0xc9454f),
         hex(0x5f8530),
-        hex(0x9a5a12),
+        hex(0x8a510f),
         hex(0x2a6a94),
         hex(0x8a55c0),
         hex(0x2a8370),

@@ -145,7 +145,7 @@ Departures, with reasons:
 - **Palette values** moved where a §3 rule failed on the surface plane: Hone
   `fg.muted #858c9a`, `syn.comment #838a97`; Slate `syn.comment #878d9a`,
   `syn.punctuation #9ea3ab`; Vellum `bg.surface #fdfbf6`, `bg.raised #e5dfd0`,
-  `bg.selection #d1c9b3`, `syn.comment #696d77`; Paper `bg.surface #eef1e8`,
+  `bg.selection #d1c9b3`, `syn.comment #696d77`, `accent #8a510f` (keycaps — accent on raised — now ≥ 4.5:1, a rule the palette test enforces); Paper `bg.surface #eef1e8`,
   `bg.raised #dbe2d6`, `bg.selection #c2d2ba`, `syn.number #92592f`; Paper Dark
   `syn.punctuation #b4c0b4`. Carbide's separate black statusline is dropped
   (statusline = surface).
@@ -167,5 +167,5 @@ Departures, with reasons:
   `rootUri` would break.
 - **U4** (Esc in `/` `:`) awaits the owner's decision; unchanged.
 
-Also fixed on the way: `x` left its undo group open, so `xxu` undid both
+Also fixed on the way: search and file-finder walks sort directory entries by name, so results no longer follow the filesystem's raw order (it made the grep golden differ between host and Docker); goldens redact the crate version so a release bump is not a visual change. `x` left its undo group open, so `xxu` undid both
 characters (differential case `xlxu` added).

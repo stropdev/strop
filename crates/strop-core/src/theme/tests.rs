@@ -80,6 +80,8 @@ fn inks_clear_their_floors_on_base_and_surface() {
             }
         }
         assert_at_least(id, "on_accent", palette.fg.on_accent, palette.accent, 4.5);
+        // Keycaps are accent bold on the raised plane (0088 §2 rule 6).
+        assert_at_least(id, "keycap", palette.accent, palette.bg.raised, 4.5);
     }
 }
 

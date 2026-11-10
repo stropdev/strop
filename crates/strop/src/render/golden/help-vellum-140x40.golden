@@ -1,4 +1,4 @@
-   1 strop 0.53.0 · help · / search · q close                                                                                              ▮
+   1 strop <version> · help · / search · q close                                                                                              ▮
    2                                                                                                                                       ▮
    3 ─ Moving ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────▮
    4    h j k l                       move (never off the line)                                                                            ▮
@@ -39,43 +39,43 @@
   39 ─ Editing ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 
  NORMAL   help [RO]                                                                                                                  1:1  0%
 
-  0: 1:#656d7b/#f6f2e9+b 4:#9a5a12/#f6f2e9 12:#262a30/#f6f2e9+b 28:#656d7b/#f6f2e9 94:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  0: 1:#656d7b/#f6f2e9+b 4:#8a510f/#f6f2e9 12:#262a30/#f6f2e9+b 28:#656d7b/#f6f2e9 94:reset/#f6f2e9 1:#656d7b/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:#656d7b/#f6f2e9
   2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#aeb3ba/#f6f2e9 6:#262a30/#f6f2e9+b 126:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 27:#262a30/#f6f2e9 76:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 21:#262a30/#f6f2e9 82:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 35:#262a30/#f6f2e9 68:reset/#f6f2e9 1:reset/reset
-  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 32:#262a30/#f6f2e9 71:reset/#f6f2e9 1:reset/reset
-  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 27:#262a30/#f6f2e9 76:reset/#f6f2e9 1:reset/reset
-  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 27:#262a30/#f6f2e9 76:reset/#f6f2e9 1:reset/reset
-  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 35:#262a30/#f6f2e9 68:reset/#f6f2e9 1:reset/reset
- 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
- 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
- 12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 13:#262a30/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
- 13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 49:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
- 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 28:#262a30/#f6f2e9 75:reset/#f6f2e9 1:reset/reset
- 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
- 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
- 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
- 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
- 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
- 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
- 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 17:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
- 22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 21:#262a30/#f6f2e9 82:reset/#f6f2e9 1:reset/reset
- 23: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
- 24: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 31:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
- 25: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
- 26: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 30:#262a30/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
- 27: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 34:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
- 28: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 41:#262a30/#f6f2e9 62:reset/#f6f2e9 1:reset/reset
- 29: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 45:#262a30/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
- 30: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 15:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
- 31: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
- 32: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 20:#262a30/#f6f2e9 83:reset/#f6f2e9 1:reset/reset
- 33: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 14:#262a30/#f6f2e9 89:reset/#f6f2e9 1:reset/reset
- 34: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 30:#262a30/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
- 35: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 44:#262a30/#f6f2e9 59:reset/#f6f2e9 1:reset/reset
- 36: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#9a5a12/#e5dfd0+b 17:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 27:#262a30/#f6f2e9 76:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 21:#262a30/#f6f2e9 82:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 35:#262a30/#f6f2e9 68:reset/#f6f2e9 1:reset/reset
+  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 32:#262a30/#f6f2e9 71:reset/#f6f2e9 1:reset/reset
+  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 27:#262a30/#f6f2e9 76:reset/#f6f2e9 1:reset/reset
+  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 27:#262a30/#f6f2e9 76:reset/#f6f2e9 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 35:#262a30/#f6f2e9 68:reset/#f6f2e9 1:reset/reset
+ 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
+ 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 13:#262a30/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
+ 13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 49:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 28:#262a30/#f6f2e9 75:reset/#f6f2e9 1:reset/reset
+ 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
+ 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
+ 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
+ 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
+ 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 17:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
+ 22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 21:#262a30/#f6f2e9 82:reset/#f6f2e9 1:reset/reset
+ 23: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
+ 24: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 31:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
+ 25: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
+ 26: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 30:#262a30/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+ 27: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 34:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
+ 28: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 41:#262a30/#f6f2e9 62:reset/#f6f2e9 1:reset/reset
+ 29: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 45:#262a30/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
+ 30: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 15:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+ 31: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
+ 32: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 20:#262a30/#f6f2e9 83:reset/#f6f2e9 1:reset/reset
+ 33: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 14:#262a30/#f6f2e9 89:reset/#f6f2e9 1:reset/reset
+ 34: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 30:#262a30/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+ 35: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 44:#262a30/#f6f2e9 59:reset/#f6f2e9 1:reset/reset
+ 36: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 17:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
  37: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
  38: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#aeb3ba/#f6f2e9 7:#262a30/#f6f2e9+b 125:#aeb3ba/#f6f2e9 1:reset/reset
- 39: 8:#f6f2e9/#9a5a12+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 114:reset/#fdfbf6 7:#656d7b/#fdfbf6
+ 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 114:reset/#fdfbf6 7:#656d7b/#fdfbf6

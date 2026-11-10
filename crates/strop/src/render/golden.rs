@@ -4,7 +4,9 @@
 //! regression fails the same as a glyph regression. No snapshot crate:
 //! `STROP_UPDATE_GOLDEN=1 cargo test` rewrites the files under
 //! `crates/strop/src/render/golden/`; a plain run compares and prints the
-//! first differing line.
+//! first differing line. The crate version is redacted to `<version>` in
+//! the character grid (the help header shows it), so a release bump is not
+//! a visual change.
 
 use std::path::PathBuf;
 
@@ -30,9 +32,11 @@ fn color_label(color: Color) -> String {
 pub(crate) fn render_text(grid: &Buffer) -> String {
     let mut out = String::new();
     for y in 0..grid.area.height {
+        let mut row = String::new();
         for symbol in crate::headless::row_symbols(grid, y) {
-            out.push_str(symbol);
+            row.push_str(symbol);
         }
+        out.push_str(&row.replace(env!("CARGO_PKG_VERSION"), "<version>"));
         out.push('\n');
     }
     out.push('\n');
