@@ -25,9 +25,14 @@ impl Editor {
                 }
             }
             LspEvent::Failed { server, name, hint } => {
+                // Captured before teardown erases the bindings (0091 §2.4).
+                let restart = self.lsp_restart_plan(server);
                 if self.record_lsp_failure(server, &name, &hint) {
                     self.lsp_failed(server);
-                    self.message = format!("lsp: {name} failed — :explain for details");
+                    self.message = match restart {
+                        Some(plan) => self.lsp_restart(plan, &name),
+                        None => format!("lsp: {name} failed — :explain for details"),
+                    };
                 } else {
                     trace::services::rejected("lsp", "failure for an unowned server");
                 }

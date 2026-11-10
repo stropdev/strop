@@ -318,6 +318,7 @@ mod navigation;
 mod diagnostics;
 
 mod attachment;
+mod project;
 
 mod warm_up {
     use super::super::attach::{AttachDecision, AttachKey, Attachment};

@@ -130,12 +130,42 @@ impl Editor {
             }
         }
         let attach = &self.lsp_state.attach;
-        let best = attach
+        let covering = attach
             .attached
             .iter()
             .filter(|a| a.language == language && &a.target == target && path.starts_with(&a.root))
-            .max_by_key(|a| a.root.as_os_str().len())?;
-        Some((best.server, best.root.clone()))
+            .max_by_key(|a| a.root.as_os_str().len());
+        if let Some(best) = covering {
+            return Some((best.server, best.root.clone()));
+        }
+        self.lsp_project_server(path, language, target)
+    }
+
+    /// A local document outside the pinned project — a library source, a
+    /// loose file — belongs to the project's server for its language
+    /// (plan 0091 §2.3; rust-analyzer, clangd and gopls serve library
+    /// files from the workspace that depends on them). Only when that
+    /// owner is unambiguous: with two project servers for the language
+    /// there is no single context, and 0049 §4.2 forbids picking one.
+    fn lsp_project_server(
+        &self,
+        path: &Path,
+        language: &str,
+        target: &Filesystem,
+    ) -> Option<(ServerId, PathBuf)> {
+        if *target != Filesystem::Local || path.starts_with(&self.cwd) {
+            return None;
+        }
+        let mut owners = self.lsp_state.attach.attached.iter().filter(|a| {
+            a.target == *target
+                && same_language_family(&a.language, language)
+                && (a.root.starts_with(&self.cwd) || self.cwd.starts_with(&a.root))
+        });
+        let owner = owners.next()?;
+        owners
+            .next()
+            .is_none()
+            .then(|| (owner.server, owner.root.clone()))
     }
 
     /// The first recorded layer diagnostic, when any — readiness and
@@ -207,6 +237,12 @@ impl Editor {
         }
         trace::services::rejected("lsp", reason);
     }
+}
+
+/// One server speaks both C and C++ (0049 §4.4); every other language
+/// is its own family.
+fn same_language_family(served: &str, language: &str) -> bool {
+    served == language || (matches!(served, "c" | "cpp") && matches!(language, "c" | "cpp"))
 }
 
 fn args_key(args: &attach::AttachArgs) -> AttachKey {

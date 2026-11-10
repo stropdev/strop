@@ -106,16 +106,19 @@ fn a_second_project_never_switches_an_existing_binding() {
 
 #[test]
 fn manual_external_open_names_the_context_route() {
-    // 0049 §4.6: a server exists but doesn't cover this path — the
-    // message says so and names the way in, no install red herring.
+    // 0049 §4.6 as amended by 0091 §2.3: with two project servers for
+    // the language there is no single context — the message says so
+    // and names the way in, no install red herring, no arbitrary pick.
     let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
     e.buf_mut().path = Some(PathBuf::from("/usr/include/lonely.hpp"));
-    e.lsp_state.attach.attached.push(super::attach::Attachment {
-        language: "cpp".into(),
-        root: PathBuf::from("/proj"),
-        server: ServerId::new(7),
-        target: strop_workspace::Filesystem::Local,
-    });
+    for (server, root) in [(7, "/proj/a"), (8, "/proj/b")] {
+        e.lsp_state.attach.attached.push(super::attach::Attachment {
+            language: "cpp".into(),
+            root: PathBuf::from(root),
+            server: ServerId::new(server),
+            target: strop_workspace::Filesystem::Local,
+        });
+    }
     e.lsp_request(RequestKind::Goto);
     assert!(
         e.message.contains("no language context"),
@@ -505,7 +508,7 @@ fn navigation_changed_during_load_does_not_switch_or_consume_new_request() {
 }
 
 #[test]
-fn external_navigation_crash_reports_failure_and_reattaches_once() {
+fn external_navigation_crash_restarts_and_rebinds_the_library_document() {
     use std::time::{Duration, Instant};
 
     const SERVER: &str = r#"
@@ -674,36 +677,19 @@ while True:
         hint: "unrelated failure".into(),
     });
 
-    e.feed(Key::CtrlO);
-    assert_eq!(e.current(), origin);
-    assert!(
-        e.lsp_state.attach.pending.is_empty(),
-        "returning to the failed workspace does not itself restart a crashed server"
-    );
+    // 0091 §2.4: the crash is visible AND the server restarts — once,
+    // without the user switching buffers or repeating a request. The
+    // unrelated, never-served workspace above restarts nothing.
+    assert_eq!(e.current(), external_document);
+    assert_eq!(e.lsp_state.attach.pending.len(), 1);
     assert_eq!(
-        std::fs::read_to_string(&log)
-            .unwrap()
-            .lines()
-            .filter(|line| *line == "start")
-            .count(),
-        1
+        e.lsp_state
+            .restarts
+            .iter()
+            .map(|restart| (restart.root.clone(), restart.attempts))
+            .collect::<Vec<_>>(),
+        vec![(root.clone(), 1)]
     );
-    e.feed_text("gd");
-    assert_eq!(e.lsp_state.attach.pending.len(), 1);
-    assert!(e.message.contains("rust-analyzer failed"), "{}", e.message);
-    assert!(e.message.contains("reattaching"), "{}", e.message);
-    assert!(
-        e.message.contains("repeat goto definition after ready"),
-        "{}",
-        e.message
-    );
-    assert!(e.message.contains(":explain"), "{}", e.message);
-    assert!(!e.message.contains("install"), "{}", e.message);
-    assert!(!e.message.contains("languages.toml"), "{}", e.message);
-
-    // Repetition while discovery is pending cannot spawn a background loop.
-    e.feed_text("gd");
-    assert_eq!(e.lsp_state.attach.pending.len(), 1);
     pump_until(&mut e, "the replacement attachment", |e| {
         e.lsp_servers.len() == 1
     });
@@ -717,15 +703,39 @@ while True:
     pump_until(&mut e, "the replacement server to become ready", |e| {
         e.lsp_servers.iter().any(|server| server.ready)
     });
+    let replacement = e.lsp_servers[0].id;
     assert_eq!(e.lsp_state.failures.len(), 1);
     assert_eq!(e.lsp_state.failures[0].root, unrelated_root);
     assert_eq!(e.lsp_state.failures[0].reason, "unrelated failure");
+    // Both documents the dead server served are open on the replacement:
+    // the project file and the library file outside the root.
+    for document in [origin, external_document] {
+        assert_eq!(
+            e.lsp_state
+                .bindings
+                .get(&document)
+                .map(|binding| (binding.server, binding.root.clone())),
+            Some((replacement, root.clone()))
+        );
+    }
+    assert!(
+        e.lsp_state.attach.pending.is_empty(),
+        "one restart, no background loop"
+    );
+    // Navigating back and forth keeps the client on both sides.
+    e.feed(Key::CtrlO);
+    assert_eq!(e.current(), origin);
+    e.feed(Key::Tab);
+    assert_eq!(e.current(), external_document);
+    assert!(e.lsp_state.attach.pending.is_empty());
+    assert_eq!(e.lsp_servers.len(), 1);
 
     let log = std::fs::read_to_string(log).unwrap();
     assert_eq!(log.lines().filter(|line| *line == "start").count(), 2);
     assert_eq!(
         log.lines().filter(|line| *line == "external-open").count(),
-        1
+        2,
+        "the library file is reopened on the replacement"
     );
     assert_eq!(
         log.lines()

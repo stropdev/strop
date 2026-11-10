@@ -61,6 +61,10 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ),
     ("trust", "authorize the pending endpoint/project command"),
     (
+        "pwd",
+        "show the pinned project root (Files, Search, terminals)",
+    ),
+    (
         "explain",
         "why: workspaces, LSP readiness/failures, effective config",
     ),
