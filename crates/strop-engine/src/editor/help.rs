@@ -292,11 +292,19 @@ mod tests {
             missing.is_empty(),
             "dispatchable Ex commands missing from generated help: {missing:?}"
         );
-        // 0065 S2: the terminal section names every dispatchable escape —
-        // the exit from terminal input is discoverable from `?` alone.
-        for escape in ["ctrl-\\ ctrl-n", "ctrl-4 ctrl-n", ":terminal-refresh"] {
-            assert!(text.contains(escape), "help lost the {escape} escape");
+        // 0090 §4: the terminal section opens with how to open one and
+        // names the one escape chord — discoverable from `?` alone.
+        for row in ["space t", ":terminal", "ctrl-\\ ctrl-n", ":bd!"] {
+            assert!(text.contains(row), "help lost the {row} terminal row");
         }
+        assert!(
+            !text.contains("ctrl-4"),
+            "help still lists the deleted Ctrl-4 chord"
+        );
+        assert!(
+            !text.contains("terminal-refresh"),
+            "help still lists :terminal-refresh"
+        );
         assert!(
             text.contains(":explain") && text.contains("LSP readiness/failures"),
             "help makes retained LSP failures discoverable"

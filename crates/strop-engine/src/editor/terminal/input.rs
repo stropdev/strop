@@ -2,9 +2,11 @@ use super::*;
 use crate::editor::{InputOwner, Mode};
 use strop_core::frontend_input::{Input, KeyCode, KeyEvent, KeyKind};
 
+/// `letter` with Control held, or the C0 byte `raw` a legacy decoder
+/// delivers for it. Crossterm's legacy decoder reports the 0x1c byte of
+/// Ctrl-\ as Ctrl-4 (vim documents the two as the same key), so that
+/// spelling is the same chord — not a second one.
 fn control(key: KeyEvent, letter: char, raw: char) -> bool {
-    // Crossterm's legacy C0 decoder reports 0x1c as Ctrl-4. It is the same
-    // legacy chord as Ctrl-\\; retain the original event when forwarding it.
     !key.modifiers.alt
         && !key.modifiers.super_key
         && !key.modifiers.hyper
@@ -17,6 +19,8 @@ impl Editor {
     pub(crate) fn terminal_owns_input(&self) -> bool {
         self.terminal_input_active() && self.input_owner() == InputOwner::Terminal
     }
+    /// TERMINAL mode: every key goes to the child — Esc and Ctrl-W
+    /// included — except the one escape chord `Ctrl-\ Ctrl-N` (0090 §4).
     pub(crate) fn feed_terminal(&mut self, input: Input) {
         let Some(session) = self
             .terminal_document(self.current())
@@ -33,14 +37,6 @@ impl Editor {
             self.terminals.prefix = None;
         }
         if let Input::Key(key) = &input {
-            if key.kind == KeyKind::Press
-                && key.code == KeyCode::Function(2)
-                && key.modifiers == Default::default()
-            {
-                self.terminals.prefix = None;
-                self.enter_terminal_normal(session);
-                return;
-            }
             if let Some(prefix) = &mut self.terminals.prefix {
                 if key.kind == KeyKind::Release && key.code == prefix.press.code {
                     prefix.release = Some(*key);
@@ -48,7 +44,7 @@ impl Editor {
                 }
                 if key.kind != KeyKind::Release && control(*key, 'n', '\x0e') {
                     self.terminals.prefix = None;
-                    self.enter_terminal_normal(session);
+                    self.enter_terminal_normal();
                     return;
                 }
             } else if key.kind == KeyKind::Press && control(*key, '\\', '\x1c') {
@@ -70,12 +66,19 @@ impl Editor {
         self.send_terminal_input(session, input);
     }
 
-    /// The pinned-snapshot inspection mode shared by both prefix escapes.
-    fn enter_terminal_normal(&mut self, session: SessionId) {
-        self.send_terminal_focus(session, false);
+    /// `Ctrl-\ Ctrl-N`: NORMAL mode on the live buffer, cursor on the
+    /// child's cursor (Neovim). No message: the echo row would cover the
+    /// prompt line (0089 T12).
+    fn enter_terminal_normal(&mut self) {
+        let cursor = self
+            .terminal_frame(self.current())
+            .map(|frame| frame.cursor_byte());
         self.view_mut().terminal_input = false;
         self.mode = Mode::Normal;
-        self.message = "terminal snapshot — i/I/a/A enter input".into();
+        if let Some(cursor) = cursor {
+            self.set_head(cursor);
+        }
+        self.message.clear();
     }
 
     fn send_terminal_input(&mut self, session: SessionId, input: Input) {
@@ -92,7 +95,7 @@ impl Editor {
                     .get(&session)
                     .and_then(|entry| entry.service.as_ref())
                     .ok_or_else(|| "terminal service unavailable".to_owned())?
-                    .input(input, false)
+                    .input(input)
                     .map_err(|error| error.to_string())
             }) {
                 Ok(result) => result,
@@ -103,6 +106,9 @@ impl Editor {
         }
     }
 
+    /// `i a I A` on a terminal buffer: TERMINAL mode at the child's
+    /// cursor. An exited session has no child to type into; the key is
+    /// consumed and says so.
     pub(crate) fn enter_terminal_input(&mut self) -> bool {
         let document = self.current();
         let Some(session) = self
@@ -117,149 +123,20 @@ impl Editor {
             .get(&session)
             .is_some_and(|entry| entry.phase.live())
         {
-            if self.terminals.capture {
-                self.install_terminal_frame(document);
-            } else {
-                strop_trace::without_content(|| self.install_terminal_frame(document));
-            }
-            if let Some(cursor) = self
-                .terminal_frame(document, true)
-                .map(|frame| frame.cursor_byte())
-            {
-                self.set_head(cursor);
-            }
-            self.message = "terminal ended; showing its final snapshot — :terminal explicitly starts a new session".into();
+            self.message = "terminal has exited — :terminal starts a new session".into();
             return true;
         }
         self.terminals.prefix = None;
         self.view_mut().terminal_input = true;
         self.mode = Mode::Normal;
-        if !self
-            .panes
-            .iter()
-            .any(|pane| pane.doc == document && !pane.terminal_input)
+        if let Some(cursor) = self
+            .terminal_frame(document)
+            .map(|frame| frame.cursor_byte())
         {
-            if self.terminals.capture {
-                self.install_terminal_frame(document);
-            } else {
-                strop_trace::without_content(|| self.install_terminal_frame(document));
-            }
+            self.set_head(cursor);
         }
-        if self.terminals.focused {
-            self.send_terminal_focus(session, true);
-        }
-        self.message = "terminal input — F2 inspect · Ctrl-\\ Ctrl-N alternative".into();
-        self.sync_terminal_feedback(document, false);
+        self.message.clear();
         true
-    }
-    pub(crate) fn terminal_paste_decision(&mut self, accept: bool) {
-        let Some(session) = self
-            .terminal_document(self.current())
-            .map(|source| source.session)
-        else {
-            self.message = "current buffer is not a terminal".into();
-            return;
-        };
-        let Some(ticket) = self
-            .terminals
-            .entries
-            .get(&session)
-            .and_then(|entry| entry.paste.as_ref())
-            .map(|paste| paste.ticket)
-        else {
-            self.message = "this terminal has no held paste".into();
-            return;
-        };
-        self.terminal_paste_decision_for(session, ticket, Some(accept));
-    }
-
-    pub(super) fn terminal_paste_decision_for(
-        &mut self,
-        session: SessionId,
-        ticket: u64,
-        decision: Option<bool>,
-    ) {
-        let valid = self
-            .terminal_document(self.current())
-            .is_some_and(|source| {
-                source.session == session
-                    && self.terminals.entries.get(&session).is_some_and(|entry| {
-                        (if decision.is_some() {
-                            matches!(entry.phase, Phase::Running)
-                        } else {
-                            entry.phase.live()
-                        }) && entry
-                            .paste
-                            .as_ref()
-                            .is_some_and(|paste| paste.ticket == ticket)
-                    })
-            });
-        if !valid {
-            self.message = "held paste is stale or its terminal session has ended".into();
-            return;
-        }
-        let Some(paste) = self
-            .terminals
-            .entries
-            .get(&session)
-            .and_then(|entry| entry.paste.clone())
-        else {
-            return;
-        };
-        let Some(accept) = decision else {
-            self.message = format!(
-                "{} · Space a offers Send or Discard; no Enter is added",
-                paste.review()
-            );
-            return;
-        };
-        let tape = self.tape.clone();
-        let result: Result<(), String> = match tape.call(
-            "terminal.paste-decision",
-            &(session, ticket, accept),
-            || {
-                self.terminals
-                    .entries
-                    .get(&session)
-                    .and_then(|entry| entry.service.as_ref())
-                    .ok_or_else(|| "terminal service unavailable".to_owned())?
-                    .decide_paste(ticket, accept)
-                    .map_err(|error| error.to_string())
-            },
-        ) {
-            Ok(result) => result,
-            Err(error) => Err(error.to_string()),
-        };
-        if result.is_ok() {
-            if let Some(entry) = self.terminals.entries.get_mut(&session) {
-                if entry
-                    .paste
-                    .as_ref()
-                    .is_some_and(|paste| paste.ticket == ticket)
-                {
-                    entry.paste = None;
-                }
-            }
-        }
-        match result {
-            Ok(()) if accept => {
-                self.feedback.resolve_terminal(
-                    session,
-                    crate::editor::feedback::FeedbackKind::TerminalPaste,
-                    None,
-                );
-                self.enter_terminal_input();
-            }
-            Ok(()) => {
-                self.feedback.resolve_terminal(
-                    session,
-                    crate::editor::feedback::FeedbackKind::TerminalPaste,
-                    None,
-                );
-                self.message = "discarding held terminal paste".into();
-            }
-            Err(error) => self.message = error,
-        }
     }
 
     pub(crate) fn terminal_focus_changed(&mut self, focused: bool) {

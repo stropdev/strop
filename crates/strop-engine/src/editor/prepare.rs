@@ -521,7 +521,7 @@ impl Editor {
             pane.view_top.hash(&mut stamp);
             pane.hscroll.get().hash(&mut stamp);
             usize::from(pane.terminal_input).hash(&mut stamp);
-            self.terminal_frame(pane.doc, true)
+            self.terminal_frame(pane.doc)
                 .map(|frame| frame.revision)
                 .unwrap_or(0)
                 .hash(&mut stamp);

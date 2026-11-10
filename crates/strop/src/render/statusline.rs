@@ -106,7 +106,7 @@ impl Modeline {
         let terminal = editor.terminal_document(editor.current()).is_some();
         let (line, col) = if terminal_input {
             editor
-                .terminal_frame(editor.current(), true)
+                .terminal_frame(editor.current())
                 .map_or((1, 1), |frame| {
                     (
                         usize::from(frame.cursor.row) + 1,
@@ -131,8 +131,10 @@ impl Modeline {
         let (errors, warnings) = editor.diag_counts(editor.current());
         let cursors = editor.sels().count();
         let commit = historical_commit(editor);
-        let namespace = if let Some(terminal) = editor.terminal_document(editor.current()) {
-            terminal.launch.filesystem.label()
+        // A terminal's `term://` name already carries its directory or
+        // endpoint: no separate namespace chip.
+        let namespace = if terminal {
+            String::new()
         } else {
             editor
                 .remote_endpoint()
@@ -405,21 +407,13 @@ fn historical_commit(editor: &Editor) -> Option<&str> {
 /// project root; anything outside keeps its absolute form. Virtual buffers keep
 /// their display name; a pathless, nameless buffer is the scratch.
 fn file_display(editor: &Editor) -> (String, String) {
-    if let Some(terminal) = editor.terminal_document(editor.current()) {
-        let directory = editor
-            .terminal_launch_location(editor.current())
-            .map_or_else(String::new, |location| {
-                let mut label = if location.filesystem == strop_workspace::Filesystem::Local {
-                    location.label()
-                } else {
-                    strop_workspace::directory::display_path(&location.path)
-                };
-                if !label.ends_with('/') {
-                    label.push('/');
-                }
-                format!("launch {label}")
-            });
-        return (directory, format!("terminal #{}", terminal.session.get()));
+    if editor.terminal_document(editor.current()).is_some() {
+        // `term://{cwd}//{N}:{program}` — the buffer's own name is the
+        // whole identity; the launch directory is inside it.
+        return (
+            String::new(),
+            editor.doc(editor.current()).label(editor.cwd()),
+        );
     }
     if let Some(directory) = editor.directory() {
         let path = &directory.location.path;

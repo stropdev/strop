@@ -1,0 +1,81 @@
+╭ 1 src/render/statusline.rs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+   1 //! The modeline: one quiet row at the bottom edge.                                                                                   ▮
+   2 //!                                                                                                                                   ▮
+   3 //! Every width is a display cell, never a character.                                                                                 ▮
+   4                                                                                                                                       ▮
+   5 use std::path::Path;                                                                                                                  ▮
+   6                                                                                                                                       ▮
+   7 /// Gather the row.                                                                                                                   ▮
+   8 pub struct Modeline {                                                                                                                 ▮
+   9 │   chip: String,                                                                                                                     ▮
+  10 │   dirty: bool,                                                                                                                      ▮
+  11 │   line: usize,                                                                                                                      ▮
+  12 }                                                                                                                                     ▮
+  13                                                                                                                                       ▮
+  14 impl Modeline {                                                                                                                       ▮
+  15 │   fn gather(path: &Path, line: usize) -> Self {                                                                                     ▮
+  16 │   │   let chip = format!(" {} ", "NORMAL");                                                                                          
+  17 │   │   // the filename must survive truncation                                                                                        
+  18 │   │   Self { chip, dirty: path.exists(), line }                                                                                      
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+$ cargo test                                                                                                                                
+   Compiling strop v0.55.0                                                                                                                  
+running 3 tests                                                                                                                             
+test render::chip ... ok                                                                                                                    
+test render::echo ... ok                                                                                                                    
+test result: ok. 3 passed                                                                                                                   
+$                                                                                                                                           
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+TERMINAL  term:///work//1:sh                                                                                     ctrl-\ ctrl-n  NORMAL   1:1
+
+  0: 2:#4a5160/#15171c 2:#858c9a/#15171c 24:#858c9a/#15171c+b 112:#4a5160/#15171c
+  1: 1:#858c9a/#15171c+b 4:#e8a848/#15171c 1:#838a97/#4a5160+i 50:#838a97/#15171c+i 83:reset/#15171c 1:#858c9a/#15171c
+  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#838a97/#15171c+i 131:reset/#15171c 1:#858c9a/#15171c
+  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 53:#838a97/#15171c+i 81:reset/#15171c 1:#858c9a/#15171c
+  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:#858c9a/#15171c
+  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#c99ce0/#15171c 1:#e6e1d6/#15171c 3:#8ecdb8/#15171c 2:#9da3af/#15171c 4:#e6e1d6/#15171c 2:#9da3af/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 114:reset/#15171c 1:#858c9a/#15171c
+  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:#858c9a/#15171c
+  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 19:#838a97/#15171c+i 115:reset/#15171c 1:#858c9a/#15171c
+  8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#c99ce0/#15171c 1:#e6e1d6/#15171c 6:#c99ce0/#15171c 1:#e6e1d6/#15171c 8:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 113:reset/#15171c 1:#858c9a/#15171c
+  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c 1:#9da3af/#15171c 117:reset/#15171c 1:#858c9a/#15171c
+ 10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 118:reset/#15171c 1:#858c9a/#15171c
+ 11: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 5:#8ecdb8/#15171c 1:#9da3af/#15171c 118:reset/#15171c 1:#858c9a/#15171c
+ 12: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#9da3af/#15171c 133:reset/#15171c 1:#858c9a/#15171c
+ 13: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:#858c9a/#15171c
+ 14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 4:#c99ce0/#15171c 1:#e6e1d6/#15171c 8:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 119:reset/#15171c 1:#858c9a/#15171c
+ 15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 2:#c99ce0/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 4:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 1:#b4b8c2/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 5:#8ecdb8/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 2:#b4b8c2/#15171c 1:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 85:reset/#15171c 1:#858c9a/#15171c
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 3:#c99ce0/#15171c 6:#e6e1d6/#15171c 1:#b4b8c2/#15171c 1:#e6e1d6/#15171c 6:#86b7d8/#15171c 1:#b4b8c2/#15171c 1:#9da3af/#15171c 6:#aec37f/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 8:#aec37f/#15171c 2:#9da3af/#15171c 89:reset/#15171c 1:reset/reset
+ 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 39:#838a97/#15171c+i 87:reset/#15171c 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 6:#e6e1d6/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 6:#e6e1d6/#15171c 3:#9da3af/#15171c 6:#e6e1d6/#15171c 1:#9da3af/#15171c 85:reset/#15171c 1:reset/reset
+ 19: 140:#4a5160/#15171c
+ 20: 2:#858c9a/#15171c 2:#e6e1d6/#15171c 18:#e6e1d6/#15171c+b 118:#858c9a/#15171c
+ 21: 12:#e6e1d6/#15171c+b 14:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 22: 26:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 23: 26:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 24: 24:#8fc48a/#15171c 2:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 25: 24:#8fc48a/#15171c 2:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 26: 25:#8fc48a/#15171c 1:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 27: 26:#e6e1d6/#15171c 113:reset/#15171c 1:reset/reset
+ 28: 139:reset/#15171c 1:reset/reset
+ 29: 139:reset/#15171c 1:reset/reset
+ 30: 139:reset/#15171c 1:reset/reset
+ 31: 139:reset/#15171c 1:reset/reset
+ 32: 139:reset/#15171c 1:reset/reset
+ 33: 139:reset/#15171c 1:reset/reset
+ 34: 139:reset/#15171c 1:reset/reset
+ 35: 139:reset/#15171c 1:reset/reset
+ 36: 139:reset/#15171c 1:reset/reset
+ 37: 139:reset/#15171c 1:reset/reset
+ 38: 139:reset/#15171c 1:reset/reset
+ 39: 8:#15171c/#6fb8c4+b 2:reset/#1c1f25 18:#e6e1d6/#1c1f25 84:reset/#1c1f25 15:#e8a848/#23272f+b 7:#858c9a/#1c1f25 3:reset/#1c1f25 3:#858c9a/#1c1f25

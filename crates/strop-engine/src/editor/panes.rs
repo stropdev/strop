@@ -155,9 +155,15 @@ impl Editor {
                 return;
             }
         }
+        // Running terminals block `:qa` with one notice, like Neovim's
+        // E947 (0090 §4); `:qa!` stops them and quits.
         if self.terminals.live() {
             if !force {
-                self.open_terminal_quit_review();
+                let running = self.terminals.live_count();
+                self.message = format!(
+                    "{running} terminal{} running — :qa! stops them",
+                    if running == 1 { "" } else { "s" }
+                );
                 return;
             }
             self.stop_all_terminals();

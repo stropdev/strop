@@ -102,13 +102,12 @@ impl FeedbackStore {
         &mut self,
         session: strop_terminal::model::SessionId,
         kind: super::model::FeedbackKind,
-        keep_ticket: Option<u64>,
     ) {
         for record in self.records.iter_mut().filter(|record| {
             record.unresolved()
                 && record.kind == kind
-                && matches!(record.owner(), FeedbackOwner::Terminal { session: current, ticket, .. }
-                    if *current == session && !keep_ticket.is_some_and(|keep| *ticket == Some(keep)))
+                && matches!(record.owner(), FeedbackOwner::Terminal { session: current, .. }
+                    if *current == session)
         }) {
             record.resolve();
         }

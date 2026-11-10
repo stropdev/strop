@@ -1815,6 +1815,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strop-core",
+ "strop-worker",
  "strop-worker-client",
  "strop-worker-protocol",
  "tar",

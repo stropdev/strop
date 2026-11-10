@@ -133,7 +133,7 @@ impl Editor {
         }
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline, ""));
         match cmd {
-            "terminal" => {
+            "terminal" | "term" => {
                 self.launch_terminal(arg, false);
                 return;
             }
@@ -141,20 +141,8 @@ impl Editor {
                 self.launch_terminal(arg, true);
                 return;
             }
-            "terminal-stop" => {
-                self.stop_terminal();
-                return;
-            }
-            "terminal-paste" => {
-                self.terminal_paste_decision(true);
-                return;
-            }
-            "terminal-paste-cancel" => {
-                self.terminal_paste_decision(false);
-                return;
-            }
-            "terminal-refresh" => {
-                self.refresh_terminal();
+            "r" | "read" => {
+                self.read_command(arg);
                 return;
             }
             _ => {}
@@ -210,7 +198,7 @@ impl Editor {
                         }
                         if self.terminal_document(self.current()).is_some() {
                             self.message =
-                                "terminal projections are read-only; i enters child input".into();
+                                "terminal buffer is read-only — i enters TERMINAL mode".into();
                             return;
                         }
                         if self.directory().is_some_and(|source| {
@@ -250,6 +238,8 @@ impl Editor {
             "q!" => {
                 self.close_pane_or_buffer(true);
             }
+            "bd" | "bdelete" => self.delete_buffer(false),
+            "bd!" | "bdelete!" => self.delete_buffer(true),
             "qa" | "qall" => self.quit_all(false),
             "qa!" | "qall!" => self.quit_all(true),
             "trust" => self.request_trust(),

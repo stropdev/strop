@@ -464,3 +464,56 @@ fn failed_pipe_then_new_pipe_progresses() {
     e.handle_shell_result(sorted);
     assert_eq!(e.buf().text().to_string(), "alpha\nbeta\n");
 }
+
+// ---- :r !cmd (0090 §4) ----
+
+#[test]
+fn read_command_inserts_output_below_the_cursor_line_as_one_undo_unit() {
+    let mut e = editor_with("first\nsecond\n");
+    e.feed_text(":r !printf 'a\\nb\\n'\r");
+    assert!(e.message.starts_with(":r !"), "{}", e.message);
+    let result = next_shell_result(&e);
+    e.handle_shell_result(result);
+    assert_eq!(e.buf().text().to_string(), "first\na\nb\nsecond\n");
+    // vim: the cursor lands on the first new line
+    assert_eq!(e.buf().line_of(e.head()), 1);
+    assert_eq!(e.message, "read 2 lines");
+    e.feed_text("u");
+    assert_eq!(e.buf().text().to_string(), "first\nsecond\n");
+}
+
+#[test]
+fn read_command_on_the_last_line_without_a_trailing_newline_appends_lines() {
+    let mut e = editor_with("only");
+    e.feed_text(":r !printf 'tail\\n'\r");
+    let result = next_shell_result(&e);
+    e.handle_shell_result(result);
+    assert_eq!(e.buf().text().to_string(), "only\ntail");
+    assert_eq!(e.buf().line_of(e.head()), 1);
+}
+
+#[test]
+fn read_command_failure_and_stale_revision_never_touch_the_text() {
+    let mut e = editor_with("keep\n");
+    e.feed_text(":r !sh -c 'echo nope >&2; exit 3'\r");
+    let result = next_shell_result(&e);
+    e.handle_shell_result(result);
+    assert_eq!(e.buf().text().to_string(), "keep\n");
+    assert!(e.message.contains("nope"), "{}", e.message);
+    e.feed_text(":r !printf 'late\\n'\r");
+    e.feed_text("x"); // the text moves on before the job lands
+    let result = next_shell_result(&e);
+    e.handle_shell_result(result);
+    assert_eq!(e.buf().text().to_string(), "eep\n");
+    assert!(e.message.contains("text changed"), "{}", e.message);
+}
+
+#[test]
+fn read_command_without_a_bang_or_command_explains_itself() {
+    let mut e = editor_with("x\n");
+    e.feed_text(":r notes.txt\r");
+    assert!(e.message.contains(":r !cmd"), "{}", e.message);
+    e.feed_text(":r !\r");
+    assert!(e.message.contains("needs a command"), "{}", e.message);
+    assert!(e.shell_requests.is_empty());
+}

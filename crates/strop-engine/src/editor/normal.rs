@@ -26,26 +26,14 @@ use strop_core::frontend_input::Key;
 pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("theme", "choose a built-in interface palette"),
     ("terminal", "interactive shell in the selected namespace"),
+    ("term", "interactive shell (alias of :terminal)"),
     (
         "terminal-local",
         "explicit local shell even from an SSH context",
     ),
-    (
-        "terminal-stop",
-        "stop the current terminal and retain its output",
-    ),
-    (
-        "terminal-paste",
-        "confirm the current terminal's held multiline/control paste",
-    ),
-    (
-        "terminal-paste-cancel",
-        "discard the current terminal's held paste",
-    ),
-    (
-        "terminal-refresh",
-        "reinstall the latest output into an inspected terminal snapshot",
-    ),
+    ("bd", "delete the buffer (a running terminal refuses)"),
+    ("bd!", "delete the buffer; a running terminal is stopped"),
+    ("r", ":r !cmd inserts the command's output below the cursor"),
     ("w", "write"),
     ("w!", "write, force (file changed on disk)"),
     ("wq!", "write forced + quit"),
@@ -162,7 +150,7 @@ impl Editor {
 
     pub(crate) fn refuse_readonly(&mut self) {
         self.message = if self.terminal_document(self.current()).is_some() {
-            "terminal snapshot — i/I/a/A enter input".into()
+            "terminal buffer is read-only — i enters TERMINAL mode".into()
         } else if self.collections.contains_key(&self.current()) {
             "collection is read-only — g<Space> opens the source".into()
         } else {

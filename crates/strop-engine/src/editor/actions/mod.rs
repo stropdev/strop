@@ -96,19 +96,6 @@ impl Editor {
         self.open_actions(entries, false, &message);
     }
 
-    pub(crate) fn open_terminal_quit_review(&mut self) {
-        let entries = self
-            .terminal_quit_actions()
-            .into_iter()
-            .map(Entry::Terminal)
-            .collect();
-        self.open_actions(
-            entries,
-            false,
-            "live terminals: Focus, Stop, or Return; quit does not kill implicitly",
-        );
-    }
-
     /// Retained feedback and terminal controls for this view. A feedback
     /// row that only repeats a live terminal control yields to it.
     fn context_entries(&self) -> Vec<Entry> {

@@ -99,7 +99,7 @@ unsafe extern "C" {
         capacity: usize,
         written: *mut usize,
     ) -> i32;
-    pub fn strop_vt_paste(handle: *mut c_void, data: *const u8, len: usize, confirmed: i32) -> i32;
+    pub fn strop_vt_paste(handle: *mut c_void, data: *const u8, len: usize) -> i32;
     pub fn strop_vt_focus(
         handle: *mut c_void,
         focused: i32,

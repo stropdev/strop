@@ -34,7 +34,7 @@ impl Vt {
         })
     }
 
-    pub fn input(&mut self, input: &Input, paste_confirmed: bool) -> Result<Emission, Error> {
+    pub fn input(&mut self, input: &Input) -> Result<Emission, Error> {
         match input {
             Input::Key(key) => self.key(*key),
             Input::Text(text) => {
@@ -60,17 +60,8 @@ impl Vt {
                 }
                 // SAFETY: input bytes live through the synchronous native reader;
                 // the VT owner is unique and callbacks only collect bounded data.
-                let code = unsafe {
-                    ffi::strop_vt_paste(
-                        self.handle.as_ptr(),
-                        text.as_ptr(),
-                        text.len(),
-                        i32::from(paste_confirmed),
-                    )
-                };
-                if code == -7 {
-                    return Err(Error::PasteNeedsConfirmation);
-                }
+                let code =
+                    unsafe { ffi::strop_vt_paste(self.handle.as_ptr(), text.as_ptr(), text.len()) };
                 check("paste", code)?;
                 self.take_events()
             }

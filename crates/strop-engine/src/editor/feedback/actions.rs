@@ -61,8 +61,7 @@ impl Editor {
                 session,
                 incarnation,
                 phase,
-                ticket,
-            } => self.terminal_owner_matches(*session, *incarnation, *phase, *ticket, document),
+            } => self.terminal_owner_matches(*session, *incarnation, *phase, document),
         }
     }
 
@@ -235,8 +234,6 @@ impl Editor {
             FeedbackKind::Connection => "connection",
             FeedbackKind::WorkerConnection => "worker connection",
             FeedbackKind::WorkerAdmission => "worker admission",
-            FeedbackKind::TerminalOutput => "terminal output",
-            FeedbackKind::TerminalPaste => "terminal held paste",
             FeedbackKind::TerminalProcess => "terminal process",
             FeedbackKind::TerminalHostControl => "terminal host control",
         }

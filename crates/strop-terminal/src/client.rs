@@ -1,8 +1,7 @@
-//! Worker-owned PTY session (0058 WK12). The child, its terminal and its
-//! supervised lease live on the namespace's worker — reached through the
-//! worker client over the same wire as every other owned execution —
-//! while the VT, bounded history and immutable publications stay here.
-//! Editor state receives only model::Update, never transport handles.
+//! One PTY session behind a [`Transport`]: in-process for a local
+//! directory (0090 §4), on the namespace's worker for a remote one (0058
+//! WK12). The VT, bounded history and immutable publications stay here;
+//! editor state receives only model::Update, never transport handles.
 //!
 //! Ordering contract (the 0055 lifecycle, preserved over the wire):
 //!
@@ -21,6 +20,9 @@
 //! - Exit is truthful: the supervisor's attested status maps to
 //!   [`Phase::Exited`], an unattested one (`Lost`, revocation) carries
 //!   no code, and a dead worker is a failure, never a guessed exit.
+use crate::local::LocalPty;
+pub use crate::transport::Target;
+use crate::transport::Transport;
 use crate::{
     launch::Launch,
     model::*,
@@ -34,8 +36,8 @@ use std::{
     sync::LazyLock,
 };
 use strop_core::worker::CancelToken;
-use strop_worker_client::{ExecEvent, PtySession, StreamEvent, Worker};
-use strop_worker_protocol::{ExitStatus, PtyGeometry, StreamId};
+use strop_worker_client::{ExecEvent, StreamEvent, Worker};
+use strop_worker_protocol::{ExitStatus, StreamId};
 
 /// One admitted input or resize awaiting its worker acknowledgment.
 struct Pending {
@@ -90,7 +92,9 @@ fn deregister_wake(stream: StreamId, session: SessionId) {
 }
 
 pub struct Client {
-    pty: PtySession,
+    pty: Transport,
+    /// The worker output stream registered for wakes (worker transport only).
+    wake_stream: Option<StreamId>,
     token: CancelToken,
     vt: Vt,
     session: SessionId,
@@ -106,6 +110,8 @@ pub struct Client {
     acknowledged: u64,
     geometry_revision: u64,
     effects: Vec<Effect>,
+    /// A local resize flipped the VT; the next poll publishes the reflowed frame.
+    resized: bool,
 }
 
 /// Emulator settings owned by the embedder rather than the PTY lease.
@@ -117,45 +123,30 @@ pub(crate) struct EmulationSettings<'a> {
 impl Client {
     pub(crate) fn spawn(
         session: SessionId,
-        worker: Worker,
+        target: Target,
         launch: &Launch,
         geometry: Geometry,
         emulation: EmulationSettings<'_>,
         wake: UnixDatagram,
         token: &CancelToken,
     ) -> Result<Self, Error> {
-        use std::os::unix::ffi::OsStrExt;
         let mut vt = Vt::new(session, geometry, emulation.palette)?;
         vt.keyboard_capabilities(emulation.keyboard)?;
-        let spec = strop_worker_protocol::ExecSpec {
-            program: launch.program.as_bytes().to_vec(),
-            argv: launch
-                .arguments
-                .iter()
-                .map(|argument| argument.as_bytes().to_vec())
-                .collect(),
-            cwd: launch.directory.as_os_str().as_bytes().to_vec(),
-            env: launch
-                .environment
-                .iter()
-                .map(|(name, value)| strop_worker_protocol::request::EnvVar {
-                    name: name.as_bytes().to_vec(),
-                    value: value.as_bytes().to_vec(),
-                })
-                .collect(),
-            service: true,
-            pty: Some(PtyGeometry {
-                columns: geometry.columns,
-                rows: geometry.rows,
-            }),
+        let (pty, wake_stream) = match target {
+            Target::Local => (
+                Transport::Local(LocalPty::spawn(launch, geometry, wake)?),
+                None,
+            ),
+            Target::Worker(worker) => {
+                let pty = spawn_on_worker(&worker, launch, geometry, token)?;
+                let stream = pty.output_stream();
+                register_wake(stream, session, wake);
+                (Transport::Worker(pty), Some(stream))
+            }
         };
-        let pty = worker.exec_pty(token, spec).map_err(|error| match error {
-            strop_worker_client::ClientError::Cancelled => Error::Closed,
-            other => Error::Unavailable(other.to_string()),
-        })?;
-        register_wake(pty.output_stream(), session, wake);
         Ok(Self {
             pty,
+            wake_stream,
             token: token.clone(),
             vt,
             session,
@@ -171,6 +162,7 @@ impl Client {
             acknowledged: 0,
             geometry_revision: geometry.revision,
             effects: Vec::new(),
+            resized: false,
         })
     }
 
@@ -178,39 +170,17 @@ impl Client {
         &self.phase
     }
 
-    /// Wait for service wakes (intents and stream-arrival nudges share
-    /// the one datagram). The timeout only bounds wake-loss recovery;
-    /// ordinary output arrives by nudge, never by poll.
+    /// Wait for service wakes (intents and output nudges share the one
+    /// datagram), or for a local master to take retained input.
     pub(crate) fn wait(&self, wake: &UnixDatagram) -> Result<(), Error> {
-        use std::os::fd::AsRawFd;
-        let mut descriptors = [libc::pollfd {
-            fd: wake.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        }];
-        // SAFETY: the service owns the descriptor and the pollfd storage.
-        let result = unsafe { libc::poll(descriptors.as_mut_ptr(), 1, 250) };
-        if result < 0 {
-            let error = std::io::Error::last_os_error();
-            if error.kind() != std::io::ErrorKind::Interrupted {
-                return Err(Error::Io {
-                    operation: "wait for terminal worker input",
-                    detail: error.to_string(),
-                });
-            }
-        }
-        Ok(())
+        self.pty.wait(wake)
     }
 
-    pub fn input(
-        &mut self,
-        input: &strop_core::frontend_input::Input,
-        confirmed: bool,
-    ) -> Result<u64, Error> {
+    pub fn input(&mut self, input: &strop_core::frontend_input::Input) -> Result<u64, Error> {
         if self.phase != Phase::Running {
             return Err(Error::Closed);
         }
-        let emission = self.vt.input(input, confirmed)?;
+        let emission = self.vt.input(input)?;
         let sequence = self.feed(&emission.reply)?;
         self.effects(emission.effects);
         Ok(sequence)
@@ -250,14 +220,10 @@ impl Client {
         if !geometry.valid() || geometry.revision <= self.geometry_revision {
             return Err(Error::Protocol("stale or invalid terminal geometry".into()));
         }
-        // Applied-geometry semantics: the worker's reply means the ioctl
-        // landed; the parser flips at the ordered output marker.
-        self.pty
-            .resize(PtyGeometry {
-                columns: geometry.columns,
-                rows: geometry.rows,
-            })
-            .map_err(|error| Error::Unavailable(error.to_string()))?;
+        // Applied-geometry semantics: a worker's reply means the ioctl
+        // landed and the parser flips at the ordered output marker; a
+        // local ioctl landed now and the parser flips now.
+        let ordered = self.pty.resize(geometry)?;
         let charge = 16usize;
         if charge > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
             || self.pending.len() >= 128
@@ -275,8 +241,14 @@ impl Client {
             bytes: charge,
             wire_sequence: None,
         });
-        self.resizes.push_back((sequence, geometry));
         self.geometry_revision = geometry.revision;
+        if ordered {
+            self.resizes.push_back((sequence, geometry));
+        } else {
+            self.vt.resize(geometry)?;
+            self.cover(sequence);
+            self.resized = true;
+        }
         Ok(sequence)
     }
 
@@ -305,10 +277,7 @@ impl Client {
                 .sequence
                 .checked_add(1)
                 .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
-            let wire_sequence = self
-                .pty
-                .feed(chunk)
-                .map_err(|error| Error::Unavailable(error.to_string()))?;
+            let wire_sequence = self.pty.feed(chunk)?;
             self.retained_input += chunk.len() + 8;
             self.sequence = sequence;
             self.pending.push_back(Pending {
@@ -329,9 +298,7 @@ impl Client {
         if !self.pending.is_empty() {
             self.warning = Some("terminal stopped; unacknowledged input was revoked".into());
         }
-        self.pty
-            .terminate()
-            .map_err(|error| Error::Unavailable(error.to_string()))
+        self.pty.terminate()
     }
 
     /// Consume a bounded turn: output chunks, the ordered resize
@@ -345,8 +312,8 @@ impl Client {
         if self.token.is_cancelled() && self.phase != Phase::Closing {
             self.stop()?;
         }
-        let mut changed = false;
-        let mut dirty = false;
+        let mut changed = std::mem::take(&mut self.resized);
+        let mut dirty = changed;
         for _ in 0..32 {
             if self.output_closed {
                 break;
@@ -399,7 +366,7 @@ impl Client {
             }
         }
         loop {
-            match self.pty.events().try_recv() {
+            match self.pty.try_event() {
                 Ok(ExecEvent::Input { sequence }) => {
                     // The worker numbers only wire input chunks; translate to
                     // the service's input/resize sequence before retiring credit.
@@ -515,9 +482,48 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        deregister_wake(self.pty.output_stream(), self.session);
+        if let Some(stream) = self.wake_stream {
+            deregister_wake(stream, self.session);
+        }
         if self.phase.live() {
             let _ = self.pty.terminate();
         }
     }
+}
+
+/// Spawn one admitted PTY on a worker lease (0058 WK12); a refusal is
+/// typed, never a guessed local launch.
+fn spawn_on_worker(
+    worker: &Worker,
+    launch: &Launch,
+    geometry: Geometry,
+    token: &CancelToken,
+) -> Result<strop_worker_client::PtySession, Error> {
+    use std::os::unix::ffi::OsStrExt;
+    let spec = strop_worker_protocol::ExecSpec {
+        program: launch.program.as_bytes().to_vec(),
+        argv: launch
+            .arguments
+            .iter()
+            .map(|argument| argument.as_bytes().to_vec())
+            .collect(),
+        cwd: launch.directory.as_os_str().as_bytes().to_vec(),
+        env: launch
+            .environment
+            .iter()
+            .map(|(name, value)| strop_worker_protocol::request::EnvVar {
+                name: name.as_bytes().to_vec(),
+                value: value.as_bytes().to_vec(),
+            })
+            .collect(),
+        service: true,
+        pty: Some(strop_worker_protocol::PtyGeometry {
+            columns: geometry.columns,
+            rows: geometry.rows,
+        }),
+    };
+    worker.exec_pty(token, spec).map_err(|error| match error {
+        strop_worker_client::ClientError::Cancelled => Error::Closed,
+        other => Error::Unavailable(other.to_string()),
+    })
 }

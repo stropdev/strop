@@ -238,3 +238,72 @@ fn completion() {
         })
     });
 }
+
+/// A terminal session in a split below the file, as `Space t` opens it:
+/// a fixed launch directory and a small styled transcript, no PTY.
+fn terminal_below(editor: &mut Editor) {
+    use strop_terminal::model::{Color, Phase, Style};
+    let plain = Style::default();
+    let green = Style {
+        foreground: Color::Indexed(2),
+        ..plain
+    };
+    let bold = Style {
+        bold: true,
+        ..plain
+    };
+    editor.split_document(false, editor.current());
+    editor.terminal_fixture_at(
+        strop_workspace::ResourceLocation::local("/work".into()),
+        &[
+            ("$ cargo test", bold),
+            ("   Compiling strop v0.55.0", plain),
+            ("running 3 tests", plain),
+            ("test render::chip ... ok", green),
+            ("test render::echo ... ok", green),
+            ("test result: ok. 3 passed", green),
+            ("$ ", plain),
+        ],
+        Phase::Running,
+    );
+}
+
+fn ctrl_key(editor: &mut Editor, ch: char) {
+    use strop_core::frontend_input::{Input, KeyCode, KeyEvent, Modifiers};
+    let code = KeyCode::Char(ch);
+    editor.handle_app_event(strop_engine::editor::events::AppEvent::Input(Input::Key(
+        KeyEvent {
+            code,
+            modifiers: Modifiers {
+                control: true,
+                ..Default::default()
+            },
+            ..KeyEvent::press(code)
+        },
+    )));
+}
+
+/// TERMINAL mode (0090 §4): the child's grid in the lower pane, the
+/// `TERMINAL` chip and the one escape chord as the hint.
+#[test]
+fn terminal_mode() {
+    each("terminal", |editor| {
+        terminal_below(editor);
+        editor.feed_text("i");
+        settle_analysis()
+    });
+}
+
+/// NORMAL on the same buffer: a numbered, read-only live transcript with
+/// the cursor at the top, plain `NORMAL` chip, no `[RO]`, no hint.
+#[test]
+fn terminal_normal_mode() {
+    each("terminal-normal", |editor| {
+        terminal_below(editor);
+        editor.feed_text("i");
+        ctrl_key(editor, '\\');
+        ctrl_key(editor, 'n');
+        editor.feed_text("gg");
+        settle_analysis()
+    });
+}

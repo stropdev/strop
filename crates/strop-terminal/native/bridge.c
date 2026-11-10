@@ -447,13 +447,15 @@ static bool read_paste(void *userdata, GhosttyString mime, GhosttyWriter writer)
     StropPaste *paste = userdata;
     return writer.write(writer.userdata, paste->data, paste->length);
 }
-int strop_vt_paste(void *handle, const uint8_t *data, size_t length, int confirmed) {
+/* A paste is sent as every terminal sends it: bracketed when the child
+ * negotiated bracketed paste, raw bytes otherwise. */
+int strop_vt_paste(void *handle, const uint8_t *data, size_t length) {
     StropVt *state = handle;
     StropPaste source = { data, length };
     GhosttyString mime = { .ptr = (const uint8_t *)"text/plain", .len = 10 };
     GhosttyPaste paste = { .size = sizeof(paste), .location = GHOSTTY_CLIPBOARD_LOCATION_STANDARD,
         .source = GHOSTTY_PASTE_SOURCE_CLIPBOARD, .mimes = &mime, .mimes_len = 1,
-        .reader = { .read = read_paste, .userdata = &source }, .allow_unsafe = confirmed != 0 };
+        .reader = { .read = read_paste, .userdata = &source }, .allow_unsafe = true };
     bool written;
     CHECK(ghostty_terminal_paste(state->terminal, &paste, &written));
     return state->memory.failed ? -901 : 0;

@@ -125,7 +125,7 @@ pub(super) fn terminal(
     if rect.width == 0 || track_h == 0 {
         return;
     }
-    let Some(frame) = editor.terminal_frame(document, true) else {
+    let Some(frame) = editor.terminal_frame(document) else {
         return;
     };
     let total = frame.rows.len();

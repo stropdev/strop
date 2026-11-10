@@ -140,6 +140,14 @@ pub fn shell(result: &ShellResult) {
                 "kind":"pipe","document":super::snapshot::document_id(*document),
                 "revision":revision,"start_byte":start,"end_byte":end,
             }),
+            crate::editor::ShellKey::Read {
+                document,
+                revision,
+                at,
+            } => json!({
+                "kind":"read","document":super::snapshot::document_id(*document),
+                "revision":revision,"at_byte":at,
+            }),
         };
         let outcome = match &result.outcome {
             strop_core::worker::Outcome::Success(output) => json!({

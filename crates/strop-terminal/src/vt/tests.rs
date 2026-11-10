@@ -64,21 +64,18 @@ fn erased_cells_retain_their_terminal_background_color() {
 }
 
 #[test]
-fn clipboard_reads_are_denied_and_multiline_paste_requires_explicit_consent() {
+fn clipboard_reads_are_denied_and_pastes_follow_the_negotiated_mode() {
     let mut vt = terminal(20, 3);
     let query = vt.feed(b"\x1b]52;c;?\x07").unwrap();
     assert!(query.reply.is_empty());
+    // Raw while the child has not asked for bracketed paste: the bytes
+    // go through as typed by hand — a newline is the Enter key (CR), as
+    // every terminal pastes it.
     let paste = Input::Paste("first\nsecond".into());
-    assert!(matches!(
-        vt.input(&paste, false),
-        Err(Error::PasteNeedsConfirmation)
-    ));
-    let accepted = vt.input(&paste, true).unwrap();
-    assert!(String::from_utf8(accepted.reply)
-        .unwrap()
-        .contains("second"));
+    let raw = vt.input(&paste).unwrap();
+    assert_eq!(raw.reply, b"first\rsecond");
     vt.feed(b"\x1b[?2004h").unwrap();
-    let bracketed = vt.input(&paste, false).unwrap().reply;
+    let bracketed = vt.input(&paste).unwrap().reply;
     assert!(bracketed.starts_with(b"\x1b[200~"));
     assert!(bracketed.ends_with(b"\x1b[201~"));
 }
@@ -89,22 +86,13 @@ fn nul_retains_modifiers_and_negotiated_repeat_release_semantics() {
     let mut vt = terminal(20, 3);
     let mut key = KeyEvent::press(KeyCode::Null);
     key.modifiers.alt = true;
-    assert_eq!(vt.input(&Input::Key(key), false).unwrap().reply, b"\x1b\0");
+    assert_eq!(vt.input(&Input::Key(key)).unwrap().reply, b"\x1b\0");
     vt.feed(b"\x1b[>3u").unwrap();
-    assert_eq!(
-        vt.input(&Input::Key(key), false).unwrap().reply,
-        b"\x1b[32;7u"
-    );
+    assert_eq!(vt.input(&Input::Key(key)).unwrap().reply, b"\x1b[32;7u");
     key.kind = KeyKind::Repeat;
-    assert_eq!(
-        vt.input(&Input::Key(key), false).unwrap().reply,
-        b"\x1b[32;7:2u"
-    );
+    assert_eq!(vt.input(&Input::Key(key)).unwrap().reply, b"\x1b[32;7:2u");
     key.kind = KeyKind::Release;
-    assert_eq!(
-        vt.input(&Input::Key(key), false).unwrap().reply,
-        b"\x1b[32;7:3u"
-    );
+    assert_eq!(vt.input(&Input::Key(key)).unwrap().reply, b"\x1b[32;7:3u");
 }
 
 #[test]
@@ -112,11 +100,11 @@ fn terminal_escape_precedes_the_next_literal_key() {
     use strop_core::frontend_input::{KeyCode, KeyEvent};
     let mut vt = terminal(20, 3);
     let escape = vt
-        .input(&Input::Key(KeyEvent::press(KeyCode::Escape)), false)
+        .input(&Input::Key(KeyEvent::press(KeyCode::Escape)))
         .unwrap();
     assert_eq!(escape.reply, b"\x1b");
     let letter = vt
-        .input(&Input::Key(KeyEvent::press(KeyCode::Char('x'))), false)
+        .input(&Input::Key(KeyEvent::press(KeyCode::Char('x'))))
         .unwrap();
     assert_eq!(letter.reply, b"x");
 }
@@ -126,12 +114,9 @@ fn oversized_paste_refusal_leaves_the_terminal_encoder_usable() {
     let mut vt = terminal(20, 3);
     vt.feed(b"\x1b[?2004h").unwrap();
     let oversized = Input::Paste("x".repeat(MAX_INPUT_BYTES));
-    assert!(matches!(
-        vt.input(&oversized, false),
-        Err(Error::Capacity(_))
-    ));
+    assert!(matches!(vt.input(&oversized), Err(Error::Capacity(_))));
     assert_eq!(
-        vt.input(&Input::Paste("safe".into()), false).unwrap().reply,
+        vt.input(&Input::Paste("safe".into())).unwrap().reply,
         b"\x1b[200~safe\x1b[201~"
     );
 }
@@ -181,7 +166,7 @@ fn keyboard_advertisement_matches_the_captured_frontend_profile() {
     let mut alt =
         strop_core::frontend_input::KeyEvent::press(strop_core::frontend_input::KeyCode::Char('x'));
     alt.modifiers.alt = true;
-    assert_eq!(vt.input(&Input::Key(alt), false).unwrap().reply, b"\x1bx");
+    assert_eq!(vt.input(&Input::Key(alt)).unwrap().reply, b"\x1bx");
     vt.keyboard_capabilities(SUPPORTED_KEYBOARD_FLAGS).unwrap();
     assert_eq!(vt.feed(b"\x1b[?u").unwrap().reply, b"\x1b[?27u");
 }

@@ -79,7 +79,8 @@ Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 - **Filesystem workspace** — directory browsing and Review → Apply →
   Receipt mutations, locally and over SSH →
   **[docs/filesystem.md](docs/filesystem.md)**
-- **Terminals, headless scripts, traces** — real PTYs in splits, the
+- **Terminals, headless scripts, traces** — `Space t` opens a real PTY in
+  a split below, Neovim's `Ctrl-\ Ctrl-N` and a live NORMAL mode; the
   scripted driver, and how to capture a reproducible bug →
   **[docs/terminal-and-scripting.md](docs/terminal-and-scripting.md)**
 
