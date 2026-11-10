@@ -28,6 +28,8 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
     (
         "Remote",
         &[
+            ("strop ssh://host/path", "How to open: a remote file or directory from the shell"),
+            (":browse ssh://host/path", "How to open: a remote directory from inside the editor"),
             ("space o / :remote", "Choose SSH or a running container; Add a host… enters an address"),
             ("- / backspace", "Visit parent directory and retain the selected child"),
             (":remote root / home", "Browse remote root or negotiated home directory"),
@@ -186,15 +188,36 @@ impl Editor {
                 push_row(&mut text, keys, width, desc, false);
             }
         }
-        push_rule(&mut text, "Languages");
-        text.push_str("   ");
-        for (index, language) in strop_core::languages::language_names().enumerate() {
-            if index > 0 {
-                text.push_str(if index % 8 == 0 { "\n   " } else { " " });
+        // Which server each language family (the `language:` values)
+        // starts, and how to get it; families without one say so.
+        push_rule(&mut text, "LSP servers");
+        let languages: Vec<_> = strop_core::languages::language_names().collect();
+        let width = languages.iter().map(|name| name.len()).max().unwrap_or(0);
+        let mut serverless = Vec::new();
+        for language in languages {
+            match strop_lsp::registry::embedded_server(language) {
+                Some((server, hint)) => push_row(
+                    &mut text,
+                    language,
+                    width,
+                    &format!("{server} · {hint}"),
+                    false,
+                ),
+                None => serverless.push(language),
             }
-            text.push_str(language);
         }
-        text.push('\n');
+        if !serverless.is_empty() {
+            push_row(
+                &mut text,
+                "",
+                width,
+                &format!(
+                    "no built-in server: {} (config: [language.NAME])",
+                    serverless.join(", ")
+                ),
+                false,
+            );
+        }
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());
         // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
@@ -281,6 +304,14 @@ mod tests {
             text.contains(":explain") && text.contains("LSP readiness/failures"),
             "help makes retained LSP failures discoverable"
         );
+        // the language list says what it is: the server each family starts
+        let servers = text.find("─ LSP servers ─").expect("LSP servers section");
+        assert!(text[servers..].contains("rust          rust-analyzer · rustup"));
+        assert!(!text.contains("─ Languages ─"));
+        // Remote opens with how to get there
+        let remote = text.find("─ Remote ─").expect("Remote section");
+        let first = text[remote..].lines().nth(1).unwrap();
+        assert!(first.contains("How to open"), "{first:?}");
         // it's a real buffer: / searches it
         e.feed_text("/undo-tree\r");
         assert!(e.head() > 0, "search moved into the help text");
