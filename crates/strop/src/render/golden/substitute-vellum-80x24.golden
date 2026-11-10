@@ -1,0 +1,49 @@
+   1 const LABELS: &[&str] = &["alpha", "beta", "gamma", "delta", "epsilon", "z 
+   2 //! The mod╭ command ─────────────────────────────────────╮                
+   3 //!        │ : %s/modeline/statusline/g▏                  │                
+   4 //! Every w│ 2 substitutions · 0 offscreen · 2 changed li │                
+   5            │ -… "omicron", "modeline", "rho"];            │                
+   6 use std::pa│ +… "omicron", "statusline", "rho"];          │                
+   7            │ -//! The modeline: one quiet row at the bot… │                
+   8 /// Gather │ +//! The statusline: one quiet row at the b… │                
+   9 pub struct ╰──────────────────────────────────────────────╯                
+  10 │   chip: String,                                                          
+  11 │   dirty: bool,                                                           
+  12 │   line: usize,                                                           
+  13 }                                                                          
+  14                                                                            
+  15 impl Modeline {                                                            
+  16 │   fn gather(path: &Path, line: usize) -> Self {                          
+  17 │   │   let chip = format!(" {} ", "NORMAL");                              
+  18 │   │   // the filename must survive truncation                            
+  19 │   │   Self { chip, dirty: path.exists(), line }                          
+  20 │   }                                                                      
+  21 }                                                                          
+~                                                                               
+~                                                                               
+COMMAND   statusline.rs ● 2 substitutions · 0 offscreen · 2 changed lines …  1:1
+
+  0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 5:#6f3aa8/#efeadf 1:#262a30/#efeadf 6:#8a510f/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 1:#4b525c/#efeadf 1:#656d7b/#efeadf 1:#4b525c/#efeadf 3:#1f6e5c/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 1:#4b525c/#efeadf 1:#262a30/#efeadf 1:#4b525c/#efeadf 1:#656d7b/#efeadf 7:#4e6f22/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 6:#4e6f22/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 7:#4e6f22/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 7:#4e6f22/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 9:#4e6f22/#efeadf 1:#656d7b/#efeadf 1:#262a30/#efeadf 2:#4e6f22/#efeadf 1:reset/reset
+  1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#696d77/#f6f2e9+i 3:#8a510f/#f0dfb8+i 1:#656d7b/#fdfbf6 9:#262a30/#fdfbf6+b 38:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 8:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 2:#8a510f/#fdfbf6 24:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 18:reset/#fdfbf6 1:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 11:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 44:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 11:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 33:#b8323f/#fdfbf6 12:reset/#fdfbf6 1:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 3:#1f6e5c/#f6f2e9 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 35:#3f7a3a/#fdfbf6 10:reset/#fdfbf6 1:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 11:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 44:#b8323f/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 11:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 44:#3f7a3a/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 6:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 48:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 57:reset/#f6f2e9 1:reset/reset
+ 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
+ 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 5:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
+ 12: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+ 13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
+ 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 59:reset/#f6f2e9 1:reset/reset
+ 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 2:#6f3aa8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 5:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 2:#4b525c/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 25:reset/#f6f2e9 1:reset/reset
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 1:#262a30/#f6f2e9 6:#235f8c/#f6f2e9 1:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9 6:#4e6f22/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 8:#4e6f22/#f6f2e9 2:#656d7b/#f6f2e9 29:reset/#f6f2e9 1:reset/reset
+ 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 39:#696d77/#f6f2e9+i 27:reset/#f6f2e9 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 3:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 25:reset/#f6f2e9 1:reset/reset
+ 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
+ 20: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+ 21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 23: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 13:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 1:reset/#fdfbf6 49:#8a510f/#fdfbf6 2:reset/#fdfbf6 3:#656d7b/#fdfbf6

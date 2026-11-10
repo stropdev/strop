@@ -20,7 +20,7 @@ Generated from the command table (`strop compat`).
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-^` — alternate buffer
 - `✓ grr` — references (LSP)
-- `✓ grn` — rename (LSP), prompting with the current name
+- `✓ grn` — rename the symbol under the cursor (prompts with its name)
 - `✓ gI` — implementation (LSP)
 - `✓ gy` — type definition (LSP)
 - `✓ gD` — declaration (LSP)
@@ -29,6 +29,8 @@ Generated from the command table (`strop compat`).
 - `✓ gd` — goto definition (LSP)
 - `✓ gs` — switch source/header (clangd)
 - `✓ f<c> F<c> t<c> T<c>` — find/till char (candidates light up)
+- `✓ ]q` — next quickfix hit
+- `✓ [q` — previous quickfix hit
 - `✓ ]f` — next file card (collections)
 - `✓ [f` — previous file card (collections)
 - `✓ ]e` — next excerpt (collections; +/- context)
@@ -123,7 +125,7 @@ Generated from the command table (`strop compat`).
 - `✓ space P` — paste clipboard before
 - `✓ space d` — diagnostics picker
 - `✓ space k` — hover docs
-- `✓ space a` — actions here (fixes, code, files)
+- `✓ space a` — actions here (fixes and code; files in a directory)
 - `✓ space s` — document symbols picker
 - `✓ space S` — workspace symbols picker
 - `✓ space j` — jumplist picker
@@ -193,4 +195,4 @@ Generated from the command table (`strop compat`).
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
 - `✓ :fs :browse :filter` — filesystem actions, namespace-aware browsing and folder filtering
-- `✓ :apply-change :cancel-change :save-change` — review: apply text or filesystem changes, cancel, or save changed text
+- `✓ :copen :cnext :cprev :cc :cdo :cfdo` — quickfix: show the list, visit hits, run a command at each hit or file

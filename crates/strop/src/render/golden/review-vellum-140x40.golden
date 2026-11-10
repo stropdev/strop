@@ -1,0 +1,81 @@
+   1 replace: 2 file(s) to change                                                                                                           
+   2 Enter applies and writes the files · q cancels                                                                                         
+   3 5 matches included, 0 excluded                                                                                                         
+   4                                                                                                                                        
+   5 --- a/docs/remote.md                                                                                                                   
+   6 +++ b/docs/remote.md                                                                                                                   
+   7 @@ -1,5 +1,5 @@                                                                                                                        
+   8  # Remote                                                                                                                              
+   9                                                                                                                                        
+  10 -The modeline identifies the endpoint.                                                                                                 
+  11 +The status row identifies the endpoint.                                                                                               
+  12                                                                                                                                        
+  13 -The modeline names the fixed root.                                                                                                    
+  14 +The status row names the fixed root.                                                                                                  
+  15                                                                                                                                        
+  16 --- a/src/render/statusline.rs                                                                                                         
+  17 +++ b/src/render/statusline.rs                                                                                                         
+  18 @@ -1,17 +1,17 @@                                                                                                                      
+  19 -//! The modeline: one quiet row at the bottom edge.                                                                                   
+  20 +//! The status row: one quiet row at the bottom edge.                                                                                 
+  21  //!                                                                                                                                   
+  22  //! Every width is a display cell, never a character.                                                                                 
+  23                                                                                                                                        
+  24  use std::path::Path;                                                                                                                  
+  25                                                                                                                                        
+  26  /// Gather the row.                                                                                                                   
+  27 -pub struct Modeline {                                                                                                                 
+  28 +pub struct status row {                                                                                                               
+  29      chip: String,                                                                                                                     
+  30      dirty: bool,                                                                                                                      
+  31      line: usize,                                                                                                                      
+  32  }                                                                                                                                     
+  33                                                                                                                                        
+  34 -impl Modeline {                                                                                                                       
+  35 +impl status row {                                                                                                                     
+  36      fn gather(path: &Path, line: usize) -> Self {                                                                                     
+  37          let chip = format!(" {} ", "NORMAL");                                                                                         
+  38          // the filename must survive truncation                                                                                       
+ › replace: review of 2 file(s) — Enter applies and writes                                                                                  
+ NORMAL   review: replace [RO]                                                                                                       1:1  2%
+
+  0: 1:#656d7b/#efeadf+b 32:#8a510f/#efeadf 106:#efeadf/#efeadf 1:reset/reset
+  1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 46:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 30:#262a30/#f6f2e9 104:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
+  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 20:#8a510f/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 20:#8a510f/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 15:#656d7b/#fdfbf6 119:#fdfbf6/#fdfbf6 1:reset/reset
+  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 125:reset/#f6f2e9 1:reset/reset
+  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 38:#b8323f/#f3dcd8 96:#f3dcd8/#f3dcd8 1:reset/reset
+ 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 40:#3f7a3a/#dfeadb 94:#dfeadb/#dfeadb 1:reset/reset
+ 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+ 12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 35:#b8323f/#f3dcd8 99:#f3dcd8/#f3dcd8 1:reset/reset
+ 13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 37:#3f7a3a/#dfeadb 97:#dfeadb/#dfeadb 1:reset/reset
+ 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
+ 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 30:#8a510f/#f6f2e9 104:reset/#f6f2e9 1:reset/reset
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 30:#8a510f/#f6f2e9 104:reset/#f6f2e9 1:reset/reset
+ 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 17:#656d7b/#fdfbf6 117:#fdfbf6/#fdfbf6 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 52:#b8323f/#f3dcd8 82:#f3dcd8/#f3dcd8 1:reset/reset
+ 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 54:#3f7a3a/#dfeadb 80:#dfeadb/#dfeadb 1:reset/reset
+ 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 130:reset/#f6f2e9 1:reset/reset
+ 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 54:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
+ 22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+ 23: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 21:#262a30/#f6f2e9 113:reset/#f6f2e9 1:reset/reset
+ 24: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+ 25: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 20:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 26: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 22:#b8323f/#f3dcd8 112:#f3dcd8/#f3dcd8 1:reset/reset
+ 27: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 24:#3f7a3a/#dfeadb 110:#dfeadb/#dfeadb 1:reset/reset
+ 28: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 18:#262a30/#f6f2e9 116:reset/#f6f2e9 1:reset/reset
+ 29: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 17:#262a30/#f6f2e9 117:reset/#f6f2e9 1:reset/reset
+ 30: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 17:#262a30/#f6f2e9 117:reset/#f6f2e9 1:reset/reset
+ 31: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 132:reset/#f6f2e9 1:reset/reset
+ 32: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+ 33: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 16:#b8323f/#f3dcd8 118:#f3dcd8/#f3dcd8 1:reset/reset
+ 34: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 18:#3f7a3a/#dfeadb 116:#dfeadb/#dfeadb 1:reset/reset
+ 35: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 50:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
+ 36: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 46:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+ 37: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 48:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
+ 38: 3:#262a30/#fdfbf6+b 55:#262a30/#fdfbf6 82:reset/#fdfbf6
+ 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 15:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 103:reset/#fdfbf6 7:#656d7b/#fdfbf6

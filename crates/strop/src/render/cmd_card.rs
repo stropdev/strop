@@ -63,8 +63,14 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     let width = ((u32::from(area.width) * 60 / 100) as u16)
         .max(32)
         .min(area.width.saturating_sub(4));
+    // The card lives between the top row and the statusline and never
+    // covers either (0091 B2). With fewer than three rows there is no room
+    // for a frame: the field alone takes the top row (0091 B6).
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
     let height = (3 + candidates.len().min(6) as u16 + substitution_height as u16)
-        .min(area.height.saturating_sub(1));
+        .min(area.height.saturating_sub(2));
     let card = Rect {
         x: (area.width.saturating_sub(width)) / 2,
         y: 1,
@@ -87,7 +93,21 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
                 state.outer_operator.expect("filtered operator").key()
             )
         });
-    let inner = Card::new(&title).render(frame, card, t);
+    let inner = if height >= 3 {
+        Card::new(&title).render(frame, card, t)
+    } else {
+        let row = Rect {
+            y: 0,
+            height: 1,
+            ..card
+        };
+        frame.render_widget(ratatui::widgets::Clear, row);
+        frame.render_widget(
+            ratatui::widgets::Block::default().style(Style::default().bg(t.surface)),
+            row,
+        );
+        row
+    };
 
     // body: the payload, not the prefix — ":w" shows "w", "/foo" shows "foo"
     let body = pending.strip_prefix(kind).unwrap_or(pending);
@@ -161,6 +181,9 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         .clamp(4, 16);
     for (i, (name, doc)) in shown.iter().enumerate() {
         let y = text_area.y + 1 + i as u16;
+        if y >= inner.y + inner.height {
+            break;
+        }
         let row = Rect {
             y,
             height: 1,
@@ -222,7 +245,7 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
             );
         }
         if let crate::editor::SubstitutePreviewState::Ready(preview) = state {
-            let changed = preview
+            let lines: Vec<(&str, &crate::editor::ReviewRow)> = preview
                 .diff_text()
                 .lines()
                 .zip(preview.diff_rows())
@@ -232,6 +255,11 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
                         crate::editor::ReviewRow::Removed | crate::editor::ReviewRow::Added
                     )
                 })
+                .collect();
+            let windows = changed_windows(&lines, usize::from(text_area.width));
+            let changed = windows
+                .into_iter()
+                .zip(lines.iter().map(|(_, row)| *row))
                 .enumerate()
                 .filter(|(index, _)| {
                     changed_row_count <= 8
@@ -277,6 +305,63 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
             crate::render::frame_capture::place_cursor(frame, (text_area.x + column, text_area.y));
         }
     }
+}
+
+/// Each changed line cut to `cells`, with its change in view (0091 B2). A
+/// removed line and the added line after it are one pair and share one
+/// window, placed on the first character where they differ, so the eye
+/// compares the same columns. `…` marks text cut on either side.
+fn changed_windows(lines: &[(&str, &crate::editor::ReviewRow)], cells: usize) -> Vec<String> {
+    let mut windows = Vec::with_capacity(lines.len());
+    let mut index = 0;
+    while index < lines.len() {
+        let pair = matches!(lines[index].1, crate::editor::ReviewRow::Removed)
+            && lines
+                .get(index + 1)
+                .is_some_and(|next| matches!(next.1, crate::editor::ReviewRow::Added));
+        let members = if pair { 2 } else { 1 };
+        let widest = lines[index..index + members]
+            .iter()
+            .map(|(line, _)| super::clip::width(line))
+            .max()
+            .unwrap_or(0);
+        // characters after the sign column the pair has in common
+        let common = if pair {
+            lines[index]
+                .0
+                .chars()
+                .skip(1)
+                .zip(lines[index + 1].0.chars().skip(1))
+                .take_while(|(old, new)| old == new)
+                .count()
+        } else {
+            0
+        };
+        // keep a third of the row as context before the change
+        let skip = if widest <= cells {
+            0
+        } else {
+            common.saturating_sub(cells / 3)
+        };
+        for (line, _) in &lines[index..index + members] {
+            windows.push(window(line, skip, cells));
+        }
+        index += members;
+    }
+    windows
+}
+
+/// `line` with its sign kept and `skip` characters after it cut away.
+fn window(line: &str, skip: usize, cells: usize) -> String {
+    let mut chars = line.chars();
+    let mut text: String = chars.next().into_iter().collect();
+    if skip > 0 {
+        text.push('…');
+        text.extend(chars.skip(skip + 1));
+    } else {
+        text.extend(chars);
+    }
+    super::clip::clip_end(&text, cells).into_owned()
 }
 
 #[cfg(test)]
@@ -396,6 +481,69 @@ mod tests {
         assert_eq!(editor.buf().text().to_string(), original);
     }
 
+    /// 0091 B2: the change is in view however far right it is, the removed
+    /// and added rows show the same columns, and the statusline row below
+    /// the card is never drawn over.
+    #[test]
+    fn substitute_card_scrolls_to_the_change_and_leaves_the_statusline() {
+        let long = format!(
+            "{}needle = old_value; // tail",
+            "let padding = 1; ".repeat(8)
+        );
+        let mut editor = Editor::new(Buffer::from_text(&format!("{long}\nshort old_value\n")));
+        editor.feed_text(":%s/old_value/fresh/g");
+        let backend = ratatui::backend::TestBackend::new(90, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_cmd_card(&editor, &tokens(), frame))
+            .unwrap();
+        let grid = terminal.backend().buffer().clone();
+        let removed = row_text(&grid, 4);
+        let added = row_text(&grid, 5);
+        assert!(removed.contains("-…"), "cut on the left: {removed}");
+        assert!(removed.contains("needle = old_value;"), "{removed}");
+        assert!(added.contains("needle = fresh;"), "{added}");
+        assert_eq!(
+            removed.find("needle"),
+            added.find("needle"),
+            "one window for the pair"
+        );
+        // a line that fits is not cut
+        assert!(row_text(&grid, 6).contains("-short old_value"));
+        assert!(row_text(&grid, 7).contains("+short fresh"));
+    }
+
+    /// 0091 B6: no terminal is too small to type a command in. The card
+    /// keeps off the statusline row, and with no room for a frame the
+    /// field alone takes the top row.
+    #[test]
+    fn the_command_card_never_reaches_the_statusline_at_any_height() {
+        let text = (0..30)
+            .map(|line| format!("edge {line}\n"))
+            .collect::<String>();
+        for rows in 1..=12u16 {
+            let mut editor = Editor::new(Buffer::from_text(&text));
+            editor.feed_text(":%s/edge/rim/g");
+            let grid = {
+                let backend = ratatui::backend::TestBackend::new(90, rows);
+                let mut terminal = ratatui::Terminal::new(backend).unwrap();
+                terminal
+                    .draw(|frame| render_cmd_card(&editor, &tokens(), frame))
+                    .unwrap();
+                terminal.backend().buffer().clone()
+            };
+            if rows >= 2 {
+                let last = row_text(&grid, rows - 1);
+                assert!(
+                    last.trim().is_empty(),
+                    "{rows} rows: statusline row drawn over: {last}"
+                );
+            }
+            let typed = (0..rows).any(|row| row_text(&grid, row).contains("%s/edge/rim/g"));
+            assert!(typed, "{rows} rows: the field is visible");
+        }
+    }
+
     #[test]
     fn substitute_card_reports_offscreen_extent_and_outer_field_mode() {
         let original = (0..30)
@@ -403,7 +551,7 @@ mod tests {
             .collect::<String>();
         let mut editor = Editor::new(Buffer::from_text(&original));
         editor.feed_text(":%s/alpha/omega/g");
-        let grid = draw_ex(&editor, 14);
+        let grid = draw_ex(&editor, 15);
         assert!(row_text(&grid, 3).contains("30 substitutions"));
         assert!(row_text(&grid, 3).contains("6 offscreen"));
         assert!(row_text(&grid, 8).contains('…'));

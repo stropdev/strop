@@ -73,15 +73,19 @@ counted resolver.
 ## Ex substitution
 
 `:[range]s/pattern/replacement/g` uses the same bounded Vim-magic pattern
-grammar as buffer search. While composing, Strop shows the actual removed and
-inserted lines, substitution count, scope and offscreen extent; Enter applies
-that displayed plan as one undo unit. Invalid or incomplete input replaces the
-previous preview rather than executing it, large plans resolve off the input
-path, and Esc cancellation leaves bytes, registers and undo history untouched.
+grammar as buffer search, and matches case exactly unless the pattern says
+otherwise (`\c`, or a leading `case:insensitive`). While composing, Strop
+shows the actual removed and inserted lines, substitution count, scope and
+offscreen extent; a long line is cut to a window on its change, the same
+window for the removed and the added row. Enter applies that displayed plan
+as one undo unit. Invalid or incomplete input replaces the previous preview
+rather than executing it, large plans resolve off the input path, and Esc
+cancellation leaves bytes, registers and undo history untouched.
 
 Replacement text is literal: `&`, `$1` and `\1` have no capture meaning. An
 escaped delimiter inserts that delimiter and `\\` inserts one backslash; other
-backslashes are preserved. This is separate from Search's literal With field.
+backslashes are preserved. (Project replace does expand captures; see With
+below.)
 
 ## The Search workspace
 
@@ -92,20 +96,14 @@ enumeration and content matching run entirely in Rust using the
 
 - **Ctrl-R** toggles the With field without restarting the search or losing
   either field's text, caret, mode, selection or workset. Enter in **Find**
-  opens the selected source; Enter in **With** prepares Review. Tab switches
-  fields when With is visible.
+  opens the selected source; Enter in **With** prepares the review. Tab
+  switches fields when With is visible.
 - **Ctrl-X** toggles one match; **Ctrl-D** masks/restores its file.
-  Excluded hits stay visible. **Ctrl-O** collects exactly the included
-  matches into a read-only source-backed collection.
-- **Ctrl-O** from source results opens that collection with surrounding
-  context, source syntax, match evidence and line numbers. `+`/`-` adjusts
-  context; `g<Space>` opens the real source for editing. Collections retain
-  navigation, search and yank, but never write through to source buffers or
-  save them. Use **With → Review** for deliberate multi-file changes.
+  Excluded hits stay visible.
+- **Ctrl-O** collects exactly the included matches into a collection (below).
 - Filter-only file finding lists eligible files; content search needs an
   expression. Unignored dotfiles are included by default; `.git` metadata
   is excluded. `:search-options` shows the separate visibility controls.
-- Replacement text is literal, including `$1` and backslashes.
 
 Opening a source hides Search; `Space /` returns to the retained
 investigation. Re-entry refreshes through owned work in its captured
@@ -113,24 +111,104 @@ namespace/root even if focus or cwd changed. In a Directory buffer,
 `:fs search` or **Space a → Search here** captures that directory without
 changing cwd.
 
-Review preparation is cancellable background work. **Space a** on a review or
-receipt exposes **Apply to buffers**, **Save files**, **Cancel** and **Inspect
-result** as applicable; `:apply-change`, `:save-change` and `:cancel-change`
-are the Ex shortcuts. Apply edits buffers; Save files is a separate action
-with a per-file receipt. Dirty open source text wins over disk, stale
-witnesses refuse, and Cancel restores the query and draft. Failed saves retain
-their exact unsaved targets and verification/recovery action. An all-excluded,
-incomplete or failed dataset cannot silently become a whole-project operation.
-Ordinary `u` and `:undo-change` are not interchangeable guarantees: the latter
-reverts the newest applied multi-file change only while its recorded target
-revisions still own that change.
+## Collections: edit every hit in one buffer
+
+**Ctrl-O** in search results, references (`grr`) or diagnostics (`Space d`)
+opens a collection: one card per file, each hit with two lines of context,
+source syntax and source line numbers. It is an ordinary editing buffer
+whose text is the files' text:
+
+- Edit inside an excerpt with any command — `cw`, `dd`, `o`, `.`, a macro,
+  visual mode, `:s`. The edit is made in the source buffer in the same
+  keystroke; open the file and it is already there. Edits made in the file
+  appear in the collection the same way.
+- `:w` writes every changed file the collection shows. `:wq` does that and
+  closes it.
+- `u` and `Ctrl-R` undo and redo what you changed through the collection,
+  in the files too. Editing one of its files somewhere else starts the
+  collection's history over; that file's own `u` still works.
+- Card borders, the `⋮ N source lines omitted` rows and the title are not
+  text. An edit that would touch one, or join the last line of an excerpt
+  with the border under it, is refused and changes nothing.
+- `+` / `-` widen and narrow the excerpt under the caret; `]e` / `[e` step
+  between excerpts and `]f` / `[f` between files; `g<Space>` (or Enter on a
+  card's top border) opens the file at that line, and `Ctrl-O` comes back.
+- `:%s/old/new/g` in a collection substitutes inside the excerpts only,
+  with the usual live preview.
+
+### The quickfix list
+
+The newest collection is the quickfix list, under the names Vim gave it:
+
+| Command | Does |
+| --- | --- |
+| `:copen` | show the list (the collection) |
+| `]q` `[q`, `:cnext` `:cprev` (`:cn` `:cp`) | go to the next or previous hit in its file |
+| `:cc N` | go to hit N |
+| `:cdo {cmd}` | run an ex command with the cursor on every hit line |
+| `:cfdo {cmd}` | run an ex command once in every file of the list |
+
+```vim
+:cdo s/open_picker/open_the_picker/
+:cfdo w
+```
+
+`:cdo` and `:cfdo` return to where you were. Each command finishes before
+the next starts, and the files stay open and undoable. `:cdo norm …` waits
+for `:norm`.
+
+## Replace across files
+
+Replace is two steps.
+
+1. `Space R`, type the term, `Tab`, type the replacement. Every hit shows a
+   `-`/`+` pair that follows your typing; `Ctrl-X` and `Ctrl-D` exclude a hit
+   or a file. `Enter` in **With** opens the review: the exact diff, nothing
+   changed yet.
+2. `Enter` in the review changes every file and writes it. The heading says
+   how many files were changed and written.
+
+In the review:
+
+- `u` puts the buffers and the files back. A file you edited since the apply
+  is left alone and named. After a full revert `Enter` applies again.
+- `q` closes the review. One that was never applied is cancelled, and Search
+  comes back with both fields as you left them. `Esc` cancels a review that
+  is still being prepared.
+- `Space a` lists the same three: apply, revert, cancel.
+
+Unsaved text in an open buffer wins over the file on disk. A file that
+changed between the search and the review, or between the review and
+`Enter`, is refused by name and left untouched; so is a read-only one. A
+file that could not be written stays changed in its buffer, unsaved, and is
+named in the heading. An all-excluded, incomplete or failed search cannot
+become a whole-project operation.
+
+**With** is literal unless the term is a `regex:` with groups. Then `$1`,
+`${name}` and `\1` are that hit's own groups, `$0` the whole hit, `$$` a
+dollar sign:
+
+```text
+Find  regex:"get_(\w+)\(\)"
+With  fetch_$1()
+```
+
+A query with several positive terms is a fine search and an ambiguous
+replace; With asks for exactly one.
+
+## Rename
+
+`grn` opens `:rename` with the name under the cursor, ready to edit. A rename
+that touches one buffer is applied at once (and `u` there undoes it). One
+that touches several opens the same review as a project replace: `Enter`
+applies and writes, `u` reverts.
 
 ## SSH scopes
 
 Search here uses the same query fields, inclusion decisions and source
 previews as local Search, on explicitly scoped SSH directories: `rg` runs
 on the host over its connection, and a host without `rg` refuses search
-without a fallback. **With/Review are unavailable in SSH scopes**.
+without a fallback. Collections work there too. **Replace (With and its review) is unavailable in SSH scopes**.
 
 Source enumeration is limited to 100,000 selected paths or 16 MiB of names;
 rg records to 1 MiB and 4,096 submatches; decoded batches to 4 MiB; a

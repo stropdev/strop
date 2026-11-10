@@ -23,7 +23,7 @@ preview cannot lie.
 | `vi[` then `c`, other Visual selections | Inspect the selection before applying the operator. |
 | `d/pattern` while composing | Live affected range and motion semantics before Enter; Esc once enters field Normal, Esc again cancels. |
 | `:s` while composing | Live before/after text, replacement count and scope before Enter. |
-| Project replace, filesystem and machine edits | Review exact targets before Apply; saving is a separate action. |
+| Project replace, multi-file rename, filesystem edits | Review the exact diff; `Enter` applies and writes, `u` in the review reverts buffers and files. |
 | Macros and arbitrary child/shell execution | No general effect preview. |
 
 The tagline covers these explicit inspection boundaries, not a post-edit flash
@@ -93,7 +93,8 @@ contract against nvim) and [nucleo-decision.md](docs/nucleo-decision.md).
 - **Async invariant**: input→render never crosses an `await`. Data sources
   (rg, git, LSP) are jobs posting onto the event loop — no exceptions.
 - **Everything is a real buffer**: terminals, directory listings, search
-  collections — every widget still knows how to be a text editor.
+  collections — every widget still knows how to be a text editor. A
+  collection of search hits is one you edit: the changes land in the files.
 - **Zero-config single static binary**: no required setup, no downloads at
   runtime; grammars, queries and palettes are compiled in. rustls only —
   a dependency dragging in openssl is a bug.
