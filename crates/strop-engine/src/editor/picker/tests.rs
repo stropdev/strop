@@ -388,12 +388,9 @@ mod picker_tests {
         // Opening Jumps records the current position before the two fixture rows.
         e.feed(strop_core::frontend_input::Key::Down);
 
-        for (title, focus) in [
-            (format!("{label}:1"), 1),
-            (format!("{label}:{last_line}"), last_line),
-        ] {
+        for focus in [1, last_line] {
             let preview = e.picker_preview().unwrap();
-            assert_eq!(preview.0, title);
+            assert_eq!(preview.0, PreviewTitle::local(label.clone()));
             assert_eq!(preview.1, Some(focus));
             assert!(matches!(
                 preview.2,

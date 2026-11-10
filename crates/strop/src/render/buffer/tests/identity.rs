@@ -126,9 +126,10 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
     let grid = draw(&mut editor, 100, 6);
     let titles = row_symbols(&grid, 0, 0, 100).join("");
     assert!(
-        titles.contains("╭ 1 ssh://fixture/repo/app.log"),
-        "{titles}"
+        titles.contains("╭ 1 ssh:fixture /repo/app.log"),
+        "the authority is its own segment, never spliced into the path: {titles}"
     );
+    assert!(!titles.contains("ssh://"), "{titles}");
     assert!(
         !titles.contains("[RO]"),
         "a connected host is editable: {titles}"
@@ -137,15 +138,15 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
 
     let grid = draw(&mut editor, 48, 16);
     let titles = row_symbols(&grid, 0, 0, 48).join("");
-    assert!(titles.contains("ssh://"), "{titles}");
+    assert!(
+        titles.contains("ssh:fixture /…") && titles.contains(".log"),
+        "narrow: the host and the name's tail survive, the directory yields: {titles}"
+    );
 
     editor.focus_pane(0);
     let grid = draw(&mut editor, 100, 6);
     let titles = row_symbols(&grid, 0, 0, 100).join("");
-    assert!(
-        titles.contains("╭ 1 ssh://fixture/repo/app.log"),
-        "{titles}"
-    );
+    assert!(titles.contains("╭ 1 ssh:fixture /repo/app.log"), "{titles}");
     assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
 }
 

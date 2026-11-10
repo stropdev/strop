@@ -132,6 +132,35 @@ fn file_headers_name_the_relative_path_and_hit_count() {
 }
 
 #[test]
+fn remote_file_headers_lead_with_the_authority_and_clip_the_path_first() {
+    let t = t();
+    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://dev@box:2299").unwrap();
+    let location = strop_workspace::ResourceLocation::remote(
+        endpoint,
+        PathBuf::from("/home/dev/proj/notes.txt"),
+    );
+    let line = file_header(&t, &location, std::path::Path::new("/w"), Some(1), 60);
+    let text = line_text(&line);
+    assert!(
+        text.starts_with(" ssh:box /home/dev/proj/notes.txt ───"),
+        "{text:?}"
+    );
+    assert!(!text.contains("ssh://"), "{text:?}");
+    let authority = &line.spans[1];
+    assert_eq!(authority.content, "ssh:box ");
+    assert_eq!(authority.style.fg, Some(t.muted));
+    assert_eq!(line.spans[2].content, "/home/dev/proj/");
+    assert_eq!(line.spans[3].content, "notes.txt");
+    assert!(line.spans[3].style.add_modifier.contains(Modifier::BOLD));
+    // narrow: the host and the name survive, the directory elides
+    let narrow = file_header(&t, &location, std::path::Path::new("/w"), Some(1), 26);
+    let text = line_text(&narrow);
+    assert!(text.starts_with(" ssh:box /…"), "{text:?}");
+    assert!(text.contains("notes.txt"), "{text:?}");
+    assert_eq!(narrow.width(), 26);
+}
+
+#[test]
 fn buffer_rows_split_the_directory_from_the_name_and_keep_terminals_whole() {
     let t = t();
     let mut arena: strop_core::id::Arena<strop_core::id::DocumentKind, ()> =

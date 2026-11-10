@@ -487,4 +487,37 @@ pub enum PreviewSource {
     Cancelled(CancelReason),
 }
 
+/// What the preview header names (0088 §2 "File names"): the resource's
+/// authority — `ssh:host` — as its own segment, then its path (absolute
+/// locally; the renderer makes it workspace-relative) or a document's
+/// label when it has no path. The focused line travels beside it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreviewTitle {
+    pub authority: Option<String>,
+    pub path: String,
+}
+
+impl PreviewTitle {
+    pub fn local(path: impl Into<String>) -> Self {
+        Self {
+            authority: None,
+            path: path.into(),
+        }
+    }
+
+    pub fn remote(endpoint: &strop_workspace::RemoteEndpoint, path: &std::path::Path) -> Self {
+        Self {
+            authority: Some(format!("ssh:{}", endpoint.host())),
+            path: strop_workspace::directory::display_path(path),
+        }
+    }
+
+    pub fn of(location: &strop_workspace::ResourceLocation) -> Self {
+        match location.filesystem.endpoint() {
+            Some(endpoint) => Self::remote(endpoint, &location.path),
+            None => Self::local(strop_workspace::directory::display_path(&location.path)),
+        }
+    }
+}
+
 pub type Previews = HashMap<strop_workspace::ResourceLocation, PreviewEntry>;

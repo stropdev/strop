@@ -85,8 +85,8 @@ pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarR
 pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{
-    checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews,
-    ReplacementHit, SearchScope,
+    checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, PreviewTitle,
+    Previews, ReplacementHit, SearchScope,
 };
 pub use registers::{ClipboardKey, ClipboardResult, Register};
 pub use shell::{ShellIntent, ShellKey, ShellResult};

@@ -53,8 +53,11 @@ and draws chrome through one primitive module (`render/card.rs`). Nothing in
 its own `/`; the basename is the identity in `fg.text`. The name is **bold where
 it is a heading** — a grep group header, a pane title, the preview header, the
 recovery card's subject, a directory buffer's own path — and regular inside a
-list (files, buffers, diagnostics, git file lists, the statusline). Clipping
-spends the directory first, from the left, so the name survives. A grep group
+list (files, buffers, diagnostics, git file lists, the statusline). A remote
+file leads with its authority, `ssh:host`, in `fg.muted` as its own segment
+(the statusline's namespace chip) — never spliced into the path. Clipping
+spends the directory first, from the left, so the authority and the name
+survive; an absolute path keeps its leading `/` ahead of the `…`. A grep group
 header is a *ruled heading*: name, a `fg.faint` leader `───`, the hit count in
 `fg.secondary` — the same grammar as a pane title in its border, so grouping
 reads without relying on how a terminal draws bold. File names are never

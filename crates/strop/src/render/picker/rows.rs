@@ -15,7 +15,7 @@ use ratatui::Frame;
 
 use super::super::card::{band, row_marker};
 use super::super::clip;
-use super::super::file_name::{self, Role};
+use super::super::file_name::{self, Label, Role};
 use super::super::style::Tokens;
 
 mod search;
@@ -254,16 +254,6 @@ fn plain(text: impl Into<String>, style: Style) -> Span<'static> {
     Span::styled(text.into(), style)
 }
 
-/// Workspace-relative display for a local path; remote locations keep their authority label.
-fn relative_label(location: &strop_workspace::ResourceLocation, root: &Path) -> String {
-    if location.local_path().is_some() {
-        let relative = location.path.strip_prefix(root).unwrap_or(&location.path);
-        strop_workspace::directory::display_path(relative)
-    } else {
-        location.label()
-    }
-}
-
 // ---- symbols --------------------------------------------------------------
 
 /// The kind chip slot: 9 cells including padding, so names share one
@@ -447,10 +437,10 @@ fn split_match_cols(match_cols: &[u32], dir_chars: usize, name_off: usize) -> (V
 
 // ---- buffers --------------------------------------------------------------
 
-/// ` crates/strop/src/render/card.rs ●` — the open file in the row
-/// idiom (directory secondary, name text), the rest of the label (a
-/// terminal's ` · phase`) in muted. A terminal's `term://` name is one
-/// identity, never split at its slashes.
+/// ` crates/strop/src/render/card.rs` — the open file in the row idiom
+/// (directory secondary, name text; a remote file behind its `ssh:host`
+/// authority), the rest of the label (a terminal's ` · phase`) in
+/// muted. A terminal's `term://` name is one identity, never split.
 fn buffer_row(
     t: &Tokens,
     item: &strop_picker::Item,
@@ -460,14 +450,32 @@ fn buffer_row(
 ) -> Line<'static> {
     let text = clip::clip_end(&item.text, width.saturating_sub(2) as usize);
     let (path, rest) = text.split_once(" · ").unwrap_or((&text, ""));
+    let label = if item.badge.is_some() {
+        Label::local(path)
+    } else {
+        Label::parse(path)
+    };
     let (dir, name) = if item.badge.is_some() {
         ("", path)
     } else {
-        file_name::split(path)
+        file_name::split(&label.path)
+    };
+    // query matches are char columns of the item text; a parsed remote
+    // label is re-spelt (`ssh:host /path`), so its matches no longer map
+    let match_cols: &[u32] = if label.authority.is_some() {
+        &[]
+    } else {
+        match_cols
     };
     let dir_chars = dir.chars().count();
     let (dir_cols, name_cols) = split_match_cols(match_cols, dir_chars, dir_chars);
     let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
+    if let Some(authority) = &label.authority {
+        spans.push(plain(
+            format!("{authority} "),
+            file_name::authority_style(t),
+        ));
+    }
     spans.extend(emphasis(t, dir, &dir_cols, file_name::dir_style(t)));
     spans.extend(emphasis(
         t,
@@ -548,14 +556,21 @@ fn diagnostic_row(
             line,
             line_text,
             ..
-        } => (relative_label(location, root), *line, line_text.to_string()),
+        } => (
+            Label::from_location(location, root),
+            *line,
+            line_text.to_string(),
+        ),
         strop_picker::Payload::Remote {
             endpoint,
             path,
             line,
             ..
         } => (
-            format!("{endpoint}{}", path.display()),
+            Label::from_location(
+                &strop_workspace::ResourceLocation::remote(endpoint.clone(), path.clone()),
+                root,
+            ),
             *line,
             item.text.clone(),
         ),
@@ -575,7 +590,7 @@ fn diagnostic_row(
     let line = format!(":{line}");
     // marker + ` ● ` = 4 cells before the message
     let budget = usize::from(width).saturating_sub(4);
-    let loc_w = clip::width(&location) + clip::width(&line);
+    let loc_w = location.width() + clip::width(&line);
     let message_budget = budget.saturating_sub(loc_w + 2);
     let message = message.replace('\n', " · ");
     let message = clip::clip_end(&message, message_budget.max(4));
@@ -587,7 +602,7 @@ fn diagnostic_row(
         plain(message.into_owned(), Style::default().fg(t.text)),
         plain(" ".repeat(pad), Style::default()),
     ];
-    spans.extend(file_name::spans(&location, Role::Row, t));
+    spans.extend(location.spans(Role::Row, t));
     spans.push(plain(line, Style::default().fg(t.secondary)));
     finish(t, spans, width, active)
 }

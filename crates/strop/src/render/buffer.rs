@@ -170,31 +170,39 @@ fn render_title_border(
     );
     let number = format!("{} ", index + 1);
     let fixed = 2 + super::clip::width(&number) + super::clip::width(&flags);
-    // the closing ` ─╮` is reserved only while the whole name fits; a
-    // tight pane spends every cell on identity instead
-    let closes = fixed + super::clip::width(&name) + 3 <= w;
-    let budget = w.saturating_sub(fixed + if closes { 3 } else { 0 });
     let outside_workspace = document
         .buf
         .path
         .as_deref()
         .is_some_and(|path| path.is_absolute() && path.strip_prefix(root).is_err());
     let retain_authority = outside_workspace || document.remote_metadata().is_some() || is_terminal;
-    let name = if retain_authority {
-        super::clip::clip_end(&name, budget)
+    // The title is the pane's heading (0088 §2 "File names"): authority
+    // muted, directory secondary, name bold. An inactive pane is all
+    // muted, the name still bold; a terminal's `term://` identity is one
+    // name, clipped from its end.
+    let label = if is_terminal {
+        super::file_name::Label::local(name)
     } else {
-        super::clip::path_suffix(&name, budget)
+        super::file_name::Label::parse(&name)
+    };
+    // the closing ` ─╮` is reserved only while the whole name fits; a
+    // tight pane spends every cell on identity instead
+    let closes = fixed + label.width() + 3 <= w;
+    let budget = w.saturating_sub(fixed + if closes { 3 } else { 0 });
+    let label = if is_terminal {
+        super::file_name::Label::local(super::clip::clip_end(&label.path, budget))
+    } else if retain_authority {
+        label.clipped(budget)
+    } else {
+        super::file_name::Label::local(super::clip::path_suffix(&label.path, budget))
+    };
+    let (dir, leaf) = if is_terminal {
+        ("", label.path.as_str())
+    } else {
+        super::file_name::split(&label.path)
     };
     let border = Style::default().fg(if active { t.muted } else { t.faint });
     let ink = Style::default().fg(if active { t.text } else { t.muted });
-    // The title is the pane's heading (0088 §2 "File names"): directory
-    // secondary, name bold. An inactive pane is all muted, the name
-    // still bold; a terminal's `term://` identity is one name.
-    let (dir, leaf) = if is_terminal {
-        ("", name.as_ref())
-    } else {
-        super::file_name::split(&name)
-    };
     let (dir_ink, leaf_ink) = if active {
         (
             super::file_name::dir_style(t),
@@ -203,12 +211,19 @@ fn render_title_border(
     } else {
         (ink, ink.add_modifier(Modifier::BOLD))
     };
-    let mut spans = vec![
-        Span::styled("╭ ", border),
-        Span::styled(number, ink),
-        Span::styled(dir.to_owned(), dir_ink),
-        Span::styled(leaf.to_owned(), leaf_ink),
-    ];
+    let mut spans = vec![Span::styled("╭ ", border), Span::styled(number, ink)];
+    if let Some(authority) = &label.authority {
+        spans.push(Span::styled(
+            format!("{authority} "),
+            if active {
+                super::file_name::authority_style(t)
+            } else {
+                ink
+            },
+        ));
+    }
+    spans.push(Span::styled(dir.to_owned(), dir_ink));
+    spans.push(Span::styled(leaf.to_owned(), leaf_ink));
     if document.buf.is_dirty() {
         spans.push(Span::styled(" ●", Style::default().fg(t.warning)));
     }

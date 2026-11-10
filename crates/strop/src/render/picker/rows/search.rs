@@ -8,7 +8,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 
 use super::super::window::{match_window, replacement_window};
-use super::{emphasis, finish, generic_row, plain, relative_label};
+use super::{emphasis, finish, generic_row, plain};
 use crate::render::card::row_marker;
 use crate::render::clip;
 use crate::render::file_name;
@@ -43,13 +43,12 @@ pub(super) fn file_header(
     hits: Option<usize>,
     width: u16,
 ) -> Line<'static> {
-    let label = relative_label(location, root);
     let count = hits.map(|hits| hits.to_string()).unwrap_or_default();
     let budget = usize::from(width).saturating_sub(count.chars().count() + 3);
-    let label = clip::clip_start(&label, budget.max(4));
-    let gap = usize::from(width).saturating_sub(1 + clip::width(&label) + count.len() + 1);
+    let label = file_name::Label::from_location(location, root).clipped(budget.max(4));
+    let gap = usize::from(width).saturating_sub(1 + label.width() + count.len() + 1);
     let mut spans = vec![plain(" ", Style::default())];
-    spans.extend(file_name::spans(&label, file_name::Role::Heading, t));
+    spans.extend(label.spans(file_name::Role::Heading, t));
     // ` ─── ` needs five cells to read as a leader; less is a plain gap
     if gap >= 5 {
         spans.push(plain(
