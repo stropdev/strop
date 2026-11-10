@@ -4,42 +4,6 @@ use crate::editor::test_support::remote::{document, snapshot_editor as editor};
 use strop_remote::ReadSelection;
 
 #[test]
-fn remote_picker_containers_action_delegates_to_container_discovery() {
-    let mut e = editor("remote\n");
-    e.open_remote_picker();
-    {
-        let picker = &e.picker.as_ref().unwrap().picker;
-        assert!(picker.items.iter().any(|item| {
-            item.text == "Containers…"
-                && matches!(&item.payload, strop_picker::Payload::ContainerDiscover)
-        }));
-    }
-    let picker = &mut e.picker.as_mut().unwrap().picker;
-    let request = picker.filter_request();
-    let ranking = strop_picker::rank::rank(&request, || false)
-        .unwrap()
-        .unwrap();
-    picker.install_ranking(ranking);
-    picker.selected = picker
-        .rows
-        .iter()
-        .position(|row| {
-            matches!(
-                &picker.items[row.item].payload,
-                strop_picker::Payload::ContainerDiscover
-            )
-        })
-        .unwrap();
-    e.picker.as_mut().unwrap().rank_pending = None;
-    e.accept_current_picker();
-    assert!(!e.picker_open());
-    assert!(matches!(
-        &e.containers.pending.as_ref().unwrap().key.job,
-        crate::editor::containers::ContainerJob::Discover
-    ));
-}
-
-#[test]
 fn workspace_picker_selects_the_exact_remote_project_root() {
     let mut e = editor("remote\n");
     e.open_remote_picker();

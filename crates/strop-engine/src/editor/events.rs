@@ -52,12 +52,6 @@ pub enum AppEvent {
     Shell(ShellResult),
     Io(super::io::IoEvent),
     RemoteCompletion(Box<super::remote_completion::RemoteCompletionEvent>),
-    Container(super::containers::ContainerEvent),
-    /// A Dev Container worker settled; its owned channel carries the facts.
-    Devcontainer,
-    /// Settled, redacted outcomes recorded at the live wake boundary. Replay
-    /// applies these facts directly and never polls native Dev Container jobs.
-    DevcontainerSettled(Vec<super::devcontainers::DevcontainerEvent>),
     Git(super::GitJob),
     Picker(super::picker::PickerEvent),
     PickerRanking(super::picker::ranking::Event),
@@ -114,12 +108,6 @@ impl Editor {
                 AppEvent::RemoteCompletion(Box::new(event))
             });
         }
-        if let Some(rx) = self.containers.take_rx() {
-            forward(rx, tx.clone(), AppEvent::Container);
-        }
-        if let Some(rx) = self.devcontainers.take_wake_rx() {
-            forward(rx, tx.clone(), |()| AppEvent::Devcontainer);
-        }
         if let Some(rx) = self.shell_rx.take() {
             forward(rx, tx.clone(), AppEvent::Shell);
         }
@@ -165,12 +153,6 @@ impl Editor {
         // loop, never at construction (pure seeding) — readiness is the
         // subscribe settle on the notify queue.
         self.start_notifications();
-        let workspace =
-            super::WorkspaceKey::new(strop_workspace::ResourceLocation::local(self.cwd.clone()));
-        if let Ok(workspace) = workspace {
-            let _ = self.devcontainers.discover(workspace);
-        }
-        self.handle_devcontainer_events();
     }
 
     /// Route one event to its handler (the per-event halves of the old
@@ -233,9 +215,6 @@ impl Editor {
             AppEvent::Shell(r) => self.handle_shell_result(r),
             AppEvent::Io(event) => self.handle_io(event),
             AppEvent::RemoteCompletion(event) => self.handle_remote_completion(*event),
-            AppEvent::Container(event) => self.handle_container_event(event),
-            AppEvent::Devcontainer => self.handle_devcontainer_events(),
-            AppEvent::DevcontainerSettled(events) => self.apply_devcontainer_events(events),
             AppEvent::Git(job) => self.handle_git_job(job),
             AppEvent::Picker(event) => self.handle_picker_event(event),
             AppEvent::PickerRanking(event) => self.handle_picker_ranking(event),
@@ -322,8 +301,6 @@ impl Editor {
                 .blame_gutters
                 .values()
                 .any(|gutter| gutter.request.is_some())
-            || self.containers.pending.is_some()
-            || self.devcontainers.pending()
             || !self.lsp_state.attach.pending.is_empty()
             || self.remote_completion.pending.is_some()
             || (!self.finishing
@@ -336,7 +313,6 @@ impl Editor {
     /// cancel observational work so shutdown cannot depend on a slow reader.
     pub(crate) fn finish_background_work(&mut self) {
         self.finishing = true;
-        self.devcontainers.shutdown();
         self.lsp_state.attach.enabled = false;
         self.stop_all_terminals();
         self.stop_remote_work();

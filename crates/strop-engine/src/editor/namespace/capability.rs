@@ -71,65 +71,6 @@ impl Editor {
                 };
                 (Available, tools, Available, write, terminal)
             }
-            Filesystem::Container(id) => {
-                let identity = self.containers.attached.get(id.as_str());
-                let Some(identity) = identity else {
-                    let decision = unavailable(
-                        "this container incarnation is not attached",
-                        "attach the running container first",
-                    );
-                    return NamespaceCapabilities {
-                        root: root.clone(),
-                        read: decision.clone(),
-                        tools: decision.clone(),
-                        search: decision.clone(),
-                        write: decision.clone(),
-                        terminal: decision,
-                    };
-                };
-                let admitted = self.containers.workers.get(identity).is_some();
-                let worker_step = ":container-worker enables tools, Search and terminal here";
-                let tools = if admitted {
-                    Available
-                } else {
-                    unavailable(
-                        "no admitted worker for this container incarnation",
-                        worker_step,
-                    )
-                };
-                let search = if admitted {
-                    Available
-                } else {
-                    unavailable("container Search needs its admitted worker", worker_step)
-                };
-                let terminal = if admitted {
-                    Available
-                } else {
-                    unavailable("container terminal needs its admitted worker", worker_step)
-                };
-                let permitted = admitted
-                    && document.is_some_and(|document| {
-                        self.io.container_writes.permit_matches(
-                            document,
-                            root,
-                            &identity.started_at,
-                        )
-                    });
-                let write = if permitted {
-                    Available
-                } else if admitted {
-                    unavailable(
-                        "this container document has no verified edit permit",
-                        ":container-edit verifies this snapshot and enables editing",
-                    )
-                } else {
-                    unavailable(
-                        "container editing needs both worker admission and document authority",
-                        ":container-worker, then :container-edit on the file",
-                    )
-                };
-                (Available, tools, search, write, terminal)
-            }
         };
         NamespaceCapabilities {
             root: root.clone(),

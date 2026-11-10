@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use strop_core::frontend_input::Key;
 use strop_core::id::{BufferRevision, DocumentId, LineIndex};
 use strop_core::worker::{self, CancelReason, Completion, FailureKind, Outcome, Ticket, WorkerId};
-use strop_workspace::{Filesystem, ResourceLocation};
+use strop_workspace::ResourceLocation;
 
 #[derive(Default)]
 pub(crate) struct DirectoryState {
@@ -189,8 +189,8 @@ impl Editor {
     /// The base a relative Ex operand (`:e`, `:sp`, `:browse`, their
     /// completion) resolves against. Local operands follow Vim: the editor's
     /// cwd, even from a local Directory buffer (0088 U2 — browsing never
-    /// changes where `:e path` lands). A remote or container Directory has
-    /// no cwd in its namespace, so its own location is the base there; an
+    /// changes where `:e path` lands). A remote Directory has no cwd in
+    /// its namespace, so its own location is the base there; an
     /// ordinary remote file never lends its namespace.
     pub(crate) fn open_context(&self) -> ResourceLocation {
         match self.directory() {
@@ -229,10 +229,7 @@ impl Editor {
         mut context: ResourceLocation,
         value: &str,
     ) -> Result<FileTarget, String> {
-        if value.starts_with("ssh://")
-            || value.starts_with("file://")
-            || value.starts_with("container:")
-        {
+        if value.starts_with("ssh://") || value.starts_with("file://") {
             return FileTarget::parse(value.into()).map_err(|error| error.to_string());
         }
         context.path = context.path.join(value);

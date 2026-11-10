@@ -59,13 +59,11 @@ impl EffectFamily {
     }
 }
 
-/// Where an effect lands: the local host, an SSH endpoint, or a
-/// container namespace.
+/// Where an effect lands: the local host or an SSH endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectTarget {
     Local,
     Ssh,
-    Container,
 }
 
 impl EffectTarget {
@@ -73,7 +71,6 @@ impl EffectTarget {
         match self {
             EffectTarget::Local => "local",
             EffectTarget::Ssh => "ssh",
-            EffectTarget::Container => "container",
         }
     }
 }
@@ -136,13 +133,12 @@ pub fn classify(policy: &EffectPolicy, family: EffectFamily, target: EffectTarge
 
 /// Persistence admission — the target-aware half (AR04 §5, AR08).
 /// Local drafts persist under the automatic policy; remote drafts need
-/// explicit session consent; container bytes are never draft-persisted.
+/// explicit session consent.
 /// A refusal loses the draft honestly (memory-only), never quietly.
 pub fn persistence_admitted(policy: &EffectPolicy, target: EffectTarget) -> bool {
     match target {
         EffectTarget::Local => true,
         EffectTarget::Ssh => policy.remote_consent,
-        EffectTarget::Container => false,
     }
 }
 
@@ -150,11 +146,9 @@ pub fn persistence_admitted(policy: &EffectPolicy, target: EffectTarget) -> bool
 pub fn target_of(source: &DocumentSource) -> EffectTarget {
     match source {
         DocumentSource::Remote(_) => EffectTarget::Ssh,
-        DocumentSource::Container { .. } => EffectTarget::Container,
         DocumentSource::Terminal(terminal) => match &terminal.launch.filesystem {
             strop_workspace::Filesystem::Local => EffectTarget::Local,
             strop_workspace::Filesystem::Remote(_) => EffectTarget::Ssh,
-            strop_workspace::Filesystem::Container(_) => EffectTarget::Container,
         },
         _ => EffectTarget::Local,
     }
@@ -190,11 +184,7 @@ mod tests {
     use super::*;
 
     const FAMILIES: [EffectFamily; 6] = EffectFamily::ALL;
-    const TARGETS: [EffectTarget; 3] = [
-        EffectTarget::Local,
-        EffectTarget::Ssh,
-        EffectTarget::Container,
-    ];
+    const TARGETS: [EffectTarget; 2] = [EffectTarget::Local, EffectTarget::Ssh];
 
     fn policy(content: ContentPolicy) -> EffectPolicy {
         EffectPolicy {
@@ -244,10 +234,7 @@ mod tests {
         };
         assert!(persistence_admitted(&no_consent, EffectTarget::Local));
         assert!(!persistence_admitted(&no_consent, EffectTarget::Ssh));
-        assert!(!persistence_admitted(&no_consent, EffectTarget::Container));
         assert!(persistence_admitted(&consent, EffectTarget::Ssh));
-        // Consent never extends to container namespaces.
-        assert!(!persistence_admitted(&consent, EffectTarget::Container));
     }
 
     /// 0057 VF15: defaults withhold — no grant can be manufactured by a
@@ -271,7 +258,6 @@ mod tests {
         }
         assert!(persistence_admitted(&policy, EffectTarget::Local));
         assert!(!persistence_admitted(&policy, EffectTarget::Ssh));
-        assert!(!persistence_admitted(&policy, EffectTarget::Container));
     }
 
     #[test]

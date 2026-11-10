@@ -1564,19 +1564,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
-name = "strop-containers"
-version = "0.54.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "strop-core",
- "strop-workspace",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "strop-core"
 version = "0.54.0"
 dependencies = [
@@ -1606,7 +1593,6 @@ dependencies = [
  "ropey",
  "serde_json",
  "sha2",
- "strop-containers",
  "strop-core",
  "strop-engine",
  "strop-git",
@@ -1642,7 +1628,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "strop-containers",
  "strop-core",
  "strop-fs",
  "strop-git",
@@ -1691,7 +1676,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "strop-containers",
  "strop-core",
  "strop-remote",
  "strop-worker",
@@ -1890,7 +1874,6 @@ dependencies = [
  "getrandom 0.4.3",
  "serde_json",
  "sha2",
- "strop-containers",
  "strop-core",
  "strop-worker-client",
  "strop-worker-protocol",

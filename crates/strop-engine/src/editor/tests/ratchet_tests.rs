@@ -6,9 +6,9 @@
 //! only ever turns one way.
 
 /// Fields of `pub struct Editor` in `editor/mod.rs`. Lower it, never raise it.
-const EDITOR_FIELDS: usize = 113;
+const EDITOR_FIELDS: usize = 111;
 /// Inherent `impl Editor` blocks across the crate. Lower it, never raise it.
-const EDITOR_IMPL_BLOCKS: usize = 164;
+const EDITOR_IMPL_BLOCKS: usize = 159;
 
 /// Removes `//` comments (doc comments included) so commented-out or
 /// documented text never counts. The struct body holds no string literals.

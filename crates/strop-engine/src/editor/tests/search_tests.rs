@@ -215,7 +215,6 @@ fn ex_completion_updates_the_same_caret_used_by_later_typing() {
 fn ex_tab_completion_offers_dispatched_user_commands() {
     const COMMANDS: &[&str] = &[
         "trust",
-        "container-worker",
         "jumps",
         "symbols",
         "set",

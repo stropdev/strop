@@ -1,5 +1,5 @@
 //! The bridge between a worker-leased server's blocking streams and the
-//! tokio mainloop (0058 WK10). A remote/container server spawned through
+//! tokio mainloop (0058 WK10). A remote server spawned through
 //! an admitted worker lease is the worker's supervised exec: its stdout/
 //! stderr arrive as bounded stream chunks on the client connection and
 //! its stdin rides relayed chunks the other way. The mainloop speaks
@@ -315,7 +315,7 @@ impl Drop for WorkerStdin {
 
 /// The lease on the worker-owned server process: identity plus the
 /// cancel path. `settle` is the teardown the runtime thread runs once
-/// the mainloop has ended — the same ordering the supervised ssh/docker
+/// the mainloop has ended — the same ordering the supervised ssh
 /// launches had (stdin EOF, grace, then revoke).
 pub(super) struct WorkerLease {
     control: ExecControl,

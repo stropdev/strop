@@ -252,7 +252,6 @@ fn startup_open(
             view,
             line: location.line,
         },
-        files::FileTarget::Container { .. } => editor::io::OpenIntent::Switch { readonly: true },
         files::FileTarget::Local(_) => return None,
     };
     Some(editor::trace::drive::StartupOpen {

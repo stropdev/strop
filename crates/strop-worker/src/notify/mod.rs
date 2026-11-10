@@ -43,7 +43,7 @@
 //! unpaired, self-moved or queue-lost is `NotifyKind::Ambiguous` plus a
 //! rescan obligation — never a guessed relocation.
 //!
-//! Remote and container namespaces are refused typed
+//! Remote namespaces are refused typed
 //! ([`NotifyError::UnsupportedNamespace`]); the relay is a later slice.
 
 mod manager;
@@ -94,9 +94,9 @@ impl Default for NotifyConfig {
 /// precise message — typed and truthful, never a guessed success.
 #[derive(Debug, thiserror::Error)]
 pub enum NotifyError {
-    /// Remote/container namespaces are out for this backend; the relay
+    /// Remote namespaces are out for this backend; the relay
     /// slice owns them. Maps to `Refusal::Capability { Notify }`.
-    #[error("native notify watches only the local namespace; remote/container scopes need the worker relay")]
+    #[error("native notify watches only the local namespace; remote scopes need the worker relay")]
     UnsupportedNamespace,
     /// A notify scope must be absolute; relative paths never resolve here.
     #[error("notify scope must be an absolute path")]

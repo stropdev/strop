@@ -14,7 +14,7 @@ release catalog publishes each tarball's SHA-256; `install.sh` and
 Report privately through GitHub's
 [private vulnerability reporting](https://github.com/stropdev/strop/security/advisories/new)
 for this repository. Please include the strop version (`strop --version`), what
-an attacker controls (a file you open, a remote host, a container, a language
+an attacker controls (a file you open, a remote host, a language
 server, a release download …) and a reproduction if you have one. Do not open a
 public issue for an unfixed vulnerability.
 
@@ -26,7 +26,7 @@ otherwise.
 
 strop sends no telemetry and transfers no files, source text or terminal
 content in the background. Network traffic happens only for operations you
-start or configure: language servers, SSH, containers, Git remotes, and update
+start or configure: language servers, SSH, Git remotes, and update
 checks or downloads. Optional traces record content only under their
 documented opt-in controls ([docs/terminal-and-scripting.md](docs/terminal-and-scripting.md));
 inspect a trace before sharing it.

@@ -67,44 +67,6 @@ impl Editor {
                     };
                     let _ = writeln!(text, "  {endpoint}  {state}");
                 }
-                strop_workspace::Filesystem::Container(id) => {
-                    let admitted = self
-                        .containers
-                        .attached
-                        .get(id.as_str())
-                        .and_then(|identity| self.containers.workers.get(identity));
-                    match admitted {
-                        Some(lease) => {
-                            let state = match lease.worker().session() {
-                                Some(session) => {
-                                    format!("connected (incarnation {})", session.incarnation)
-                                }
-                                None => "artifact verified; service not connected".into(),
-                            };
-                            let _ = writeln!(text, "  container {}  {state}", id);
-                            let _ = writeln!(
-                                text,
-                                "    target {} / {}",
-                                env!("CARGO_PKG_VERSION"),
-                                lease.target()
-                            );
-                            let _ =
-                                writeln!(text, "    artifact sha256:{}", lease.artifact_sha256());
-                            let _ = writeln!(
-                                text,
-                                "    path {}",
-                                strop_core::layout::printable_text(lease.artifact_path())
-                            );
-                        }
-                        None => {
-                            let _ = writeln!(
-                                text,
-                                "  container {}  read-only browse; :container-worker for services",
-                                id
-                            );
-                        }
-                    }
-                }
             }
         }
 
@@ -404,10 +366,8 @@ impl Editor {
             "  persistence   {}",
             if admitted {
                 "drafts admitted to private state storage".to_string()
-            } else if target == super::privacy::EffectTarget::Ssh {
-                "remote drafts not persisted without :recover consent remote".to_string()
             } else {
-                "container bytes are never draft-persisted".to_string()
+                "remote drafts not persisted without :recover consent remote".to_string()
             }
         );
         if !strop_trace::enabled() {
@@ -436,9 +396,6 @@ impl Editor {
             }
             Some(strop_core::ReadonlyReason::RemoteAuthority) => {
                 "remote snapshot without write authority — :remote edit grants it"
-            }
-            Some(strop_core::ReadonlyReason::Container) => {
-                "container file — container bytes have no local write path"
             }
             Some(strop_core::ReadonlyReason::GitSurface) => {
                 "git surface — content is derived from history"

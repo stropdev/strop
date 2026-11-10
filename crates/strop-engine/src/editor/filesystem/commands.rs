@@ -1,6 +1,5 @@
 use super::*;
 use strop_core::id::LineIndex;
-use strop_workspace::Filesystem;
 impl Editor {
     pub(crate) fn filesystem_completion_context(
         &self,
@@ -289,14 +288,10 @@ impl Editor {
         }
         let mut intents = Vec::with_capacity(sources.len());
         for source in &sources {
-            if matches!(source.filesystem, Filesystem::Container(_)) {
-                return Err("container filesystem operations are read-only by policy".into());
-            }
             let destination = if needs_destination {
                 let mut target = if command == "rename"
                     && !argument.contains('/')
                     && !argument.starts_with("file:")
-                    && !argument.starts_with("container:")
                 {
                     let parent = strop_fs::parent(source).ok_or("source has no parent")?;
                     ResourceLocation {

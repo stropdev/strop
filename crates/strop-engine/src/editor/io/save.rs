@@ -2,13 +2,9 @@
 use super::*;
 use strop_core::worker::{self, FailureKind};
 
-pub(super) mod container;
-
 impl Editor {
     pub(crate) fn local_write_pending(&self) -> bool {
         !self.io.saves.is_empty()
-            || self.io.container_writes.pending()
-            || self.io.container_writes.unconfirmed() > 0
             // An unconfirmed store holds its binding until verified.
             || !self.io.store_attempts.is_empty()
             || matches!(self.lsp_state.after_format.as_ref(),
@@ -93,14 +89,6 @@ impl Editor {
             }
             self.message = "Directory buffers have no file write binding; use :fs edit".into();
             return false;
-        }
-        if self.docs.get(document).is_some_and(|doc| {
-            matches!(
-                doc.source,
-                crate::editor::document::DocumentSource::Container { .. }
-            )
-        }) {
-            return self.request_container_save(document, target, force, close);
         }
         if self.docs.get(document).is_some_and(|doc| {
             matches!(

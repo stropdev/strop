@@ -601,8 +601,8 @@ pub fn activate(
     if let Some(layout) = layout {
         // The probe has been stopped by the provider. It must not pin
         // the object as though it were the editor's later live worker.
-        // Its own orderly teardown can race this removal (container rm
-        // does not classify ENOENT); re-observe only on failure.
+        // Its own orderly teardown can race this removal; re-observe
+        // only on failure.
         let path = layout.lease(handshake.session.lease.0);
         if let Err(error) = provider.remove(&path) {
             if provider

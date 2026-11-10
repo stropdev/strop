@@ -51,8 +51,7 @@ Confirmed relocation keeps source text, history and document identity.
 Remote relocation revokes old write authority; use `:remote edit` again
 before saving the renamed buffer. Pending saves and unconfirmed operations
 block conflicting work. Receipts survive leaving the view; verification
-never blindly retries a mutation. Containers remain read-only through these
-actions.
+never blindly retries a mutation.
 
 Local saves/save-as and local filesystem mutations use a conservative
 per-editor write barrier, including parent aliases. Let an admitted save
@@ -62,9 +61,7 @@ post-publication version: finding the same inode at a pathname is not
 sufficient ownership evidence. Receipts are in-memory, not crash recovery.
 Graceful global exit refuses unresolved outcomes; explicit `:qa!` reports
 them and exits unsuccessfully rather than claiming they were resolved or
-persisted. Container filesystem mutations remain refused through these
-actions; ordinary file editing/saving is a separate `:container-edit` and
-worker-Store authority path.
+persisted.
 
 Removing an otherwise empty directory may retire its validated, quiescent
 protocol locks. Active locks, unknown entries and other directory contents

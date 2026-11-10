@@ -561,12 +561,6 @@ impl Editor {
                     }
                 })
             }
-            strop_workspace::Filesystem::Container(id) => self
-                .containers
-                .attached
-                .get(id.as_str())
-                .and_then(|identity| self.containers.workers.get(identity))
-                .map(|worker| strop_picker::SearchWorker::Container(worker.worker().clone())),
             _ => None,
         };
         let worker = match self.source_worker() {

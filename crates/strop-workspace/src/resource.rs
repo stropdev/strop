@@ -21,7 +21,7 @@ pub struct ResourceLocation {
 
 impl ResourceLocation {
     /// Explicit, lossless clipboard/completion spelling. Display labels are not
-    /// used as an input codec, especially for non-UTF-8 names and container IDs.
+    /// used as an input codec, especially for non-UTF-8 names.
     pub fn uri(&self) -> Result<String, crate::AddressError> {
         if !self.path.is_absolute() {
             return Err(crate::AddressError::RelativePath);
@@ -35,7 +35,6 @@ impl ResourceLocation {
                 return crate::RemoteFile::from_path(endpoint.clone(), self.path.clone())
                     .map(|file| file.to_string())
             }
-            Filesystem::Container(id) => format!("container:{id}"),
         };
         crate::addr::uri::push_escaped(&mut value, crate::addr::uri::path_bytes(&self.path));
         Ok(value)
@@ -58,13 +57,6 @@ impl ResourceLocation {
                     .ok_or(crate::AddressError::NonLocalFileAuthority)?
             };
             (Filesystem::Local, path)
-        } else if let Some(rest) = value.strip_prefix("container:") {
-            let slash = rest
-                .find('/')
-                .ok_or(crate::AddressError::InvalidContainerLocation)?;
-            let id = crate::ContainerId::canonical(rest[..slash].to_owned())
-                .map_err(|_| crate::AddressError::InvalidContainerLocation)?;
-            (Filesystem::Container(id), &rest[slash..])
         } else {
             return Err(crate::AddressError::UnsupportedResourceUri);
         };
@@ -165,17 +157,7 @@ mod tests {
         );
         assert!(ResourceLocation::parse_uri("file://another-host/tmp/a").is_err());
         assert!(ResourceLocation::parse_uri("file:///tmp/%00").is_err());
-        assert!(ResourceLocation::parse_uri("container:short/tmp/a").is_err());
-        let container = ResourceLocation {
-            filesystem: Filesystem::Container(
-                crate::ContainerId::canonical("a".repeat(64)).unwrap(),
-            ),
-            path: "/tmp/a b".into(),
-        };
-        assert_eq!(
-            ResourceLocation::parse_uri(&container.uri().unwrap()).unwrap(),
-            container
-        );
+        assert!(ResourceLocation::parse_uri("container:a/tmp/a").is_err());
     }
 
     #[cfg(unix)]

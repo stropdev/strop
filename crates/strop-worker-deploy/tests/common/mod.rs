@@ -1,7 +1,6 @@
 //! Hermetic fake provider: an in-memory remote filesystem with metadata,
 //! failure injection at every provider operation and a scripted
-//! handshake. Stands in for both thin provider shapes (SFTP upload and
-//! container tar) — the trait surface they implement is identical.
+//! handshake. Stands in for the thin SFTP upload provider.
 // Each integration binary uses its own slice of these fixtures; the
 // module is shared, so unused-helper warnings would be noise here.
 #![allow(dead_code)]

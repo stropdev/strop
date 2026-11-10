@@ -62,31 +62,6 @@ pub(super) fn run_search(
     }
 }
 
-pub(super) fn run_container_search(
-    query: Arc<SearchQuery>,
-    policy: SelectionPolicy,
-    root: ResourceLocation,
-    snapshots: Vec<SourceSnapshot>,
-    worker: Worker,
-    tx: &StreamSender,
-    token: CancelToken,
-) -> Outcome<()> {
-    if !matches!(root.filesystem, strop_workspace::Filesystem::Container(_)) {
-        return Outcome::failed(
-            FailureKind::Protocol,
-            "container search requires a container scope",
-        );
-    }
-    let result = search(&query, policy, &root, snapshots, &worker, tx, &token);
-    if token.is_cancelled() {
-        return Outcome::Cancelled(CancelReason::Superseded);
-    }
-    match result {
-        Ok(()) => Outcome::Success(()),
-        Err(error) => Outcome::failed(FailureKind::Io, error),
-    }
-}
-
 fn search(
     query: &SearchQuery,
     policy: SelectionPolicy,
@@ -98,7 +73,7 @@ fn search(
 ) -> Result<(), String> {
     let backend = match &root.filesystem {
         strop_workspace::Filesystem::Remote(endpoint) => endpoint.to_string(),
-        _ => root.label(),
+        strop_workspace::Filesystem::Local => root.label(),
     };
     let selection = FileSelectionPlan::compile(query).map_err(|error| error.message)?;
     let content = ContentPlan::compile(query)
@@ -468,16 +443,15 @@ mod tests {
         lease.worker().shutdown().unwrap();
     }
 
+    /// Worker search answers from the editor's dirty buffer, not the
+    /// bytes on the host, and keeps the hit in the searched namespace.
     #[cfg(unix)]
     #[test]
-    fn container_search_uses_only_the_captured_worker_and_root() {
+    fn worker_search_prefers_dirty_buffer_snapshots() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("hit.txt"), b"needle\n").unwrap();
-        let container = strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap();
-        let root = ResourceLocation {
-            filesystem: strop_workspace::Filesystem::Container(container.clone()),
-            path: directory.path().to_path_buf(),
-        };
+        let endpoint = RemoteEndpoint::parse("ssh://fixture.example").unwrap();
+        let root = ResourceLocation::remote(endpoint.clone(), directory.path().to_path_buf());
         let worker = Worker::connect_with(|| {
             let (client_read, worker_write) = std::io::pipe()?;
             let (worker_read, client_write) = std::io::pipe()?;
@@ -504,7 +478,10 @@ mod tests {
                 path: directory.path().join("hit.txt"),
                 text: ropey::Rope::from_str("needle from the dirty buffer\n"),
             }],
-            Some(SearchWorker::Container(worker.clone())),
+            Some(SearchWorker::Admitted(RemoteWorker::for_test(
+                &endpoint,
+                worker.clone(),
+            ))),
             tx,
         );
         let mut found = false;
@@ -530,31 +507,11 @@ mod tests {
                     break;
                 }
                 PickerMsg::Warning(_) => {}
-                other => panic!("unexpected container search event {other:?}"),
+                other => panic!("unexpected search event {other:?}"),
             }
         }
         assert!(found);
         worker.shutdown().unwrap();
-
-        let (tx, rx) = std::sync::mpsc::channel();
-        let _handle = source.search(
-            Arc::new(SearchQuery::parse("needle")),
-            SelectionPolicy {
-                hidden: true,
-                respect_ignore: true,
-            },
-            root,
-            Vec::new(),
-            None,
-            tx,
-        );
-        match rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap() {
-            PickerMsg::Finished(Outcome::Failed { failure, .. }) => {
-                assert_eq!(failure.kind, FailureKind::Unavailable);
-                assert!(failure.message.contains("no local fallback"));
-            }
-            other => panic!("unadmitted container search fell back or streamed: {other:?}"),
-        }
     }
 
     /// A read-only SFTP account has no worker execution capability;

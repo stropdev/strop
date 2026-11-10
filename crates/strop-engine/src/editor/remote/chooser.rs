@@ -21,15 +21,11 @@ impl Editor {
         let workspace_root = self.directory_context();
         let mut picker = Picker::new(
             Kind::RemoteHosts,
-            vec![
-                workspace_root_item(workspace_root.clone()),
-                new_host_item(),
-                containers_item(),
-            ],
+            vec![workspace_root_item(workspace_root.clone()), new_host_item()],
             true,
         );
         // Keep project/environment actions visible under filtering.
-        picker.pinned_tail = 3;
+        picker.pinned_tail = 2;
         self.set_picker(PickerGlue::diagnostics(picker));
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return;
@@ -133,7 +129,6 @@ impl Editor {
                 }
                 items.push(workspace_root_item(workspace_root));
                 items.push(new_host_item());
-                items.push(containers_item());
                 Outcome::Success(RemoteChoices {
                     items: items.into(),
                     notes,
@@ -242,13 +237,6 @@ fn new_host_item() -> Item {
         badge: None,
         text: "Add a host…".into(),
         payload: Payload::RemoteConnect,
-    }
-}
-fn containers_item() -> Item {
-    Item {
-        badge: None,
-        text: "Containers…".into(),
-        payload: Payload::ContainerDiscover,
     }
 }
 fn destination_item(directory: RemoteFile, origin: &str) -> Item {

@@ -24,13 +24,10 @@ fn row(grid: &ratatui::buffer::Buffer, y: u16) -> String {
 #[test]
 fn a_fresh_message_outranks_retained_info_feedback() {
     let mut editor = Editor::new(Buffer::from_text("alpha\n"));
-    editor.fixture_feedback_info("Dev container discovery completed");
+    editor.fixture_feedback_info("Remote connection restored");
     let frame = grid(&mut editor, 80, 6);
     let echo = row(&frame, 4);
-    assert!(
-        echo.contains("● Dev container discovery completed"),
-        "{echo:?}"
-    );
+    assert!(echo.contains("● Remote connection restored"), "{echo:?}");
     assert!(echo.contains(" space a  actions"), "{echo:?}");
     editor.set_message("unsaved changes — :e! to force");
     let frame = grid(&mut editor, 80, 6);
@@ -39,7 +36,7 @@ fn a_fresh_message_outranks_retained_info_feedback() {
         echo.contains("› unsaved changes — :e! to force"),
         "{echo:?}"
     );
-    assert!(!echo.contains("Dev container"), "{echo:?}");
+    assert!(!echo.contains("Remote connection"), "{echo:?}");
     assert!(
         !row(&frame, 5).contains("unsaved"),
         "messages never enter the statusline: {:?}",

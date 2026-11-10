@@ -6,9 +6,7 @@
 pub enum AddressError {
     #[error("file URIs must use an empty or localhost authority")]
     NonLocalFileAuthority,
-    #[error("container locations require a canonical full container ID and absolute path")]
-    InvalidContainerLocation,
-    #[error("resource URI must use file://, ssh:// or container:")]
+    #[error("resource URI must use file:// or ssh://")]
     UnsupportedResourceUri,
     #[error("remote locations use the form `ssh://[user@]host[:port]/absolute/path`")]
     NotSshUri,

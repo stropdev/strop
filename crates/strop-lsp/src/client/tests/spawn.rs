@@ -274,7 +274,6 @@ fn worker_leased_spawn_classifies_launch_failure() {
 #[test]
 fn lsp_without_worker_refuses_before_launch_in_every_namespace() {
     let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture.example").unwrap();
-    let container = strop_workspace::ContainerId::canonical("d".repeat(64)).unwrap();
     let spec = registry::ServerSpec {
         name: "missing",
         command: "strop-no-such-server-binary",
@@ -290,10 +289,6 @@ fn lsp_without_worker_refuses_before_launch_in_every_namespace() {
         },
         crate::target::Workspace::Remote {
             endpoint,
-            root: "/workspace".into(),
-        },
-        crate::target::Workspace::Container {
-            container,
             root: "/workspace".into(),
         },
     ] {

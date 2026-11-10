@@ -28,7 +28,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("terminal", "interactive shell in the selected namespace"),
     (
         "terminal-local",
-        "explicit local shell even from an SSH/container context",
+        "explicit local shell even from an SSH context",
     ),
     (
         "terminal-stop",
@@ -73,21 +73,12 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("filter", "filter remote directory by literal filename"),
     (
         "remote",
-        "choose remote destination or running container; edit/verify/root/home/connect/disconnect/clear/list",
+        "choose remote destination; edit/verify/root/home/connect/disconnect/clear/list",
     ),
     ("trust", "authorize the pending endpoint/project command"),
     (
         "explain",
         "why: workspaces, LSP readiness/failures, effective config",
-    ),
-    ("containers", "attach to a running container (read-only)"),
-    (
-        "container-worker",
-        "authorize a verified worker for the attached container",
-    ),
-    (
-        "container-edit",
-        "verify this snapshot and enable editing in the attached container",
     ),
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
@@ -135,7 +126,6 @@ impl Editor {
         // ground the machine (0013 §3) — it never walks the trie
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
-            self.cancel_container_write(self.current());
             self.collapse_cursors();
             self.walker.clear();
             return;

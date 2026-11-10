@@ -142,9 +142,6 @@ pub enum SaveOutcome {
 pub enum IoEvent {
     Open(Box<Completion<OpenKey, Opened>>),
     Save(Box<Completion<SaveKey, SaveOutcome>>),
-    ContainerWrite(
-        Box<Completion<save::container::ContainerWriteKey, save::container::ContainerWriteResult>>,
-    ),
     Native(Box<Completion<native::NativeKey, native::NativeResult>>),
     Remote(super::remote::RemoteEvent),
     DirectoryFilter(Box<Completion<super::directory::FilterKey, Opened>>),
@@ -181,7 +178,6 @@ pub struct IoState {
     /// entry here verifies on its next `:w` before any rewrite.
     store_attempts: HashMap<DocumentId, StoreAttempt>,
     saves: HashMap<DocumentId, Ticket<SaveKey>>,
-    pub(crate) container_writes: save::container::ContainerWriteState,
     session: Option<WorkerId>,
     queued_session: Option<crate::session::SaveRequest>,
     native: HashMap<WorkerId, native::NativeKey>,
@@ -199,7 +195,6 @@ impl Default for IoState {
             navigation: None,
             store_attempts: HashMap::new(),
             saves: HashMap::new(),
-            container_writes: save::container::ContainerWriteState::default(),
             session: None,
             queued_session: None,
             native: HashMap::new(),
@@ -214,7 +209,6 @@ impl Editor {
         super::trace::services::io(&event);
         match event {
             IoEvent::Native(completion) => self.handle_native(*completion),
-            IoEvent::ContainerWrite(completion) => self.container_write_done(*completion),
             IoEvent::Remote(event) => self.handle_remote_event(event),
             IoEvent::Review(completion) => self.handle_review_prepared(*completion),
             IoEvent::DirectoryFilter(completion) => self.directory_filter_done(*completion),
@@ -299,7 +293,6 @@ impl Editor {
             || !self.directories.filters.is_empty()
             || self.filesystem.pending()
             || !self.io.saves.is_empty()
-            || self.io.container_writes.pending()
             || self.io.session.is_some()
             || !self.io.native.is_empty()
             || self.remote_work_pending()
@@ -313,7 +306,6 @@ impl Editor {
         self.io.session == Some(request)
             || self.recovery.write_pending(request)
             || self.remote_write_pending(request)
-            || self.container_write_pending(request)
             || self.destination_write_pending(request)
             || self.filesystem.mutation_pending(request)
             || self
@@ -330,9 +322,6 @@ impl Editor {
     }
     pub fn io_status(&self) -> Option<&'static str> {
         if let Some(status) = self.remote_write_status() {
-            return Some(status);
-        }
-        if let Some(status) = self.container_write_status() {
             return Some(status);
         }
         if !self.io.saves.is_empty() {

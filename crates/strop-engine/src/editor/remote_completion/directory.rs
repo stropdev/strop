@@ -4,7 +4,6 @@ use strop_workspace::{Filesystem, ResourceLocation};
 const CANDIDATE_LIMIT: usize = 1024;
 
 pub(super) fn classify(
-    editor: &Editor,
     operand: &str,
     context: ResourceLocation,
 ) -> Result<RemoteCompletionQuery, String> {
@@ -19,7 +18,7 @@ pub(super) fn classify(
     let location = target
         .resource_location()
         .ok_or("completion requires a filesystem namespace")?;
-    let bytes = if operand.starts_with("file://") || operand.starts_with("container:") {
+    let bytes = if operand.starts_with("file://") {
         lenient_percent_decode(segment)
     } else {
         segment.as_bytes().to_vec()
@@ -42,26 +41,18 @@ pub(super) fn classify(
                 .ok_or("invalid remote completion identity")?,
         );
     }
-    let container = match &location.filesystem {
-        Filesystem::Container(id) => editor.containers.attached.get(id.as_str()).cloned(),
-        _ => None,
-    };
     Ok(RemoteCompletionQuery::Directory {
         location,
         segment: bytes,
-        container,
     })
 }
 
-/// All namespace authorities captured at one prompt moment. A
-/// container lease is paired with its inspected incarnation; missing
-/// authority stays on the established read-only tar/SFTP path.
+/// All namespace authorities captured at one prompt moment; missing
+/// authority stays on the established read-only SFTP path.
 pub(super) struct Sources<'a> {
     pub client: &'a RemoteClient,
     pub worker: &'a strop_worker_client::Worker,
     pub remote: &'a crate::editor::remote::workers::RemoteWorkers,
-    pub container: Option<&'a strop_containers::ContainerIdentity>,
-    pub container_worker: Option<&'a crate::editor::containers::BoundWorker>,
 }
 
 pub(super) fn run(
@@ -71,14 +62,12 @@ pub(super) fn run(
     cancel: &worker::CancelToken,
 ) -> Outcome<RemoteCompletionResult> {
     // Completion never authenticates: a bound lease is reused, or the
-    // read-only SFTP/tar path serves without provisioning.
+    // read-only SFTP path serves without provisioning.
     let listed = match crate::editor::namespace::list(
         sources.worker,
         sources.remote,
         &location,
         sources.client,
-        sources.container,
-        sources.container_worker,
         cancel,
     ) {
         Ok(listed) => listed,

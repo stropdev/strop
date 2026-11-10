@@ -157,7 +157,7 @@ impl Editor {
 
     /// Default coverage (0056 AR04 §5): ordinary local dirty documents and
     /// scratch drafts. Remote drafts need explicit session consent;
-    /// surfaces, terminals, containers and generated collections are never
+    /// surfaces, terminals and generated collections are never
     /// substitute source backups and stay out.
     fn recovery_doc_eligible(&self, doc: &super::Document) -> bool {
         if !doc.buf.dirty {

@@ -12,12 +12,6 @@ use strop_workspace::{AddressError, RemoteLocation};
 pub enum FileTarget {
     Local(PathBuf),
     Remote(RemoteLocation),
-    /// A path inside a running container (0037 DC1b) — the path names
-    /// container bytes; there is never a local interpretation.
-    Container {
-        container: strop_workspace::ContainerId,
-        path: PathBuf,
-    },
 }
 
 impl Serialize for FileTarget {
@@ -26,18 +20,9 @@ impl Serialize for FileTarget {
         struct RemoteRecord<'a> {
             remote: &'a RemoteLocation,
         }
-        #[derive(Serialize)]
-        struct ContainerRecord<'a> {
-            container: &'a strop_workspace::ContainerId,
-            #[serde(with = "strop_core::path_serde")]
-            path: &'a PathBuf,
-        }
         match self {
             Self::Local(path) => strop_core::path_serde::serialize(path, serializer),
             Self::Remote(remote) => RemoteRecord { remote }.serialize(serializer),
-            Self::Container { container, path } => {
-                ContainerRecord { container, path }.serialize(serializer)
-            }
         }
     }
 }
@@ -46,34 +31,22 @@ impl<'de> Deserialize<'de> for FileTarget {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Record {
-            Remote {
-                remote: RemoteLocation,
-            },
-            Container {
-                container: strop_workspace::ContainerId,
-                #[serde(with = "strop_core::path_serde")]
-                path: PathBuf,
-            },
+            Remote { remote: RemoteLocation },
             Local(#[serde(with = "strop_core::path_serde")] PathBuf),
         }
         Ok(match Record::deserialize(deserializer)? {
             Record::Remote { remote } => Self::Remote(remote),
-            Record::Container { container, path } => Self::Container { container, path },
             Record::Local(path) => Self::Local(path),
         })
     }
 }
 impl FileTarget {
     pub fn resource_location(&self) -> Option<strop_workspace::ResourceLocation> {
-        use strop_workspace::{Filesystem, ResourceLocation};
+        use strop_workspace::ResourceLocation;
         match self {
             Self::Local(path) if path.is_absolute() => Some(ResourceLocation::local(path.clone())),
             Self::Remote(location) => location.absolute_file().map(|file| {
                 ResourceLocation::remote(file.endpoint().clone(), file.path().to_path_buf())
-            }),
-            Self::Container { container, path } if path.is_absolute() => Some(ResourceLocation {
-                filesystem: Filesystem::Container(container.clone()),
-                path: path.clone(),
             }),
             _ => None,
         }
@@ -91,10 +64,6 @@ impl FileTarget {
                 strop_workspace::RemoteFile::from_path(endpoint.clone(), location.path.clone())?
                     .into(),
             ),
-            Filesystem::Container(container) => Self::Container {
-                container: container.clone(),
-                path: location.path.clone(),
-            },
         })
     }
 
@@ -105,9 +74,6 @@ impl FileTarget {
             (Self::Remote(remote), Filesystem::Remote(endpoint)) => remote
                 .absolute_file()
                 .is_some_and(|file| file.endpoint() == endpoint && file.path() == location.path),
-            (Self::Container { container, path }, Filesystem::Container(expected)) => {
-                container == expected && path == &location.path
-            }
             _ => false,
         }
     }
@@ -118,7 +84,7 @@ impl FileTarget {
             if text.starts_with("ssh://") {
                 return RemoteLocation::parse(text).map(Self::Remote);
             }
-            if text.starts_with("file://") || text.starts_with("container:") {
+            if text.starts_with("file://") {
                 return strop_workspace::ResourceLocation::parse_uri(text)
                     .and_then(|location| Self::from_location(&location));
             }
@@ -137,12 +103,6 @@ impl std::fmt::Display for FileTarget {
         match self {
             Self::Local(path) => path.display().fmt(formatter),
             Self::Remote(file) => file.fmt(formatter),
-            Self::Container { container, path } => write!(
-                formatter,
-                "container:{}{}",
-                &container.as_str()[..12],
-                path.display()
-            ),
         }
     }
 }

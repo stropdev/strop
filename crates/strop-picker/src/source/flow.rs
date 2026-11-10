@@ -116,7 +116,6 @@ pub(super) fn row_bytes(item: &Item) -> usize {
                 strop_workspace::Filesystem::Remote(endpoint) => {
                     2 * (endpoint.host().len() + endpoint.user().map_or(0, str::len))
                 }
-                strop_workspace::Filesystem::Container(id) => id.as_str().len(),
             };
             location.path.capacity().saturating_add(namespace)
         }

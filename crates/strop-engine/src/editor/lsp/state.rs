@@ -418,12 +418,6 @@ impl Editor {
                         "{label}: no language server on {endpoint} — install it there or fix languages.toml"
                     )
                 }
-                strop_workspace::Filesystem::Container(id) => {
-                    format!(
-                        "{label}: no language server in container {} — run :container-worker and install it there or fix languages.toml",
-                        &id.as_str()[..12]
-                    )
-                }
             };
             return;
         };

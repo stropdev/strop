@@ -470,7 +470,7 @@ fn churn_storm_bounds_hold() {
 }
 
 #[test]
-fn remote_and_container_scopes_are_typed_refusals() {
+fn remote_scopes_are_typed_refusals() {
     let mut mgr = NotifyManager::new(test_config());
     let remote = ResourceLocation::parse_uri("ssh://example.com/data").expect("remote uri");
     let err = mgr

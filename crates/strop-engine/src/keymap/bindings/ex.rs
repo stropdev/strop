@@ -91,14 +91,6 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::TextLine,
     },
     Binding {
-        keys: ":container-worker",
-        desc: "authorize a verified worker for the attached container; may write its private cache",
-        sections: &["ex"],
-        live: true,
-        id: "ex-container-worker",
-        handler: Handler::TextLine,
-    },
-    Binding {
         keys: ":select-next :select-all :select-skip :select-pop",
         desc: "occurrence selection: next / all / skip / pop last-added",
         sections: &["ex"],

@@ -8,7 +8,6 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-strop-containers = { path = "../strop-containers", version = "0.54.0" }
 strop-core = { path = "../strop-core", version = "0.54.0" }
 strop-worker-client = { path = "../strop-worker-client", version = "0.54.0" }
 strop-worker-protocol = { path = "../strop-worker-protocol", version = "0.54.0" }

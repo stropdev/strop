@@ -76,14 +76,6 @@ impl<'de> Deserialize<'de> for Opened {
         } else {
             match (&record.canonical, record.remote) {
                 (FileTarget::Local(_), None) => Document::new(buffer),
-                (FileTarget::Container { container, path }, None) => {
-                    if buffer.path.is_some() || buffer.dirty {
-                        return Err(serde::de::Error::custom(
-                            "container completion has a local write binding",
-                        ));
-                    }
-                    Document::container_file(buffer, container.clone(), path.clone())
-                }
                 (FileTarget::Remote(location), Some(metadata)) => {
                     if buffer.path.is_some() || buffer.dirty {
                         return Err(serde::de::Error::custom(
@@ -132,7 +124,6 @@ impl<'de> Deserialize<'de> for Opened {
                 | DocumentSource::Scratch
                 | DocumentSource::Directory(_)
                 | DocumentSource::Remote(_)
-                | DocumentSource::Container { .. }
         ));
         Ok(Self {
             document,

@@ -149,21 +149,23 @@ fn terminal_start_trace_retains_location_and_terminal_local_stays_local() {
 }
 
 #[test]
-fn refused_container_terminal_never_falls_back_to_the_host() {
+fn unadmitted_remote_terminal_never_falls_back_to_the_host() {
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
     let origin = editor.current();
     editor.launch_terminal_at(
-        strop_workspace::ResourceLocation {
-            filesystem: strop_workspace::Filesystem::Container(
-                strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap(),
-            ),
-            path: "/srv".into(),
-        },
+        strop_workspace::ResourceLocation::remote(
+            strop_workspace::RemoteEndpoint::parse("ssh://fixture.example").unwrap(),
+            "/srv".into(),
+        ),
         "touch should-not-execute",
     );
     assert_eq!(editor.current(), origin);
     assert!(editor.terminals.entries.is_empty());
-    assert!(editor.message.contains("refused"), "{}", editor.message);
+    assert!(
+        editor.message.contains("no admitted worker"),
+        "{}",
+        editor.message
+    );
     assert!(!directory.path().join("should-not-execute").exists());
 }

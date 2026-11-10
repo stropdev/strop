@@ -185,28 +185,6 @@ impl Editor {
             "w" | "w!" => {
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
                 // :w! forces through the mutation boundary's rule.
-                // Container saves require a separate verified document permit.
-                if matches!(
-                    self.cur().source,
-                    crate::editor::document::DocumentSource::Container { .. }
-                ) {
-                    let location = self.directory_context();
-                    let decision = self.namespace_capability_for(
-                        &location,
-                        crate::editor::WorkspaceCapability::Write,
-                        Some(self.current()),
-                    );
-                    if !decision.available() {
-                        self.message = format!(
-                            "{} — {}",
-                            decision
-                                .reason()
-                                .unwrap_or("container editing is unavailable"),
-                            decision.next_step().unwrap_or(":container-edit")
-                        );
-                        return;
-                    }
-                }
                 if self.buf().readonly && cmd != "w!" && self.remote_file().is_none() {
                     let name = self.buf().name.as_deref().unwrap_or("readonly buffer");
                     self.message = format!("{name}: readonly — :w! to force");
@@ -215,27 +193,6 @@ impl Editor {
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
             }
             "wq" | "wq!" => {
-                if matches!(
-                    self.cur().source,
-                    crate::editor::document::DocumentSource::Container { .. }
-                ) {
-                    let location = self.directory_context();
-                    let decision = self.namespace_capability_for(
-                        &location,
-                        crate::editor::WorkspaceCapability::Write,
-                        Some(self.current()),
-                    );
-                    if !decision.available() {
-                        self.message = format!(
-                            "{} — {}",
-                            decision
-                                .reason()
-                                .unwrap_or("container editing is unavailable"),
-                            decision.next_step().unwrap_or(":container-edit")
-                        );
-                        return;
-                    }
-                }
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "wq!", true);
             }
             "set" => {
@@ -260,13 +217,6 @@ impl Editor {
                             source.draft.as_ref().is_none_or(|draft| !draft.editable())
                         }) {
                             self.message = "Directory listings are read-only; use :fs edit for filename drafts".into();
-                            return;
-                        }
-                        if matches!(
-                            self.cur().source,
-                            crate::editor::DocumentSource::Container { .. }
-                        ) {
-                            self.message = "container files are read-only by policy".into();
                             return;
                         }
                         if self.remote_file().is_some() && !self.remote_edit_authorized() {
@@ -342,13 +292,6 @@ impl Editor {
             "symbols" => self.lsp_document_symbols_pub(),
             "explain" => self.open_explain(),
             "recover" => self.run_recovery_ex(arg),
-            "containers" => self.request_containers(),
-            "container-worker" => self.request_container_worker(),
-            "container-edit" => {
-                if let Err(error) = self.enable_container_edit() {
-                    self.message = error;
-                }
-            }
             "format" => self.lsp_format(),
             "rename" => {
                 if arg.is_empty() {

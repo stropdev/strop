@@ -18,7 +18,7 @@ The baseline this release migrates is the post-0056 candidate:
   AR02 admitted action/effect API (`editor/api.rs`), AR03 semantic
   presentation/read models, AR04 draft checkpoint/recovery, AR05
   resource-binding/operation outcomes, AR06 bounded work/queues, AR07
-  selected-context native/SSH/container execution admission, AR08
+  selected-context native/SSH execution admission, AR08
   trust/privacy classification, AR09/AR10 the bounded UI protocol
   (retired with the GUI in 0.53, plans/0086), AR11/AR12
   install/release identity, AR13–AR16 identity exhaustion, ownership
@@ -43,8 +43,7 @@ fallback.
   `remote_completion` own resource binding and read-only browsing. Local
   observations, listings and reads use the local worker; SSH keeps
   read-only SFTP browsing/ranged access when no worker can run, while
-  admitted endpoints use `RemoteWorker`. Container browsing needs no
-  deployment; an explicitly admitted `BoundWorker` routes its reads.
+  admitted endpoints use `RemoteWorker`.
 - `editor::remote::save` owns the document's protected write permit,
   frozen Store attempt and `:remote verify`. `:remote edit` deploys/
   admits a verified worker and then checks the displayed snapshot
@@ -55,27 +54,21 @@ fallback.
   `Worker::exec`, never shell interpolation or an analogous local path.
   Starting a remote search is itself the explicit worker-using action;
   deployment takes place on the source thread, not input→render.
-- `strop-git::exec`, `strop-git::remote` and `strop-git::container`
+- `strop-git::exec` and `strop-git::remote`
   issue finite Git commands on an already-admitted, endpoint-bound
   worker. Native local libgit2 hot paths remain native.
 - `strop-lsp::Client::spawn` uses an admitted worker for every
-  local, SSH and container server. The editor supplies its local worker
+  local and SSH server. The editor supplies its local worker
   lease; missing non-local authority refuses typed, never via a shell,
   Python or direct local process fallback. Project-command trust
   still precedes every launch.
-- `editor::containers::ContainerWorkers` records a selected Docker
-  engine and canonical id/StartedAt incarnation. `:container-worker`
-  authorizes private-cache deployment (or a configured preinstalled
-  artifact), without changing readonly browsing or granting writes.
-- `strop-terminal` owns VT interpretation and history; the admitted local,
-  SSH or container worker owns the PTY, child and stream. Interactive
-  terminals require the matching admitted worker; container launches also
-  pin the attached incarnation and never retarget to the host.
+- `strop-terminal` owns VT interpretation and history; the admitted local
+  or SSH worker owns the PTY, child and stream. Interactive terminals
+  require the matching admitted worker and never retarget to the host.
 
 ## 3. Wire shape (WK02, implemented by `strop-worker-protocol`)
 
-One canonical wire for local child stdio, OpenSSH stdio and selected
-container exec stdio — no second serializer, JSON-RPC or SFTP variant
+One canonical wire for local child stdio and OpenSSH stdio — no second serializer, JSON-RPC or SFTP variant
 per transport.
 
 - **Framing** (`frame.rs`): bounded `Content-Length: N\r\n\r\n` + body,
@@ -156,16 +149,13 @@ per transport.
   incarnation cannot inherit a reused numeric exec ID.
 - **Editor-owned lease retirement (0.36.0)**: closing any editor backend
   cancels its jobs, stops LSP clients and permanently closes its admitted
-  SSH/container and local worker leases. The client sends `shutdown`,
+  SSH and local worker leases. The client sends `shutdown`,
   waits at most two seconds for `bye`, then terminates and reaps its
   owned child. A background clone remaining after the owner closes
   cannot spawn a replacement: new requests return `ClientError::Closed`.
-  Publication racing SSH/container owner closure retires its private
+  Publication racing SSH owner closure retires its private
   client and reports cancellation. Explicit `Worker::shutdown` remains
   a different operation: its still-owned lease may later reconnect.
-  This does not make a container PID 1 that fails to reap its own
-  Docker-exec children into a reaper; that external no-init case is
-  measured and reported separately under 0058 WK20.
 - **Shutdown quiescence recheck (0.36.0)**: UI stdio, headless
   jobs and TUI finish keep their absolute timeout while checking
   silent physical picker-source completion every 16 ms. The last
@@ -205,7 +195,7 @@ Three identities are kept distinct on the wire (`id.rs`):
    inode, no live lease or Welcome is issued. The client receives the
    pre-handshake protocol refusal directly, not a timeout that might
    be mistaken for a usable worker.
-   On live SSH/container admission, the selected worker runs native
+   On live SSH admission, the selected worker runs native
    `collect_cache` before the editor publishes ready; a preinstalled
    administrator object outside the managed cache is not a target.
    The worker binds the requested context to its own receipt. Its
@@ -221,8 +211,6 @@ Three identities are kept distinct on the wire (`id.rs`):
    through fresh *read-only* authority only if this witness matches;
    stale prepared writes still refuse. An unattested platform can
    verify in its live session but cannot claim cross-restart recovery.
-   Containers additionally bind their selected Docker engine, canonical
-   id and StartedAt at the deployment provider.
 3. **Editor document binding** — `DocumentStamp { document, revision }`,
    carried opaquely on mutation requests and echoed in receipts so a
    late committed outcome reconciles its source exactly once. Workers do
@@ -277,7 +265,7 @@ Deployment consent/policy (WK05–WK08 contract, recorded here so protocol
 and deployment agree):
 
 - First deployment requires an explicit worker-using action (`:remote
-  edit`, `:remote worker`, remote search or `:container-worker`) with
+  edit`, `:remote worker` or remote search) with
   endpoint/principal-bound consent. Read-only browsing never deploys;
   a restricted/SFTP-only host remains readable without a worker.
 - The verified artifact is a matching native binary in `--worker-stdio`

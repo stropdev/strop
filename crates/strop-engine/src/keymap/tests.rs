@@ -203,7 +203,6 @@ const DISPATCHED: &[&str] = &[
     ":collection",
     ":symbols",
     ":trust",
-    ":container-worker",
     ":set",
     ":select-next",
     ":select-all",

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **Containers and dev containers**: `:containers`, `:container-worker`, `:container-edit`, **Space o → Containers…**, the dev container offer and its review/lifecycle actions, `container:` resource URIs and the `strop-containers` crate. To work inside a container, open `:terminal` and run `docker exec -it <container> sh`.
+
 ## 0.54.0 — 2026-11-10
 
 ### Changed

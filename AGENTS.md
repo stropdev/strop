@@ -100,7 +100,7 @@ exactly that: partial. The authoritative procedure is `plans/0079` and
 `.github/scripts/release-local.sh`.
 
 1. **Local qualification**: a clean committed Linux/WSL checkout whose GitHub
-   `ci` run is green (test, model, ssh-pythonfree, container-test) passes the
+   `ci` run is green (test, model, ssh-pythonfree) passes the
    Compose `test`, `model` and `proofs` gates, the release fixtures, a
    changed-feature smoke and the static artifact checks. `proofs` runs locally
    because its toolchain image does not fit a hosted runner. The supported

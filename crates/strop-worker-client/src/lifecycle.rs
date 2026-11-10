@@ -12,7 +12,7 @@ use crate::{ClientError, StreamNotifier, Transport};
 
 /// How a connection is (re)created. Process transports carry a child to
 /// reap; factory transports (the in-process test seam and deployed
-/// remote/container workers) cross the same codec over caller-provided
+/// remote workers) cross the same codec over caller-provided
 /// pipes. Each connector also pins the target triple the worker's
 /// handshake must report: this build's own, or the admitted endpoint's
 /// for a deployed worker (WK07/WK08).

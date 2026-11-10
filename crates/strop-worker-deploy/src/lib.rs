@@ -4,8 +4,8 @@
 //! Deployment is part of the product, not a shell script: the first deploy
 //! to an endpoint is consent-gated and endpoint/principal-bound, artifacts
 //! live in a private (0700) per-user content-addressed cache, bytes travel
-//! over the already-authenticated provider channel (SFTP upload / container
-//! tar are thin provider implementations), and an object is activated only
+//! over the already-authenticated provider channel (SFTP upload is a thin
+//! provider implementation), and an object is activated only
 //! after its digest, provenance, target and executable mode verify against
 //! the WK05 release-catalog manifest — at its final published path, never
 //! stage-then-blind-exec. A temporary activation handshake proves that
@@ -26,15 +26,13 @@
 //!
 //! The providers are thin; the state machine in [`deploy`] is the product.
 //! Cache retirement runs inside the admitted native worker under its
-//! cross-process lock, not through an unlocked SFTP/container listing.
+//! cross-process lock, not through an unlocked SFTP listing.
 
 pub mod cache;
-pub mod container;
 pub mod deploy;
 pub mod manifest;
 pub mod provider;
 
-pub use container::{ContainerProvider, ShellPolicy};
 pub use deploy::{
     deploy, ArtifactSupply, Consent, DeployOrigin, DeployOutcome, DeployRefusal, DeployReport,
     DeployRequest, State, VerifiedObject,
