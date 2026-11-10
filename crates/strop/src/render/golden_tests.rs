@@ -182,6 +182,15 @@ fn recovery_offer() {
     });
 }
 
+/// 0095 §4: `:` from Visual opens with the selection's range typed.
+#[test]
+fn ex_line_from_visual() {
+    each("ex-visual", |editor| {
+        editor.feed_text("7jVjjj:");
+        settle_analysis()
+    });
+}
+
 #[test]
 fn split() {
     each("split", |editor| {

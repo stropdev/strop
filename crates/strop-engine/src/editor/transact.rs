@@ -156,6 +156,20 @@ impl super::Editor {
                 }
             }
         }
+        let ends_in_break = |index: usize| {
+            document
+                .buf
+                .change_inserted(index)
+                .is_some_and(|text| text.ends_with('\n'))
+        };
+        let marked: Vec<(usize, usize, usize, bool)> = journal
+            .iter()
+            .enumerate()
+            .map(|(index, &(start, old_end, new_end))| {
+                (start, old_end, new_end, ends_in_break(index))
+            })
+            .collect();
+        self.pending.ex.marked.map_edits(id, &marked, &document.buf);
         self.analysis.edits(id, document.buf.changes());
         self.resolution.edits(id, document.buf.changes());
         if let Err(error) = self.completion.edits(

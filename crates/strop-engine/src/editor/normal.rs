@@ -1,108 +1,18 @@
 //! Normal mode (0016): the machine walks keys to typed actions; this
 //! module dispatches them. Siblings by responsibility: `execute` (the
 //! operator engine + editing entries), `search`, `preview`, `pending`
-//! (the prompt effects), `ex` (the `:` line), `motions`.
+//! (the prompt effects), `motions`. The `:` line is `editor/ex/`.
 
-mod ex;
 mod execute;
 mod motions;
 mod pending;
 mod preview;
 mod search;
-pub(crate) mod substitute;
-
-pub use substitute::{
-    PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
-    SubstitutionPreview,
-};
 
 use strop_grammar::{self as grammar, Parse};
 
 use super::Editor;
 use strop_core::frontend_input::Key;
-
-/// The ex vocabulary (completion + `run_ex` dispatch reads the same
-/// list — one table, no drift).
-pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
-    ("theme", "choose a built-in interface palette"),
-    ("terminal", "interactive shell in the selected namespace"),
-    ("term", "interactive shell (alias of :terminal)"),
-    (
-        "terminal-local",
-        "explicit local shell even from an SSH context",
-    ),
-    ("bd", "delete the buffer (a running terminal refuses)"),
-    ("bd!", "delete the buffer; a running terminal is stopped"),
-    ("r", ":r !cmd inserts the command's output below the cursor"),
-    ("w", "write"),
-    ("w!", "write, force (file changed on disk)"),
-    ("wq!", "write forced + quit"),
-    ("q", "quit"),
-    ("q!", "quit, force"),
-    ("wq", "write + quit"),
-    ("e", "edit file"),
-    ("e!", "edit file, force"),
-    ("vs", "split vertical"),
-    ("vsplit", "split vertical"),
-    ("sp", "split horizontal"),
-    ("split", "split horizontal"),
-    ("help", "help buffer"),
-    ("h", "help buffer"),
-    ("jumps", "open the jumplist picker"),
-    ("!", "run shell command"),
-    ("view", "open readonly"),
-    ("set", "readonly option: ro/noro"),
-    ("noh", "clear the persistent search highlight"),
-    ("browse", "browse remote directory: :browse [URI]"),
-    ("filter", "filter remote directory by literal filename"),
-    (
-        "remote",
-        "choose remote destination; root/home/connect/disconnect/clear/list",
-    ),
-    ("trust", "authorize the pending endpoint/project command"),
-    (
-        "pwd",
-        "show the pinned project root (Files, Search, terminals)",
-    ),
-    (
-        "explain",
-        "why: workspaces, LSP readiness/failures, effective config",
-    ),
-    ("messages", "message history: the last 50 echo-row messages"),
-    ("format", "format the buffer through the language server"),
-    ("rename", "rename the symbol under the cursor: :rename NEW"),
-    ("symbols", "open the document symbols picker"),
-    ("undo-change", "undo the last applied change plan"),
-    (
-        "save-change",
-        "save files changed by the latest reviewed operation",
-    ),
-    ("apply-change", "apply the prepared proposal"),
-    ("cancel-change", "cancel the prepared proposal"),
-    (
-        "select-next",
-        "select the next occurrence of the word or selection",
-    ),
-    ("select-all", "select all occurrences in buffer"),
-    ("select-skip", "skip the next occurrence candidate"),
-    ("select-pop", "drop the last-added occurrence"),
-    ("search-options", "choose hidden and ignored search policy"),
-    ("tab-size", "choose indentation width: N or auto"),
-    (
-        "indent-style",
-        "choose indentation style: spaces, tabs or auto",
-    ),
-    (
-        "collection",
-        "source, expand or contract the excerpt at the caret",
-    ),
-    (
-        "recover",
-        "draft recovery: list, restore N, discard N, consent remote|off",
-    ),
-    ("qa", "quit all (fails on unsaved; :qa! discards)"),
-    ("qall", "quit all (fails on unsaved; :qall! discards)"),
-];
 
 impl Editor {
     pub(crate) fn feed_normal(&mut self, key: Key) {

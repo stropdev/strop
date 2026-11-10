@@ -81,7 +81,10 @@ pub(super) fn render_pane(
         } else {
             Vec::new()
         },
-        flash: view.overlays.then(|| editor.flash_range()).flatten(),
+        flash: view
+            .overlays
+            .then(|| editor.confirm_range().or_else(|| editor.flash_range()))
+            .flatten(),
         selection: if view.overlays {
             // 0069 D05: in a snippet session the active placeholder reads
             // as the selection (insert mode has none otherwise)

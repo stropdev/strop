@@ -86,17 +86,34 @@ fn query_metacharacters_and_non_global_line_semantics_are_not_literal() {
     assert_eq!(editor.buf().text().to_string(), "X X ac\naa\naa\n");
     editor.feed_text(":%s/a/b/\r");
     assert_eq!(editor.buf().text().to_string(), "X X bc\nba\nba\n");
-    assert_eq!(editor.message(), "3 substitutions");
+    assert_eq!(editor.message(), "3 substitutions on 3 lines");
 }
 
 #[test]
-fn delimiters_and_replacement_escaping_have_explicit_literal_rules() {
-    let mut editor = Editor::new(Buffer::from_text("a/b a.b a.b\n"));
-    editor.feed_text(r":s/a\/b/x\/y\\z\1&$1/");
+fn the_replacement_is_vims_and_the_preview_shows_the_same_text() {
+    let mut editor = Editor::new(Buffer::from_text("a/b key=value\n"));
+    // an escaped delimiter and an escaped backslash are themselves
+    editor.feed_text(r":s/a\/b/x\/y\\z/");
     editor.feed(Key::Enter);
-    assert_eq!(editor.buf().text().to_string(), "x/y\\z\\1&$1 a.b a.b\n");
-    editor.feed_text(":%s#a\\.b#&#g\r");
-    assert_eq!(editor.buf().text().to_string(), "x/y\\z\\1&$1 & &\n");
+    assert_eq!(editor.buf().text().to_string(), "x/y\\z key=value\n");
+    // groups, `&`, case and a line break, seen in the card before Enter
+    editor.feed_text(r":s/\(key\)=\(value\)/\2=\U\1\E [&]\rnext/");
+    let preview = ready(&editor);
+    assert!(preview
+        .diff_text()
+        .contains("+x/y\\z value=KEY [key=value]"));
+    assert!(preview.diff_text().contains("+next"));
+    editor.feed(Key::Enter);
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "x/y\\z value=KEY [key=value]\nnext\n"
+    );
+    // `\&` is an ampersand, `\n` a NUL, `\t` a tab
+    editor.feed_text(":2s/next/\\&\\n\\t/\r");
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "x/y\\z value=KEY [key=value]\n&\0\t\n"
+    );
 }
 
 #[test]
@@ -128,7 +145,7 @@ fn incomplete_invalid_and_stale_input_never_reuses_valid_output() {
     assert!(editor.preview().is_err());
     assert_eq!(editor.buf().text().to_string(), original);
     editor.feed(Key::Enter);
-    assert!(editor.message().contains("unsupported substitute flags"));
+    assert!(editor.message().contains("trailing characters: x"));
     assert_eq!(editor.buf().text().to_string(), original);
 
     let mut editor = Editor::new(Buffer::from_text(original));
@@ -196,7 +213,7 @@ fn whole_buffer_offsets_are_invalid_instead_of_substituting_everything() {
     let mut editor = Editor::new(Buffer::from_text(original));
     editor.feed_text(":%+1s/alpha/omega/g\r");
     assert_eq!(editor.buf().text(), original);
-    assert!(editor.message.contains("invalid Ex range after %"));
+    assert!(editor.message.contains("not an editor command"));
 }
 
 #[test]

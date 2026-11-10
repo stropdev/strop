@@ -16,14 +16,14 @@ impl Editor {
     pub fn preview(&self) -> Result<Option<(Vec<Range>, String)>, String> {
         if let Some(state) = self.substitute_preview() {
             return match state {
-                super::substitute::SubstitutePreviewState::Ready(preview) => {
+                crate::editor::SubstitutePreviewState::Ready(preview) => {
                     Ok(Some((preview.ranges().collect(), preview.summary())))
                 }
-                super::substitute::SubstitutePreviewState::Invalid(error)
-                | super::substitute::SubstitutePreviewState::Unavailable(error) => Err(error),
-                super::substitute::SubstitutePreviewState::Resolving
-                | super::substitute::SubstitutePreviewState::NoTarget
-                | super::substitute::SubstitutePreviewState::Incomplete(_) => Ok(None),
+                crate::editor::SubstitutePreviewState::Invalid(error)
+                | crate::editor::SubstitutePreviewState::Unavailable(error) => Err(error),
+                crate::editor::SubstitutePreviewState::Resolving
+                | crate::editor::SubstitutePreviewState::NoTarget
+                | crate::editor::SubstitutePreviewState::Incomplete(_) => Ok(None),
             };
         }
         let Some((command, cursors)) = self.preview_command()? else {
@@ -71,13 +71,13 @@ impl Editor {
                     self.resolution.cancel_preview();
                     return;
                 }
-                match super::substitute::parse(
+                match crate::editor::ex::parse_substitute_line(
+                    self,
                     prompt.body(),
-                    self.buf(),
                     origin.pane.sels.primary().head,
                 ) {
                     Ok(Some(spec)) => {
-                        self.prepare_ex_substitute(spec, origin.pane.sels.heads());
+                        self.prepare_substitute_resolution(spec, origin.pane.sels.heads());
                     }
                     Ok(None) | Err(_) => self.resolution.cancel_preview(),
                 }

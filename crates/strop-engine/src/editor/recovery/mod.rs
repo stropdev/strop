@@ -256,6 +256,65 @@ impl Editor {
         }
     }
 
+    /// `:cd` moves the session to another project's checkpoint file; it
+    /// waits for the present file's reads and writes to finish.
+    pub(crate) fn recovery_can_move(&self) -> bool {
+        !self.recovery.pending() && self.recovery.queued.is_none() && !self.recovery.reading_prior
+    }
+
+    /// Before the root changes: take this session's drafts out of the old
+    /// project's checkpoint, so a later session there is not offered text
+    /// that went on living elsewhere. Drafts an earlier session left
+    /// there stay.
+    pub(crate) fn recovery_leave_project(&mut self) {
+        if !self.recovery_persistent()
+            || (self.recovery.captured.is_empty() && self.recovery.durable.is_empty())
+        {
+            return;
+        }
+        self.recovery.cohort = strop_core::cohortguard::next_cohort(self.recovery.cohort);
+        let records = self
+            .recovery
+            .prior
+            .iter()
+            .filter_map(|inherited| {
+                Some(store::PendingRecord {
+                    document: inherited.record.document,
+                    origin: inherited.record.origin.clone(),
+                    revision: inherited.record.revision,
+                    source: store::RecordSource::Inherited(inherited.record.source),
+                    text: inherited.text.clone()?,
+                })
+            })
+            .collect();
+        let publication = Publication::Capture {
+            cohort: self.recovery.cohort,
+            captured_ms: store::now_ms(),
+            workspace: self.recovery_workspace(),
+            records,
+        };
+        // The checkpoint path is fixed here, while the root is the old one.
+        self.start_recovery_publication(publication);
+    }
+
+    /// After the root changed: nothing known about the old file describes
+    /// the new one. Read the drafts already there before publishing this
+    /// session's into it (the read's completion republishes).
+    pub(crate) fn recovery_enter_project(&mut self) {
+        let recovery = &mut self.recovery;
+        recovery.captured.clear();
+        recovery.durable.clear();
+        recovery.durable_cohort = None;
+        recovery.over_bound.clear();
+        recovery.loaded = None;
+        recovery.intent = None;
+        recovery.prior.clear();
+        recovery.prior_changed = false;
+        recovery.offer = None;
+        recovery.announced = false;
+        self.recovery_read_prior();
+    }
+
     fn build_capture(&mut self) -> Publication {
         // The verified watermark step (0057 VF18): cohorts strictly increase.
         self.recovery.cohort = strop_core::cohortguard::next_cohort(self.recovery.cohort);

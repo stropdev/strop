@@ -69,6 +69,12 @@ impl NotifyState {
         self.subscription.is_some()
     }
 
+    /// A subscription is being set up: its settle is not stamped, so the
+    /// scope must not change under it (`:cd` waits).
+    pub(crate) fn subscribing(&self) -> bool {
+        self.subscribing
+    }
+
     /// Stop the watcher thread; its inotify instances close with it.
     pub(crate) fn stop(&mut self) {
         self.stop.store(true, Ordering::Release);

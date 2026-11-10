@@ -61,6 +61,13 @@ impl TextPrompt {
         }
     }
 
+    /// A prompt that opens with text already typed (`:'<,'>` from Visual).
+    pub(crate) fn with_body(context: PromptContext, body: &str) -> Self {
+        let mut prompt = Self::new(context);
+        prompt.line.insert_str(body);
+        prompt
+    }
+
     pub(crate) fn sigil(&self) -> char {
         match &self.context {
             PromptContext::Ex(_) => ':',
@@ -128,6 +135,8 @@ impl TextPrompt {
 pub struct PendingInput {
     active: Option<TextPrompt>,
     machine: super::field::FieldMachine,
+    /// What the `:` line remembers between commands.
+    pub(crate) ex: super::ex::ExState,
 }
 
 /// One input event for the open prompt.

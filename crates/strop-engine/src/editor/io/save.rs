@@ -190,8 +190,8 @@ impl Editor {
             // A plain `:w` names the buffer's own path; a CLI-opened
             // missing file keeps the relative name it was given, and the
             // store guard requires an absolute target. Resolve against
-            // the editor's cwd (launch-time — no :cd exists) at this
-            // admission site: the job reads no process state.
+            // the editor's cwd at this admission site: the job reads
+            // no process state. (`:cd` makes such names absolute first.)
             // `origin` stays untouched — save acceptance keys on it.
             if !plan.target.is_absolute() {
                 plan.target = self.cwd.join(&plan.target);

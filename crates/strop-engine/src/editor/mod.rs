@@ -29,6 +29,7 @@ pub use diagnostics::DocumentDiagnostics;
 mod dive;
 mod document;
 pub mod events;
+pub(crate) mod ex;
 mod explain;
 pub mod feedback;
 pub(crate) mod field;
@@ -91,12 +92,12 @@ pub use picker::{
 pub use registers::{ClipboardKey, ClipboardResult, Register, RegisterError};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 
-pub use lsp::attach::{AttachDecision, AttachRecord};
-pub use lsp::{LspPhase, LspServer, LspStatus};
-pub use normal::{
+pub use ex::{
     PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
     SubstitutionPreview,
 };
+pub use lsp::attach::{AttachDecision, AttachRecord};
+pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
 pub use remote::RemoteEvent;
@@ -666,6 +667,28 @@ impl Editor {
 
     /// (name, 1-based line, trimmed line text) per set mark, name-sorted —
     /// the which-key mark cards' live rows (0047 §3).
+    /// Where mark `name` points in the current buffer: a letter mark set
+    /// here, or `<` / `>`, the ends of the last Visual selection.
+    pub(crate) fn mark_offset(&self, name: char) -> Option<usize> {
+        let clamp = |offset: usize| {
+            self.buf()
+                .clamp_boundary(offset.min(self.buf().len_bytes()))
+        };
+        match name {
+            '<' => self
+                .last_visual
+                .map(|(anchor, head)| clamp(anchor.min(head))),
+            '>' => self
+                .last_visual
+                .map(|(anchor, head)| clamp(anchor.max(head))),
+            name => self
+                .marks
+                .get(&name)
+                .filter(|(document, _)| *document == self.current())
+                .map(|(_, offset)| clamp(*offset)),
+        }
+    }
+
     pub fn mark_rows(&self) -> Vec<(char, usize, String)> {
         let mut rows: Vec<_> = self
             .marks

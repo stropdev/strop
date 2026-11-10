@@ -165,7 +165,14 @@ fn prompt_edit_cancel_matrix_uses_identical_modal_rules_on_all_surfaces() {
                 assert!(!e.pending.is_active());
                 assert_eq!(selection_pairs(&e), origin);
                 assert_eq!(e.buf().text().to_string(), "a fx then fox\nother\n");
-                assert_eq!(e.mode, if visual { Mode::Visual } else { Mode::Normal });
+                // Vim: `:` ends Visual mode (the range is typed for it);
+                // the other prompts return to the selection.
+                let expected = if visual && open != ":" {
+                    Mode::Visual
+                } else {
+                    Mode::Normal
+                };
+                assert_eq!(e.mode, expected);
             }
         }
     }
@@ -218,8 +225,11 @@ fn ex_tab_completion_offers_dispatched_user_commands() {
         "jumps",
         "symbols",
         "set",
-        "noh",
+        "nohlsearch",
         "qall",
+        "substitute",
+        "normal",
+        "buffers",
         "select-next",
         "select-all",
         "select-skip",

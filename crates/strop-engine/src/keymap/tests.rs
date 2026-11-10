@@ -169,7 +169,6 @@ const DISPATCHED: &[&str] = &[
     "~",
     "S",
     "I",
-    ":view",
     "space |",
     // prefixes with their own which-key cards
     "gg",
@@ -189,34 +188,7 @@ const DISPATCHED: &[&str] = &[
     "\"+y",
     "\"+p",
     "\"+P",
-    // ex + panes
-    ":w",
-    ":q",
-    ":q!",
-    ":wq",
-    ":e",
-    ":help",
-    ":theme",
-    ":jumps",
-    ":noh",
-    ":format",
-    ":rename",
-    ":recover",
-    ":qa",
-    ":qall",
-    ":collection",
-    ":symbols",
-    ":trust",
-    ":set",
-    ":select-next",
-    ":select-all",
-    ":select-skip",
-    ":select-pop",
-    ":e!",
-    ":vs",
-    ":vsplit",
-    ":sp",
-    ":split",
+    // panes
     "space w h",
     "space w l",
     "space w j",
@@ -254,27 +226,18 @@ const DISPATCHED: &[&str] = &[
     "space y",
 ];
 
-/// Long-form ex commands dispatch to the same arms as their short
-/// forms; they need no separate rows.
-const EX_ALIASES: &[(&str, &str)] = &[(":vsplit", ":vs"), (":split", ":sp"), (":e!", ":e")];
-
 /// 0003 §5.7, reverse direction: every dispatchable sequence has a
 /// BINDINGS row. A new match arm without a row fails here.
 #[test]
 fn every_dispatched_sequence_has_a_row() {
     let mut missing = Vec::new();
     for entry in DISPATCHED {
-        let canonical = EX_ALIASES
-            .iter()
-            .find(|(a, _)| a == entry)
-            .map(|(_, c)| *c)
-            .unwrap_or(*entry);
         // the machine's granularity (0016): per-key tokens; named
-        // keys and ex commands stay whole; placeholders materialize
-        let concretized = canonical.replace("<a>", "a").replace("<c>", "x");
+        // keys stay whole; placeholders materialize
+        let concretized = entry.replace("<a>", "a").replace("<c>", "x");
         let mut toks: Vec<String> = Vec::new();
         for tok in concretized.split(' ') {
-            if NAMED.contains(&tok) || tok.starts_with(':') {
+            if NAMED.contains(&tok) {
                 toks.push(tok.to_string());
             } else if let Some(pos) = tok.find('<') {
                 // g<space> style: leading chars, then the named token in
@@ -304,6 +267,30 @@ fn every_dispatched_sequence_has_a_row() {
     assert!(
         missing.is_empty(),
         "dispatchable sequences missing BINDINGS rows (0003 §5.7): {missing:?}"
+    );
+}
+
+/// 0003 §5.7 for the `:` line, read off the one table dispatch uses
+/// (0095 §2.6): every ex command is named in `?` — by its full name or
+/// any abbreviation Vim accepts for it. A new table row without a
+/// keymap row fails here; no hand-kept list stands between them.
+#[test]
+fn every_ex_command_has_a_row() {
+    let named: std::collections::HashSet<&str> = BINDINGS
+        .iter()
+        .flat_map(|row| row.keys.split(' '))
+        .filter_map(|token| token.strip_prefix(':'))
+        .filter_map(crate::editor::ex::split_command)
+        .map(|(command, _, _)| command.name)
+        .collect();
+    let missing: Vec<&str> = crate::editor::ex::table::COMMANDS
+        .iter()
+        .map(|command| command.name)
+        .filter(|name| !named.contains(name))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "ex commands missing BINDINGS rows (0003 §5.7): {missing:?}"
     );
 }
 

@@ -14,6 +14,8 @@ use strop_core::frontend_input::Key;
 pub enum InputOwner {
     /// A live `: / ? |` line.
     Pending,
+    /// An open `:s///c` question: the next key is its answer.
+    SubstituteConfirm,
     /// The LSP hover card — a transient overlay.
     HoverCard,
     /// The blame card or its in-flight request — a transient overlay.
@@ -46,6 +48,9 @@ impl Editor {
     pub fn input_owner(&self) -> InputOwner {
         if self.pending.is_active() {
             return InputOwner::Pending;
+        }
+        if super::ex::confirm_active(self) {
+            return InputOwner::SubstituteConfirm;
         }
         if self.picker_open() {
             return InputOwner::Picker;
@@ -86,6 +91,7 @@ impl Editor {
         }
         match owner {
             InputOwner::Pending => self.feed_pending(key),
+            InputOwner::SubstituteConfirm => super::ex::feed_confirm(self, key),
             InputOwner::HoverCard => {
                 if key == Key::Enter {
                     self.open_hover_document();

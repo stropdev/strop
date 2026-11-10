@@ -197,6 +197,14 @@ impl Default for IoState {
 
 impl Editor {
     pub fn handle_io(&mut self, event: IoEvent) {
+        let write = matches!(event, IoEvent::Save(_) | IoEvent::Remote(_));
+        self.dispatch_io(event);
+        if write {
+            super::ex::quit_after_writes(self);
+        }
+    }
+
+    fn dispatch_io(&mut self, event: IoEvent) {
         super::trace::services::io(&event);
         match event {
             IoEvent::Native(completion) => self.handle_native(*completion),
