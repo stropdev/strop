@@ -463,6 +463,9 @@ impl Editor {
             Some(strop_core::ReadonlyReason::RecoveryCheckpoint) => {
                 "recovery checkpoint surface — :recover restore N opens a checked draft"
             }
+            Some(strop_core::ReadonlyReason::Stdin) => {
+                "stdin is still streaming in (strop -) — editable once the pipe closes"
+            }
             Some(strop_core::ReadonlyReason::OutsideWorkspace) => {
                 "outside the workspace root — :set noro to edit"
             }

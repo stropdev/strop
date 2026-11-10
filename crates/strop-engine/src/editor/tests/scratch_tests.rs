@@ -38,3 +38,43 @@ fn edited_scratch_survives() {
     e.open_fixture(&f).unwrap();
     assert_eq!(e.docs.len(), 2, "edited scratch is real work");
 }
+
+/// `tail -f log | strop -`: stdin streams into a read-only buffer that
+/// never dirties or records undo; the cursor on the last line follows;
+/// EOF makes it an ordinary editable scratch buffer.
+#[test]
+fn stdin_streams_into_a_following_buffer_until_eof() {
+    use crate::editor::events::AppEvent;
+    let mut e = Editor::new(Buffer::from_text(""));
+    e.adopt_stdin();
+    assert!(e.stdin_streaming());
+    assert_eq!(e.buf().name.as_deref(), Some("stdin"));
+    e.handle_app_event(AppEvent::Stdin(Some("one\ntw".into())));
+    e.handle_app_event(AppEvent::Stdin(Some("o\nthree\n".into())));
+    assert_eq!(e.buf().text().to_string(), "one\ntwo\nthree\n");
+    assert_eq!(e.buf().line_of(e.head()), 2, "the cursor follows the tail");
+    assert!(!e.buf().is_dirty());
+    assert!(
+        !e.buf().history().can_undo(),
+        "stdin is not an edit to undo"
+    );
+    e.feed_text("x");
+    assert_eq!(
+        e.buf().text().to_string(),
+        "one\ntwo\nthree\n",
+        "read-only while streaming"
+    );
+    e.feed_text("gg");
+    e.handle_app_event(AppEvent::Stdin(Some("four\n".into())));
+    assert_eq!(
+        e.buf().line_of(e.head()),
+        0,
+        "a cursor that left the tail stays put"
+    );
+    e.handle_app_event(AppEvent::Stdin(None));
+    assert!(!e.stdin_streaming());
+    assert!(!e.buf().readonly);
+    assert!(e.message().contains("4 lines"), "{}", e.message());
+    e.feed_text("x");
+    assert_eq!(e.buf().text().to_string(), "ne\ntwo\nthree\nfour\n");
+}

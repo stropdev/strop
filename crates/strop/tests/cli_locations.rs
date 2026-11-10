@@ -142,3 +142,42 @@ fn native_filename_bytes_survive_the_real_cli() {
     assert_eq!(first_line(&output), 3);
     assert!(output.contains("three"));
 }
+
+/// `cmd | strop -`: stdin becomes the buffer (headless reads it whole).
+#[test]
+fn a_dash_operand_edits_stdin() {
+    use std::io::Write;
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let script = root.join("steps.keys");
+    std::fs::write(&script, "keys jx\nframe\nstate\n").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_strop"))
+        .current_dir(root)
+        .env("HOME", root.join("home"))
+        .env("XDG_CONFIG_HOME", root.join("config"))
+        .env("XDG_STATE_HOME", root.join("state"))
+        .env_remove("STROP_LOG")
+        .args(["headless".as_ref(), script.as_os_str(), OsStr::new("-")])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"piped one\npiped two\n")
+        .unwrap();
+    let output = text(child.wait_with_output().unwrap());
+    assert!(output.contains("piped one"), "{output}");
+    assert!(
+        output.contains("iped two"),
+        "x edited the stdin text: {output}"
+    );
+    assert!(
+        output.contains(" stdin "),
+        "the buffer is named stdin: {output}"
+    );
+    assert_eq!(first_line(&output), 2);
+}

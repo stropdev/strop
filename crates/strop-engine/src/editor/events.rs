@@ -73,6 +73,8 @@ pub enum AppEvent {
     /// tape-recorded drain of those slots, so duplicate wakes may coalesce.
     Completion,
     Clipboard(super::ClipboardResult),
+    /// `strop -`: one read of stdin, or `None` at its end.
+    Stdin(Option<String>),
 }
 
 /// A forwarder: move every item of a job channel onto the app channel.
@@ -231,6 +233,7 @@ impl Editor {
                 self.completion_language_changed();
             }
             AppEvent::Shell(r) => self.handle_shell_result(r),
+            AppEvent::Stdin(chunk) => self.handle_stdin(chunk),
             AppEvent::Io(event) => self.handle_io(event),
             AppEvent::RemoteCompletion(event) => self.handle_remote_completion(*event),
             AppEvent::Container(event) => self.handle_container_event(event),

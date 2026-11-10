@@ -135,6 +135,7 @@ fn classify(event: &AppEvent) -> (Class, &'static str, usize) {
         AppEvent::Resolution(_) => semantic("resolution"),
         AppEvent::Preview(_) => semantic("preview"),
         AppEvent::Clipboard(_) => semantic("clipboard"),
+        AppEvent::Stdin(_) => semantic("stdin"),
     }
 }
 

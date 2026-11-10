@@ -71,7 +71,10 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(output))?;
     let (sender, receiver) = editor::events::channel();
     let (input_sender, input_receiver) = editor::events::channel();
-    editor.connect_events(sender);
+    editor.connect_events(sender.clone());
+    if editor.stdin_streaming() {
+        reader::spawn_stdin(sender.clone());
+    }
     reader::spawn(input_sender)?;
     editor.trace_state();
     let mut redraw = true;

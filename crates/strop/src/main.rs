@@ -10,7 +10,7 @@ mod update;
 use strop_engine::{config, editor, files, keymap, session};
 
 use std::error::Error;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::process::ExitCode;
 use strop_core::Buffer;
 use strop_trace::{record_with, EventKind, TraceOptions};
@@ -137,9 +137,17 @@ fn execute(
             script,
             path,
             remote_view,
+            stdin,
         } => {
             let script = std::fs::read_to_string(script)?;
-            let (buffer, directory) = initial_buffer(&path)?;
+            let (mut buffer, directory) = initial_buffer(&path)?;
+            if stdin {
+                // Headless is deterministic: stdin is read whole, up front.
+                let mut bytes = Vec::new();
+                io::stdin().lock().read_to_end(&mut bytes)?;
+                buffer = Buffer::from_text(&String::from_utf8_lossy(&bytes));
+                buffer.name = Some("stdin".into());
+            }
             let mut editor = editor::Editor::new(buffer);
             editor.set_terminal_capture(terminal_capture);
             editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
@@ -169,6 +177,7 @@ fn execute(
             path,
             readonly,
             remote_view,
+            stdin,
         } => {
             let (mut buffer, directory) = initial_buffer(&path)?;
             // The CLI --readonly flag lands on the buffer before
@@ -182,7 +191,9 @@ fn execute(
             editor.set_config(configuration);
             editor.reresolve_indents();
             editor.set_state_dir(session::state_root());
-            if path.is_none() {
+            if stdin {
+                editor.adopt_stdin();
+            } else if path.is_none() {
                 if let Err(error) = session::restore(&mut editor) {
                     editor.set_message(format!("session restore failed: {error}"));
                 }
@@ -318,7 +329,7 @@ fn print_help() {
     section(&mut out, &paint("1", "Usage:"));
     usage(
         &mut out,
-        &["strop [OPTIONS] [FILE[:LINE] | DIR | ssh://URL]"],
+        &["strop [OPTIONS] [FILE[:LINE] | DIR | ssh://URL | -]"],
     );
     section(&mut out, &paint("1", "Commands:"));
     rows(

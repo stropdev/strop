@@ -46,6 +46,8 @@ pub enum ReadonlyReason {
     CollectionProjection,
     /// The recovery checkpoint surface.
     RecoveryCheckpoint,
+    /// `strop -`: stdin is still streaming in; editable at EOF.
+    Stdin,
     /// Navigation landed outside the workspace root.
     OutsideWorkspace,
 }

@@ -187,6 +187,8 @@ pub struct IoState {
     native: HashMap<WorkerId, native::NativeKey>,
     pub session_error: Option<String>,
     pub(crate) format_warnings: HashMap<DocumentId, String>,
+    /// `strop -`: the scratch document stdin streams into, until EOF.
+    stdin: Option<DocumentId>,
 }
 
 impl Default for IoState {
@@ -205,6 +207,7 @@ impl Default for IoState {
             native: HashMap::new(),
             session_error: None,
             format_warnings: HashMap::new(),
+            stdin: None,
         }
     }
 }
@@ -309,6 +312,64 @@ impl Editor {
 }
 
 impl Editor {
+    /// `strop -`: the current scratch buffer receives stdin. It reads as
+    /// `stdin` and stays read-only while the pipe streams (a live
+    /// `tail -f`); EOF hands it to the user like any scratch buffer.
+    pub fn adopt_stdin(&mut self) {
+        let document = self.current();
+        {
+            let mut doc = self.doc_mut(document);
+            doc.buf.name = Some("stdin".into());
+            doc.buf.set_readonly(strop_core::ReadonlyReason::Stdin);
+        }
+        self.io.stdin = Some(document);
+    }
+
+    /// Whether a stdin reader must be started (frontends ask once).
+    pub fn stdin_streaming(&self) -> bool {
+        self.io.stdin.is_some()
+    }
+
+    /// One read of stdin (`Some`) or its end (`None`). Text appends at
+    /// the end as a system edit — never undo history, never dirty; a
+    /// cursor on the last line follows the stream like `tail -f`.
+    pub(crate) fn handle_stdin(&mut self, chunk: Option<String>) {
+        let live = self.io.stdin.filter(|id| self.docs.get(*id).is_some());
+        let Some(document) = live else {
+            self.io.stdin = None;
+            return;
+        };
+        let Some(text) = chunk else {
+            self.io.stdin = None;
+            let lines = {
+                let mut doc = self.doc_mut(document);
+                if doc.buf.readonly_reason == Some(strop_core::ReadonlyReason::Stdin) {
+                    doc.buf.clear_readonly();
+                }
+                doc.buf.last_content_line() + 1
+            };
+            self.message = format!("stdin closed — {lines} lines, editable now");
+            return;
+        };
+        let following = self.current() == document
+            && self.buf().line_of(self.head()) >= self.buf().last_content_line();
+        let end = self.doc(document).buf.len_bytes();
+        let appended = self
+            .doc_mut(document)
+            .buf
+            .system_edit()
+            .replace(strop_core::Range::charwise(end, end), &text);
+        if let Err(error) = appended {
+            self.message = format!("stdin: {error}");
+            return;
+        }
+        if following {
+            let last = self.buf().last_content_line();
+            self.set_head(self.buf().line_start(last));
+            self.clamp_cursor();
+        }
+    }
+
     pub(crate) fn io_write_pending(&self, request: WorkerId) -> bool {
         self.io.session == Some(request)
             || self.recovery.write_pending(request)
