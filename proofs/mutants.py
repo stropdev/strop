@@ -65,6 +65,26 @@ MUTANTS = (
            "        let edit = edits[k];\n        mapped = map_position",
            "        let edit = edits[edits.len() - 1 - k];\n        mapped = map_position",
            ("Strop.Kernel.map_through_edits_loop_spec",)),
+    # a view edit running past the excerpt body's end reaches the card border
+    Mutant("excerpt-end-unbounded", "excerpt.rs",
+           "    if start < view_start || start > end || end > view_end {",
+           "    if start < view_start || start > end {",
+           ("Strop.Kernel.admits_spec",)),
+    # an edit that joins the last body line with the row below it is refused
+    Mutant("excerpt-terminator-ignored", "excerpt.rs",
+           "    end < view_end || keeps_terminator\n",
+           "    end <= view_end || keeps_terminator\n",
+           ("Strop.Kernel.admits_spec",)),
+    # the source edit starts at the view edit's own offset, not its end's
+    Mutant("excerpt-start-from-end", "excerpt.rs",
+           "    let from = clamp(start - view_start, shown);",
+           "    let from = clamp(end - view_start, shown);",
+           ("Strop.Kernel.source_edit_spec",)),
+    # the view's added terminator maps onto the source's end, never past it
+    Mutant("excerpt-unclamped", "excerpt.rs",
+           "    let to = clamp(end - view_start, shown);",
+           "    let to = end - view_start;",
+           ("Strop.Kernel.source_edit_spec",)),
     # a generation retires at u32::MAX, not one early
     Mutant("generation-early-retire", "generation.rs",
            "    if current == u32::MAX {",

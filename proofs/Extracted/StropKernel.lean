@@ -228,6 +228,59 @@ def editmap.validate_batch
   := do
   editmap.validate_batch_loop len edits 0#usize
 
+/-- [strop_kernel::excerpt::clamp]:
+    Source: 'crates/strop-kernel/src/excerpt.rs', lines 26:0-32:1 -/
+def excerpt.clamp
+  (value : Std.Usize) (bound : Std.Usize) : Result Std.Usize := do
+  if value > bound
+  then ok bound
+  else ok value
+
+/-- [strop_kernel::excerpt::admits]:
+    Source: 'crates/strop-kernel/src/excerpt.rs', lines 38:0-49:1
+    Visibility: public -/
+def excerpt.admits
+  (view_start : Std.Usize) (view_end : Std.Usize) (start : Std.Usize)
+  («end» : Std.Usize) (keeps_terminator : Bool) :
+  Result Bool
+  := do
+  if start < view_start
+  then ok false
+  else
+    if start > «end»
+    then ok false
+    else
+      if «end» > view_end
+      then ok false
+      else if «end» < view_end
+           then ok true
+           else ok keeps_terminator
+
+/-- [strop_kernel::excerpt::source_edit]:
+    Source: 'crates/strop-kernel/src/excerpt.rs', lines 53:0-69:1
+    Visibility: public -/
+def excerpt.source_edit
+  (view_start : Std.Usize) (view_end : Std.Usize) (source_start : Std.Usize)
+  (source_end : Std.Usize) (start : Std.Usize) («end» : Std.Usize)
+  (keeps_terminator : Bool) :
+  Result (Option (Std.Usize × Std.Usize))
+  := do
+  if source_start > source_end
+  then ok none
+  else
+    let b ← excerpt.admits view_start view_end start «end» keeps_terminator
+    if b
+    then
+      let shown ← source_end - source_start
+      let i ← start - view_start
+      let «from» ← excerpt.clamp i shown
+      let i1 ← «end» - view_start
+      let «to» ← excerpt.clamp i1 shown
+      let i2 ← source_start + «from»
+      let i3 ← source_start + «to»
+      ok (some (i2, i3))
+    else ok none
+
 /-- [strop_kernel::generation::next_generation]:
     Source: 'crates/strop-kernel/src/generation.rs', lines 11:0-17:1
     Visibility: public -/
