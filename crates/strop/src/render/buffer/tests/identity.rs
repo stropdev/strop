@@ -129,7 +129,10 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
         titles.contains("╭ 1 ssh://fixture/repo/app.log"),
         "{titles}"
     );
-    assert!(!titles.contains("[RO]"), "a connected host is editable: {titles}");
+    assert!(
+        !titles.contains("[RO]"),
+        "a connected host is editable: {titles}"
+    );
     assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
 
     let grid = draw(&mut editor, 48, 16);

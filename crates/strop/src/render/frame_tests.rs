@@ -219,7 +219,11 @@ fn remote_search_yank_edit_and_readonly_commands_use_the_real_buffer() {
     editor.feed_text(":set ro<cr>");
     assert!(editor.buf().readonly);
     editor.feed_text("u");
-    assert_eq!(editor.buf().text(), "first\nlast\n", "readonly refuses edits");
+    assert_eq!(
+        editor.buf().text(),
+        "first\nlast\n",
+        "readonly refuses edits"
+    );
     assert!(editor.buf().path.is_none());
     assert!(matches!(editor.cur().source, DocumentSource::Remote(_)));
     editor.feed(Key::Esc);
