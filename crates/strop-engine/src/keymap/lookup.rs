@@ -337,7 +337,7 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
 /// The vim-compatibility report, generated from the single binding table.
 pub fn compat_report() -> String {
     let mut out = String::from(
-        "# Vim compatibility\n\nGenerated from the command table (`strop --dump-compat`).\n\
+        "# Vim compatibility\n\nGenerated from the command table (`strop compat`).\n\
          `✓` ships exactly; `(soon)` is a planned slot.\n",
     );
     for section in SECTIONS {

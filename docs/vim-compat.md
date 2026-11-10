@@ -1,6 +1,6 @@
 # Vim compatibility
 
-Generated from the command table (`strop --dump-compat`).
+Generated from the command table (`strop compat`).
 `✓` ships exactly; `(soon)` is a planned slot.
 
 ## Moving
