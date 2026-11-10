@@ -16,7 +16,12 @@ use strop_trace::{record_with, EventKind};
 const READ_BYTES: usize = 4096;
 
 pub(super) fn spawn(sender: EventSender) -> io::Result<()> {
-    let tty = std::fs::File::open("/dev/tty")?;
+    // Without a controlling terminal, a terminal stdin is the keyboard.
+    let tty: Box<dyn Read + Send> = match std::fs::File::open("/dev/tty") {
+        Ok(tty) => Box::new(tty),
+        Err(_) if std::io::IsTerminal::is_terminal(&io::stdin()) => Box::new(io::stdin()),
+        Err(error) => return Err(error),
+    };
     let mut signals = signal_hook::iterator::Signals::new([signal_hook::consts::SIGWINCH])?;
     let resizes = sender.clone();
     std::thread::spawn(move || {
@@ -100,7 +105,7 @@ fn take_text(pending: &mut Vec<u8>, end: bool) -> String {
     text
 }
 
-fn read_keys(mut tty: std::fs::File, sender: EventSender) {
+fn read_keys(mut tty: Box<dyn Read + Send>, sender: EventSender) {
     let mut decoder = Decoder::default();
     let mut bytes = [0u8; READ_BYTES];
     let mut decoded = Vec::new();
