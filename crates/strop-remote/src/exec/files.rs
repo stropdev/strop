@@ -13,7 +13,7 @@
 use super::ExecError;
 use crate::transport::error::{Fault, ReadFailureKind};
 use crate::transport::session::kind_of;
-use crate::transport::wire::DeploySftp;
+use crate::transport::wire::{DeployAttrs, DeploySftp};
 use crate::RemoteEntryKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -149,31 +149,95 @@ impl RemoteFiles {
     }
 }
 
+/// Three round trips for a regular file: LSTAT with the temporary's
+/// creation, then the writes, close and mode, then the rename with the
+/// published attributes. A symlink is resolved first and saved through.
 async fn save(
     session: &mut DeploySftp<ChildStdin, ChildStdout>,
     path: &Path,
     bytes: &[u8],
     expect: Expect,
 ) -> Result<Stamp, ExecError> {
-    let mut target = path.to_path_buf();
-    let mut existing = optional(session.lstat(path).await)?;
-    if existing
-        .as_ref()
-        .and_then(|attrs| attrs.permissions)
-        .is_some_and(|mode| mode & S_IFMT == S_IFLNK)
-    {
-        target = session.canonical(path).await.map_err(sftp)?;
-        existing = optional(session.lstat(&target).await)?;
-    }
+    let temporary = temporary_beside(path);
+    let (existing, created) = session
+        .inspect_and_create(path, &temporary)
+        .await
+        .map_err(sftp)?;
+    let existing = optional(existing);
+    let linked = matches!(&existing, Ok(Some(attrs)) if is_link(attrs));
+    let admitted = existing.and_then(|existing| match linked {
+        true => Ok(None),
+        false => admit(path, expect, existing).map(Some),
+    });
+    let (destination, handle) = match (admitted, created) {
+        (Ok(Some(destination)), Ok(handle)) => (destination, handle),
+        (admitted, Ok(handle)) => {
+            let discarded = session.discard(handle, &temporary).await;
+            admitted?;
+            discarded.map_err(sftp)?;
+            return save_through_link(session, path, bytes, expect).await;
+        }
+        (admitted, Err(fault)) => {
+            if linked {
+                return save_through_link(session, path, bytes, expect).await;
+            }
+            admitted?;
+            return Err(sftp(fault));
+        }
+    };
+    let staged = session
+        .upload_into(handle, &temporary, bytes, destination.mode)
+        .await;
+    let staged = match staged {
+        Ok(()) => publish(session, &temporary, path, destination.found.is_some()).await,
+        Err(fault) => Err(fault),
+    };
+    settle(session, &temporary, staged).await
+}
+
+/// The slow path for a symlink: resolve it, then stage beside the
+/// target so the rename stays on one filesystem.
+async fn save_through_link(
+    session: &mut DeploySftp<ChildStdin, ChildStdout>,
+    path: &Path,
+    bytes: &[u8],
+    expect: Expect,
+) -> Result<Stamp, ExecError> {
+    let target = session.canonical(path).await.map_err(sftp)?;
+    let existing = optional(session.lstat(&target).await)?;
+    let destination = admit(&target, expect, existing)?;
+    let temporary = temporary_beside(&target);
+    let staged = match session.upload(&temporary, bytes, destination.mode).await {
+        Ok(()) => publish(session, &temporary, &target, destination.found.is_some()).await,
+        Err(fault) => Err(fault),
+    };
+    settle(session, &temporary, staged).await
+}
+
+struct Destination {
+    found: Option<Stamp>,
+    mode: u32,
+}
+
+/// Whether `expect` allows replacing what is at `path`.
+fn admit(
+    path: &Path,
+    expect: Expect,
+    existing: Option<DeployAttrs>,
+) -> Result<Destination, ExecError> {
     let found = match &existing {
         Some(attrs) => Some(stamp(attrs.size, attrs.mtime)?),
         None => None,
     };
     match (expect, found) {
-        (Expect::Absent, Some(_)) => return Err(ExecError::Exists { path: target }),
+        (Expect::Absent, Some(_)) => {
+            return Err(ExecError::Exists {
+                path: path.to_path_buf(),
+            })
+        }
         (Expect::Unchanged(expected), Some(found)) if found != expected => {
             return Err(ExecError::ChangedOnDisk {
-                path: target,
+                path: path.to_path_buf(),
                 expected,
                 found: Some(found),
             })
@@ -183,24 +247,43 @@ async fn save(
     let mode = existing
         .and_then(|attrs| attrs.permissions)
         .map_or(NEW_FILE_MODE, |mode| mode & 0o7777);
-    let temporary = temporary_beside(&target);
-    let staged = async {
-        session.upload(&temporary, bytes, mode).await?;
-        if session.overwrites_on_rename() {
-            return session.publish(&temporary, &target).await;
-        }
-        // SFTP v3 rename refuses an existing destination; without
-        // posix-rename the replacement cannot be atomic.
-        if found.is_some() {
-            session.remove(&target).await?;
-        }
-        session.rename(&temporary, &target).await?;
-        session.lstat(&target).await
+    Ok(Destination { found, mode })
+}
+
+fn is_link(attrs: &DeployAttrs) -> bool {
+    attrs
+        .permissions
+        .is_some_and(|mode| mode & S_IFMT == S_IFLNK)
+}
+
+/// Rename the staged file over `target` and return its attributes.
+async fn publish(
+    session: &mut DeploySftp<ChildStdin, ChildStdout>,
+    temporary: &Path,
+    target: &Path,
+    replaces: bool,
+) -> Result<DeployAttrs, Fault> {
+    if session.overwrites_on_rename() {
+        return session.publish(temporary, target).await;
     }
-    .await;
+    // SFTP v3 rename refuses an existing destination; without
+    // posix-rename the replacement cannot be atomic.
+    if replaces {
+        session.remove(target).await?;
+    }
+    session.rename(temporary, target).await?;
+    session.lstat(target).await
+}
+
+/// The new stamp, or the failure with the staged file removed.
+async fn settle(
+    session: &mut DeploySftp<ChildStdin, ChildStdout>,
+    temporary: &Path,
+    staged: Result<DeployAttrs, Fault>,
+) -> Result<Stamp, ExecError> {
     match staged {
         Ok(attrs) => stamp(attrs.size, attrs.mtime),
-        Err(fault) => Err(sftp(match session.remove(&temporary).await {
+        Err(fault) => Err(sftp(match session.remove(temporary).await {
             Ok(()) => fault,
             Err(cleanup) => fault.with_cleanup(cleanup),
         })),
