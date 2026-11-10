@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.54.0 — 2026-11-10
+
+### Changed
+
+- **A new look** (plans/0088): every surface draws from one token set and one card primitive — three background planes you can actually tell apart, one accent for "where am I / what will happen", four greys, italic comments, the cursor line painted in file buffers and a Visual selection you can see.
+- **Six original palettes**: `hone` (new default — graphite with strop's amber), `slate` (low-chroma), `carbide` (high contrast, every ink ≥ 7:1), `vellum` (warm light), `paper` and `paper-dark` (reworked). Every palette is tested against WCAG contrast rules.
+- **Messages get their own row**: an echo row above the statusline appears only while a message is live, and an error is never hidden behind an info notice.
+- **A quieter statusline**: fixed-width mode chip so the path never jumps, diagnostics only when non-zero, a 4-cell `LSP!` badge only on failure, `Spaces:N` only when it differs from your config.
+- **Less chrome**: the scrollbar is a thumb shown only when the content overflows; pane titles sit in the pane's top border and only with two or more panes.
+- **Pickers**: honest `38 of 2,311` counts; grep hits grouped under one header per file (no `[x]` boxes); diagnostics rows show the message; the scope row appears only when a scope differs from the default.
+- **Which-key and help** follow the keymap's sections in a curated order, with keycaps; which-key uses two columns for long menus and collapses `1-9`.
+
+### Removed
+
+- **`dark`, `light`, `strop-ink`, `catppuccin-mocha`, `catppuccin-latte` and `nord` themes**, their bundled licences and `strop licenses`. A config naming one starts on `hone` with a warning listing the six palettes.
+
+### Fixed
+
+- **`x` then `u`** undid every preceding `x` at once — each `x` is now its own undo step, as in vim (differential-tested against Neovim).
+- **`:e relative/path` from a directory buffer** resolved against the directory instead of the working directory and silently created a stray file; opening a missing file now says `[new file]`.
+- **Leader commands that decline now say why** (symbols or hover without a language server, an empty undo tree).
+- **No "Dev container discovery completed" notice** when no dev container exists.
+- **Terminal sessions number from 1** in each editor instead of from a process-wide counter.
+
+### Proofs
+
+- **The edit-journal fold is proved over the shipped code**: mapping positions through a journal of edits is now a kernel function that production calls; the composition theorem is stated over its Lean translation (13 audited claims, 10 calibration mutants). The proofs gate also refuses a kernel module left out of extraction.
+
 ## 0.53.0 — 2026-11-09
 
 ### Changed

@@ -127,6 +127,45 @@ character grid plus a per-row style-run summary; no snapshot crate. Plus the usu
 compose `test`, `model`, `proofs`, release fixtures, a real tmux smoke of every
 surface in §5's list.
 
-## 6. Implementation record
+## 6. Implementation record (0.54.0)
 
-Filled in when 0.54.0 ships.
+Shipped as planned: the token set and six palettes with the contrast test;
+`Tokens` per frame and the process-global theme deleted; `render/card.rs`
+(card, keycap, whole-chord hints, selected row) behind every bordered surface;
+the echo row; the statusline of §2; thumb-only scrollbar; titles in the top
+border; grouped grep hits, honest counts, message-first diagnostics rows; which-key
+and help by keymap section (the keymap is now `keymap/bindings/{moving,editing,
+insert,visual,search,leader,panes,git,pickers,terminal,ex}.rs`); 32 golden
+cell-grid snapshots (8 surfaces × hone/vellum × 140×40/80×24); U2, U3, U5–U13,
+U16, U17; A1 for `render_pane`/`render_picker`; A4 ratchet; A9; A13 (dead-code
+allow); K1, P2, P4.
+
+Departures, with reasons:
+
+- **Palette values** moved where a §3 rule failed on the surface plane: Hone
+  `fg.muted #858c9a`, `syn.comment #838a97`; Slate `syn.comment #878d9a`,
+  `syn.punctuation #9ea3ab`; Vellum `bg.surface #fdfbf6`, `bg.raised #e5dfd0`,
+  `bg.selection #d1c9b3`, `syn.comment #696d77`; Paper `bg.surface #eef1e8`,
+  `bg.raised #dbe2d6`, `bg.selection #c2d2ba`, `syn.number #92592f`; Paper Dark
+  `syn.punctuation #b4c0b4`. Carbide's separate black statusline is dropped
+  (statusline = surface).
+- **Echo-row severity glyphs**: `Editor::message` is an untyped string set at
+  ~650 sites, so fresh messages rank above feedback by freshness (they clear on
+  the next key) — that fixes U1 — but carry no severity glyph. Typing messages
+  is F2 work. Info feedback has no timestamp, so it does not auto-expire.
+- **`of 999+`**: the picker cannot tell a capped catalogue from a complete one;
+  it shows `shown of total`.
+- **Help stays one column**: two columns would truncate descriptions inside a
+  searchable buffer.
+- **`Editor` ratchet**: moving the palette onto the editor added a field; the
+  palette, yank flash and cursor fade now live in `editor::Presentation`, so the
+  ratchet went down (115 → 113) instead of up.
+- **K2 deferred** to 0.55 (recorded in 0086 §9.1): production has no single
+  operated-span step to move; each resolver arm computes its own span. The
+  refactor to one normaliser, with its differential cases, comes first.
+- **`#[allow(deprecated)]` on LSP `rootUri`** stays: servers that read only
+  `rootUri` would break.
+- **U4** (Esc in `/` `:`) awaits the owner's decision; unchanged.
+
+Also fixed on the way: `x` left its undo group open, so `xxu` undid both
+characters (differential case `xlxu` added).
