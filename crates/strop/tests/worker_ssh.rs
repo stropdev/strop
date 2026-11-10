@@ -9,6 +9,10 @@
 //! Loopback TCP carries the real SSH protocol to two scoped OpenSSH daemons
 //! (ordinary and SFTP-only). Gated by STROP_REQUIRE_SSH_TESTS=1.
 #![cfg(unix)]
+#[path = "worker_ssh/exec_bench.rs"]
+mod exec_bench;
+#[path = "worker_ssh/exec_journeys.rs"]
+mod exec_journeys;
 #[path = "worker_ssh/journeys.rs"]
 mod journeys;
 #[path = "worker_ssh/perf.rs"]

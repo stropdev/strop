@@ -7,6 +7,8 @@
 pub mod bootstrap;
 mod client;
 pub mod deploy_provider;
+#[cfg(unix)]
+pub mod exec;
 mod hosts;
 mod pool;
 mod selection;

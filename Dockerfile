@@ -48,6 +48,22 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor \
         --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd
 
+# Plan 0090 §5 go/no-go measurement, not a gate: the same editor operations
+# through the deployed worker and through plain ssh exec + SFTP on one
+# multiplexed master, over a loopback sshd, release builds on both sides.
+# DELAY_MS adds netem delay each way on loopback (needs NET_ADMIN).
+FROM builder AS ssh-bench
+RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server iproute2-tc
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/cache/target,id=strop-ssh-bench,sharing=locked \
+    cargo test --release --locked -p strop-editor --test worker_ssh --no-run --message-format=json \
+        | sed -n 's/.*"executable":"\([^"]*worker_ssh[^"]*\)".*/\1/p' > /tmp/bench-exe \
+    && install -D -m755 "$(cat /tmp/bench-exe)" /app/bench/worker_ssh \
+    && install -D -m755 /cache/target/release/strop /app/bench/strop \
+    && strip /app/bench/strop
+ENV STROP_WORKER_BINARY=/app/bench/strop STROP_REQUIRE_SSH_TESTS=1 STROP_SSH_EXEC_BENCH=1
+CMD ["sh", "-c", "if [ -n \"$DELAY_MS\" ]; then tc qdisc add dev lo root netem delay \"${DELAY_MS}ms\"; fi; exec /app/bench/worker_ssh --exact exec_bench::worker_versus_exec_latency_over_real_sshd --nocapture --test-threads=1"]
+
 # Stripped static release binary. The gate: no NEEDED shared libraries and a
 # static ELF (readelf NEEDED is the truth; `ldd` lies on static-pie musl).
 FROM builder AS release
