@@ -12,7 +12,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────╮
    1 $ cargo test                                                               
-   2    Compiling strop v0.55.0                                                 
+   2    Compiling demo v0.1.0                                                   
    3 running 3 tests                                                            
    4 test render::chip ... ok                                                   
    5 test render::echo ... ok                                                   
@@ -36,13 +36,13 @@
  10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
  11: 80:#aeb3ba/#f6f2e9
  12: 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 18:#262a30/#f6f2e9+b 58:#656d7b/#f6f2e9
- 13: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 12:#262a30/#f6f2e9+b 14:#262a30/#f6f2e9 48:#efeadf/#efeadf 1:reset/reset
- 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
- 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
- 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 24:#4e6f22/#f6f2e9 2:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
- 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 24:#4e6f22/#f6f2e9 2:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
- 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 25:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
- 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
+ 13: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 12:#262a30/#f6f2e9+b 13:#262a30/#f6f2e9 49:#efeadf/#efeadf 1:reset/reset
+ 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 25:#262a30/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
+ 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 25:#262a30/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
+ 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 25:#4e6f22/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
+ 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 25:#262a30/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
  20: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset

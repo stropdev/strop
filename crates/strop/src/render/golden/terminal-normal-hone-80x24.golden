@@ -12,7 +12,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────╮
    1 $ cargo test                                                               
-   2    Compiling strop v0.55.0                                                 
+   2    Compiling demo v0.1.0                                                   
    3 running 3 tests                                                            
    4 test render::chip ... ok                                                   
    5 test render::echo ... ok                                                   
@@ -36,13 +36,13 @@
  10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 58:reset/#15171c 1:reset/reset
  11: 80:#4a5160/#15171c
  12: 2:#858c9a/#15171c 2:#e6e1d6/#15171c 18:#e6e1d6/#15171c+b 58:#858c9a/#15171c
- 13: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 12:#e6e1d6/#15171c+b 14:#e6e1d6/#15171c 48:#1b1e24/#1b1e24 1:reset/reset
- 14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#e6e1d6/#15171c 48:reset/#15171c 1:reset/reset
- 15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#e6e1d6/#15171c 48:reset/#15171c 1:reset/reset
- 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 24:#8fc48a/#15171c 2:#e6e1d6/#15171c 48:reset/#15171c 1:reset/reset
- 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 24:#8fc48a/#15171c 2:#e6e1d6/#15171c 48:reset/#15171c 1:reset/reset
- 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 25:#8fc48a/#15171c 1:#e6e1d6/#15171c 48:reset/#15171c 1:reset/reset
- 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#e6e1d6/#15171c 48:reset/#15171c 1:reset/reset
+ 13: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 12:#e6e1d6/#15171c+b 13:#e6e1d6/#15171c 49:#1b1e24/#1b1e24 1:reset/reset
+ 14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 25:#e6e1d6/#15171c 49:reset/#15171c 1:reset/reset
+ 15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 25:#e6e1d6/#15171c 49:reset/#15171c 1:reset/reset
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 49:reset/#15171c 1:reset/reset
+ 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 49:reset/#15171c 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 25:#8fc48a/#15171c 49:reset/#15171c 1:reset/reset
+ 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 25:#e6e1d6/#15171c 49:reset/#15171c 1:reset/reset
  20: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  21: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  22: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset

@@ -257,7 +257,7 @@ fn terminal_below(editor: &mut Editor) {
         strop_workspace::ResourceLocation::local("/work".into()),
         &[
             ("$ cargo test", bold),
-            ("   Compiling strop v0.55.0", plain),
+            ("   Compiling demo v0.1.0", plain),
             ("running 3 tests", plain),
             ("test render::chip ... ok", green),
             ("test render::echo ... ok", green),

@@ -12,7 +12,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────╮
 $ cargo test                                                                    
-   Compiling strop v0.55.0                                                      
+   Compiling demo v0.1.0                                                        
 running 3 tests                                                                 
 test render::chip ... ok                                                        
 test render::echo ... ok                                                        
@@ -36,13 +36,13 @@ TERMINAL  term:///work//1:sh                         ctrl-\ ctrl-n  NORMAL   1:1
  10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
  11: 80:#aeb3ba/#f6f2e9
  12: 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 18:#262a30/#f6f2e9+b 58:#656d7b/#f6f2e9
- 13: 12:#262a30/#f6f2e9+b 14:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
- 14: 26:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
- 15: 26:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
- 16: 24:#4e6f22/#f6f2e9 2:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
- 17: 24:#4e6f22/#f6f2e9 2:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
- 18: 25:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
- 19: 26:#262a30/#f6f2e9 53:reset/#f6f2e9 1:reset/reset
+ 13: 12:#262a30/#f6f2e9+b 13:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 14: 25:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 15: 25:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 16: 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 17: 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 18: 25:#4e6f22/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 19: 25:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
  20: 79:reset/#f6f2e9 1:reset/reset
  21: 79:reset/#f6f2e9 1:reset/reset
  22: 79:reset/#f6f2e9 1:reset/reset
