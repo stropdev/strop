@@ -6,12 +6,48 @@ symbols, workspace symbols (`Space S`) and the jump list menu (`ctrl-o`
 history, `Space j`). Qualifiers, highlighting, suggestions and errors behave
 identically everywhere — what you learn in one field works in all of them.
 
+## Finding files (`Space f`)
+
+- **The top row is the best match, and Enter opens it.** The bar stays on
+  the top row while files are still streaming in; once you move it, it
+  follows the file you moved to.
+- **A file name beats a directory name.** `sched` lists files named
+  `sched…` before files that merely live under `sched/`; typing a whole
+  name (`sched.h`) lists the files with exactly that name, shortest path
+  first.
+- **Spaces separate terms; every term must match.** `core.c sched` finds
+  `kernel/sched/core.c`. A term containing `/` is matched against the path.
+- **It remembers what you use.** With nothing typed, the list starts with
+  your other open files (most recent first), then the current file, then
+  the files you open most in this project. So `Space f` `Enter` goes back
+  to the file you were just in. When you type, a file you use often wins
+  among equally good matches.
+- **`Space b`** lists buffers most recent first with the bar on the
+  previous buffer, so `Space b` `Enter` switches back.
+
+## Keys in the search field
+
+| Key | Where | Does |
+|---|---|---|
+| `Ctrl-U` | every picker | clear the field back to its start |
+| `Alt-C` | Search, Replace | match case |
+| `Alt-W` | Search, Replace | whole word |
+| `Alt-R` | Search, Replace | regular expression |
+| `Alt-H` | Files, Search | hidden files (dotfiles) on/off |
+| `Alt-I` | Files, Search | files your ignore rules skip on/off |
+
+The toggles stay as you set them until you quit. Whenever one differs from
+the default, a row under the field says so in words — `match case · whole
+word · ignored files shown` — and the row disappears when everything is back
+to default. A qualifier typed in the query (`case:`, `hidden:`, `ignored:`,
+`regex:`) wins over a toggle.
+
 ## The grammar
 
-Bare file queries are fuzzy and case-insensitive; content queries are literal and
-case-insensitive unless you choose `regex:`. Use `case:sensitive` on any query
-surface for exact-case matching, or `case:smart` for the former uppercase-sensitive
-behavior:
+**Case is smart everywhere:** an all-lowercase query matches either case;
+one capital letter makes case count. Bare file queries are fuzzy; content
+queries are literal unless you press `Alt-R` or write `regex:`. Use
+`case:sensitive` or `case:ignore` to decide outright:
 
 ```text
 language:rust
@@ -32,9 +68,8 @@ kind:function parse AND NOT wrap
 - `glob:PATTERN` — glob over the workspace-relative path.
 - `hidden:` / `ignored:` — visibility overrides for this query.
 - `case:sensitive|ignore|insensitive|smart` — case mode for file, path, symbol
-  and content matching. The default is insensitive; `insensitive` aliases
-  `ignore`, and `smart` classifies each content atom as sensitive only when that
-  atom contains uppercase.
+  and content matching. The default is `smart`: each content atom is
+  sensitive only when it contains a capital. `insensitive` aliases `ignore`.
 - `kind:` — on symbol surfaces, the declaration's classification
   (`kind:function`, `kind:struct`, …).
 - `AND` / `OR` / `NOT` and parentheses — Boolean expressions; juxtaposition
@@ -61,10 +96,11 @@ errors and examples. Old `-t`/`-g` UI flags are ordinary text now.
 
 ## Buffer search
 
-Buffer `/` and `?` search is case-insensitive by default. Start the query
-with `case:sensitive` for exact case; `case:ignore`/`case:insensitive`
-select insensitive matching explicitly. Vim's `\C` and `\c` remain
-supported, including in `n`/`N` and highlights. The dialect is bounded
+Buffer `/` and `?` search is smart-case, like the pickers: `/edge` finds
+`Edge` and `edge`, `/Edge` finds only `Edge`. Start the query with
+`case:sensitive` or `case:ignore` (alias `case:insensitive`) to decide
+outright; Vim's `\C` and `\c` do the same, including in `n`/`N` and
+highlights. `*` and `#` match the word under the cursor in either case. The dialect is bounded
 Vim-magic (and `\v` very magic): collections, groups, alternation,
 repetition and backreferences; unsupported constructs report an error
 instead of becoming literals. Search previews and Enter use the same
@@ -118,7 +154,8 @@ enumeration and content matching run entirely in Rust using the
   save them. Use **With → Review** for deliberate multi-file changes.
 - Filter-only file finding lists eligible files; content search needs an
   expression. Unignored dotfiles are included by default; `.git` metadata
-  is excluded. `:search-options` shows the separate visibility controls.
+  is excluded. `Alt-H` and `Alt-I` in the field turn hidden and ignored
+  files on and off.
 - Replacement text is literal, including `$1` and backslashes.
 
 Opening a source hides Search; `Space /` returns to the retained
