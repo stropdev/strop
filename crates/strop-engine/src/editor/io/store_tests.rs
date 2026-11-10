@@ -305,8 +305,7 @@ fn dismissed_unconfirmed_save_still_offers_verification_and_resolves() {
         .items
         .iter()
         .any(|item| item.text.contains("Retry the failed save")));
-    let picker = editor.picker.as_ref().unwrap().id;
-    editor.accept_filesystem_action(picker, 0);
+    editor.accept_action(0);
     editor.wait_io().unwrap();
 
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");

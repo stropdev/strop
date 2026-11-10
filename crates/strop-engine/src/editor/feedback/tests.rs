@@ -135,7 +135,7 @@ fn context_actions_drop_retry_after_revision_changes() {
         .items
         .iter()
         .any(|item| item.text.contains("Retry the failed save")));
-    assert_eq!(picker.kind, strop_picker::Kind::FilesystemActions);
+    assert_eq!(picker.kind, strop_picker::Kind::Actions);
     editor.close_picker();
 
     editor.feed_text("ichanged<esc>");

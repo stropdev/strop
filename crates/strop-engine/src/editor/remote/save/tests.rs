@@ -244,8 +244,7 @@ fn remote_unconfirmed_feedback_offers_verify_not_blind_retry() {
         .items
         .iter()
         .any(|item| item.text.contains("Retry the failed save")));
-    let picker = editor.picker.as_ref().unwrap().id;
-    editor.accept_filesystem_action(picker, 0);
+    editor.accept_action(0);
     let ticket = editor.remote.writes.pending[&document].clone();
     assert_eq!(ticket.key.action, WriteAction::Verify);
     editor.remote_write_done(Completion {

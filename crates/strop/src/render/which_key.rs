@@ -327,7 +327,7 @@ mod tests {
         );
         let files = frame
             .lines()
-            .position(|line| line.contains("files"))
+            .position(|line| line.contains("file finder"))
             .unwrap();
         let git = frame
             .lines()

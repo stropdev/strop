@@ -114,8 +114,7 @@ fn container_setup_failure_has_typed_retry_and_owner_scoped_recovery() {
         .items
         .iter()
         .any(|item| item.text.contains("Retry container setup")));
-    let picker = editor.picker.as_ref().unwrap().id;
-    editor.accept_filesystem_action(picker, 0);
+    editor.accept_action(0);
     let ticket = editor.containers.pending.clone().unwrap();
     editor.handle_container_event(Completion {
         ticket,

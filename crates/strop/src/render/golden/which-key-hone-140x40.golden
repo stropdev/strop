@@ -27,7 +27,7 @@
 ~                     ╭ space ──────────────────────────────────────────────────────────────────────────────────────╮                       
 ~                     │  |  pipe line/selection through shell (:! runs)    d  diagnostics picker                    │                       
 ~                     │  e  reveal source in its Directory buffer          k  hover docs                            │                       
-~                     │  f  file finder                                    a  context actions (code / filesystem)   │                       
+~                     │  f  file finder                                    a  actions here (fixes, code, files)     │                       
 ~                     │  o  open remote destination                        s  document symbols picker               │                       
 ~                     │  b  buffers (MRU)                                  S  workspace symbols picker              │                       
 ~                     │  /  Search workspace (resume investigation)        j  jumplist picker                       │                       
@@ -68,7 +68,7 @@ PENDING   src/render/statusline.rs                                              
  26: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 7:#e6e1d6/#1c1f25+b 87:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
  27: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 44:#e6e1d6/#1c1f25 3:reset/#1c1f25 3:#e8a848/#23272f+b 19:#e6e1d6/#1c1f25 20:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
  28: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 38:#e6e1d6/#1c1f25 9:reset/#1c1f25 3:#e8a848/#23272f+b 11:#e6e1d6/#1c1f25 28:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
- 29: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 12:#e6e1d6/#1c1f25 35:reset/#1c1f25 3:#e8a848/#23272f+b 36:#e6e1d6/#1c1f25 3:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
+ 29: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 12:#e6e1d6/#1c1f25 35:reset/#1c1f25 3:#e8a848/#23272f+b 34:#e6e1d6/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
  30: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 24:#e6e1d6/#1c1f25 23:reset/#1c1f25 3:#e8a848/#23272f+b 24:#e6e1d6/#1c1f25 15:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
  31: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 14:#e6e1d6/#1c1f25 33:reset/#1c1f25 3:#e8a848/#23272f+b 25:#e6e1d6/#1c1f25 14:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset
  32: 1:#4a5160/#15171c 21:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 40:#e6e1d6/#1c1f25 7:reset/#1c1f25 3:#e8a848/#23272f+b 16:#e6e1d6/#1c1f25 23:reset/#1c1f25 1:#858c9a/#1c1f25 22:reset/#15171c 1:reset/reset

@@ -108,7 +108,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space a",
-        desc: "context actions (code / filesystem)",
+        desc: "actions here (fixes, code, files)",
         sections: &["leader"],
         live: true,
         id: "code-actions",

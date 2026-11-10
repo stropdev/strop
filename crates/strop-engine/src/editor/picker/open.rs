@@ -4,8 +4,8 @@ use super::{Editor, Item, Kind, Payload, Picker, PickerGlue};
 
 impl Editor {
     pub fn open_picker(&mut self, kind: Kind) {
-        if kind == Kind::FilesystemActions {
-            self.open_filesystem_actions();
+        if kind == Kind::Actions {
+            self.context_actions();
             return;
         }
         if kind == Kind::Search {
@@ -76,15 +76,12 @@ impl Editor {
             | Kind::Search
             | Kind::RemoteHosts
             | Kind::RemoteAddress
-            | Kind::CodeActions
             | Kind::Containers => vec![],
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
             Kind::SearchOptions => unreachable!("search options build their own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
             Kind::Theme => unreachable!("the theme selector builds its own items"),
-            Kind::FilesystemActions => {
-                unreachable!("filesystem actions build their own captured selector")
-            }
+            Kind::Actions => unreachable!("actions build their own captured selector"),
             Kind::Symbols | Kind::WorkspaceSymbols => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")

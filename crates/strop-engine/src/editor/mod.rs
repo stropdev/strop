@@ -3,6 +3,7 @@
 //!
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
+mod actions;
 mod api;
 mod blame;
 pub mod block;

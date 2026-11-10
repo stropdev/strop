@@ -28,17 +28,14 @@ fn live_text(editor: &Editor, document: DocumentId) -> String {
 }
 
 fn choose_open_action(editor: &mut Editor, label: &str) {
-    let (picker, index) = {
-        let glue = editor.picker.as_ref().expect("context action picker");
-        let index = glue
-            .picker
-            .items
-            .iter()
-            .position(|item| item.text.contains(label))
-            .unwrap_or_else(|| panic!("missing {label:?} action: {:?}", glue.picker.items));
-        (glue.id, index)
-    };
-    editor.accept_filesystem_action(picker, index);
+    let glue = editor.picker.as_ref().expect("context action picker");
+    let index = glue
+        .picker
+        .items
+        .iter()
+        .position(|item| item.text.contains(label))
+        .unwrap_or_else(|| panic!("missing {label:?} action: {:?}", glue.picker.items));
+    editor.accept_action(index);
 }
 
 fn inspect(editor: &mut Editor) {

@@ -194,7 +194,18 @@ impl Editor {
     pub(crate) fn lsp_document_symbols(&mut self) {
         self.lsp_request(strop_lsp::RequestKind::DocumentSymbols);
     }
-    /// `Space a` — code actions at the cursor, offered as a picker.
+    /// Whether a language server serves `document` now: `Space a` asks it
+    /// for code actions only then, and stays quiet otherwise.
+    pub(crate) fn lsp_serves(&self, document: strop_core::id::DocumentId) -> bool {
+        self.lsp_document_location(document)
+            .and_then(|doc| {
+                let language = self.lsp_doc_language(document, &doc.path)?;
+                self.lsp_server_for(document, &doc.path, &language, &doc.filesystem)
+            })
+            .is_some()
+    }
+
+    /// `Space a` — code actions at the cursor, joining the actions list.
     pub(crate) fn lsp_code_actions(&mut self) {
         self.lsp_change_request(strop_lsp::RequestKind::CodeAction, None);
     }

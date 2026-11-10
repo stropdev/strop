@@ -44,7 +44,6 @@ impl Editor {
                     self.jump_land(document, offset);
                 }
             }
-            Payload::CodeAction(index) => self.accept_code_action(index),
             Payload::Container(id) => self.attach_container(id),
             // Indentation choices retain a captured source owner and are
             // handled before closing the selector, never against current focus.
@@ -56,9 +55,7 @@ impl Editor {
             Payload::ThemeChoice(_) => {
                 self.message = "theme choice requires its original selector".into()
             }
-            Payload::FilesystemAction(_) => {
-                self.message = "filesystem choice requires its original selector".into()
-            }
+            Payload::Action(_) => self.message = "action choice requires its original list".into(),
             // A project status row (0063 §2): Enter browses the project
             // root as a directory — never a symbol location jump.
             Payload::ProjectStatus(root) => {

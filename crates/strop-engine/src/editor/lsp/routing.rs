@@ -222,28 +222,7 @@ impl Editor {
                     trace::services::rejected("lsp", "code-action owner/revision changed");
                     return;
                 }
-                if actions.is_empty() {
-                    self.message = "no code actions here".into();
-                    return;
-                }
-                let items = actions
-                    .iter()
-                    .enumerate()
-                    .map(|(index, action)| strop_picker::Item {
-                        badge: None,
-                        text: action.title.clone(),
-                        payload: strop_picker::Payload::CodeAction(index),
-                    })
-                    .collect();
-                self.changes.pending_actions = actions;
-                self.open_picker(strop_picker::Kind::CodeActions);
-                self.changes.pending_encoding = context.encoding;
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.picker.append(items);
-                }
-                // Same post-append re-rank as the symbols arm above:
-                // the initial ranking ran over an empty catalog.
-                self.request_picker_ranking();
+                self.deliver_code_actions(actions, context.encoding);
             }
             LspEvent::GotoLocation { context, location } => {
                 if !self.finish_lsp_reply(&context) {
