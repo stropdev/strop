@@ -211,6 +211,9 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
+- `✓ ctrl-u` — query field: clear back to the start
+- `✓ alt-c alt-w alt-r` — Search: match case / whole word / regex
+- `✓ alt-h alt-i` — Files, Search: hidden files / ignored files
 - `✓ ctrl-d` — Search: exclude/include file
 - `✓ ctrl-r` — input field: insert register {reg} (" is the last yank/delete)
 - `✓ ctrl-t` — Search: toggle replacement
@@ -251,7 +254,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
-- `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
+- `✓ :tab-size :indent-style` — source indentation controls
 - `✓ :fs :browse :filter :remote :terminal-local` — filesystem actions, namespace-aware browsing, folder filtering, remote destinations, a local shell
 - `✓ :apply-change :cancel-change :save-change :undo-change` — review: apply text or filesystem changes, cancel, save changed text, or undo the last applied plan
 

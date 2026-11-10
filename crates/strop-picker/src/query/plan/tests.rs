@@ -25,9 +25,13 @@ fn path_substring_and_negation() {
 }
 
 #[test]
-fn path_scopes_default_to_insensitive_and_honor_sensitive_override() {
+fn path_scopes_default_to_smart_case_and_honor_overrides() {
+    // smart: a capital in the scope makes its case count
+    let (_, smart) = plan("path:SRC/");
+    assert!(smart.allows("SRC/lib.rs"));
+    assert!(!smart.allows("src/lib.rs"));
     for input in [
-        "path:SRC/",
+        "path:src/",
         "case:ignore path:SRC/",
         "case:insensitive path:SRC/",
     ] {
@@ -40,7 +44,7 @@ fn path_scopes_default_to_insensitive_and_honor_sensitive_override() {
     assert!(sensitive.allows("SRC/lib.rs"));
     assert!(!sensitive.allows("src/lib.rs"));
 
-    for input in ["fpath:SRC/LIB", "case:insensitive fpath:SRC/LIB"] {
+    for input in ["fpath:src/lib", "case:insensitive fpath:SRC/LIB"] {
         let (_, plan) = plan(input);
         assert!(plan.allows("src/lib.rs"), "{input}");
         assert!(plan.allows("Src/Lib.rs"), "{input}");
@@ -50,10 +54,10 @@ fn path_scopes_default_to_insensitive_and_honor_sensitive_override() {
     assert!(sensitive.allows("SRC/LIB.rs"));
     assert!(!sensitive.allows("src/lib.rs"));
 
-    let (_, excluded) = plan("-path:SRC/");
-    assert!(!excluded.allows("src/lib.rs"));
+    let (_, excluded) = plan("-path:src/");
+    assert!(!excluded.allows("Src/lib.rs"));
     assert!(excluded.allows("tests/lib.rs"));
-    let (_, excluded) = plan("-fpath:SRC/LIB");
+    let (_, excluded) = plan("-fpath:src/lib");
     assert!(!excluded.allows("src/lib.rs"));
     assert!(excluded.allows("src/main.rs"));
 }
@@ -61,7 +65,7 @@ fn path_scopes_default_to_insensitive_and_honor_sensitive_override() {
 #[test]
 fn boolean_and_retained_path_scopes_share_the_selected_case() {
     for input in [
-        "path:SRC/ AND needle",
+        "path:src/ AND needle",
         "case:insensitive path:SRC/ AND needle",
     ] {
         let plan = content_plan(input);
@@ -74,7 +78,7 @@ fn boolean_and_retained_path_scopes_share_the_selected_case() {
     assert!(!admits_line(&sensitive, "src/lib.rs", "NEEDLE"));
     assert!(!admits_line(&sensitive, "SRC/lib.rs", "needle"));
 
-    for input in ["path:SRC/", "case:insensitive path:SRC/"] {
+    for input in ["path:src/", "case:insensitive path:SRC/"] {
         let query = SearchQuery::parse(input);
         let retained = BooleanPlan::compile_retained(&query).unwrap().unwrap();
         let evidence = |path| Evidence {
@@ -226,8 +230,12 @@ fn filter_only_content_surface_needs_an_expression() {
 }
 
 #[test]
-fn literal_is_escaped_and_case_insensitive_by_default() {
-    for input in ["a.b", "A.B", "case:ignore a.b", "case:insensitive a.b"] {
+fn literal_is_escaped_and_smart_case_by_default() {
+    // one capital makes case count; an all-lowercase literal folds
+    let capital = content_plan("A.b");
+    assert!(capital.regex.is_match("A.b"));
+    assert!(!capital.regex.is_match("a.b"));
+    for input in ["a.b", "case:ignore A.B", "case:insensitive A.b"] {
         let query = SearchQuery::parse(input);
         let plan = ContentPlan::compile(&query).unwrap().unwrap();
         let re = plan.regex;
@@ -587,8 +595,11 @@ fn plain_queries_never_build_the_symbol_index() {
 
 #[test]
 fn boolean_case_modes_apply_to_atoms() {
+    let smart = content_plan("text:Parser AND text:request");
+    assert!(admits_line(&smart, "x.rs", "Parser REQUEST"));
+    assert!(!admits_line(&smart, "x.rs", "parser request"));
     for input in [
-        "text:Parser AND text:Request",
+        "text:parser AND text:request",
         "case:ignore text:Parser AND text:Request",
         "case:insensitive text:Parser AND text:Request",
     ] {
@@ -680,12 +691,17 @@ fn replacement_targets_are_single_positive_atoms_only() {
     };
     assert!(re.is_match("needle"));
     assert!(!re.is_match("Needle"));
-    let ReplacementTarget::Single(re) = target("NEEDLE") else {
+    let ReplacementTarget::Single(re) = target("needle") else {
         panic!("single");
     };
     assert!(re.is_match("needle"));
     assert!(re.is_match("Needle"));
     assert!(re.is_match("NEEDLE"));
+    let ReplacementTarget::Single(re) = target("Needle") else {
+        panic!("single");
+    };
+    assert!(re.is_match("Needle"));
+    assert!(!re.is_match("needle"));
 }
 
 #[test]

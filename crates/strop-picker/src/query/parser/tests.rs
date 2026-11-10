@@ -88,10 +88,12 @@ fn insensitive_alias_matches_ignore_and_changes_scope_identity() {
         SearchQuery::parse("case:ignore case:insensitive needle").state,
         QueryState::Ready
     );
-    assert_eq!(default.case_mode(), CaseMode::Ignore);
+    assert_eq!(default.case_mode(), CaseMode::Smart);
     assert!(!default.same_scope(&sensitive));
-    assert!(default.same_scope(&SearchQuery::parse("case:ignore path:src needle")));
-    assert!(default.same_scope(&SearchQuery::parse("case:insensitive path:src needle")));
+    assert!(default.same_scope(&SearchQuery::parse("case:smart path:src needle")));
+    let ignore = SearchQuery::parse("case:ignore path:src needle");
+    assert!(!default.same_scope(&ignore));
+    assert!(ignore.same_scope(&SearchQuery::parse("case:insensitive path:src needle")));
 }
 
 #[test]

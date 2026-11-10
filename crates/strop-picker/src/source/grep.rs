@@ -2,9 +2,6 @@
 //! dirty snapshots and exact admission stay shared with the remote source;
 //! only local content matching and result streaming live here.
 
-use grep::regex::RegexMatcherBuilder;
-use grep::searcher::{sinks::UTF8, SearcherBuilder};
-
 use strop_core::worker::{CancelReason, FailureKind, Outcome};
 
 use super::PickerMsg;
@@ -48,99 +45,41 @@ pub(super) fn run(
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
-    let pattern = content.provider_pattern().to_string();
-    if content.is_literal() && pattern.is_empty() {
+    if content.is_literal() && content.provider_pattern().is_empty() {
         return Outcome::Success(());
     }
     let cancelled = || {
         tx.heartbeat();
         cancel.is_cancelled()
     };
-    // Retained baseline (0063 residual, 0058 S7): with push coverage the
-    // catalog/symbol scan reuses unchanged subtrees and rescans only
-    // hinted paths; without it, scan per search exactly as before. The
-    // lock never spans filesystem I/O; a cancelled scan abandons (its
-    // invalidation snapshot is restored, never consumed).
-    let baseline = cache.lock().begin(&cwd);
-    let invalidated = super::cache::Caches::invalidated(&baseline).to_vec();
-    let full =
-        baseline.catalog.is_none() || (content.needs_symbols() && baseline.symbols.is_none());
-    // One bounded discovery scan per search (0063 §2): the catalog
-    // decides `repo:` atoms exactly; a missed project only overfetches.
-    let (catalog, catalog_stats) = match baseline.catalog.as_deref() {
-        Some(prior) => {
-            crate::source::catalog::ProjectCatalog::refresh(prior, &cwd, &invalidated, &cancelled)
+    let threads = disk::threads();
+    // Eligible paths come from the shared selection authority with
+    // bounded count and encoded path bytes, gathered on every core.
+    let mut paths = match super::selection::collect(&cwd, &plan, policy, &cancelled, threads) {
+        Ok(paths) => paths,
+        Err(super::selection::CollectError::Limit) => {
+            return Outcome::failed(
+                FailureKind::Unavailable,
+                "search selection exceeds 100000 paths or 16 MiB; narrow the scope",
+            )
         }
-        None => (
-            crate::source::catalog::ProjectCatalog::discover(&cwd, &cancelled),
-            crate::source::catalog::CatalogStats::default(),
-        ),
+        Err(super::selection::CollectError::Walk(error)) => {
+            return Outcome::failed(FailureKind::Io, error)
+        }
     };
     if cancelled() {
-        cache.lock().abandon(&cwd, baseline);
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
-    // Every hit line goes through the exact plan: the provider pattern
-    // only prefilters (0063 §4). Eligible paths come from the shared
-    // selection authority with bounded count and encoded path bytes.
-    let mut paths: Vec<std::path::PathBuf> = Vec::new();
-    let mut path_bytes = 0usize;
-    let mut path_limit = false;
-    let walk = super::selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
-        path_bytes = path_bytes.saturating_add(rel.as_os_str().as_encoded_bytes().len());
-        if paths.len() >= super::selection::PATH_LIMIT || path_bytes > super::selection::PATH_BYTES
-        {
-            path_limit = true;
-            return false;
+    // Only `repo:` and `kind:` atoms consult evidence beyond the line
+    // itself (0063 §2). A plain expression pays for neither scan.
+    let (catalog, mut symbols) = if content.needs_catalog() || content.needs_symbols() {
+        match evidence(&cwd, &content, &paths, &cache, &cancelled) {
+            Some((catalog, symbols)) => (Some(catalog), symbols),
+            None => return Outcome::Cancelled(CancelReason::OwnerClosed),
         }
-        paths.push(rel);
-        true
-    });
-    if path_limit {
-        cache.lock().abandon(&cwd, baseline);
-        return Outcome::failed(
-            FailureKind::Unavailable,
-            "search selection exceeds 100000 paths or 16 MiB; narrow the scope",
-        );
-    }
-    if let Err(error) = walk {
-        cache.lock().abandon(&cwd, baseline);
-        return Outcome::failed(FailureKind::Io, error);
-    }
-    if cancelled() {
-        cache.lock().abandon(&cwd, baseline);
-        return Outcome::Cancelled(CancelReason::OwnerClosed);
-    }
-    // Syntax-fallback symbol index (0063 §2): built only when the
-    // query carries a `kind:` atom, from the selection's own eligible
-    // files. Absent or incomplete entries stay Unknown and admit.
-    let disk_symbols = if content.needs_symbols() {
-        let (index, stats) = crate::source::symbols::SymbolIndex::refresh(
-            baseline.symbols.as_deref(),
-            &cwd,
-            &paths,
-            &invalidated,
-            &cancelled,
-        );
-        Some((index, stats))
     } else {
-        None
+        (None, None)
     };
-    if cancelled() {
-        cache.lock().abandon(&cwd, baseline);
-        return Outcome::Cancelled(CancelReason::OwnerClosed);
-    }
-    // Settle the disk-pure baseline BEFORE the dirty overlay touches
-    // the working copy — the retained index never absorbs unsaved text.
-    cache.lock().settle(
-        &cwd,
-        disk_symbols
-            .as_ref()
-            .map(|(index, stats)| (std::sync::Arc::new(index.clone()), *stats)),
-        Some((std::sync::Arc::new(catalog.clone()), catalog_stats)),
-        full,
-    );
-    let mut symbols = disk_symbols.map(|(index, _)| index);
     // Dirty open source text is authoritative, never a hidden disk
     // save. Matching happens on this worker, under the same plan.
     if let Err(error) = super::snapshots::emit_snapshots(
@@ -151,7 +90,7 @@ pub(super) fn run(
         &tx,
         &cancel,
         super::snapshots::Sources {
-            catalog: Some(&catalog),
+            catalog: catalog.as_ref(),
             symbols: symbols.as_mut(),
         },
     ) {
@@ -161,103 +100,94 @@ pub(super) fn run(
             Outcome::failed(FailureKind::Protocol, error)
         };
     }
-    let symbols = symbols.map(std::sync::Arc::new);
-    let mut matcher = RegexMatcherBuilder::new();
-    matcher
-        .case_smart(content.provider_case() == crate::query::CaseMode::Smart)
-        .case_insensitive(content.provider_case() == crate::query::CaseMode::Ignore)
-        .fixed_strings(content.is_literal());
-    let matcher = match matcher.build(&pattern) {
-        Ok(matcher) => matcher,
-        Err(error) => {
-            return Outcome::failed(FailureKind::Protocol, format!("invalid regex: {error}"))
-        }
-    };
-    let mut searcher = SearcherBuilder::new().line_number(true).build();
-    for path in paths {
-        tx.heartbeat();
-        if cancel.is_cancelled() {
-            return Outcome::Cancelled(CancelReason::OwnerClosed);
-        }
-        let location = strop_workspace::ResourceLocation::local(cwd.join(&path));
-        let relative = path.to_string_lossy();
-        let display = strop_workspace::directory::display_path(&path);
-        let mut terminal = None;
-        let mut sink = UTF8(|line, text| {
-            if cancel.is_cancelled() {
-                return Ok(false);
-            }
-            if text.len() > super::query::RECORD_LIMIT {
-                terminal = Some(Outcome::failed(
-                    FailureKind::Protocol,
-                    format!("{display}:{line}: source line exceeds the 1 MiB search bound"),
-                ));
-                return Ok(false);
-            }
-            let text: std::sync::Arc<str> = text.strip_suffix('\n').unwrap_or(text).into();
-            if !content.admits(
-                crate::query::Evidence {
-                    catalog: Some(&catalog),
-                    symbols: symbols.as_deref(),
-                    path: Some(&relative),
-                    line: Some(line as usize),
-                    symbol: None,
-                },
-                &text,
-            ) {
-                return Ok(true);
-            }
-            let short: String = text.trim().chars().take(80).collect();
-            let mut items = Vec::new();
-            let mut expanded = text.len();
-            for hit in content.regex.find_iter(&text).take(4097) {
-                if items.len() == 4096 {
-                    terminal = Some(Outcome::failed(
-                        FailureKind::Protocol,
-                        format!("{display}:{line}: source line exceeds 4096 matches"),
-                    ));
-                    return Ok(false);
-                }
-                let item = crate::Item {
-                    badge: None,
-                    text: format!("{display}:{line} · {short}"),
-                    payload: crate::Payload::Grep {
-                        location: location.clone(),
-                        line: line as usize,
-                        col: hit.start() + 1,
-                        match_len: hit.len(),
-                        line_text: text.clone(),
-                    },
-                };
-                expanded = expanded.saturating_add(super::flow::row_bytes(&item));
-                if expanded > super::flow::BACKLOG_BYTES {
-                    terminal = Some(Outcome::failed(
-                        FailureKind::Protocol,
-                        format!("{display}:{line}: source line exceeds 4 MiB of result rows"),
-                    ));
-                    return Ok(false);
-                }
-                items.push(item);
-            }
-            if let Err(error) = tx.batch(items, &cancel) {
-                terminal = Some(error.finish(&tx));
-                return Ok(false);
-            }
-            Ok(true)
-        });
-        let searched = searcher.search_path(&matcher, cwd.join(&path), &mut sink);
-        if let Some(outcome) = terminal {
-            return outcome;
-        }
-        if cancel.is_cancelled() {
-            return Outcome::Cancelled(CancelReason::OwnerClosed);
-        }
-        if let Err(error) = searched {
-            return Outcome::failed(FailureKind::Io, format!("{display}: {error}"));
-        }
-    }
-    Outcome::Success(())
+    // Tree order here is a courtesy, not the contract: files are claimed
+    // front to back, so hits mostly arrive in the order the list shows
+    // them and rows grow at the bottom instead of shuffling. The list's
+    // order itself is decided where rows are ranked (0093 §4.2).
+    paths.sort_unstable_by(|a, b| {
+        crate::rank::tree_order(
+            a.as_os_str().as_encoded_bytes(),
+            b.as_os_str().as_encoded_bytes(),
+        )
+    });
+    disk::search(
+        &disk::Scope {
+            cwd: &cwd,
+            content: &content,
+            catalog: catalog.as_ref(),
+            symbols: symbols.as_ref(),
+            tx: &tx,
+            cancel: &cancel,
+        },
+        &paths,
+        threads,
+    )
 }
+
+/// The retained baseline (0063 residual, 0058 S7) for queries that
+/// consult it: with push coverage the catalog/symbol scan reuses
+/// unchanged subtrees and rescans only hinted paths; without it, scan per
+/// search. The lock never spans filesystem I/O; a cancelled scan abandons
+/// (its invalidation snapshot is restored, never consumed) and reports
+/// `None`. The disk-pure baseline settles BEFORE any dirty overlay — the
+/// retained index never absorbs unsaved text.
+fn evidence(
+    cwd: &std::path::Path,
+    content: &crate::query::ContentPlan,
+    paths: &[std::path::PathBuf],
+    cache: &parking_lot::Mutex<super::cache::Caches>,
+    cancelled: &impl Fn() -> bool,
+) -> Option<(
+    crate::source::catalog::ProjectCatalog,
+    Option<crate::source::symbols::SymbolIndex>,
+)> {
+    let baseline = cache.lock().begin(cwd);
+    let invalidated = super::cache::Caches::invalidated(&baseline).to_vec();
+    let full =
+        baseline.catalog.is_none() || (content.needs_symbols() && baseline.symbols.is_none());
+    // One bounded discovery scan (0063 §2): the catalog decides `repo:`
+    // atoms exactly; a missed project only overfetches.
+    let (catalog, catalog_stats) = match baseline.catalog.as_deref() {
+        Some(prior) => {
+            crate::source::catalog::ProjectCatalog::refresh(prior, cwd, &invalidated, cancelled)
+        }
+        None => (
+            crate::source::catalog::ProjectCatalog::discover(cwd, cancelled),
+            crate::source::catalog::CatalogStats::default(),
+        ),
+    };
+    if cancelled() {
+        cache.lock().abandon(cwd, baseline);
+        return None;
+    }
+    // Syntax-fallback symbol index (0063 §2): built only when the
+    // query carries a `kind:` atom, from the selection's own eligible
+    // files. Absent or incomplete entries stay Unknown and admit.
+    let symbols = content.needs_symbols().then(|| {
+        crate::source::symbols::SymbolIndex::refresh(
+            baseline.symbols.as_deref(),
+            cwd,
+            paths,
+            &invalidated,
+            cancelled,
+        )
+    });
+    if cancelled() {
+        cache.lock().abandon(cwd, baseline);
+        return None;
+    }
+    cache.lock().settle(
+        cwd,
+        symbols
+            .as_ref()
+            .map(|(index, stats)| (std::sync::Arc::new(index.clone()), *stats)),
+        Some((std::sync::Arc::new(catalog.clone()), catalog_stats)),
+        full,
+    );
+    Some((catalog, symbols.map(|(index, _)| index)))
+}
+
+mod disk;
 
 #[cfg(test)]
 mod tests {
@@ -334,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn content_search_defaults_to_insensitive_and_sensitive_is_exact() {
+    fn content_search_defaults_to_smart_case_and_sensitive_is_exact() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("MixedCase.txt"), "needle\nNEEDLE\n").unwrap();
         let run = |query: &str| {
@@ -351,12 +281,12 @@ mod tests {
             }
         };
         assert_eq!(run("needle"), 2);
-        assert_eq!(run("NEEDLE"), 2);
+        assert_eq!(run("NEEDLE"), 1);
         assert_eq!(run("case:insensitive NEEDLE"), 2);
-        assert_eq!(run("case:sensitive NEEDLE"), 1);
+        assert_eq!(run("case:sensitive needle"), 1);
         assert_eq!(run("case:sensitive path:MIXEDCASE.TXT NEEDLE"), 0);
         assert_eq!(run("case:sensitive path:MixedCase.txt NEEDLE"), 1);
-        assert_eq!(run("path:MIXEDCASE.TXT needle"), 2);
+        assert_eq!(run("path:mixedcase.txt needle"), 2);
     }
 
     #[test]
@@ -432,29 +362,110 @@ mod tests {
 
     #[test]
     fn cancelling_disk_search_stops_the_in_process_searcher() {
+        // One file with far more hits than the delivery backlog admits.
+        // The first batch is held, so the searcher can only run as far as
+        // its 4 MiB of credit before it must notice the cancellation.
+        const LINES: usize = 90_000;
         let directory = tempfile::tempdir().unwrap();
-        let mut text = "needle on disk\n".to_string();
-        text.push_str(&"filler line\n".repeat(100_000));
-        std::fs::write(directory.path().join("large.txt"), text).unwrap();
+        std::fs::write(
+            directory.path().join("large.txt"),
+            "needle on disk\n".repeat(LINES),
+        )
+        .unwrap();
         let (tx, rx) = channel();
         let (worker, request) = spawn_query("needle", directory.path(), tx);
-        match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
+        let held = match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
             PickerMsg::Items(items) => {
-                assert_eq!(items.len(), 1);
                 assert_eq!(items[0].text, "large.txt:1 · needle on disk");
+                items
             }
-            other => panic!("the disk row must arrive first: {other:?}"),
-        }
+            other => panic!("the disk rows must arrive first: {other:?}"),
+        };
         request.cancel(CancelReason::OwnerClosed);
-        match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
-            PickerMsg::Finished(Outcome::Cancelled(CancelReason::OwnerClosed)) => {}
-            other => panic!("cancellation must settle without late rows: {other:?}"),
+        let mut rows = held.len();
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
+                PickerMsg::Items(items) => rows += items.len(),
+                PickerMsg::Finished(Outcome::Cancelled(_)) => break,
+                other => panic!("cancellation must settle as cancelled: {other:?}"),
+            }
         }
+        assert!(rows < LINES, "the searcher stopped early: {rows}");
         drop(worker);
         assert!(matches!(
             rx.recv_timeout(std::time::Duration::from_secs(30)),
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
         ));
+    }
+
+    #[test]
+    fn hits_from_many_files_rank_in_tree_order_however_they_arrive() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        // enough files that several threads claim work, with names whose
+        // byte order differs from their tree order (`a-b` vs `a/`)
+        let mut expected = Vec::new();
+        for dir in ["a", "a-b", "a/deep", "b"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        for dir in ["a", "a/deep", "a-b", "b"] {
+            for file in 0..40 {
+                let relative = format!("{dir}/f{file:02}.txt");
+                std::fs::write(root.join(&relative), "x\nneedle one\nneedle two needle\n").unwrap();
+                expected.push(relative);
+            }
+        }
+        // tree order: a/deep/* (a directory's children) before a/f*, then a-b, then b
+        expected.sort_by(|a, b| crate::rank::tree_order(a.as_bytes(), b.as_bytes()));
+        let (tx, rx) = channel();
+        let (_worker, _request) = spawn_query("needle", root, tx);
+        let mut items = Vec::new();
+        loop {
+            match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
+                PickerMsg::Items(batch) => items.extend(batch.into_items()),
+                PickerMsg::Warning(_) | PickerMsg::ScopeProjects(_) => {}
+                PickerMsg::Finished(Outcome::Success(())) => break,
+                other => panic!("unexpected search event {other:?}"),
+            }
+        }
+        assert_eq!(items.len(), expected.len() * 3);
+        let picker = crate::Picker::search(items, false, false);
+        let ranking = crate::rank::rank(&picker.filter_request(), || false)
+            .unwrap()
+            .unwrap();
+        let listed: Vec<(String, usize, usize)> = ranking
+            .rows
+            .iter()
+            .map(|row| match &picker.items[row.item].payload {
+                crate::Payload::Grep {
+                    location,
+                    line,
+                    col,
+                    ..
+                } => (
+                    location
+                        .path
+                        .strip_prefix(root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                    *line,
+                    *col,
+                ),
+                other => panic!("grep rows only: {other:?}"),
+            })
+            .collect();
+        let wanted: Vec<(String, usize, usize)> = expected
+            .iter()
+            .flat_map(|path| {
+                [
+                    (path.clone(), 2, 1),
+                    (path.clone(), 3, 1),
+                    (path.clone(), 3, 12),
+                ]
+            })
+            .collect();
+        assert_eq!(listed, wanted);
     }
 
     /// 0063 §6.8 shape: a mixed parent directory — nested repositories,

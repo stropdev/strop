@@ -512,11 +512,6 @@ pub(crate) const COMMANDS: &[ExCommand] = &[
     own("select-pop", "drop the last-added occurrence", |e, _| {
         e.occurrence_pop_pub()
     }),
-    own(
-        "search-options",
-        "choose hidden and ignored search policy",
-        |e, _| e.open_search_options(),
-    ),
     own("tab-size", "choose indentation width: N or auto", |e, c| {
         e.tab_size_command(c.arg)
     }),

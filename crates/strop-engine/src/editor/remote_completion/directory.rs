@@ -41,9 +41,11 @@ pub(super) fn classify(
                 .ok_or("invalid remote completion identity")?,
         );
     }
+    let plain = !operand.starts_with(['/', '~']) && !operand.contains("://");
     Ok(RemoteCompletionQuery::Directory {
         location,
         segment: bytes,
+        typed: plain.then(|| directory.to_owned()),
     })
 }
 
@@ -53,7 +55,15 @@ pub(super) struct Sources<'a> {
     pub local: &'a crate::editor::namespace::LocalFs,
 }
 
+/// A name that can be spelled into the prompt as it is: valid text with
+/// nothing the ex line would split or a URI would escape.
+fn plain_name(name: &std::path::Path) -> Option<&str> {
+    name.to_str()
+        .filter(|name| !name.contains(|c: char| c.is_whitespace() || c.is_control() || c == '%'))
+}
+
 pub(super) fn run(
+    typed: Option<&str>,
     location: ResourceLocation,
     segment: &[u8],
     sources: Sources<'_>,
@@ -81,9 +91,17 @@ pub(super) fn run(
             break;
         }
         let directory = entry.observation.kind == strop_workspace::EntryKind::Directory;
-        let mut uri = match listed.directory.snapshot.location_of(entry).uri() {
-            Ok(uri) => uri,
-            Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
+        // A relative operand completes relatively; a name that cannot be
+        // typed plainly keeps the lossless URI.
+        let relative = typed
+            .zip(plain_name(entry.name.as_path()))
+            .map(|(directory, name)| format!("{directory}{name}"));
+        let mut uri = match relative {
+            Some(relative) => relative,
+            None => match listed.directory.snapshot.location_of(entry).uri() {
+                Ok(uri) => uri,
+                Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
+            },
         };
         if directory && !uri.ends_with('/') {
             uri.push('/');

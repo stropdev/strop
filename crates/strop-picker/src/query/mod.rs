@@ -5,6 +5,7 @@
 
 pub mod highlight;
 pub mod lexer;
+mod modes;
 pub mod parser;
 pub mod plan;
 #[cfg(test)]
@@ -13,6 +14,7 @@ pub mod store;
 pub mod suggest;
 
 pub use highlight::{HighlightSpan, Role};
+pub use modes::SearchModes;
 pub use parser::{CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery};
 pub use plan::{
     BooleanPlan, ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget, SymbolEvidence,

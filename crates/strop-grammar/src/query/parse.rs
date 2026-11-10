@@ -168,13 +168,29 @@ struct Parser<'a> {
     branch_start: bool,
 }
 
+/// Whether the pattern's own text has a capital: the character after a
+/// backslash is an escape (`\S`, `\W`), not text.
+fn spells_capital(pattern: &str) -> bool {
+    let mut escaped = false;
+    for c in pattern.chars() {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c.is_uppercase() {
+            return true;
+        }
+    }
+    false
+}
+
 pub(super) fn compile(pattern: &str, whole_word: bool) -> Result<Program, QueryError> {
     let mut p = Parser {
         pat: pattern.as_bytes(),
         at: 0,
         mode: Magic::Magic,
         ngroups: 0,
-        fold: Some(true),
+        fold: None,
         depth: 0,
         branch_start: true,
     };
@@ -199,12 +215,19 @@ pub(super) fn compile(pattern: &str, whole_word: bool) -> Result<Program, QueryE
             break;
         }
     }
+    let start = p.at;
     let node = p.parse_alt()?;
     if p.at < p.pat.len() {
         // the only token that stops a parse early is an unmatched `)`
         return Err(QueryError::UnbalancedGroup { at: p.at });
     }
-    let fold = p.fold.unwrap_or(true);
+    // Smart case (0093 §3.7, vim's `smartcase`): a typed pattern that
+    // spells a capital is case-sensitive; `\c`/`\C` and the qualifiers
+    // decide outright. `*`/`#` take the word under the cursor, which the
+    // user did not type — they keep folding, as vim's do.
+    let fold = p
+        .fold
+        .unwrap_or(whole_word || !spells_capital(&pattern[start..]));
     let mut e = Emitter {
         insts: Vec::new(),
         n_slots: 2 + 2 * p.ngroups,

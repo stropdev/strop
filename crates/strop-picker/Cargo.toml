@@ -26,3 +26,4 @@ thiserror = "2"
 [dev-dependencies]
 nucleo-matcher = "0.3"
 tempfile = "3"
+flate2 = "1"

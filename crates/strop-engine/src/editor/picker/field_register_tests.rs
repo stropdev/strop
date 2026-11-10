@@ -36,7 +36,13 @@ fn a_yank_pastes_with_ctrl_r_in_every_text_input() {
     e.feed_text("yiw/");
     ctrl_r(&mut e, '"');
     e.feed_text("<cr>");
-    assert_eq!(e.head(), 7, "the pasted pattern searches");
+    // smart case: the capital makes case count, so `needle` on line 2 is
+    // not a match and the search wraps to the word it started on
+    assert_eq!(e.head(), 0, "the pasted pattern searches");
+    e.feed_text("/needle<cr>");
+    assert_eq!(e.head(), 7, "an all-lowercase pattern matches either case");
+    e.feed_text("n");
+    assert_eq!(e.head(), 0);
 }
 
 #[test]

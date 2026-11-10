@@ -2,7 +2,6 @@
 use super::*;
 use std::sync::Arc;
 use strop_picker::query::SearchQuery;
-use strop_workspace::ResourceLocation;
 
 impl Editor {
     fn source_worker(
@@ -23,51 +22,34 @@ impl Editor {
     }
 
     fn query_policy(&self) -> strop_picker::SelectionPolicy {
-        strop_picker::SelectionPolicy {
-            hidden: self.config.search_show_hidden,
-            respect_ignore: self.config.search_respect_ignore,
-        }
+        modes::policy(&self.config, self.picker_ranking.modes)
     }
     pub(super) fn picker_query_eval(&mut self, kind: Kind) -> Option<Arc<SearchQuery>> {
+        let session = self.picker_ranking.modes;
         let glue = self.picker.as_mut()?;
-        let query = Arc::new(SearchQuery::parse(glue.picker.input.text()));
+        // The toggles re-read a content expression; the finder's fuzzy
+        // needle has no expression to re-read.
+        let query = Arc::new(if kind == Kind::Search {
+            SearchQuery::parse_with(glue.picker.input.text(), session)
+        } else {
+            SearchQuery::parse(glue.picker.input.text())
+        });
         glue.query = Some(query.clone());
         glue.query_highlights = query.highlights.clone();
-        let hidden = query.hidden.unwrap_or(self.config.search_show_hidden);
-        let ignored = query.ignored.unwrap_or(!self.config.search_respect_ignore);
-        let expression_mode = if kind == Kind::Files && !query.exact_file_expression {
-            "fuzzy"
-        } else if query.boolean.is_some() {
-            "boolean"
-        } else if matches!(
-            query.content,
-            Some(strop_picker::query::ContentExpr::Regex(_))
-        ) {
-            "regex"
-        } else {
-            "literal"
-        };
-        let namespace = glue
+        let root = glue
             .search
             .as_ref()
             .map(|context| &context.scope.root)
-            .or(glue.file_root.as_ref())
-            .map_or_else(|| "local".into(), ResourceLocation::label);
-        glue.query_summary = format!(
-            "{namespace} · {expression_mode} · hidden {} ({}) · ignored {} ({})",
-            if hidden { "on" } else { "off" },
-            if query.hidden.is_some() {
-                "query"
-            } else {
-                "session"
-            },
-            if ignored { "on" } else { "off" },
-            if query.ignored.is_some() {
-                "query"
-            } else {
-                "session"
-            }
-        );
+            .or(glue.file_root.as_ref());
+        glue.status_row = modes::status_row(&modes::Scope {
+            kind,
+            elsewhere: root.filter(|root| {
+                root.filesystem != strop_workspace::Filesystem::Local || root.path != self.cwd
+            }),
+            config: &self.config,
+            modes: session,
+            query: &query,
+        });
         match query.state {
             strop_picker::query::QueryState::Ready => {}
             strop_picker::query::QueryState::Incomplete
@@ -424,16 +406,15 @@ impl Editor {
                 glue.picker.error = Some("Search has no captured workspace scope".into());
                 return;
             };
+            let session = modes::policy(&self.config, self.picker_ranking.modes);
+            let query = glue.query.as_deref();
             let policy = (
-                glue.query
-                    .as_ref()
+                query
                     .and_then(|query| query.hidden)
-                    .unwrap_or(self.config.search_show_hidden),
-                !glue
-                    .query
-                    .as_ref()
+                    .unwrap_or(session.hidden),
+                !query
                     .and_then(|query| query.ignored)
-                    .unwrap_or(!self.config.search_respect_ignore),
+                    .unwrap_or(!session.respect_ignore),
             );
             let refresh =
                 std::mem::take(&mut context.refresh_requested) && context.policy == policy;

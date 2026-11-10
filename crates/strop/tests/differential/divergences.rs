@@ -46,10 +46,11 @@ pub const KNOWN: &[(&[&str], &str)] = &[
             "gen/code@4:14/dot/g~/in⏎",
             "gen/code@4:14/dot/g~?in⏎",
         ],
-        "Search folds case: `/edge` also finds `Edge`, and `/in` still finds the `IN` \
-         an operator has just upper-cased. `nvim -u NONE` is case-sensitive. The \
-         policy belongs to plan 0093, which makes it smart case; these cases search \
-         lower-case for text that also occurs in another case.",
+        "Search is smart case (plan 0093 §3.7), in `/`, `?` and `:s` alike: an \
+         all-lowercase pattern matches either case, so `/edge` also finds `Edge` and \
+         `/in` still finds the `IN` an operator has just upper-cased. `nvim -u NONE` \
+         is case-sensitive. These cases search lower-case for text that also occurs \
+         in another case; a pattern that spells a capital agrees with Neovim.",
     ),
 ];
 

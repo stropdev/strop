@@ -249,8 +249,9 @@ The compared state is the final text, cursor, mode, `""`, `"0 "1 "2 "- "a
 1. *Missing* (7 critique cases): folds, `U`, `=`, `gq` / `gw`, search
    offsets. On the Missing list; nothing happens.
 2. *Reassigned* (2): `gd` and `gI` are the language server's.
-3. *Search folds case* (8): `/edge` finds `Edge`; after `gU`, `/in` still
-   finds `IN`. The policy is 0093's.
+3. *Search is smart case* (8): `/edge` finds `Edge`; after `gU`, `/in` still
+   finds `IN`. The policy is 0093 §3.7's: an all-lowercase pattern matches
+   either case, one that spells a capital agrees with Neovim.
 4. *A refused `daw`* (1, inherited): Vim's failed `current_word` still moves
    the cursor a column.
 
