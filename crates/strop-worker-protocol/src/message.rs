@@ -114,7 +114,7 @@ pub struct Capabilities {
     pub exec_finite: bool,
     /// Admitted long-lived services (LSP-class leases).
     pub exec_service: bool,
-    /// Local terminal/PTY ownership (0055); remote/container interactive
+    /// Local terminal/PTY ownership (0055); remote interactive
     /// terminals stay refused ahead of their authorized milestones.
     pub pty: bool,
 }
@@ -165,7 +165,7 @@ pub enum Refusal {
     /// Control/cancellation capacity is reserved; this class is full.
     #[error("admission queue full: {message}")]
     Busy { message: String },
-    /// The host/mount/container namespace changed under a retained
+    /// The host/mount namespace changed under a retained
     /// authority; the operation fails closed.
     #[error("namespace changed; the current namespace is {current}")]
     NamespaceChanged { current: String },

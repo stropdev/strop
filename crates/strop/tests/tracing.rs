@@ -66,7 +66,10 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
         first_edit < commit,
         "uncommitted typing is visible before Esc"
     );
-    let text = successful(run(root, &["--replay-script".as_ref(), trace.as_os_str()]));
+    let text = successful(run(
+        root,
+        &["replay".as_ref(), "--script".as_ref(), trace.as_os_str()],
+    ));
     let replay = root.join("replay.keys");
     std::fs::write(&replay, text).unwrap();
     let replayed = successful(run(root, &["--headless".as_ref(), replay.as_os_str()]));

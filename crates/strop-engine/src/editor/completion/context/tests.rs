@@ -156,12 +156,4 @@ fn namespace_write_policy_and_full_windows_are_independent_of_the_readonly_flag(
         capture(&editor, Invocation::ManualWords, 0, None),
         Err(ContextRefusal::ReadOnly)
     );
-    editor.docs.get_mut(document).unwrap().source = DocumentSource::Container {
-        container: strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap(),
-        path: "/source.txt".into(),
-    };
-    assert_eq!(
-        capture(&editor, Invocation::ManualWords, 0, None),
-        Err(ContextRefusal::ReadOnly)
-    );
 }

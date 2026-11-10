@@ -1,4 +1,4 @@
-# SSH, remote editing and containers
+# SSH and remote editing
 
 Remote files are first-class: real buffers, real identity, never a local
 lookalike. The short version:
@@ -25,9 +25,8 @@ byte windows, whose line numbers are window-relative.
 ## Connecting
 
 Press **Space o** or run **`:remote`** to choose a known/connected
-destination, select **Add a host**, or choose **Containers** to attach to a
-running container. Enter `host`, `user@host:port`, or a complete SSH path.
-Enter is the connection action; opening the chooser does not authenticate.
+destination or select **Add a host**. Enter `host`, `user@host:port`, or a
+complete SSH path. Enter is the connection action; opening the chooser does not authenticate.
 New hosts start at `/`; successful directory choices are remembered
 privately. `:remote home` uses negotiated remote-home expansion;
 `:remote root` returns to `/`.
@@ -53,7 +52,7 @@ distinct type markers. Enter opens an entry; `-`, Backspace or `../`
 returns to the parent and restores the selected child. `:filter` narrows
 names; an empty filter restores the full listing.
 
-SSH and container listings include hidden entries and do not evaluate
+SSH listings include hidden entries and do not evaluate
 ignore files; the modeline names this fixed policy. Plain Ex open operands
 keep their local meaning outside Directory buffers; inside Directory they
 use that directory's captured namespace. Explicit `file://` and `ssh://`
@@ -142,70 +141,10 @@ and a killed worker cannot guarantee cleanup.
 `strop-remote` owns SFTP and the SSH worker transport; the editor owns
 views, write permits and replay. See the [workspace
 contract](../plans/0036-remote-workspace-execution.md), [protocol
-evidence](../plans/0034-ssh-log-buffers.md), the [prioritized remote
-roadmap](../plans/0035-remote-workflow-roadmap.md), and [Dev Containers
-design](../plans/0037-devcontainers-and-workspace-contexts.md).
+evidence](../plans/0034-ssh-log-buffers.md) and the [prioritized remote
+roadmap](../plans/0035-remote-workflow-roadmap.md).
 
 ## Containers
 
-Run **`:containers`** or choose **Space o → Containers** to select a
-running container. Directory browsing, file reads and tab completion stay
-read-only and do not install software. Run **`:container-worker`** in an
-attached container buffer to authorize a verified native worker in that
-container's selected Docker engine, canonical id, StartedAt, user and
-working directory. The default path uploads the matching static artifact
-into that user's private executable cache. For shell-less images, set
-`STROP_CONTAINER_WORKER_PATH` to an already installed matching binary; the
-worker is verified in place, without upload. Missing tools, wrong targets
-and recycled containers refuse typed rather than executing Git/LSP on the
-host or through an implicit `docker exec sh` fallback. Generic attachment
-starts at the inspected WorkingDir, falling back to `/`; an explicit path
-wins. WorkingDir is a navigation hint, not repository/mount proof.
-
-Worker admission enables Git/LSP, scoped Search and interactive terminals.
-Container definitions, references, diagnostics and document/workspace symbols
-open through the same canonical container identity and native root; picker
-previews use the admitted worker and never the analogous host path. Closing
-the last document in a container LSP workspace retires that workspace's
-server without affecting local, SSH or other container roots.
-**`:container-edit`** is the separate file-authority step: it verifies the
-displayed snapshot against that incarnation and then permits editing. Saves
-use the worker's conditional Store baseline, protected staging and atomic
-publication; conflicts and unconfirmed outcomes retain verification evidence
-and never become `docker cp` or blind rewrites. Worker admission alone leaves
-files read-only. Filesystem mutations and project replacement remain refused.
-
-## Dev Container configurations
-
-Selecting a project root performs bounded, read-only discovery of
-`.devcontainer/devcontainer.json`, `.devcontainer.json` and one-subfolder-deep
-`.devcontainer/<folder>/devcontainer.json`. JSONC and multiple configurations
-are supported. A single non-focusing **Dev container configuration found**
-offer has Review, Later and workspace-scoped suppression actions; changed
-configuration digests invalidate earlier decisions. Discovery never invokes
-Docker, the reference CLI, lifecycle hooks, builds, pulls or network
-authentication.
-
-**Space a → Review options** shows the selected configuration, provider,
-engine, users, workspace/mount mapping and redacted effects before consent.
-Host initialization, mounts/sockets, privileges/capabilities, devices, host
-networking, credential forwarding and ports are explicit trust inputs.
-Attach existing, create/start and rebuild are different actions. The optional
-reference Dev Container CLI versions 0.87–0.90.x are supported; Strop never
-installs it automatically and ordinary editing needs no such dependency.
-Image, Dockerfile and Compose main-service configurations are supported;
-unsupported shapes remain inspectable and refuse rather than becoming a
-generic `docker run`.
-
-Setup logs stream into a real read-only buffer, with cancellation and partial
-resources retained for inspection. Dirty local buffers require Save/Stay/Cancel
-before switching. Successful transitions verify the returned container and
-workspace mapping before opening it; rebuild retires the previous incarnation
-without deleting containers or volumes. Remote engines, automatic port
-forwarding and template/Feature marketplaces are outside this workflow.
-
-In a container without an init/reaper at PID 1, repeated Docker exec
-bootstrap processes can remain as zombies after they exit. Strop closes its
-worker lease, but cannot reap process-table entries adopted by an unrelated
-PID 1. For sustained worker sessions without that zombie accumulation,
-start the container with an init that reaps children.
+Strop does not attach to containers. Open **`:terminal`** and run
+`docker exec -it <container> sh` to work inside one.

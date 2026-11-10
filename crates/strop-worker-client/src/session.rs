@@ -53,26 +53,6 @@ impl ExecHandle {
         &mut self.stderr
     }
 
-    /// Write to a relayed stdin stream; `last` delivers EOF (the same
-    /// half-close semantics as [`Worker::exec_half_close`]).
-    pub fn write_stdin(&mut self, bytes: &[u8], last: bool) -> Result<(), ClientError> {
-        let Some(stream) = self.stdin else {
-            return Err(ClientError::Refused(
-                strop_worker_protocol::Refusal::UnknownHandle {
-                    message: "exec has no relayed stdin".into(),
-                },
-            ));
-        };
-        let sequence = self.stdin_sequence;
-        self.stdin_sequence += 1;
-        self.conn.write_chunk(&StreamChunk {
-            stream,
-            sequence,
-            last,
-            bytes: bytes.to_vec(),
-        })
-    }
-
     /// Wait for the terminal status. `Lost` means the supervisor could
     /// not attest the exit — it is never silently mapped to a code.
     pub fn wait_exit(self) -> ExitStatus {
@@ -95,11 +75,6 @@ pub struct ExecStdin {
 }
 
 impl ExecStdin {
-    /// `true` when this exec admitted a relayed stdin (leased services).
-    pub fn is_relayed(&self) -> bool {
-        self.stream.is_some()
-    }
-
     /// Write one chunk; `last` delivers EOF, not revocation.
     pub fn write(&mut self, bytes: &[u8], last: bool) -> Result<(), ClientError> {
         let Some(stream) = self.stream else {
@@ -280,12 +255,6 @@ impl PtySession {
     pub fn resize(&self, geometry: PtyGeometry) -> Result<(), ClientError> {
         self.worker
             .exec_resize_on(&self.control, self.id, geometry, Arc::clone(&self.conn))
-    }
-
-    /// Whether the session's control token was cancelled (the terminal
-    /// client's close detection; 0058 WK12).
-    pub fn token_cancelled(&self) -> bool {
-        self.control.is_cancelled()
     }
 
     /// Revoke the session's lease (TERM/grace/KILL, then the exit

@@ -1,5 +1,5 @@
 //! Native cache maintenance is executed by the admitted worker, never by
-//! an SFTP/container listing followed by an unlocked client-side unlink.
+//! an SFTP listing followed by an unlocked client-side unlink.
 //! The persistent OS lock excludes new worker leases from the complete
 //! lease snapshot through retirement; a crash releases the lock without
 //! making an old lease record disappear or guessing its liveness.

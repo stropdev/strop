@@ -297,16 +297,6 @@ impl Editor {
                                         line,
                                         col,
                                     },
-                                    Filesystem::Container(container) => Payload::Grep {
-                                        location: ResourceLocation {
-                                            filesystem: Filesystem::Container(container),
-                                            path: location.doc.path,
-                                        },
-                                        line,
-                                        col,
-                                        match_len: 1,
-                                        line_text: "".into(),
-                                    },
                                 };
                                 Item {
                                     badge: None,
@@ -493,14 +483,11 @@ impl Editor {
                 )) {
                     return None;
                 }
-                let shown = match &symbol.location.doc.filesystem {
-                    Filesystem::Container(_) => symbol.location.doc.label(),
-                    _ => path
-                        .strip_prefix(&root)
-                        .map(strop_picker::display_path)
-                        .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
-                        .into_owned(),
-                };
+                let shown = path
+                    .strip_prefix(&root)
+                    .map(strop_picker::display_path)
+                    .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
+                    .into_owned();
                 let payload = match symbol.location.doc.filesystem {
                     Filesystem::Local => Payload::Grep {
                         location: strop_workspace::ResourceLocation::local(path),
@@ -514,16 +501,6 @@ impl Editor {
                         path,
                         line,
                         col,
-                    },
-                    Filesystem::Container(container) => Payload::Grep {
-                        location: ResourceLocation {
-                            filesystem: Filesystem::Container(container),
-                            path,
-                        },
-                        line,
-                        col,
-                        match_len: 1,
-                        line_text: "".into(),
                     },
                 };
                 Some(Item {
@@ -631,16 +608,6 @@ fn document_symbol_items(
                     path,
                     line,
                     col,
-                },
-                Filesystem::Container(container) => Payload::Grep {
-                    location: ResourceLocation {
-                        filesystem: Filesystem::Container(container.clone()),
-                        path,
-                    },
-                    line,
-                    col,
-                    match_len: 1,
-                    line_text: "".into(),
                 },
             };
             // The kind moves into the chip; the row text is

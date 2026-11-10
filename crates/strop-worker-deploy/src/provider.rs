@@ -1,8 +1,7 @@
 //! The authenticated provider surface deployment runs over (0058 WK06).
 //!
-//! Providers are thin: an SFTP upload session and a container scoped
-//! file-transfer/exec facility both implement this trait with near-direct
-//! mappings (`put`/`get`/`rename`/`chmod`/`stat`/`readdir`, tar-in/tar-out
+//! Providers are thin: an SFTP upload session implements this trait with
+//! near-direct mappings (`put`/`get`/`rename`/`chmod`/`stat`/`readdir`
 //! plus scoped exec). Authentication, host-key policy and connection
 //! ownership stay in the established transports (WK07/WK08 wire the real
 //! providers); this crate never opens a connection of its own.
@@ -16,12 +15,11 @@ use std::path::Path;
 use strop_worker_protocol::{EndpointInfo, Session};
 
 /// Where the cache lives and who owns it. The context binds consent,
-/// receipts and leases to one admitted endpoint incarnation (SSH alias or
-/// canonical container ID + StartedAt per 0056); a renamed/restarted
-/// context is a different endpoint and fails closed.
+/// receipts and leases to one admitted endpoint incarnation (SSH alias);
+/// a renamed context is a different endpoint and fails closed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndpointIdentity {
-    /// Stable connection context (SSH alias, `docker:<id>@<started-at>`).
+    /// Stable connection context (SSH alias).
     pub context: String,
     /// Remote principal the deployment runs as.
     pub principal: String,
@@ -103,7 +101,7 @@ pub struct HandshakeReport {
 }
 
 /// The authenticated transfer/exec surface for one endpoint. Every method
-/// is a thin primitive the SFTP and container-tar providers can honor;
+/// is a thin primitive the SFTP provider can honor;
 /// byte counts are always bounded by the caller.
 pub trait DeployProvider {
     /// The admitted endpoint this provider is bound to.
@@ -121,7 +119,7 @@ pub trait DeployProvider {
     fn mkdir_private(&self, path: &str) -> Result<(), ProviderError>;
 
     /// Authenticated byte transfer from a verified local file to a remote
-    /// staging path (SFTP `put`, container tar-in). The source is always
+    /// staging path (SFTP `put`). The source is always
     /// the client's own verified artifact; payloads never appear in
     /// command arguments or logs.
     fn upload(&self, source: &Path, dest: &str) -> Result<(), ProviderError>;
@@ -129,7 +127,7 @@ pub trait DeployProvider {
     /// Write a small facts payload (receipt, lease record).
     fn write(&self, dest: &str, bytes: &[u8]) -> Result<(), ProviderError>;
 
-    /// Bounded read-back for verification (SFTP `get`, container tar-out).
+    /// Bounded read-back for verification (SFTP `get`).
     /// Fails rather than returning more than `max` bytes.
     fn fetch(&self, path: &str, max: u64) -> Result<Vec<u8>, ProviderError>;
 

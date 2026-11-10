@@ -30,8 +30,6 @@ pub enum ReadonlyReason {
     Command,
     /// A remote snapshot without write authority (`:remote edit` grants it).
     RemoteAuthority,
-    /// Container bytes have no local write path (0037 DC1b).
-    Container,
     /// A git memory surface — content derived from history.
     GitSurface,
     /// Transient named output (help, `:!`, the undo browser, `:explain`).

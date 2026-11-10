@@ -103,8 +103,6 @@ fn writable_source(editor: &Editor, id: DocumentId, document: &Document) -> bool
                         .as_ref()
                         .is_some_and(|permit| permit.owns(&source.file))
             }
-            // Container snapshots have no write capability, even if a caller
-            // accidentally changes the buffer's presentation readonly flag.
             _ => false,
         }
 }
@@ -347,10 +345,7 @@ pub(super) fn capture(
             .ok_or(ContextRefusal::SourceUnavailable)?;
         if !matches!(
             document.source,
-            DocumentSource::File
-                | DocumentSource::Scratch
-                | DocumentSource::Remote(_)
-                | DocumentSource::Container { .. }
+            DocumentSource::File | DocumentSource::Scratch | DocumentSource::Remote(_)
         ) {
             return Err(ContextRefusal::UnsupportedSurface);
         }

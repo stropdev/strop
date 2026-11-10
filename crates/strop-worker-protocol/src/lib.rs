@@ -1,6 +1,6 @@
 //! The strop worker protocol (0058 WK02): one canonical, bounded, versioned
 //! wire between the editor and the same release's native worker, over local
-//! child stdio, OpenSSH stdio or selected container exec stdio.
+//! child stdio or OpenSSH stdio.
 //!
 //! The normative contract is `docs/worker-protocol.md` (WK01); this crate is
 //! its sign-off by construction — the codec implements exactly the documented

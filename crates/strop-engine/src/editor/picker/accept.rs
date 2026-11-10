@@ -18,7 +18,6 @@ impl Editor {
                 super::super::io::OpenIntent::Browse,
             ),
             Payload::RemoteConnect => self.open_remote_address(),
-            Payload::ContainerDiscover => self.request_containers(),
             // R03: the toggle flips the session default and the row
             // re-renders with the new value
             Payload::SearchOption(setting) => {
@@ -45,7 +44,6 @@ impl Editor {
                 }
             }
             Payload::CodeAction(index) => self.accept_code_action(index),
-            Payload::Container(id) => self.attach_container(id),
             // Indentation choices retain a captured source owner and are
             // handled before closing the selector, never against current focus.
             Payload::IndentChoice(_) => {

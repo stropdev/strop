@@ -76,8 +76,7 @@ impl Editor {
             | Kind::Search
             | Kind::RemoteHosts
             | Kind::RemoteAddress
-            | Kind::CodeActions
-            | Kind::Containers => vec![],
+            | Kind::CodeActions => vec![],
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
             Kind::SearchOptions => unreachable!("search options build their own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
@@ -205,15 +204,12 @@ fn jump_items(editor: &Editor, admission: Option<&strop_picker::query::BooleanPl
     items
 }
 
-/// The workspace-relative (or native remote/container) path a jump
+/// The workspace-relative (or native remote) path a jump
 /// row's query evidence reports. Nameless scratch and output buffers
 /// report none — path-family atoms stay Unknown and admit (0063 §4).
 fn jump_evidence_path(document: &super::super::Document, cwd: &std::path::Path) -> Option<String> {
     if let Some(remote) = document.remote_metadata() {
         return Some(remote.file.to_string());
-    }
-    if let super::super::document::DocumentSource::Container { path, .. } = &document.source {
-        return Some(path.display().to_string());
     }
     document
         .buf

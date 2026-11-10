@@ -1,6 +1,6 @@
 [package]
 name = "strop-worker-protocol"
-description = "strop worker protocol (0058 WK02): one bounded versioned wire for local/SSH/container native workers — handshake, typed families, streaming payloads, typed refusals"
+description = "strop worker protocol (0058 WK02): one bounded versioned wire for local/SSH native workers — handshake, typed families, streaming payloads, typed refusals"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **Containers and dev containers**: `:containers`, `:container-worker`, `:container-edit`, **Space o → Containers…**, the dev container offer and its review/lifecycle actions, `container:` resource URIs and the `strop-containers` crate. To work inside a container, open `:terminal` and run `docker exec -it <container> sh`.
+- **Legacy flag spellings `--dump-compat`, `--replay-script` and `--export-metadata`**: use `strop compat`, `strop replay --script TRACE` and `strop export TRACE`.
+
 ## 0.54.0 — 2026-11-10
 
 ### Changed

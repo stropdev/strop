@@ -2,7 +2,6 @@
 #   docker compose run --build --rm test            # fmt + clippy -D warnings + cargo test + Loom
 #   docker compose run --build --rm proofs          # Lean proofs over the kernel translation
 #   docker compose run --build --rm model           # TLC probation models
-#   docker compose run --build --rm container-test  # real Docker journeys (host engine)
 #   docker compose run --build --rm ssh-pythonfree  # real sshd, no Python on the host
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
 #   docker compose run --build --rm bench           # perf scenarios (measurement, not a gate)
@@ -27,26 +26,6 @@ services:
       dockerfile: Dockerfile
       target: ssh-pythonfree
     command: 'echo "gate passed: real SSH native worker without Python"'
-
-  # Container integration tests (0037 DC1a + 0058 WK08): run on the
-  # HOST engine via the socket; fixtures are uniquely labelled and
-  # self-cleaning, and only the container-gated tests run here. In this
-  # stage target/debug/strop IS the static musl worker the WK08
-  # deployment tests upload and exec (STROP_WORKER_BINARY unset → the
-  # tests discover it).
-  container-test:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: container-test
-    environment:
-      - STROP_CONTAINER_TESTS=1
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command:
-      - sh
-      - -c
-      - cargo test --locked -p strop-containers -p strop-worker-deploy -p strop-git && cargo test --locked -p strop-editor --test container_editor
 
   model:
     build:

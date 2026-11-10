@@ -24,12 +24,6 @@ impl Editor {
         let source = self
             .directory()
             .ok_or("Edit names requires a Directory; use Space e or :browse first")?;
-        if matches!(
-            source.location.filesystem,
-            strop_workspace::Filesystem::Container(_)
-        ) {
-            return Err("container filename drafts are unavailable: container mutations are read-only by policy".into());
-        }
         if source.stale.is_some() {
             return Err("refresh the stale Directory before editing names".into());
         }

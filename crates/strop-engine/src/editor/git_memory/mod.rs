@@ -227,8 +227,6 @@ impl Editor {
             range,
         );
         let workers = self.remote.workers.clone();
-        let containers = self.containers.workers.clone();
-        let container_started = self.git_container_started(&repo);
         self.launch_git_job(
             "git-log",
             "git.log",
@@ -239,8 +237,7 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let lease =
-                    jobs::repo_lease(&workers, &containers, container_started.as_deref(), &repo);
+                let lease = jobs::repo_lease(&workers, &repo);
                 let exec = match GitExec::for_target_routed(&repo, lease.as_ref()) {
                     Ok(exec) => exec,
                     Err(error) => {
@@ -265,7 +262,6 @@ impl Editor {
     pub(crate) fn feed_readonly(&mut self, key: Key) {
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
-            self.cancel_container_write(self.current());
             self.stop_remote_follow(self.current());
             self.cancel_directory_filter(self.current());
             self.walker.clear();

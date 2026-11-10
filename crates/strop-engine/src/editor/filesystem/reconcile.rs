@@ -23,9 +23,6 @@ impl Editor {
                         location.label()
                     ));
                 }
-                if matches!(location.filesystem, Filesystem::Container(_)) {
-                    return Err("container filesystem operations are read-only by policy".into());
-                }
                 for key in self.io.open.values() {
                     if key
                         .path

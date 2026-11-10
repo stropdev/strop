@@ -6,9 +6,8 @@ uses the host; in an SSH directory with an admitted worker it runs on that
 remote host and retains the endpoint in the modeline, pane title and buffer
 list. Directory **Terminal here** (`Space a` / `:fs terminal`) uses the same
 admission decision without changing the editor's cwd. SSH without an admitted
-worker refuses. An attached container runs through its incarnation-pinned
-admitted worker; **`:container-worker`** enables tools/Search/terminal and the
-separate **`:container-edit`** verifies file authority. The separately labelled
+worker refuses. For a container, run `docker exec -it <container> sh` in a
+terminal. The separately labelled
 **Open local terminal** / `:terminal-local` is a deliberate local choice, never
 a fallback against a remote-looking path. The displayed launch directory is
 not an unverified live shell cwd and does not follow `cd`.

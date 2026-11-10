@@ -4,8 +4,6 @@ use strop_core::id::{BufferRevision, DocumentId};
 use strop_terminal::model::SessionId;
 use strop_workspace::RemoteEndpoint;
 
-use crate::editor::containers::ContainerJob;
-use crate::editor::devcontainers::DevcontainerAction;
 use crate::editor::remote::RemoteControl;
 use crate::editor::terminal::actions::TerminalAction;
 
@@ -65,7 +63,7 @@ impl FeedbackLifecycle {
 }
 
 /// The resource whose recovery settles a record. Generational document IDs,
-/// endpoint incarnations and container StartedAt values prevent a stale record
+/// and endpoint incarnations prevent a stale record
 /// from addressing a replacement resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TerminalFeedbackPhase {
@@ -85,15 +83,6 @@ pub enum FeedbackOwner {
         incarnation: u64,
     },
     RemoteControls,
-    ContainerDiscovery,
-    Container {
-        id: String,
-        started_at: Option<String>,
-    },
-    Devcontainer {
-        workspace: crate::editor::WorkspaceKey,
-        incarnation: u64,
-    },
     Terminal {
         session: SessionId,
         incarnation: u64,
@@ -116,18 +105,6 @@ impl FeedbackOwner {
                 incarnation,
             } => format!("{endpoint} (workspace incarnation {incarnation})"),
             Self::RemoteControls => "remote connections".into(),
-            Self::ContainerDiscovery => "container discovery".into(),
-            Self::Container { id, started_at } => match started_at {
-                Some(started_at) => format!("container {id} (incarnation {started_at})"),
-                None => format!("container {id}"),
-            },
-            Self::Devcontainer {
-                workspace,
-                incarnation,
-            } => format!(
-                "devcontainer {} (discovery {incarnation})",
-                workspace.root.display()
-            ),
             Self::Terminal {
                 session,
                 incarnation,
@@ -149,10 +126,6 @@ pub(crate) enum FeedbackKind {
     Connection,
     WorkerConnection,
     WorkerAdmission,
-    ContainerSetup,
-    ContainerAdmission,
-    DevcontainerOffer,
-    DevcontainerOperation,
     TerminalOutput,
     TerminalPaste,
     TerminalProcess,
@@ -216,11 +189,6 @@ pub(crate) enum TypedAction {
         operation: RemoteControl,
         incarnation: u64,
     },
-    RetryContainer {
-        job: ContainerJob,
-        started_at: Option<String>,
-    },
-    Devcontainer(DevcontainerAction),
     Terminal(TerminalAction),
 }
 
@@ -240,12 +208,6 @@ impl TypedAction {
                 ..
             } => "Retry verified remote worker admission",
             Self::RetryRemote { .. } => "Retry the remote connection",
-            Self::RetryContainer {
-                job: ContainerJob::EnableWorker { .. },
-                ..
-            } => "Retry verified container worker admission",
-            Self::RetryContainer { .. } => "Retry container setup",
-            Self::Devcontainer(_) => "Dev container action",
             Self::Terminal(action) => action.label(),
         }
     }

@@ -53,15 +53,11 @@ pub enum Payload {
     RemoteDirectory(strop_workspace::RemoteFile),
     /// Switch the same modal picker to its new-address field.
     RemoteConnect,
-    /// Discover running containers through the existing container job.
-    ContainerDiscover,
     /// A language-server code action: the editor's pending action list
     /// index. The action payload itself never crosses the picker.
     CodeAction(usize),
     /// Index into the editor's captured filesystem action selector.
     FilesystemAction(usize),
-    /// A running container's canonical inspect id (0037 DC1a).
-    Container(String),
     /// A search-visibility setting toggle (0051 R03).
     SearchOption(SearchSetting),
     /// A jumplist entry: document + byte offset (0047 §2).
@@ -141,8 +137,6 @@ pub enum Kind {
     /// applies the chosen action's edits through a change plan.
     CodeActions,
     FilesystemActions,
-    /// Running containers on the local engine (0037 DC1a).
-    Containers,
     /// The `:tab-size` indent selector (0051 R08).
     TabSize,
     /// The `:theme` palette selector (0.42.0).
@@ -156,7 +150,6 @@ impl Kind {
             Kind::Buffers => " buffers ",
             Kind::Search => " search ",
             Kind::Locations => " locations ",
-            Kind::Containers => " containers ",
             Kind::Diagnostics => " diagnostics ",
             Kind::RemoteHosts => " remote destinations ",
             Kind::Jumps => " jumps ",

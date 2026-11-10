@@ -5,7 +5,7 @@
 //!    incarnation with the lease the handshake granted; a restarted worker
 //!    never accepts an old session's handles or permits;
 //! 2. the stable host/mount **namespace** — [`NamespaceIdentity`], a native
-//!    observation (boot/mount/container incarnation), not a display
+//!    observation (boot/mount incarnation), not a display
 //!    hostname; a changed namespace fails closed;
 //! 3. the editor's **document binding** — [`DocumentStamp`], carried
 //!    opaquely through mutation requests and echoed in receipts so a late
@@ -59,12 +59,12 @@ pub struct Session {
 }
 
 /// Stable host/namespace identity, distinct from the session incarnation:
-/// a native boot/mount/container observation plus the execution principal.
+/// a native boot/mount observation plus the execution principal.
 /// A changed value between reconnects is a different namespace and fails
 /// closed — old write authority never transfers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NamespaceIdentity {
-    /// Native incarnation evidence (boot ID, mount/container incarnation),
+    /// Native incarnation evidence (boot ID, mount incarnation),
     /// never a display hostname alone.
     pub identity: String,
     /// The execution principal (uid), when the platform reports one.

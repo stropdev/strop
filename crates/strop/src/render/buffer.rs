@@ -133,7 +133,7 @@ pub(crate) fn render_panes(editor: &Editor, t: &Tokens, frame: &mut Frame, area:
 /// The pane's identity in its top border: number, workspace-relative
 /// name, dirty `●` (warning) and `[RO]`. `Document::label` is the shared
 /// document-aware projection — local paths workspace-relative, outside
-/// paths absolute, remote/container resources keeping their authority;
+/// paths absolute, remote resources keeping their authority;
 /// never the active-document modeline projection for an inactive pane.
 #[allow(clippy::too_many_arguments)]
 fn render_title_border(
@@ -176,8 +176,7 @@ fn render_title_border(
         || document.remote_metadata().is_some()
         || matches!(
             &document.source,
-            strop_engine::editor::DocumentSource::Container { .. }
-                | strop_engine::editor::DocumentSource::Terminal(_)
+            strop_engine::editor::DocumentSource::Terminal(_)
         );
     let name = if retain_authority {
         super::clip::clip_end(&name, budget)

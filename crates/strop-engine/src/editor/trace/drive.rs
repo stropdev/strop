@@ -41,17 +41,8 @@ pub enum Action {
 }
 
 impl Editor {
-    /// Live drivers: record the action, then run the shared body. Dev Container
-    /// wakes are the one exception to literal action transcription: their facts
-    /// live in an owned channel, so settle that channel first and tape the pure
-    /// outcome payload instead of a non-replayable native polling hint.
+    /// Live drivers: record the action, then run the shared body.
     pub fn recorded_action(&mut self, action: Action, tick: Tick) -> io::Result<()> {
-        let action = match action {
-            Action::Event(AppEvent::Devcontainer) => {
-                Action::Event(AppEvent::DevcontainerSettled(self.devcontainers.poll()))
-            }
-            action => action,
-        };
         if self.tape_action_private(&action) {
             self.tape.omit_content("terminal")?;
             self.tape.action(tick, &action)?;

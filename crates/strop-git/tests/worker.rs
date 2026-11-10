@@ -14,7 +14,7 @@ use strop_git::{GitExec, RepoTarget};
 use strop_remote::worker_transport::RemoteWorker;
 use strop_worker_client::{Transport, Worker};
 
-use strop_workspace::{ContainerId, RemoteEndpoint};
+use strop_workspace::RemoteEndpoint;
 /// A live token: the standalone handle cancels on drop, so tests hold it.
 fn token() -> (
     strop_core::worker::CancelToken,
@@ -156,24 +156,17 @@ fn worker_git_cancellation_is_typed() {
 }
 
 /// A non-local repository without an admitted worker is unavailable:
-/// never run Git locally, through Python over SSH, or through an
-/// unadmitted container shell supervisor.
+/// never run Git locally or through Python over SSH.
 #[test]
 fn non_local_git_refuses_missing_worker_authority() {
     let remote = RepoTarget::Remote {
         endpoint: RemoteEndpoint::parse("ssh://box.example").unwrap(),
         workdir: std::path::PathBuf::from("/repo"),
     };
-    let container = RepoTarget::Container {
-        container: ContainerId::canonical("d".repeat(64)).unwrap(),
-        workdir: std::path::PathBuf::from("/repo"),
-    };
-    for target in [&remote, &container] {
-        assert!(matches!(
-            GitExec::for_target_routed(target, None),
-            Err(GitExecError::Unavailable { .. })
-        ));
-    }
+    assert!(matches!(
+        GitExec::for_target_routed(&remote, None),
+        Err(GitExecError::Unavailable { .. })
+    ));
 }
 
 /// `ssh -G` runs inside the bound worker, not as `git -G` or against

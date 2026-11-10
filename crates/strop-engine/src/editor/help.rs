@@ -28,7 +28,7 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
     (
         "Remote",
         &[
-            ("space o / :remote", "Choose SSH or a running container; Add a host… enters an address"),
+            ("space o / :remote", "Choose an SSH destination; Add a host… enters an address"),
             ("- / backspace", "Visit parent directory and retain the selected child"),
             (":remote root / home", "Browse remote root or negotiated home directory"),
             (":remote worker [URI]", "Explicit worker consent for Git/LSP/search; no edit permit"),
@@ -59,7 +59,7 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
             ("one language", "Identical local-workspace qualifiers on every surface above"),
             ("language:rust", "Include a language family (alias: language:rs)"),
             ("scope", "Regular local files; directory links and special files are not searched"),
-            ("SSH/container listings", "Hidden entries included; no ignore-file filtering (local search defaults do not apply)"),
+            ("SSH listings", "Hidden entries included; no ignore-file filtering (local search defaults do not apply)"),
             ("path:src/", "Literal substring in the workspace-relative path"),
             ("glob:\"**/*.rs\"", "Explicit path glob; quote values with spaces"),
             ("fpath:modules/jweb/", "Fuzzy scope over full workspace-relative path"),
@@ -133,9 +133,6 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
         "Documentation",
         &[
             ("enter on hover", "Open full searchable documentation; Ctrl-O returns"),
-            (":containers", "Attach to a running container (read-only browse)"),
-            (":container-worker", "Enable verified services for the attached container"),
-            (":container-edit", "Verify the snapshot and enable conditional file saves"),
         ],
     ),
 ];

@@ -39,18 +39,11 @@ jobs:
       - name: Real SSH native worker on a Python-free host
         run: docker compose run --build --rm ssh-pythonfree
 
-  container-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Real Docker worker and editor journeys
-        run: docker compose run --build --rm container-test
-
   # The required status check on `main` (branch protection names `gate`):
   # green only when every lane above is green.
   gate:
     runs-on: ubuntu-latest
-    needs: [test, model, ssh-pythonfree, container-test]
+    needs: [test, model, ssh-pythonfree]
     if: always()
     steps:
       - name: Every lane is green
@@ -58,4 +51,3 @@ jobs:
           test "${{ needs.test.result }}" = success
           test "${{ needs.model.result }}" = success
           test "${{ needs.ssh-pythonfree.result }}" = success
-          test "${{ needs.container-test.result }}" = success

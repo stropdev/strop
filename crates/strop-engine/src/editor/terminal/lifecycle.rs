@@ -484,9 +484,8 @@ impl Editor {
 /// rides the session's local worker lease; an SSH workspace rides its
 /// already-admitted endpoint lease (deploy is consent-gated and
 /// blocking, so a terminal never triggers it from the input path — an
-/// endpoint without a live lease is a typed refusal). An attached container
-/// rides its incarnation-pinned admitted lease the same way; no path falls
-/// back to the host or an implicit docker-exec.
+/// endpoint without a live lease is a typed refusal); no path falls back
+/// to the host.
 fn terminal_worker(
     editor: &Editor,
     location: &strop_workspace::ResourceLocation,
@@ -505,24 +504,5 @@ fn terminal_worker(
                      use :terminal-local for an explicit local shell"
                 )
             }),
-        strop_workspace::Filesystem::Container(id) => {
-            let identity = editor.containers.attached.get(id.as_str()).ok_or_else(|| {
-                format!(
-                    "interactive terminal refused in container {}: attach its current incarnation first",
-                    &id.as_str()[..12]
-                )
-            })?;
-            editor
-                .containers
-                .workers
-                .get(identity)
-                .map(|lease| lease.worker().clone())
-                .ok_or_else(|| {
-                    format!(
-                        "interactive terminal refused in container {}: :container-worker admits this incarnation's worker; use :terminal-local for an explicit local shell",
-                        &id.as_str()[..12]
-                    )
-                })
-        }
     }
 }

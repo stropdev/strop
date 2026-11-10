@@ -270,7 +270,6 @@ fn committed_rename_retires_completion_candidates_for_the_old_name() {
             query: RemoteCompletionQuery::Directory {
                 location: ResourceLocation::local(root.path().to_path_buf()),
                 segment: b"orig".to_vec(),
-                container: None,
             },
             prefix_body: "e ".into(),
         },

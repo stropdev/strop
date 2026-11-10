@@ -1,5 +1,4 @@
-//! One same-release worker artifact catalog for SSH and container
-//! deployment. Called on jobs; no binary hashing crosses input→render.
+//! One same-release worker artifact catalog for SSH deployment. Called on jobs; no binary hashing crosses input→render.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};

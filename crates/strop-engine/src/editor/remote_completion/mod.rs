@@ -1,5 +1,5 @@
-//! One owned path-completion session for local, SSH and attached containers.
-//! Local/container listings run on workers. SSH paths use only existing live
+//! One owned path-completion session for local and SSH paths.
+//! Local listings run on workers. SSH paths use only existing live
 //! connections or bounded cached observations; Tab never authenticates.
 //!
 //! Every reply captures the exact prompt, focus, document revision and cursor.
@@ -65,7 +65,6 @@ pub enum RemoteCompletionQuery {
     Directory {
         location: strop_workspace::ResourceLocation,
         segment: Vec<u8>,
-        container: Option<strop_containers::ContainerIdentity>,
     },
 }
 
@@ -309,7 +308,7 @@ impl Editor {
                 self.open_context()
             };
             (
-                directory::classify(self, rest, context),
+                directory::classify(rest, context),
                 body[..body.len() - rest.len()].to_owned(),
             )
         };
@@ -423,13 +422,6 @@ impl Editor {
         let client = self.remote_client();
         let worker = self.filesystem.worker().clone();
         let remote = self.remote.workers.clone();
-        let container_worker = match &query {
-            RemoteCompletionQuery::Directory {
-                container: Some(identity),
-                ..
-            } => self.containers.workers.get(identity),
-            _ => None,
-        };
         let tx = self.remote_completion.tx.clone();
         let handle = worker::spawn(
             "strop-remote-complete",
@@ -446,7 +438,6 @@ impl Editor {
                     client,
                     worker,
                     remote,
-                    container_worker,
                 };
                 run_completion(job, cancel)
             },
@@ -530,15 +521,6 @@ impl Editor {
             && self.buf().revision() == key.revision
             && prompt.text() == key.text
             && prompt.cursor() == key.cursor
-            && match &key.query {
-                RemoteCompletionQuery::Directory {
-                    location,
-                    container: Some(expected),
-                    ..
-                } => matches!(&location.filesystem, strop_workspace::Filesystem::Container(id)
-                        if self.containers.attached.get(id.as_str()) == Some(expected)),
-                _ => true,
-            }
     }
 
     /// Apply one candidate through the one prompt grammar.
@@ -660,7 +642,6 @@ struct CompletionJob {
     client: RemoteClient,
     worker: strop_worker_client::Worker,
     remote: crate::editor::remote::workers::RemoteWorkers,
-    container_worker: Option<std::sync::Arc<crate::editor::containers::BoundWorker>>,
 }
 
 /// The authority region of a canonical URI, for the connect

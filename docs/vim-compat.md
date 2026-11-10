@@ -1,6 +1,6 @@
 # Vim compatibility
 
-Generated from the command table (`strop --dump-compat`).
+Generated from the command table (`strop compat`).
 `✓` ships exactly; `(soon)` is a planned slot.
 
 ## Moving
@@ -186,7 +186,6 @@ Generated from the command table (`strop --dump-compat`).
 - `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
 - `✓ :qa :qall` — quit all (fails on unsaved; bang discards)
 - `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
-- `✓ :container-worker` — authorize a verified worker for the attached container; may write its private cache
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls

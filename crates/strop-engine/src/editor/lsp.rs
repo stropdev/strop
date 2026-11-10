@@ -1,8 +1,8 @@
-//! Editor-side LSP event handling and asynchronous navigation. Local,
-//! SSH and container documents share request/server/incarnation/revision
+//! Editor-side LSP event handling and asynchronous navigation. Local
+//! and SSH documents share request/server/incarnation/revision
 //! ownership; every non-local workspace keeps its namespace in every
 //! identity — diagnostics, bindings and navigation never alias its paths
-//! onto the local disk (0036 RW8, 0037 DC1b).
+//! onto the local disk (0036 RW8).
 
 use super::{trace, Editor};
 use std::path::{Path, PathBuf};
@@ -85,12 +85,6 @@ impl Editor {
                     file.file.endpoint().clone(),
                     file.file.path().to_path_buf(),
                 ))
-            }
-            crate::editor::document::DocumentSource::Container { container, path } => {
-                Some(ResourceLocation {
-                    filesystem: strop_workspace::Filesystem::Container(container.clone()),
-                    path: path.clone(),
-                })
             }
             _ => document
                 .buf
@@ -286,27 +280,6 @@ impl Editor {
                             path: doc.path.clone(),
                             line,
                             col,
-                        },
-                    }),
-                    Filesystem::Container(container) => items.push(Item {
-                        badge: None,
-                        text: format!(
-                            "container:{}{}:{} {} {}",
-                            &container.as_str()[..12],
-                            doc.path.display(),
-                            line,
-                            d.severity_char(),
-                            d.message
-                        ),
-                        payload: Payload::Grep {
-                            location: ResourceLocation {
-                                filesystem: Filesystem::Container(container.clone()),
-                                path: doc.path.clone(),
-                            },
-                            line,
-                            col,
-                            match_len: 1,
-                            line_text: d.message.clone().into(),
                         },
                     }),
                 }

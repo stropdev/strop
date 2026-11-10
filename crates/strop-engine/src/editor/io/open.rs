@@ -1,9 +1,8 @@
 //! Worker-only resource inspection and opening. Directories never enter a file reader.
 use super::{Document, FileTarget, Opened};
-use std::io::Read as _;
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 use strop_core::Buffer;
-use strop_workspace::{Filesystem, ResourceLocation};
+use strop_workspace::ResourceLocation;
 
 pub(super) struct OpenRead {
     pub target: FileTarget,
@@ -11,10 +10,6 @@ pub(super) struct OpenRead {
     pub requires_file: bool,
     pub selection: strop_remote::ReadSelection,
     pub client: strop_remote::RemoteClient,
-    pub container: Option<strop_containers::ContainerIdentity>,
-    /// Already-admitted worker for this exact container incarnation,
-    /// selected before the job starts. No deployment during browsing.
-    pub container_worker: Option<std::sync::Arc<crate::editor::containers::BoundWorker>>,
     /// The session's local worker lease (0058 WK04): local reads,
     /// observations and listings ride it — no in-process twin.
     pub worker: strop_worker_client::Worker,
@@ -188,90 +183,6 @@ impl OpenRead {
                     Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
                 }
             }
-            FileTarget::Container { container, path } => {
-                let Some(identity) = self
-                    .container
-                    .as_ref()
-                    .filter(|identity| identity.id == container.as_str())
-                else {
-                    return Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "attach the container before opening its resources",
-                    );
-                };
-                if let Some(worker) = &self.container_worker {
-                    return self.open_container_worker(worker, identity, container, path, cancel);
-                }
-                let Some(path_text) = path.to_str() else {
-                    return Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "container backend requires a UTF-8 path",
-                    );
-                };
-                let engine = match strop_containers::engine(cancel) {
-                    Ok(engine) => engine,
-                    Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-                };
-                let reference = match strop_containers::ContainerRef::of(identity) {
-                    Ok(reference) => reference,
-                    Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
-                };
-                // The streaming directory adapter stops at a non-directory header;
-                // this does not retain a whole directory archive to discover its kind.
-                match strop_containers::list_dir(&engine, &reference, path_text, cancel) {
-                    Ok(entries) => {
-                        if self.requires_file {
-                            return file_required();
-                        }
-                        let location = ResourceLocation {
-                            filesystem: Filesystem::Container(container.clone()),
-                            path: path.clone(),
-                        };
-                        match super::super::namespace::from_container(location, entries) {
-                            Ok(listed) => directory_opened(
-                                listed,
-                                &self.previous_directories,
-                                self.reveal.as_ref(),
-                                cancel,
-                            ),
-                            Err(error) => Outcome::failed(FailureKind::Protocol, error.to_string()),
-                        }
-                    }
-                    Err(strop_containers::ContainerError::CapabilityRefused { .. })
-                        if !self.browse =>
-                    {
-                        const LIMIT: u64 = 4 * 1024 * 1024;
-                        match strop_containers::read_file(
-                            &engine,
-                            &reference,
-                            path_text,
-                            LIMIT + 1,
-                            cancel,
-                        ) {
-                            Ok(bytes) if bytes.len() as u64 > LIMIT => Outcome::failed(
-                                FailureKind::InvalidInput,
-                                "container file exceeds the 4 MiB view limit",
-                            ),
-                            Ok(bytes) => match String::from_utf8(bytes) {
-                                Ok(text) => Outcome::Success(Opened {
-                                    document: Document::container_file(
-                                        Buffer::from_text(&text),
-                                        container.clone(),
-                                        path.clone(),
-                                    ),
-                                    canonical: self.target,
-                                }),
-                                Err(_) => Outcome::failed(
-                                    FailureKind::InvalidInput,
-                                    "container file is not UTF-8 text",
-                                ),
-                            },
-                            Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-                        }
-                    }
-                    Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-                }
-            }
         }
     }
     /// Open one absolute remote file through the endpoint's admitted
@@ -315,111 +226,12 @@ impl OpenRead {
         })
     }
 
-    fn open_container_worker(
-        &self,
-        worker: &crate::editor::containers::BoundWorker,
-        identity: &strop_containers::ContainerIdentity,
-        container: &strop_workspace::ContainerId,
-        path: &std::path::Path,
-        cancel: &CancelToken,
-    ) -> Outcome<Opened> {
-        if !worker.matches(identity) {
-            return Outcome::failed(
-                FailureKind::Protocol,
-                "container worker lease belongs to a stale incarnation",
-            );
-        }
-        let location = ResourceLocation {
-            filesystem: Filesystem::Container(container.clone()),
-            path: path.to_path_buf(),
-        };
-        let observed = match worker.observe(cancel, &location) {
-            Ok(Some(observation)) => observation,
-            Ok(None) => {
-                return Outcome::failed(FailureKind::InvalidInput, "container file does not exist")
-            }
-            Err(error) if error.is_cancellation() => {
-                return Outcome::Cancelled(CancelReason::OwnerClosed)
-            }
-            Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-        };
-        match observed.kind {
-            strop_workspace::EntryKind::Directory => {
-                if self.requires_file {
-                    return file_required();
-                }
-                let snapshot = match worker.list(cancel, &location) {
-                    Ok(snapshot) => snapshot,
-                    Err(error) if error.is_cancellation() => {
-                        return Outcome::Cancelled(CancelReason::OwnerClosed)
-                    }
-                    Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-                };
-                directory_opened(
-                    super::super::namespace::Listed {
-                        directory: strop_fs::ListedDirectory { snapshot },
-                        connection: None,
-                    },
-                    &self.previous_directories,
-                    self.reveal.as_ref(),
-                    cancel,
-                )
-            }
-            strop_workspace::EntryKind::File if !self.browse => {
-                const LIMIT: u64 = 4 * 1024 * 1024;
-                if observed.size.is_some_and(|size| size > LIMIT) {
-                    return Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "container file exceeds the 4 MiB view limit",
-                    );
-                }
-                let mut payload = match worker.read(cancel, &location, LIMIT + 1) {
-                    Ok(payload) => payload,
-                    Err(error) if error.is_cancellation() => {
-                        return Outcome::Cancelled(CancelReason::OwnerClosed)
-                    }
-                    Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-                };
-                let mut bytes = Vec::new();
-                if let Err(error) = payload.read_to_end(&mut bytes) {
-                    return Outcome::failed(FailureKind::Io, error.to_string());
-                }
-                if bytes.len() as u64 > LIMIT {
-                    return Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "container file exceeds the 4 MiB view limit",
-                    );
-                }
-                match String::from_utf8(bytes) {
-                    Ok(text) => Outcome::Success(Opened {
-                        document: Document::container_file(
-                            Buffer::from_text(&text),
-                            container.clone(),
-                            path.to_path_buf(),
-                        ),
-                        canonical: self.target.clone(),
-                    }),
-                    Err(_) => Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "container file is not UTF-8 text",
-                    ),
-                }
-            }
-            _ => Outcome::failed(
-                FailureKind::InvalidInput,
-                "only regular files and directories can be opened in a container",
-            ),
-        }
-    }
-
     fn list(&self, location: ResourceLocation, cancel: &CancelToken) -> Outcome<Opened> {
         match super::super::namespace::list(
             &self.worker,
             &self.remote,
             &location,
             &self.client,
-            self.container.as_ref(),
-            self.container_worker.as_deref(),
             cancel,
         ) {
             Ok(listed) => directory_opened(

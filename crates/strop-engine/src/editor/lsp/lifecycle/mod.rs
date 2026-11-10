@@ -54,21 +54,6 @@ impl Editor {
             self.lsp_did_open_document(document);
             return;
         }
-        if let Filesystem::Container(id) = &doc.filesystem {
-            let admitted = self
-                .containers
-                .attached
-                .get(id.as_str())
-                .and_then(|identity| self.containers.workers.get(identity))
-                .is_some();
-            if !admitted {
-                // Admission is recoverable and must not become a sticky
-                // spawn refusal: :container-worker can enable this exact
-                // incarnation without restarting the editor.
-                self.message = "lsp: container language services need :container-worker".into();
-                return;
-            }
-        }
         // Discovery runs only for an unambiguous extension — never
         // rediscover project commands from /usr/include (0049 §4.7).
         let Some(ext) = doc
@@ -171,7 +156,7 @@ impl Editor {
     }
 
     /// Retire non-local servers whose owning workspace no longer has a
-    /// document: no orphan SSH/container process or live placement.
+    /// document: no orphan SSH process or live placement.
     /// Local servers keep their session-long lifetime.
     pub(crate) fn lsp_retire_workspace_servers(&mut self) {
         let retired: Vec<ServerId> = self
@@ -190,18 +175,6 @@ impl Editor {
                             && source.window.is_complete()
                             && !self.remote_following(id)
                     })
-                }),
-                Filesystem::Container(container) => !self.docs.iter().any(|(id, document)| {
-                    matches!(
-                        &document.source,
-                        crate::editor::document::DocumentSource::Container {
-                            container: expected,
-                            path,
-                        } if expected == container
-                            && path.starts_with(&a.root)
-                            && self.lsp_doc_language(id, path).as_deref()
-                                == Some(a.language.as_str())
-                    )
                 }),
             })
             .map(|a| a.server)

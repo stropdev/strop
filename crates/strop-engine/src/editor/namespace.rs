@@ -8,16 +8,11 @@
 //! machine's typed refusal, never an alternate write path. Browsing
 //! never deploys: read arms use only an already-admitted live lease,
 //! and [`RemoteWorkers::admit`] runs exclusively from mutation families.
-//! Containers stay read-only until an admitted incarnation worker and a
-//! separate per-document verified edit permit both exist. Their document
-//! saves use the same [`StoreDispatch`] protected Store protocol; Search and
-//! tools use only that admitted worker, never an analogous host path.
 //!
 //! The in-process strop-fs kernel remains directly usable by lower-level
 //! tests (strop-fs's own suite); engine tests cross the real codec
 //! through an in-process transport ([`local_worker`]).
 
-use super::containers::BoundWorker;
 use strop_core::worker::CancelToken;
 use strop_fs::batch::PreparedBatch;
 use strop_fs::Environment;
@@ -178,8 +173,6 @@ pub(crate) fn list(
     remote: &RemoteWorkers,
     location: &ResourceLocation,
     client: &strop_remote::RemoteClient,
-    container: Option<&strop_containers::ContainerIdentity>,
-    container_worker: Option<&BoundWorker>,
     token: &CancelToken,
 ) -> Result<Listed, FsFailure> {
     if !location.path.is_absolute() {
@@ -226,42 +219,6 @@ pub(crate) fn list(
                 )
             })?;
             from_remote(listed)
-        }
-        Filesystem::Container(id) => {
-            let identity = container
-                .filter(|identity| identity.id == id.as_str())
-                .ok_or_else(|| {
-                    failure(
-                        FsFailureKind::Unsupported,
-                        "attach the container before browsing its filesystem",
-                    )
-                })?;
-            if let Some(worker) = container_worker {
-                if !worker.matches(identity) {
-                    return Err(failure(
-                        FsFailureKind::Conflict,
-                        "container worker lease belongs to a stale incarnation",
-                    ));
-                }
-                let snapshot = worker.list(token, location).map_err(map_client)?;
-                return Ok(Listed {
-                    directory: strop_fs::ListedDirectory { snapshot },
-                    connection: None,
-                });
-            }
-            let path = location.path.to_str().ok_or_else(|| {
-                failure(
-                    FsFailureKind::Unsupported,
-                    "container backend requires a UTF-8 path",
-                )
-            })?;
-            let engine = strop_containers::engine(token)
-                .map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
-            let reference = strop_containers::ContainerRef::of(identity)
-                .map_err(|error| failure(FsFailureKind::Protocol, error.to_string()))?;
-            let entries = strop_containers::list_dir(&engine, &reference, path, token)
-                .map_err(|error| failure(FsFailureKind::Io, error.to_string()))?;
-            from_container(location.clone(), entries)
         }
     }
 }
@@ -314,37 +271,6 @@ pub(crate) fn from_remote(
     })
 }
 
-/// Decode one container engine listing into kernel-validated data.
-pub(crate) fn from_container(
-    location: ResourceLocation,
-    source: Vec<strop_containers::DirEntry>,
-) -> Result<Listed, FsFailure> {
-    if !matches!(location.filesystem, Filesystem::Container(_)) {
-        return Err(failure(
-            FsFailureKind::Protocol,
-            "container listing has a different filesystem namespace",
-        ));
-    }
-    let entries = source
-        .into_iter()
-        .map(|entry| strop_fs::ObservedEntry {
-            name: entry.name.into(),
-            kind: match entry.kind {
-                strop_containers::DirEntryKind::File => EntryKind::File,
-                strop_containers::DirEntryKind::Dir => EntryKind::Directory,
-                strop_containers::DirEntryKind::Symlink => EntryKind::SymbolicLink,
-                strop_containers::DirEntryKind::Other => EntryKind::Unknown,
-            },
-            size: entry.size,
-            permissions: None,
-        })
-        .collect();
-    Ok(Listed {
-        directory: strop_fs::assemble(location, entries)?,
-        connection: None,
-    })
-}
-
 /// The admitted executor for one namespace: the local worker lease, or
 /// the endpoint's deployed worker lease (WK07). Remote mutation families
 /// admit the worker here — consent-gated on first use — and a refusal
@@ -367,10 +293,6 @@ fn kernel(
             let worker = remote.admit(endpoint, "remote filesystem mutation", token)?;
             Ok(Dispatch::Remote(worker))
         }
-        Filesystem::Container(_) => Err(failure(
-            FsFailureKind::Unsupported,
-            "container filesystem operations are read-only by policy",
-        )),
     }
 }
 
@@ -484,12 +406,6 @@ pub(crate) fn execute(
                 ));
             }
         },
-        Filesystem::Container(_) => {
-            return refuse(failure(
-                FsFailureKind::Unsupported,
-                "container filesystem operations are read-only by policy",
-            ));
-        }
     };
     let active = match &dispatch {
         Dispatch::Local(worker) => worker.session(),
@@ -581,14 +497,12 @@ pub(crate) fn verify(
     }
 }
 
-/// One admitted Store dispatch target (0058 WK09): the local worker lease,
-/// the endpoint's deployed worker lease, or one incarnation-pinned container
-/// worker. Same protocol, same kernel — transport selection lives here,
+/// One admitted Store dispatch target (0058 WK09): the local worker lease
+/// or the endpoint's deployed worker lease. Same protocol, same kernel — transport selection lives here,
 /// never in the kernel.
 pub(crate) enum StoreDispatch {
     Local(Worker),
     Remote(RemoteWorker),
-    Container(std::sync::Arc<BoundWorker>),
 }
 
 /// The exact worker session that observed one Store intent stays with
@@ -620,22 +534,6 @@ impl StoreDispatch {
             // not save policy, and a remote worker captures its own.
             Self::Local(worker) => worker.prepare(token, vec![intent], None),
             Self::Remote(worker) => worker.prepare(token, vec![intent]),
-            Self::Container(worker) => {
-                let mut native = intent;
-                native.source = native
-                    .source
-                    .as_ref()
-                    .map(|location| worker.location(location))
-                    .transpose()
-                    .map_err(map_client)?;
-                native.destination = native
-                    .destination
-                    .as_ref()
-                    .map(|location| worker.location(location))
-                    .transpose()
-                    .map_err(map_client)?;
-                worker.worker().prepare(token, vec![native], None)
-            }
         };
         let (mut steps, refused, session) = prepared.map_err(map_client)?;
         if let Some(refusal) = refused.into_iter().next() {
@@ -669,11 +567,6 @@ impl StoreDispatch {
             }
             Self::Remote(worker) => {
                 worker.apply(token, session, vec![operation.clone()], Some(content))
-            }
-            Self::Container(worker) => {
-                worker
-                    .worker()
-                    .apply(token, session, vec![operation.clone()], Some(content))
             }
         };
         match applied {
@@ -726,9 +619,6 @@ impl StoreDispatch {
             return match self {
                 Self::Local(worker) => worker.verify(token, receipt).map_err(map_client),
                 Self::Remote(worker) => worker.verify(token, receipt).map_err(map_client),
-                Self::Container(worker) => {
-                    worker.worker().verify(token, receipt).map_err(map_client)
-                }
             };
         }
         match self {
@@ -736,10 +626,6 @@ impl StoreDispatch {
                 .verify_recovered(token, receipt, namespace)
                 .map_err(map_client),
             Self::Remote(worker) => worker
-                .verify_recovered(token, receipt, namespace)
-                .map_err(map_client),
-            Self::Container(worker) => worker
-                .worker()
                 .verify_recovered(token, receipt, namespace)
                 .map_err(map_client),
         }

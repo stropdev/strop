@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 
 use strop_workspace::addr::uri;
-use strop_workspace::{ContainerId, Filesystem, RemoteEndpoint};
+use strop_workspace::{Filesystem, RemoteEndpoint};
 
 /// Where a spawned server runs: its filesystem target plus the
 /// workspace root on that filesystem. The root anchors relative
@@ -27,18 +27,12 @@ pub enum Workspace {
         endpoint: RemoteEndpoint,
         root: PathBuf,
     },
-    /// A language server inside a running container (0037 DC1b): the
-    /// workspace root names container paths, never local ones.
-    Container {
-        container: ContainerId,
-        root: PathBuf,
-    },
 }
 
 impl Workspace {
     pub fn root(&self) -> &Path {
         match self {
-            Self::Local { root } | Self::Remote { root, .. } | Self::Container { root, .. } => root,
+            Self::Local { root } | Self::Remote { root, .. } => root,
         }
     }
 
@@ -46,14 +40,13 @@ impl Workspace {
         match self {
             Self::Local { .. } => Filesystem::Local,
             Self::Remote { endpoint, .. } => Filesystem::Remote(endpoint.clone()),
-            Self::Container { container, .. } => Filesystem::Container(container.clone()),
         }
     }
 
     pub fn endpoint(&self) -> Option<&RemoteEndpoint> {
         match self {
             Self::Remote { endpoint, .. } => Some(endpoint),
-            _ => None,
+            Self::Local { .. } => None,
         }
     }
     /// Absolute path on the workspace's own filesystem: pure joining,
@@ -75,9 +68,7 @@ impl Workspace {
             Self::Local { .. } => {
                 async_lsp::lsp_types::Url::from_file_path(self.absolute(path)).ok()
             }
-            // Container paths are POSIX inside the container: the remote
-            // byte codec, never the local OS's path rules.
-            Self::Remote { .. } | Self::Container { .. } => remote_file_uri(&self.absolute(path)),
+            Self::Remote { .. } => remote_file_uri(&self.absolute(path)),
         }
     }
 
@@ -91,7 +82,7 @@ impl Workspace {
         }
         match self {
             Self::Local { .. } => uri_.to_file_path().ok(),
-            Self::Remote { .. } | Self::Container { .. } => decode_uri_path(uri_.path()),
+            Self::Remote { .. } => decode_uri_path(uri_.path()),
         }
     }
 
@@ -101,9 +92,6 @@ impl Workspace {
         match self {
             Self::Local { root } => root.display().to_string(),
             Self::Remote { endpoint, root } => format!("{endpoint}{}", root.display()),
-            Self::Container { container, root } => {
-                format!("container:{}{}", &container.as_str()[..12], root.display())
-            }
         }
     }
 }

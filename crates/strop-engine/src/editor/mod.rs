@@ -18,9 +18,7 @@ pub use changes::review::ReviewRow;
 pub use dispatch::InputOwner;
 pub mod collections;
 pub mod completion;
-mod containers;
 mod cursor;
-mod devcontainers;
 mod diagnostics;
 mod directory;
 mod dispatch;
@@ -94,7 +92,6 @@ pub use picker::{
 pub use registers::{ClipboardKey, ClipboardResult, Register};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 
-pub use containers::{ContainerKey, ContainerResult};
 pub use lsp::attach::{AttachDecision, AttachRecord};
 pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use normal::{
@@ -247,10 +244,6 @@ pub struct Editor {
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
     /// A build waiting on background source loads (0044 v2).
     pub(crate) collection_build: Option<collections::CollectionBuild>,
-    /// Container attach/browse state (0037 DC1a).
-    pub(crate) containers: containers::ContainerState,
-    /// Dev Container discovery, review and owned lifecycle work.
-    pub(crate) devcontainers: devcontainers::DevcontainerState,
     /// MRU document order (most recent first); drives `Space b`.
     pub(crate) mru: Vec<strop_core::id::DocumentId>,
     /// Picker preview file cache.
@@ -454,8 +447,6 @@ impl Editor {
             git_mutation: None,
             shell_requests: HashMap::new(),
             shell_focus: None,
-            containers: containers::ContainerState::default(),
-            devcontainers: devcontainers::DevcontainerState::default(),
             mru: vec![current],
             changes: changes::ChangeState::default(),
             review: changes::review::ReviewState::default(),
@@ -731,7 +722,6 @@ impl Drop for Editor {
         // permanently instead of waiting for the last clone's Drop:
         // no outstanding job may reconnect or publish a new worker.
         self.remote.workers.close_all();
-        self.containers.workers.close_all();
         self.filesystem.worker().close();
     }
 }

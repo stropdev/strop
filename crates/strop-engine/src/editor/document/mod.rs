@@ -54,12 +54,6 @@ impl Document {
             )
         } else if let Some(remote) = self.remote_metadata() {
             remote.file.to_string()
-        } else if let DocumentSource::Container { container, path } = &self.source {
-            strop_workspace::ResourceLocation {
-                filesystem: strop_workspace::Filesystem::Container(container.clone()),
-                path: path.clone(),
-            }
-            .label()
         } else {
             self.buf
                 .path
@@ -138,27 +132,6 @@ impl Document {
         }
     }
 
-    /// A file read from a container. Its source starts read-only; a separate
-    /// verified per-document permit may grant edit authority without ever
-    /// giving the path a local filesystem identity.
-    pub fn container_file(
-        mut buf: Buffer,
-        container: strop_workspace::ContainerId,
-        path: std::path::PathBuf,
-    ) -> Self {
-        buf.set_readonly(strop_core::ReadonlyReason::Container);
-        let detection = Some(detect_indent(buf.text()));
-        Self {
-            buf,
-            syntax_hint: None,
-            indent: Indent::default(),
-            indent_override: IndentOverride::default(),
-            detection,
-            source: DocumentSource::Container { container, path },
-            external_change: false,
-        }
-    }
-
     /// Syntax identity is data; parsers live on the display-analysis worker.
     pub fn syntax_path(&self) -> Option<&std::path::Path> {
         if let Some(path) = &self.syntax_hint {
@@ -175,7 +148,6 @@ impl Document {
                 _ => None,
             },
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
-            DocumentSource::Container { path, .. } => Some(path),
             DocumentSource::Directory(_)
             | DocumentSource::Output { .. }
             | DocumentSource::Terminal(_) => None,
@@ -190,13 +162,6 @@ impl Document {
             (DocumentSource::Directory(source), target) => {
                 target.matches_location(&source.location)
             }
-            (
-                DocumentSource::Container { container, path },
-                crate::files::FileTarget::Container {
-                    container: expected,
-                    path: requested,
-                },
-            ) => container == expected && path == requested,
             (DocumentSource::File, crate::files::FileTarget::Local(path)) => {
                 self.buf.path.as_ref() == Some(path)
                     || self.buf.file_identity() == Some(path.as_path())
@@ -210,10 +175,6 @@ impl Document {
         match &self.source {
             DocumentSource::Remote(source) => Some(FileTarget::Remote(source.file.clone().into())),
             DocumentSource::Directory(source) => FileTarget::from_location(&source.location).ok(),
-            DocumentSource::Container { container, path } => Some(FileTarget::Container {
-                container: container.clone(),
-                path: path.clone(),
-            }),
             _ => self
                 .buf
                 .file_identity()
@@ -528,7 +489,6 @@ impl Editor {
             }
         }
         self.revoke_remote_write(closed);
-        self.revoke_container_write(closed);
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
         self.stop_remote_follow(closed);

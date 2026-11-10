@@ -26,9 +26,6 @@ the common case stays `strop file.rs`.
 | `strop compat` | dump the vim-compatibility table |
 | `strop help` | print help |
 
-Every command also has its original flag spelling (`--dump-compat`,
-`--replay-script`, …); scripts and muscle memory keep working.
-
 ## Options
 
 | Option | Meaning |

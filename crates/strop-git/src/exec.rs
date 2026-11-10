@@ -1,5 +1,5 @@
 //! Finite Git execution in the owning namespace: local process jobs
-//! keep their in-process libgit2 hot paths, while admitted SSH/container
+//! keep their in-process libgit2 hot paths, while admitted SSH
 //! namespaces run byte-exact `git` through their one native worker.
 //! No Python or shell-supervised alternate execution path.
 //!
@@ -56,7 +56,7 @@ pub enum GitExecError {
     /// The local `git` process could not be started.
     Spawn(String),
     /// A non-local namespace without an admitted worker cannot run
-    /// Git there. Never retry through Python, docker exec or locally.
+    /// Git there. Never retry through Python or locally.
     Unavailable { namespace: &'static str },
     /// The admitted worker lease refused or failed the run (0058 WK10):
     /// transport, admission and cancellation stay the client's own typed
@@ -124,9 +124,8 @@ pub enum GitExec<'a> {
         workdir: &'a Path,
     },
     /// One admitted worker lease owns the repository's namespace (0058
-    /// WK10): finite `git` rides the lease's supervised exec — SSH
-    /// endpoint and container incarnation alike, since the lease is
-    /// already the namespace boundary. The workdir is a native path in
+    /// WK10): finite `git` rides the lease's supervised exec, since the
+    /// lease is already the namespace boundary. The workdir is a native path in
     /// the worker's own namespace.
     Worker {
         worker: Worker,
@@ -138,7 +137,7 @@ impl<'a> GitExec<'a> {
     /// The selected repository's native execution. Local worktrees
     /// retain in-process Git; a non-local target requires an already
     /// admitted worker lease and never falls back to a second command
-    /// supervisor. Admission of the endpoint/container occurs above
+    /// supervisor. Admission of the endpoint occurs above
     /// this pure routing decision.
     pub fn for_target_routed(
         target: &'a RepoTarget,
@@ -146,17 +145,13 @@ impl<'a> GitExec<'a> {
     ) -> Result<Self, GitExecError> {
         match (target, lease) {
             (RepoTarget::Local { workdir }, _) => Ok(Self::Local { workdir }),
-            (RepoTarget::Remote { workdir, .. }, Some(worker))
-            | (RepoTarget::Container { workdir, .. }, Some(worker)) => Ok(Self::Worker {
+            (RepoTarget::Remote { workdir, .. }, Some(worker)) => Ok(Self::Worker {
                 worker: worker.clone(),
                 workdir,
             }),
             (RepoTarget::Remote { .. }, None) => {
                 Err(GitExecError::Unavailable { namespace: "SSH" })
             }
-            (RepoTarget::Container { .. }, None) => Err(GitExecError::Unavailable {
-                namespace: "container",
-            }),
         }
     }
 

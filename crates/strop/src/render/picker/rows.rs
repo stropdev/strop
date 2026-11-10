@@ -250,8 +250,7 @@ fn plain(text: impl Into<String>, style: Style) -> Span<'static> {
     Span::styled(text.into(), style)
 }
 
-/// Workspace-relative display for a local path; remote/container
-/// locations keep their authority label.
+/// Workspace-relative display for a local path; remote locations keep their authority label.
 fn relative_label(location: &strop_workspace::ResourceLocation, root: &Path) -> String {
     if location.local_path().is_some() {
         let relative = location.path.strip_prefix(root).unwrap_or(&location.path);

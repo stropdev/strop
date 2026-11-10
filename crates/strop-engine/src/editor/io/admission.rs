@@ -28,14 +28,7 @@ impl Editor {
             }
             return;
         }
-        if matches!(intent, OpenIntent::Refresh)
-            && (self.remote_write_blocks_refresh(self.current())
-                || self.io.container_writes.pending_for(self.current())
-                || self
-                    .io
-                    .container_writes
-                    .unconfirmed_revision(self.current())
-                    .is_some())
+        if matches!(intent, OpenIntent::Refresh) && self.remote_write_blocks_refresh(self.current())
         {
             self.message =
                 "save pending or unconfirmed; settle or verify before refreshing this snapshot"
@@ -69,12 +62,6 @@ impl Editor {
             remote => remote,
         };
         self.cancel_open(worker::CancelReason::Superseded);
-        if let FileTarget::Container { container, path } = &path {
-            if !self.containers.attached.contains_key(container.as_str()) {
-                self.attach_container_target(container.clone(), path.clone(), intent);
-                return;
-            }
-        }
         let existing = self.docs.iter().find_map(|(id, document)| {
             (document.matches_target(&path)
                 && document
@@ -84,7 +71,6 @@ impl Editor {
         });
         if let Some(id) = existing.filter(|&id| {
             !matches!(intent, OpenIntent::Refresh)
-                && !matches!(path, FileTarget::Container { .. })
                 && (!matches!(
                     intent,
                     OpenIntent::Browse
@@ -139,20 +125,9 @@ impl Editor {
                 return;
             }
         }
-        let container = match &path {
-            FileTarget::Container { container, .. } => {
-                self.containers.attached.get(container.as_str()).cloned()
-            }
-            _ => None,
-        };
-        let container_worker = container
-            .as_ref()
-            .and_then(|identity| self.containers.workers.get(identity));
         let work = super::open::OpenRead {
             worker: self.filesystem.worker().clone(),
             remote: self.remote.workers.clone(),
-            container,
-            container_worker,
             previous_directories: {
                 let mut previous: Vec<_> = self
                     .docs
@@ -321,7 +296,6 @@ impl Editor {
             Outcome::Success(mut opened) => {
                 if matches!(key.intent, OpenIntent::Refresh) {
                     self.revoke_remote_write(key.origin);
-                    self.revoke_container_write(key.origin);
                     self.finish_refresh(key.origin, opened.document);
                     return;
                 }
@@ -336,13 +310,7 @@ impl Editor {
                     .then_some(id)
                 });
                 let id = if let Some(id) = existing {
-                    if self.doc(id).directory_metadata_ref().is_some()
-                        || (matches!(key.path, FileTarget::Container { .. })
-                            && !self.doc(id).buf.dirty)
-                    {
-                        if matches!(key.path, FileTarget::Container { .. }) {
-                            self.revoke_container_write(id);
-                        }
+                    if self.doc(id).directory_metadata_ref().is_some() {
                         if let Err(error) = self.publish_source_snapshot(id, opened.document, false)
                         {
                             self.message = error.to_string();
@@ -422,20 +390,7 @@ impl Editor {
                 );
                 self.finish_open(id, key.intent);
                 if self.current() == id {
-                    if matches!(&key.path, FileTarget::Container { .. }) {
-                        let next_step = match self.current_namespace_capabilities().write {
-                            crate::editor::namespace::CapabilityDecision::Unavailable {
-                                next_step,
-                                ..
-                            } => Some(next_step),
-                            crate::editor::namespace::CapabilityDecision::Available => None,
-                        };
-                        self.message = if let Some(next_step) = next_step {
-                            format!("container is read-only — {next_step}")
-                        } else {
-                            "container editing is enabled".into()
-                        };
-                    } else if matches!(&key.path, FileTarget::Remote(_)) && self.buf().readonly {
+                    if matches!(&key.path, FileTarget::Remote(_)) && self.buf().readonly {
                         self.message = if matches!(
                             self.buf().readonly_reason,
                             Some(strop_core::ReadonlyReason::RemoteAuthority)

@@ -4,158 +4,132 @@ struct Action {
     title: &'static str,
     command: &'static str,
     operand: bool,
-    mutation: bool,
 }
 const ACTIONS: &[Action] = &[
     Action {
         title: "New file",
         command: "create",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "New directory",
         command: "mkdir",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "Rename",
         command: "rename",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "Move into directory",
         command: "move",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "Copy stored file",
         command: "copy stored",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "Copy current buffer contents",
         command: "copy buffer",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "Trash (recoverable)",
         command: "trash",
         operand: false,
-        mutation: true,
     },
     Action {
         title: "Delete permanently",
         command: "remove",
         operand: false,
-        mutation: true,
     },
     Action {
         title: "Toggle mark",
         command: "mark",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Clear marks",
         command: "unmark",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Refresh directory",
         command: "refresh",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Copy resource URI",
         command: "path",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Operations and receipts",
         command: "operations",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Verify operation outcome",
         command: "verify",
         operand: true,
-        mutation: false,
     },
     Action {
         title: "Prepare checked recovery",
         command: "undo",
         operand: true,
-        mutation: true,
     },
     Action {
         title: "Edit names with modal grammar",
         command: "edit",
         operand: false,
-        mutation: true,
     },
     Action {
         title: "Review filename changes",
         command: ":w",
         operand: false,
-        mutation: true,
     },
     Action {
         title: "Discard filename draft",
         command: "discard",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Draft copies: stored files",
         command: "copies stored",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Draft copies: current buffers",
         command: "copies buffer",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Draft deletions: Trash",
         command: "deletes trash",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Draft deletions: permanently remove",
         command: "deletes permanent",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Search here",
         command: "search",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Terminal here",
         command: "terminal",
         operand: false,
-        mutation: false,
     },
     Action {
         title: "Open local terminal",
         command: ":terminal-local",
         operand: false,
-        mutation: false,
     },
 ];
 pub(super) struct ActionOwner {
@@ -167,7 +141,6 @@ pub(super) struct ActionOwner {
 enum ContextChoice {
     Feedback(super::super::feedback::actions::FeedbackChoice),
     Terminal(super::super::terminal::actions::TerminalAction),
-    Devcontainer(super::super::devcontainers::DevcontainerAction),
 }
 
 enum ActionSource {
@@ -236,7 +209,6 @@ impl Editor {
                 text: match choice {
                     ContextChoice::Feedback(choice) => choice.title.clone(),
                     ContextChoice::Terminal(action) => self.terminal_action_title(action),
-                    ContextChoice::Devcontainer(action) => action.title(),
                 },
                 payload: Payload::FilesystemAction(index),
             })
@@ -259,21 +231,6 @@ impl Editor {
     }
 
     pub(crate) fn open_filesystem_actions(&mut self) {
-        if let Some(workspace) = self.devcontainers.document_workspace(self.current()) {
-            if let Some(discovery) = self.devcontainers.discovery_incarnation(&workspace) {
-                let choices = self
-                    .devcontainer_actions(&workspace, discovery)
-                    .into_iter()
-                    .filter(|action| self.devcontainer_action_valid(action))
-                    .map(ContextChoice::Devcontainer)
-                    .collect();
-                self.open_context_actions(
-                    choices,
-                    "dev container actions: configuration, discovery and transition are revalidated",
-                );
-                return;
-            }
-        }
         let scope = self.directory_context();
         let directory = self.directory().is_some();
         let draft = self.filename_draft(self.current()).is_some();
@@ -281,10 +238,8 @@ impl Editor {
             .iter()
             .enumerate()
             .filter(|(_, action)| {
-                (!action.mutation
-                    || !matches!(scope.filesystem, strop_workspace::Filesystem::Container(_)))
-                    && (action.command != "trash"
-                        || scope.filesystem == strop_workspace::Filesystem::Local)
+                (action.command != "trash"
+                    || scope.filesystem == strop_workspace::Filesystem::Local)
                     && (action.command != "deletes trash"
                         || scope.filesystem == strop_workspace::Filesystem::Local)
                     && match action.command {
@@ -390,9 +345,6 @@ impl Editor {
                     }
                     ContextChoice::Terminal(action) => {
                         self.invoke_terminal_action(action.clone());
-                    }
-                    ContextChoice::Devcontainer(action) => {
-                        self.invoke_devcontainer_action(action.clone());
                     }
                 }
             }
