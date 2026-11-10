@@ -24,6 +24,11 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY docs ./docs
+# Every checkout on this machine shares the cargo target caches below, and
+# cargo decides freshness by mtime: an older checkout would reuse crates a
+# newer one compiled. Each cargo RUN touches the workspace sources first, in
+# the same RUN as the cache mount, so workspace crates always rebuild against
+# this tree (registry dependencies stay cached).
 
 # The gate: fmt, clippy -D warnings, the workspace tests (including the real
 # sshd suites) and the Loom campaign over the shipped synchronization seams.
@@ -31,7 +36,8 @@ FROM builder AS test
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-test,sharing=locked \
-    cargo fmt --check \
+    find crates docs -type f -exec touch {} + \
+    && cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
     && STROP_REQUIRE_SSH_TESTS=1 STROP_REQUIRE_NVIM=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
     && CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
@@ -46,7 +52,8 @@ FROM builder AS ssh-pythonfree
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-ssh,sharing=locked \
-    ! command -v python && ! command -v python2 && ! command -v python3 \
+    find crates docs -type f -exec touch {} + \
+    && ! command -v python && ! command -v python2 && ! command -v python3 \
     && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked --no-fail-fast -p strop-editor \
         --test ssh_exec --test remote_ssh -- --test-threads=1
 
@@ -58,7 +65,8 @@ FROM builder AS ssh-bench
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server iproute2-tc
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-ssh-bench,sharing=locked \
-    cargo test --release --locked -p strop-editor --test ssh_exec --no-run --message-format=json \
+    find crates docs -type f -exec touch {} + \
+    && cargo test --release --locked -p strop-editor --test ssh_exec --no-run --message-format=json \
         | sed -n 's/.*"executable":"\([^"]*ssh_exec[^"]*\)".*/\1/p' > /tmp/bench-exe \
     && install -D -m755 "$(cat /tmp/bench-exe)" /app/bench/ssh_exec
 ENV STROP_REQUIRE_SSH_TESTS=1 STROP_SSH_EXEC_BENCH=1
@@ -69,7 +77,8 @@ CMD ["sh", "-c", "if [ -n \"$DELAY_MS\" ]; then tc qdisc add dev lo root netem d
 FROM builder AS release
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-release,sharing=locked \
-    cargo build --release --locked -p strop-editor \
+    find crates docs -type f -exec touch {} + \
+    && cargo build --release --locked -p strop-editor \
     && install -D -m755 /cache/target/release/strop /app/target/release/strop \
     && strip /app/target/release/strop \
     && ! readelf -d /app/target/release/strop | grep -q NEEDED \
