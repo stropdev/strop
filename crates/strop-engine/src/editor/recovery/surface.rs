@@ -6,6 +6,7 @@
 //! re-grants remote authority; saving the draft goes through the existing
 //! source-admission/conflict paths.
 
+use super::offer::{captured_len, Choice, Inherited, Offer, RecoveryOffer};
 use super::record::{DraftOrigin, DraftRecord, Snapshot};
 use super::{Editor, SurfaceIntent};
 use crate::editor::Document;
@@ -77,8 +78,15 @@ impl Editor {
     /// every surface action is read-before-act.
     pub(crate) fn finish_recovery_load(&mut self, stored: Option<super::StoredCohort>) {
         let intent = self.recovery.intent.take().unwrap_or(SurfaceIntent::List);
+        if std::mem::take(&mut self.recovery.reading_prior) {
+            self.recovery.prior = stored.clone().map(Inherited::adopt).unwrap_or_default();
+            // the file the session opened with may have been waiting
+            self.recovery_offer_for(self.current());
+            self.recovery_after_event();
+        }
         self.recovery.loaded = stored;
         match intent {
+            SurfaceIntent::Startup => {}
             SurfaceIntent::List => self.open_recovery_surface(),
             SurfaceIntent::Restore(index) => self.recovery_restore(index),
             SurfaceIntent::Discard(index) => self.recovery_discard(index),
@@ -88,7 +96,13 @@ impl Editor {
     /// The record's current state against the live editor and the disk.
     fn recovery_row_state(&self, record: &DraftRecord) -> (RowState, Vec<String>) {
         let mut notes = Vec::new();
-        if let Some(live) = self.docs.get(record.document) {
+        // an earlier session's document ids name nothing live here
+        let inherited = self
+            .recovery
+            .prior
+            .iter()
+            .any(|draft| draft.same_draft(record));
+        if let Some(live) = self.docs.get(record.document).filter(|_| !inherited) {
             if live.buf.revision() > record.revision {
                 notes.push(format!(
                     "newer unsaved edits (r{}) since the checkpoint",
@@ -162,7 +176,7 @@ impl Editor {
                     )));
                 }
             };
-            Some(Ok((record.revision, record.origin.label(), text)))
+            Some(Ok((record.clone(), text)))
         });
         let Some(restored) = restored else {
             self.message = format!(
@@ -171,13 +185,14 @@ impl Editor {
             );
             return;
         };
-        let (revision, label, text) = match restored {
+        let (record, text) = match restored {
             Ok(restored) => restored,
             Err(message) => {
                 self.message = message;
                 return;
             }
         };
+        let (revision, label) = (record.revision, record.origin.label());
         let mut buffer = Buffer::from_text(&text);
         buffer.mark_dirty();
         buffer.name = Some(format!("recovered: {label}"));
@@ -192,6 +207,7 @@ impl Editor {
         self.drop_stale_scratch(id);
         self.switch_to(id);
         self.set_head(0);
+        self.forget_prior_draft(&record);
         self.message = format!(
             "restored checkpoint r{revision} into a checked draft — the source is untouched; :w {{path}} saves through the normal admission path"
         );
@@ -325,6 +341,150 @@ impl Editor {
         let buf = &mut self.doc_mut(document).buf;
         buf.clear_readonly();
         buf.set_readonly(strop_core::ReadonlyReason::RecoveryCheckpoint);
+    }
+
+    /// Startup: read the drafts an earlier session left. Publications wait
+    /// for this read so they cannot overwrite them first.
+    pub(crate) fn recovery_read_prior(&mut self) {
+        if !self.recovery_persistent() {
+            return;
+        }
+        self.recovery.reading_prior = true;
+        self.request_recovery_load(SurfaceIntent::Startup);
+    }
+
+    /// A file just opened (or the startup read just landed): offer its
+    /// earlier-session draft, vim `ATTENTION` style.
+    pub(crate) fn recovery_offer_for(&mut self, document: strop_core::id::DocumentId) {
+        if self.recovery.offer.is_some() || self.docs.is_empty() || self.current() != document {
+            return;
+        }
+        let doc = self.doc(document);
+        if !matches!(doc.source, crate::editor::DocumentSource::File) || doc.buf.is_dirty() {
+            return;
+        }
+        let Some(path) = doc.buf.path.as_deref() else {
+            return;
+        };
+        let canonical = doc.buf.file_identity();
+        let Some(draft) = self.recovery.prior.iter().position(|draft| {
+            !draft.declined && draft.text.is_some() && draft.is_for(path, canonical)
+        }) else {
+            return;
+        };
+        // Compare the observation the draft's session made with the bytes
+        // just read — no extra stat on the input path.
+        let observed = self.recovery.prior[draft].record.source;
+        let source_changed = observed.is_none_or(|observed| {
+            observed.len != doc.buf.len_bytes() as u64
+                || doc.buf.disk_stamp().map(super::record::millis) != Some(observed.modified_ms)
+        });
+        self.recovery.offer = Some(Offer {
+            document,
+            draft,
+            source_changed,
+        });
+    }
+
+    /// The offer card's content, while one is open.
+    pub fn recovery_offer(&self) -> Option<RecoveryOffer> {
+        let offer = self.recovery.offer?;
+        let draft = self.recovery.prior.get(offer.draft)?;
+        let path = match &draft.record.origin {
+            DraftOrigin::LocalFile { path, .. } => path
+                .strip_prefix(&self.cwd)
+                .unwrap_or(path)
+                .display()
+                .to_string(),
+            origin => origin.label(),
+        };
+        Some(RecoveryOffer {
+            path,
+            revision: draft.record.revision.get(),
+            bytes: captured_len(&draft.record),
+            captured_ms: draft.captured_ms,
+            source_changed: offer.source_changed,
+        })
+    }
+
+    /// The offer owns every key until answered; other keys are refused
+    /// with the choices, so nothing edits the file behind the question.
+    pub(crate) fn feed_recovery_offer(&mut self, key: strop_core::frontend_input::Key) {
+        let Some(offer) = self.recovery.offer else {
+            return;
+        };
+        let Some(choice) = Choice::from_key(key) else {
+            self.message =
+                "a recovery draft exists: r recover · o read-only · d delete draft · e edit anyway"
+                    .into();
+            return;
+        };
+        self.recovery.offer = None;
+        let live = self.docs.get(offer.document).is_some();
+        match choice {
+            Choice::Recover if live => self.recover_into(offer),
+            Choice::ReadOnly if live => {
+                self.recovery.prior[offer.draft].declined = true;
+                self.doc_mut(offer.document)
+                    .buf
+                    .set_readonly(strop_core::ReadonlyReason::Command);
+                self.message =
+                    "opened read-only — the draft is kept; :recover lists it, :set noro edits"
+                        .into();
+            }
+            Choice::Delete => {
+                let record = self.recovery.prior[offer.draft].record.clone();
+                self.forget_prior_draft(&record);
+                self.message = "deleted the recovery draft — its bytes are gone".into();
+            }
+            _ => {
+                self.recovery.prior[offer.draft].declined = true;
+                self.message =
+                    "editing the file on disk — the draft is kept; :recover lists it".into();
+            }
+        }
+    }
+
+    /// Recover: the draft replaces the opened text as ONE undoable edit,
+    /// so `u` returns to the file on disk. Nothing is written; `:w` saves
+    /// through the normal admission path.
+    fn recover_into(&mut self, offer: Offer) {
+        let Some(text) = self.recovery.prior[offer.draft].text.clone() else {
+            return;
+        };
+        let record = self.recovery.prior[offer.draft].record.clone();
+        self.switch_to(offer.document);
+        {
+            let mut buf = self.buf_mut();
+            let end = buf.len_bytes();
+            buf.begin_undo_group();
+            buf.delete(strop_core::Range::charwise(0, end));
+            buf.insert(0, &text.to_string());
+            buf.commit_undo_group();
+        }
+        self.set_head(0);
+        self.clamp_cursor();
+        self.forget_prior_draft(&record);
+        self.message = if offer.source_changed {
+            "recovered the draft — the file changed on disk after it was saved; check before :w (u undoes)"
+        } else {
+            "recovered the draft — :w saves it, u returns to the file on disk"
+        }
+        .into();
+    }
+
+    /// An earlier-session draft is resolved (recovered or deleted): drop
+    /// it from every later publication, and republish now so a delete is
+    /// real even if nothing else changes this session.
+    fn forget_prior_draft(&mut self, record: &DraftRecord) {
+        let before = self.recovery.prior.len();
+        self.recovery
+            .prior
+            .retain(|draft| !draft.same_draft(record));
+        if self.recovery.prior.len() != before {
+            self.recovery.prior_changed = true;
+            self.recovery_after_event();
+        }
     }
 
     fn recovery_row(&self, index: usize, record: &DraftRecord) -> String {

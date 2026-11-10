@@ -152,6 +152,18 @@ fn echo_row_wraps() {
     });
 }
 
+/// 0090 §3: opening a file with an earlier session's draft asks first.
+#[test]
+fn recovery_offer() {
+    each("recovery", |editor| {
+        let path = editor.buf().path.clone().unwrap();
+        editor.fixture_recovery_draft(&path, "//! a draft\n");
+        editor.open_fixture(&path).unwrap();
+        assert!(editor.recovery_offer().is_some());
+        settle_analysis()
+    });
+}
+
 #[test]
 fn split() {
     each("split", |editor| {

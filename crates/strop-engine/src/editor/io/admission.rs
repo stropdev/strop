@@ -298,6 +298,7 @@ impl Editor {
                 self.remember_remote_destination();
                 self.discover_git();
                 self.lsp_attach_document(self.current());
+                self.recovery_offer_for(document);
             }
         }
     }

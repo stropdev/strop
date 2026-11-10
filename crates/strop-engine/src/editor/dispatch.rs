@@ -20,6 +20,9 @@ pub enum InputOwner {
     BlameCard,
     /// An open picker (its fields are their own modal input).
     Picker,
+    /// The recovery offer for a file with an earlier session's draft:
+    /// modal until answered.
+    RecoveryOffer,
     /// The undo-tree browser.
     UndoBrowser,
     /// Physical input belongs to an embedded child, before grammar normalization.
@@ -46,6 +49,9 @@ impl Editor {
         }
         if self.picker_open() {
             return InputOwner::Picker;
+        }
+        if self.recovery.offer.is_some() {
+            return InputOwner::RecoveryOffer;
         }
         if self.terminal_input_active() {
             return InputOwner::Terminal;
@@ -101,6 +107,7 @@ impl Editor {
                 }
             }
             InputOwner::Picker => self.feed_picker(key),
+            InputOwner::RecoveryOffer => self.feed_recovery_offer(key),
             InputOwner::UndoBrowser => {
                 if !self.feed_undo_browser(key) {
                     self.feed_document(key);
