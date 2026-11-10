@@ -3,11 +3,10 @@
 //! lane fairness under sustained output, and finite-work vs service
 //! liveness at shutdown.
 use super::*;
-use strop_core::worker::WorkerId;
 use strop_terminal::model::SessionId;
 
 fn session(n: u64) -> SessionId {
-    SessionId::from_request(WorkerId::new(n))
+    SessionId::new(n)
 }
 
 fn key(c: char) -> AppEvent {

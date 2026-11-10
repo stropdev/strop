@@ -33,6 +33,23 @@ impl Editor {
         });
     }
 
+    /// Retain one info-level notice (the shape a devcontainer discovery
+    /// report takes) so frontends can pin message precedence (0087 U1).
+    pub fn fixture_feedback_info(&mut self, summary: &str) {
+        self.record(super::feedback::FeedbackEvent {
+            severity: super::feedback::FeedbackSeverity::Info,
+            owner: super::feedback::FeedbackOwner::Save {
+                document: self.current(),
+                remote: false,
+            },
+            kind: super::feedback::FeedbackKind::DevcontainerOffer,
+            summary: summary.to_owned(),
+            detail: String::new(),
+            reference: None,
+            actions: vec![super::feedback::TypedAction::Dismiss],
+        });
+    }
+
     /// Local-channel fixture barrier; live drivers never call this.
     pub fn wait_io(&mut self) -> Result<(), String> {
         while self.io_pending() {
@@ -100,6 +117,12 @@ impl Editor {
         }
         self.request_picker_ranking();
         self.wait_picker();
+    }
+
+    /// Whether admitted syntax analysis has not yet landed — the settle
+    /// condition for scenes whose analysis flows through the app channel.
+    pub fn analysis_pending(&self) -> bool {
+        self.analysis.pending()
     }
 
     pub fn wait_analysis(&mut self) {

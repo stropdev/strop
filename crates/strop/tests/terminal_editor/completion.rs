@@ -4,6 +4,14 @@ use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
+/// The completion card has no title (0088 §2 mockup): its rows end in a
+/// source tag against the card's right border.
+fn completion_card(screen: &str) -> bool {
+    screen
+        .lines()
+        .any(|line| line.contains(" buf \u{2502}") || line.contains(" lsp \u{2502}"))
+}
+
 impl Tui {
     fn resize_completion(&mut self, columns: u16, rows: u16) {
         let size = libc::winsize {
@@ -44,16 +52,16 @@ fn completion_physical_word_keys_resize_accept_escape_and_undo() {
     tui.until(|screen| numbered_line(screen, "result response reusable return_value"));
     tui.send(b"Gire\x0e");
     let wide = tui.until(|screen| {
-        screen.contains("completions")
+        completion_card(screen)
             && screen.contains("response")
-            && screen.contains("\u{258c}word")
+            && screen.contains("\u{258c} word")
             && screen.contains("INSERT")
     });
     assert!(numbered_line(&wide, "re"));
     eprintln!("0059 WORD PTY 120x30\n{wide}");
     tui.resize_completion(26, 12);
     let narrow = tui.until(|screen| {
-        screen.contains("completions")
+        completion_card(screen)
             && screen
                 .lines()
                 .any(|line| line.contains("response") && line.contains("buf"))
@@ -61,7 +69,7 @@ fn completion_physical_word_keys_resize_accept_escape_and_undo() {
     assert!(numbered_line(&narrow, "re"));
     eprintln!("0059 WORD PTY 26x12\n{narrow}");
     tui.send(b"\x19");
-    tui.until(|screen| numbered_line(screen, "response") && !screen.contains("completions"));
+    tui.until(|screen| numbered_line(screen, "response") && !completion_card(screen));
     tui.send(b"\x1b");
     tui.until(|screen| screen.contains("NORMAL"));
     tui.send(b"u");
@@ -96,10 +104,10 @@ fn completion_tab_preview_cycle_revert_and_commit() {
     let words = ["result", "response", "reusable", "return_value"];
     // Tab focuses the popup and previews the first candidate (0059 §6.1).
     tui.send(b"Gire");
-    tui.until(|screen| screen.contains("completions"));
+    tui.until(completion_card);
     tui.send(b"\t");
     let previewed = tui.until(|screen| {
-        screen.contains("completions") && words.iter().any(|word| numbered_line(screen, word))
+        completion_card(screen) && words.iter().any(|word| numbered_line(screen, word))
     });
     let first = words
         .iter()
@@ -110,7 +118,7 @@ fn completion_tab_preview_cycle_revert_and_commit() {
     // Shift-Tab wraps to the last candidate, Tab cycles back to the first.
     tui.send(b"\x1b[Z");
     let wrapped = tui.until(|screen| {
-        screen.contains("completions")
+        completion_card(screen)
             && words
                 .iter()
                 .any(|word| *word != first && numbered_line(screen, word))
@@ -129,10 +137,10 @@ fn completion_tab_preview_cycle_revert_and_commit() {
     tui.send(b"u");
     tui.until(|screen| !numbered_line(screen, "re"));
     tui.send(b"ire");
-    tui.until(|screen| screen.contains("completions"));
+    tui.until(completion_card);
     tui.send(b"\t");
     let cycled = tui.until(|screen| {
-        screen.contains("completions") && words.iter().any(|word| numbered_line(screen, word))
+        completion_card(screen) && words.iter().any(|word| numbered_line(screen, word))
     });
     let chosen = words
         .iter()
@@ -140,7 +148,7 @@ fn completion_tab_preview_cycle_revert_and_commit() {
         .expect("cycled candidate")
         .to_string();
     tui.send(b"\x19");
-    tui.until(|screen| !screen.contains("completions") && numbered_line(screen, &chosen));
+    tui.until(|screen| !completion_card(screen) && numbered_line(screen, &chosen));
     tui.send(b"\x1b");
     tui.until(|screen| screen.contains("NORMAL"));
     tui.send(b":w\r");
@@ -182,7 +190,7 @@ fn completion_real_clangd_docs_narrow_split_and_acceptance() {
     });
     tui.send(b"9G$a\x18\x0f");
     tui.until(|screen| {
-        screen.contains("completions")
+        completion_card(screen)
             && screen.contains("retry_budget")
             && screen.contains("retry_count")
             && screen.contains("lsp")
@@ -197,7 +205,7 @@ fn completion_real_clangd_docs_narrow_split_and_acceptance() {
     eprintln!("0059 CLANGD PTY 120x30\n{wide}");
     tui.resize_completion(60, 18);
     let narrow = tui.until(|screen| {
-        screen.contains("completions")
+        completion_card(screen)
             && screen.contains("retry_budget")
             && screen.contains("lsp")
             && !screen.contains("documentation")
@@ -207,11 +215,11 @@ fn completion_real_clangd_docs_narrow_split_and_acceptance() {
         .any(|line| line.contains("request.") && !line.contains("request.retry")));
     eprintln!("0059 CLANGD PTY 60x18\n{narrow}");
     tui.send(b"\x1b");
-    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("completions"));
+    tui.until(|screen| screen.contains("NORMAL") && !completion_card(screen));
     tui.resize_completion(120, 30);
     tui.send(b":vs\r9G$a\x18\x0f");
     let split = tui.until(|screen| {
-        screen.contains("completions") && screen.contains("retry_budget") && screen.contains("lsp")
+        completion_card(screen) && screen.contains("retry_budget") && screen.contains("lsp")
     });
     eprintln!("0059 CLANGD PTY SPLIT 120x30\n{split}");
     tui.send(b"\x0e");
@@ -221,7 +229,7 @@ fn completion_real_clangd_docs_narrow_split_and_acceptance() {
             .any(|line| line.contains("\u{258c}field") && line.contains("retry_budget"))
     });
     tui.send(b"\x19");
-    tui.until(|screen| screen.contains("request.retry_budget") && !screen.contains("completions"));
+    tui.until(|screen| screen.contains("request.retry_budget") && !completion_card(screen));
     tui.send(b"\x1b");
     tui.until(|screen| screen.contains("NORMAL"));
     let expected = source.replace("request.\n", "request.retry_budget\n");
@@ -293,7 +301,7 @@ fn completion_held_language_keeps_physical_typing_resize_and_split_live() {
         .unwrap();
     let mut control = std::io::BufReader::new(socket);
     tui.send(b"G$as");
-    tui.until(|screen| screen.contains("completions") && screen.contains("response"));
+    tui.until(|screen| completion_card(screen) && screen.contains("response"));
     fixture_command(
         &mut control,
         serde_json::json!({"action": "await", "counter": "queries", "at_least": 1}),
@@ -323,10 +331,10 @@ fn completion_held_language_keeps_physical_typing_resize_and_split_live() {
     assert!(numbered_line(&narrow, "res"));
     eprintln!("0059 SLOW PTY 26x12\n{narrow}");
     tui.send(b"\x1b");
-    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("completions"));
+    tui.until(|screen| screen.contains("NORMAL") && !completion_card(screen));
     tui.resize_completion(120, 30);
     tui.send(b":vs\rG$ap\x7f");
-    tui.until(|screen| screen.contains("completions") && screen.contains("response"));
+    tui.until(|screen| completion_card(screen) && screen.contains("response"));
     tui.send(b"\x0e");
     tui.until(selected_source_word);
     fixture_command(&mut control, serde_json::json!({"action": "release"}));
@@ -344,7 +352,7 @@ fn completion_held_language_keeps_physical_typing_resize_and_split_live() {
     eprintln!("0059 LATE LANGUAGE PTY SPLIT 120x30\n{split}");
     tui.send(b"\x19");
     tui.until(|screen| {
-        !screen.contains("completions")
+        !completion_card(screen)
             && screen
                 .lines()
                 .any(|row| row.split('│').any(|pane| numbered_line(pane, "response")))

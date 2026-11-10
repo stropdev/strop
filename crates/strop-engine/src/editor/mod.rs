@@ -67,6 +67,7 @@ mod snippet;
 mod structural_indent;
 pub(crate) mod terminal;
 pub use terminal::TerminalDocument;
+mod presentation;
 mod theme;
 pub mod transact;
 mod undo;
@@ -111,7 +112,7 @@ use std::time::Duration;
 pub use workspaces::{WorkspaceKey, WorkspaceRegistry, WorkspaceRootError};
 
 use strop_core::frontend_input::Key;
-use strop_core::{Buffer, Range};
+use strop_core::Buffer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -199,15 +200,9 @@ pub struct Editor {
     pub(crate) registers: HashMap<char, Register>,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub(crate) marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
-    pub(crate) flash: Option<(Range, strop_trace::replay::Tick)>,
-    /// Cursor fade-in (0064 §2): the Normal-mode block cursor fades
-    /// back in from this tick after a focus return, pane/buffer switch
-    /// or a jump beyond half a screen. Presentation-only — never part
-    /// of the recorded observation.
-    pub(crate) cursor_fade: Option<strop_trace::replay::Tick>,
-    /// Last cursor-fade track mark (pane, document, head line) for
-    /// jump detection across recorded actions.
-    pub(crate) fade_track: Option<(usize, strop_core::id::DocumentId, usize)>,
+    /// What the next frame paints beyond the documents: palette, yank
+    /// flash and cursor fade (0088 §3). Presentation-only state.
+    pub(crate) presentation: presentation::Presentation,
     pub(crate) message: String,
     pub(crate) feedback: feedback::FeedbackStore,
     pub(crate) should_quit: bool,
@@ -475,9 +470,7 @@ impl Editor {
             registers: HashMap::new(),
             marks: HashMap::new(),
             last_find: None,
-            flash: None,
-            cursor_fade: None,
-            fade_track: None,
+            presentation: presentation::Presentation::default(),
             message: String::new(),
             feedback: feedback::FeedbackStore::default(),
             should_quit: false,

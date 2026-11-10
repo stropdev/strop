@@ -21,7 +21,7 @@ set_option maxRecDepth 2048
 namespace strop_kernel
 
 /-- [strop_kernel::editmap::map_position]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 22:0-30:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 23:0-31:1
     Visibility: public -/
 def editmap.map_position
   (position : Std.Usize) (start : Std.Usize) (old_end : Std.Usize)
@@ -37,8 +37,50 @@ def editmap.map_position
       ok (core.num.Usize.saturating_add new_end i)
     else ok start
 
+/-- [strop_kernel::editmap::map_through_edits]: loop body 0:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 40:4-44:5
+    Visibility: public -/
+@[rust_loop_body]
+def editmap.map_through_edits_loop.body
+  (edits : Slice (Std.Usize × Std.Usize × Std.Usize)) (mapped : Std.Usize)
+  (k : Std.Usize) :
+  Result (ControlFlow (Std.Usize × Std.Usize) Std.Usize)
+  := do
+  let i := Slice.len edits
+  if k < i
+  then
+    let (i1, i2, i3) ← Slice.index_usize edits k
+    let mapped1 ← editmap.map_position mapped i1 i2 i3
+    let k1 ← k + 1#usize
+    ok (cont (mapped1, k1))
+  else ok (done mapped)
+
+/-- [strop_kernel::editmap::map_through_edits]: loop 0:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 40:4-44:5
+    Visibility: public -/
+@[rust_loop]
+def editmap.map_through_edits_loop
+  (edits : Slice (Std.Usize × Std.Usize × Std.Usize)) (mapped : Std.Usize)
+  (k : Std.Usize) :
+  Result Std.Usize
+  := do
+  loop
+    (fun (mapped1, k1) => editmap.map_through_edits_loop.body edits mapped1 k1)
+    (mapped, k)
+
+/-- [strop_kernel::editmap::map_through_edits]:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 37:0-46:1
+    Visibility: public -/
+@[reducible]
+def editmap.map_through_edits
+  (position : Std.Usize) (edits : Slice (Std.Usize × Std.Usize × Std.Usize))
+  :
+  Result Std.Usize
+  := do
+  editmap.map_through_edits_loop edits position 0#usize
+
 /-- [strop_kernel::editmap::BatchRefusal]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 34:0-43:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 50:0-59:1
     Visibility: public -/
 @[discriminant isize]
 inductive editmap.BatchRefusal where
@@ -47,7 +89,7 @@ inductive editmap.BatchRefusal where
 | Unsorted : editmap.BatchRefusal
 
 /-- [strop_kernel::editmap::{impl core::fmt::Debug for strop_kernel::editmap::BatchRefusal}::fmt]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:9-33:14
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:9-49:14
     Visibility: public -/
 def editmap.BatchRefusal.Insts.CoreFmtDebug.fmt
   (self : editmap.BatchRefusal) (f : core.fmt.Formatter) :
@@ -62,7 +104,7 @@ def editmap.BatchRefusal.Insts.CoreFmtDebug.fmt
     core.fmt.Formatter.write_str f (toStr "Unsorted")
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::fmt::Debug for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:9-33:14 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:9-49:14 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreFmtDebug : core.fmt.Debug
   editmap.BatchRefusal := {
@@ -70,14 +112,14 @@ def editmap.BatchRefusal.Insts.CoreFmtDebug : core.fmt.Debug
 }
 
 /-- [strop_kernel::editmap::{impl core::clone::Clone for strop_kernel::editmap::BatchRefusal}::clone]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:16-33:21
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:16-49:21
     Visibility: public -/
 def editmap.BatchRefusal.Insts.CoreCloneClone.clone
   (self : editmap.BatchRefusal) : Result editmap.BatchRefusal := do
   ok self
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::clone::Clone for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:16-33:21 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:16-49:21 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreCloneClone : core.clone.Clone
   editmap.BatchRefusal := {
@@ -85,7 +127,7 @@ def editmap.BatchRefusal.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::marker::Copy for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:23-33:27 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:23-49:27 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreMarkerCopy : core.marker.Copy
   editmap.BatchRefusal := {
@@ -93,14 +135,14 @@ def editmap.BatchRefusal.Insts.CoreMarkerCopy : core.marker.Copy
 }
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::marker::StructuralPartialEq for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:29-33:38 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:29-49:38 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq editmap.BatchRefusal := {
 }
 
 /-- [strop_kernel::editmap::{impl core::cmp::PartialEq<strop_kernel::editmap::BatchRefusal> for strop_kernel::editmap::BatchRefusal}::eq]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:29-33:38
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:29-49:38
     Visibility: public -/
 def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal.eq
   (self : editmap.BatchRefusal) (other : editmap.BatchRefusal) :
@@ -111,7 +153,7 @@ def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal.eq
   ok (self1 = other1)
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::cmp::PartialEq<strop_kernel::editmap::BatchRefusal> for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:29-33:38 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:29-49:38 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal :
   core.cmp.PartialEq editmap.BatchRefusal editmap.BatchRefusal := {
@@ -119,7 +161,7 @@ def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal :
 }
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::cmp::Eq for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 33:40-33:42 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:40-49:42 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreCmpEq : core.cmp.Eq editmap.BatchRefusal
   := {
@@ -127,7 +169,7 @@ def editmap.BatchRefusal.Insts.CoreCmpEq : core.cmp.Eq editmap.BatchRefusal
 }
 
 /-- [strop_kernel::editmap::validate_batch]: loop body 0:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 50:4-67:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 66:4-83:1
     Visibility: public -/
 @[rust_loop_body]
 def editmap.validate_batch_loop.body
@@ -165,7 +207,7 @@ def editmap.validate_batch_loop.body
   else ok (done (core.result.Result.Ok ()))
 
 /-- [strop_kernel::editmap::validate_batch]: loop 0:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 50:4-67:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 66:4-83:1
     Visibility: public -/
 @[rust_loop]
 def editmap.validate_batch_loop
@@ -177,7 +219,7 @@ def editmap.validate_batch_loop
     k
 
 /-- [strop_kernel::editmap::validate_batch]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 48:0-67:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 64:0-83:1
     Visibility: public -/
 @[reducible]
 def editmap.validate_batch

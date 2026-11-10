@@ -1,152 +1,60 @@
 //! Rendering: the render tree's root. Panes and diff decoration live
-//! in `buffer`/`diff` (0010 §3); `statusline` owns the modeline.
-//! This module owns the palette, welcome card, and cursor.
+//! in `buffer`/`diff` (0010 §3); `statusline` owns the modeline and
+//! `echo` the message row above it. Colours come from one per-frame
+//! `Tokens` (`style.rs`, 0088 §2) and chrome from one primitive module
+//! (`card.rs`); this module owns the welcome card and the cursor.
 //! Overlay precedence (0001 §5.8 subset): search/incsearch < operator
-//! preview < cursor. One accent color (0001 §4).
+//! preview < cursor. One accent colour (0001 §4).
 
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::editor::{Editor, Mode};
 
 mod blame_card;
 mod buffer;
+pub(crate) mod card;
 mod clip;
 mod cmd_card;
 mod completion;
 pub(crate) mod diff;
+mod echo;
+#[cfg(test)]
+mod echo_tests;
+mod field;
 pub(crate) mod frame_capture;
 #[cfg(test)]
 mod frame_tests;
+#[cfg(test)]
+mod golden;
+#[cfg(test)]
+mod golden_tests;
 mod help;
 mod hover_card;
 #[path = "picker/mod.rs"]
 mod picker;
 mod statusline;
+pub(crate) mod style;
 mod terminal;
 #[cfg(test)]
 mod terminal_tests;
 #[cfg(test)]
 mod theme_tests;
+#[cfg(test)]
+mod welcome_tests;
 mod which_key;
 
-// strop palette (plan 0004 site, --accent amber): every value derives
-// from the strop-core theme seed's CURRENT palette (0065 D3, `:theme`)
-// — never restated here. Accessors, not consts: a theme switch takes
-// effect on the next frame.
-const fn seed(value: strop_core::theme::Rgb) -> Color {
-    Color::Rgb(value.r, value.g, value.b)
-}
-pub fn base() -> Color {
-    seed(strop_core::theme::current().base)
-}
-pub fn text() -> Color {
-    seed(strop_core::theme::current().text)
-}
-pub fn muted() -> Color {
-    seed(strop_core::theme::current().muted)
-}
-pub fn accent() -> Color {
-    seed(strop_core::theme::current().accent)
-}
-pub fn preview_bg() -> Color {
-    seed(strop_core::theme::current().preview_bg)
-}
-pub fn flash_bg() -> Color {
-    seed(strop_core::theme::current().flash_bg)
-}
-pub fn select_bg() -> Color {
-    seed(strop_core::theme::current().select_bg)
-}
-/// Matching-delimiter overlay (0051 §7 R09): quiet — a slate wash one
-/// step above the selection, never the accent's urgency.
-pub fn pair_bg() -> Color {
-    seed(strop_core::theme::current().pair_bg)
-}
-/// Useful secondary context (0050 §4): between text and muted.
-pub fn secondary() -> Color {
-    seed(strop_core::theme::current().secondary)
-}
-/// Terminal-input chip (0065 S1): the child's type teal — glanceably not
-/// Normal's amber, Insert's green or Visual's violet, because the keys go
-/// to the child, not the grammar.
-pub fn terminal_chip() -> Color {
-    seed(strop_core::theme::current().class_type)
-}
+pub(crate) use style::Tokens;
 
-/// Diagnostic severity → color (LSP typed severity; one source for
-/// the gutter sign and the cursor-line end-of-line note).
-pub(crate) fn severity_color(sev: strop_lsp::Severity) -> Color {
-    use strop_lsp::Severity;
-    let theme = strop_core::theme::current();
-    match sev {
-        Severity::Error => seed(theme.diag_error),
-        Severity::Warning => seed(theme.warning),
-        Severity::Information => seed(theme.diag_info),
-        Severity::Hint => muted(), // hint
-    }
+/// The tokens a fresh `Editor` renders with (its default palette) —
+/// the one place render tests take colours from.
+#[cfg(test)]
+pub(crate) fn tokens() -> Tokens {
+    Tokens::new(strop_core::theme::ThemeId::default())
 }
-
-/// Syntax class → color (one projection; `:theme` swaps the palette).
-pub(crate) fn class_color(class: strop_syntax::Class) -> Color {
-    use strop_syntax::Class as C;
-    let theme = strop_core::theme::current();
-    match class {
-        C::Keyword => seed(theme.class_keyword),
-        C::Function => seed(theme.class_function),
-        C::Type => seed(theme.class_type),
-        C::String => seed(theme.class_string),
-        C::Comment => muted(),
-        C::Number => seed(theme.class_number),
-        C::Operator => seed(theme.class_operator),
-        C::Punctuation => seed(theme.class_punctuation),
-        C::Constant => accent(),
-        C::Attribute => seed(theme.class_attribute),
-        C::Variable => text(),
-        C::Heading | C::List => accent(),
-        C::Link | C::Tag => seed(theme.diag_info),
-        C::Code => seed(theme.class_string),
-        C::Quote => muted(),
-    }
-}
-
-/// Completion/symbol kind → color. One vocabulary projection shared by the
-/// picker's chips and the completion menu (0050 §4): four quiet families —
-/// callables, types, data, modules — with unknown kinds neutral.
-pub(crate) fn kind_color(kind: &str) -> Color {
-    let theme = strop_core::theme::current();
-    match kind {
-        "fn" | "meth" | "new" | "func" | "ctor" => seed(theme.class_function),
-        "struct" | "class" | "iface" | "enum" | "variant" | "T" | "type" | "unit" => {
-            seed(theme.class_type)
-        }
-        "const" | "var" | "field" | "prop" | "value" => seed(theme.class_string),
-        "mod" | "ns" | "pkg" => seed(theme.class_type),
-        _ => secondary(),
-    }
-}
-
-/// One style projection for panes and picker previews; overlays compose later.
-pub(crate) fn syntax_style(span: &strop_syntax::Span) -> Style {
-    let mut style = Style::default().fg(class_color(span.class));
-    if span.emphasis.bold {
-        style = style.add_modifier(Modifier::BOLD);
-    }
-    if span.emphasis.italic {
-        style = style.add_modifier(Modifier::ITALIC);
-    }
-    if span.emphasis.underline {
-        style = style.add_modifier(Modifier::UNDERLINED);
-    }
-    if span.emphasis.strikethrough {
-        style = style.add_modifier(Modifier::CROSSED_OUT);
-    }
-    style
-}
-
-mod field;
 
 /// Toolkit rect → engine cell geometry (AR01: geometry enters the engine
 /// only through this conversion; cells, never pixels).
@@ -190,24 +98,29 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
         },
         "paint without prepare_view for this geometry"
     );
+    // One style table per frame (0088 §2): built here, borrowed below.
+    let t = Tokens::new(editor.theme());
 
     // pane geometry (heights feed the vertical viewport, widths the
     // horizontal origin) is decided per pane inside render_panes —
     // the full-area numbers were wrong in splits (0031 R6)
-    let pane_area = buffer::render_panes(editor, frame, area);
-    statusline::render(editor, frame, area);
-    cmd_card::render_cmd_card(editor, frame);
+    let pane_area = buffer::render_panes(editor, &t, frame, area);
+    // The welcome card is part of the pane layer: every card, the echo
+    // row and the statusline paint over it, never the reverse.
+    render_welcome(editor, &t, frame);
+    echo::render(editor, &t, frame, area, pane_area);
+    statusline::render(editor, &t, frame, area);
+    cmd_card::render_cmd_card(editor, &t, frame);
     let caret = if !cmd_card_active(editor) && !editor.terminal_input_active() {
-        place_cursor(editor, frame, pane_area)
+        place_cursor(editor, &t, frame, pane_area)
     } else {
         None
     };
-    render_welcome(editor, frame);
-    picker::render_picker(editor, frame);
-    blame_card::render_blame_card(editor, frame);
-    hover_card::render_hover_card(editor, frame);
-    completion::render(editor, frame, pane_area, caret);
-    which_key::render_which_key(editor, frame);
+    picker::render_picker(editor, &t, frame);
+    blame_card::render_blame_card(editor, &t, frame);
+    hover_card::render_hover_card(editor, &t, frame);
+    completion::render(editor, &t, frame, pane_area, caret);
+    which_key::render_which_key(editor, &t, frame);
     // Every widget can display external text (paths, LSP messages, shell output).
     // Enforce the printable-cell invariant at the final emission boundary too.
     for cell in &mut frame.buffer_mut().content {
@@ -230,32 +143,7 @@ pub(crate) fn paint(editor: &mut Editor, frame: &mut Frame) {
     render(editor, frame);
 }
 
-/// Mode chip colors (0001 §4: mode = accent color change, not bars).
-pub(crate) fn mode_color(mode: Mode) -> Color {
-    match mode {
-        Mode::Normal => accent(),
-        Mode::Insert => seed(strop_core::theme::current().class_string),
-        Mode::Visual | Mode::VisualLine | Mode::VisualBlock => {
-            seed(strop_core::theme::current().class_keyword)
-        }
-    }
-}
-
-/// Pull a color toward the base for the picker's dimmed backdrop.
-pub(crate) fn dim_color(c: Color) -> Color {
-    fn mix(c: (u8, u8, u8), base: (u8, u8, u8), t: u8) -> Color {
-        let m =
-            |a: u8, b: u8| (a as u16 * (100 - t) as u16 / 100 + b as u16 * t as u16 / 100) as u8;
-        Color::Rgb(m(c.0, base.0), m(c.1, base.1), m(c.2, base.2))
-    }
-    let base = strop_core::theme::current().base;
-    match c {
-        Color::Rgb(r, g, b) => mix((r, g, b), (base.r, base.g, base.b), 55),
-        other => other,
-    }
-}
-
-fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) -> Option<(u16, u16)> {
+fn place_cursor(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) -> Option<(u16, u16)> {
     // one projection shared with every painted caret: vertical top +
     // horizontal origin + fixed inset, checked, narrowed once
     let at = buffer::caret_position(
@@ -277,8 +165,8 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) -> Option<(u16, 
         if let Some(progress) = editor.cursor_fade_progress() {
             let cell = &mut frame.buffer_mut()[at];
             let fg = cell.fg;
-            cell.set_bg(fade_mix(base(), text(), progress));
-            cell.set_fg(fade_mix(fg, base(), progress));
+            cell.set_bg(style::fade_mix(t.base, t.text, progress));
+            cell.set_fg(style::fade_mix(fg, t.base, progress));
             return Some(at);
         }
     }
@@ -286,20 +174,9 @@ fn place_cursor(editor: &Editor, frame: &mut Frame, area: Rect) -> Option<(u16, 
     Some(at)
 }
 
-/// Linear RGB ramp for the cursor fade (0064 §2). Terminal-palette
-/// (non-RGB) colors have no interpoland and switch over halfway.
-fn fade_mix(from: Color, to: Color, pct: u8) -> Color {
-    let (Color::Rgb(fr, fg, fb), Color::Rgb(tr, tg, tb)) = (from, to) else {
-        return if pct >= 50 { to } else { from };
-    };
-    let mix =
-        |a: u8, b: u8| (i32::from(a) + (i32::from(b) - i32::from(a)) * i32::from(pct) / 100) as u8;
-    Color::Rgb(mix(fr, tr), mix(fg, tg), mix(fb, tb))
-}
-
 /// First-launch card: brand + the keys that matter. Only on an
 /// empty scratch buffer — once you're editing, it never intrudes.
-fn render_welcome(editor: &Editor, frame: &mut Frame) {
+fn render_welcome(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     if !matches!(editor.cur().source, crate::editor::DocumentSource::Scratch)
         || editor.buf().path.is_some()
         || editor.buf().len_bytes() > 0
@@ -307,78 +184,52 @@ fn render_welcome(editor: &Editor, frame: &mut Frame) {
     {
         return;
     }
-    use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
     let area = frame.area();
-    let (w, h) = (58u16, 10u16);
+    let keys = [
+        ("space", "everything"),
+        ("space ?", "keybindings"),
+        (":w", "save"),
+    ];
+    let keys_row: usize = keys
+        .iter()
+        .map(|(key, desc)| clip::width(key) + 2 + 1 + clip::width(desc) + 3)
+        .sum();
+    let tagline = "see the cut before you make it.";
+    let note = "git signs paint the gutter · ci[ previews the cut";
+    let content = keys_row.max(clip::width(note)).max(clip::width(tagline)) + 4;
+    let (w, h) = (card::card_width(content, area.width), 9u16);
     if area.width < w + 4 || area.height < h + 4 {
         return;
     }
-    let card = Rect {
+    let rect = Rect {
         x: (area.width - w) / 2,
         y: (area.height - h) / 3,
         width: w,
         height: h,
     };
-    frame.render_widget(Clear, card);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(muted()))
-        .style(Style::default().bg(base()));
-    let inner = block.inner(card);
-    frame.render_widget(block, card);
+    let inner = card::Card::new("").render(frame, rect, t);
+    let mut chips = Vec::new();
+    for (index, (key, desc)) in keys.iter().enumerate() {
+        if index > 0 {
+            chips.push(Span::raw("   "));
+        }
+        chips.push(card::keycap(key, t));
+        chips.push(Span::styled(
+            format!(" {desc}"),
+            Style::default().fg(t.muted),
+        ));
+    }
     let lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            " strop",
-            Style::default().fg(text()).add_modifier(Modifier::BOLD),
+            "strop",
+            Style::default().fg(t.text).add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(
-            " see the cut before you make it.",
-            Style::default().fg(accent()),
-        )),
+        Line::from(Span::styled(tagline, Style::default().fg(t.accent))),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                " space ",
-                Style::default()
-                    .fg(accent())
-                    .bg(select_bg())
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" everything · ", Style::default().fg(muted())),
-            Span::styled(
-                " ? ",
-                Style::default()
-                    .fg(accent())
-                    .bg(select_bg())
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" keybindings · ", Style::default().fg(muted())),
-            Span::styled(
-                " :w ",
-                Style::default()
-                    .fg(accent())
-                    .bg(select_bg())
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" save", Style::default().fg(muted())),
-        ]),
+        Line::from(chips),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                " space o ",
-                Style::default()
-                    .fg(accent())
-                    .bg(select_bg())
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" remote & containers", Style::default().fg(muted())),
-        ]),
-        Line::from(Span::styled(
-            "  git signs paint the gutter · ci[ previews the cut",
-            Style::default().fg(muted()),
-        )),
+        Line::from(Span::styled(note, Style::default().fg(t.muted))),
     ];
     frame.render_widget(Paragraph::new(lines), inner);
 }

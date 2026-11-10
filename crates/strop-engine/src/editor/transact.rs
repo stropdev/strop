@@ -73,28 +73,31 @@ impl super::Editor {
 
     /// The lease cannot be released without consuming each change exactly once.
     /// Core records geometry BEFORE mutation; no post-edit reconstruction or
-    /// cloning deleted text to reconstruct syntax/anchor effects.
+    /// cloning deleted text to reconstruct syntax/anchor effects. Points map
+    /// through the whole journal with the proved kernel fold.
     pub(super) fn sync_document(&mut self, id: DocumentId, map_active: bool) {
-        self.sync_document_positions(id, map_active, map_position);
+        self.sync_document_positions(id, map_active, strop_kernel::editmap::map_through_edits);
     }
 
+    /// `position` maps one offset through a journal slice of
+    /// `(start, old_end, new_end)` entries in application order.
     fn sync_document_positions(
         &mut self,
         id: DocumentId,
         map_active: bool,
-        position: impl Fn(usize, &Change) -> usize,
+        position: impl Fn(usize, &[(usize, usize, usize)]) -> usize,
     ) {
         self.sync_filename_draft(id);
-        let change_count = self.docs.get(id).map_or(0, |doc| doc.buf.changes().len());
-        if change_count == 0 {
-            return;
-        }
-        // Copy one small journal entry at a time: return views live in
-        // other documents, so remap before borrowing the source mutably.
-        for index in 0..change_count {
-            let change = self.doc(id).buf.changes()[index];
-            self.map_navigation_records(id, |offset| position(offset, &change));
-        }
+        let journal: Vec<(usize, usize, usize)> = match self.docs.get(id) {
+            Some(doc) if !doc.buf.changes().is_empty() => {
+                doc.buf.changes().iter().map(Change::extent).collect()
+            }
+            _ => return,
+        };
+        let map = |offset| position(offset, &journal);
+        // Return views live in other documents: remap them before
+        // borrowing the source mutably.
+        self.map_navigation_records(id, map);
         // Snapshot clean views before the mutable document borrow: source
         // refreshes never overwrite an in-flight system projection update.
         let clean_views: std::collections::HashSet<DocumentId> = self
@@ -115,60 +118,41 @@ impl super::Editor {
             return;
         }
         let active = self.active_pane;
-        for change in document.buf.changes() {
-            let map = |offset| position(offset, change);
-            for (owner, position) in self.marks.values_mut() {
-                if *owner == id {
-                    *position = map(*position);
-                }
+        for (owner, position) in self.marks.values_mut() {
+            if *owner == id {
+                *position = map(*position);
             }
-            for (index, pane) in self.panes.iter_mut().enumerate() {
-                if pane.doc == id && (map_active || index != active) {
-                    pane.sels.map_positions(map);
-                }
+        }
+        for (index, pane) in self.panes.iter_mut().enumerate() {
+            if pane.doc == id && (map_active || index != active) {
+                pane.sels.map_positions(map);
             }
-            // Collection excerpts are SPANS, not points (0049 §5): an
-            // edit replacing the span's first byte keeps the start —
-            // the pointwise collapse rule would slide the anchor past
-            // the new text and drop it from the view.
-            for collection in self.collections.values_mut() {
-                for excerpt in &mut collection.excerpts {
-                    if excerpt.source == id {
-                        let (s, e) = (change.edit.start_byte, change.edit.old_end_byte);
-                        let new_len = change.edit.new_end_byte - change.edit.start_byte;
-                        let delta = new_len as isize - (e - s) as isize;
-                        let shift = |p: usize| (p as isize + delta) as usize;
-                        let insertion = s == e;
-                        excerpt.start = if excerpt.start <= s {
-                            excerpt.start
-                        } else if excerpt.start >= e {
-                            shift(excerpt.start)
-                        } else {
-                            s
-                        };
-                        excerpt.end = if excerpt.end < s {
-                            excerpt.end
-                        } else if excerpt.end > e || (excerpt.end == e && !insertion) {
-                            shift(excerpt.end)
-                        } else {
-                            // covered (or a boundary insertion — deleted-
-                            // then-reinserted text regrows the span)
-                            s + new_len
-                        };
-                        for anchor in &mut excerpt.hit_anchors {
-                            *anchor = map(*anchor);
+        }
+        for collection in self.collections.values_mut() {
+            for excerpt in &mut collection.excerpts {
+                if excerpt.source != id {
+                    continue;
+                }
+                for anchor in &mut excerpt.hit_anchors {
+                    *anchor = map(*anchor);
+                }
+                // Spans and matches are decided per edit, in the
+                // coordinates that edit addressed.
+                for step in 0..journal.len() {
+                    let edit = &journal[step..=step];
+                    map_excerpt_span(excerpt, edit[0]);
+                    let map = |offset| position(offset, edit);
+                    let (s, e, _) = edit[0];
+                    excerpt.matches.retain_mut(|(start, length)| {
+                        let finish = start.saturating_add(*length);
+                        if s < finish && e > *start {
+                            return false;
                         }
-                        excerpt.matches.retain_mut(|(start, length)| {
-                            let finish = start.saturating_add(*length);
-                            if s < finish && e > *start {
-                                return false;
-                            }
-                            let mapped = map(*start);
-                            *length = map(finish).saturating_sub(mapped);
-                            *start = mapped;
-                            true
-                        });
-                    }
+                        let mapped = map(*start);
+                        *length = map(finish).saturating_sub(mapped);
+                        *start = mapped;
+                        true
+                    });
                 }
             }
         }
@@ -188,17 +172,31 @@ impl super::Editor {
     }
 }
 
-fn map_position(position: usize, change: &Change) -> usize {
-    let edit = change.edit;
-    debug_assert!(edit.start_byte <= edit.old_end_byte);
-    // The verified kernel (strop_core::editmap, 0045): positions are
-    // byte offsets bounded by the buffer length, so its no-overflow
-    // precondition is established by the rope, not by this caller.
-    debug_assert!(edit.new_end_byte >= edit.start_byte);
-    strop_kernel::editmap::map_position(
-        position,
-        edit.start_byte,
-        edit.old_end_byte,
-        edit.new_end_byte,
-    )
+/// Collection excerpts are SPANS, not points (0049 §5): an edit replacing
+/// the span's first byte keeps the start — the pointwise collapse rule would
+/// slide the anchor past the new text and drop it from the view.
+fn map_excerpt_span(
+    excerpt: &mut super::collections::Excerpt,
+    (s, e, new_end): (usize, usize, usize),
+) {
+    let new_len = new_end - s;
+    let delta = new_len as isize - (e - s) as isize;
+    let shift = |p: usize| (p as isize + delta) as usize;
+    let insertion = s == e;
+    excerpt.start = if excerpt.start <= s {
+        excerpt.start
+    } else if excerpt.start >= e {
+        shift(excerpt.start)
+    } else {
+        s
+    };
+    excerpt.end = if excerpt.end < s {
+        excerpt.end
+    } else if excerpt.end > e || (excerpt.end == e && !insertion) {
+        shift(excerpt.end)
+    } else {
+        // covered (or a boundary insertion — deleted-then-reinserted text
+        // regrows the span)
+        s + new_len
+    };
 }

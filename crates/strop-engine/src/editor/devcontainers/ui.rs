@@ -125,7 +125,10 @@ impl Editor {
             Ok(summary) => {
                 if let Some(offer) = offer {
                     self.publish_devcontainer_offer_at(*offer, incarnation);
-                } else {
+                } else if summary.configurations > 0 || summary.issues > 0 {
+                    // A workspace with no devcontainer at all is the common
+                    // case and says nothing (0088 U13); only a discovery that
+                    // found something, or tripped over something, reports.
                     let detail = format!(
                         "Workspace {}\nConfigurations discovered: {}\nDiscovery issues: {}\nNo offer is active: it was deferred, suppressed, already under review, or no configuration was found.",
                         workspace.root.display(), summary.configurations, summary.issues

@@ -8,6 +8,23 @@ cd "$(dirname "$0")/.."
 started="$(date +%s)"
 stamp() { echo "[$(( $(date +%s) - started ))s] $*"; }
 
+stamp "every kernel module is translated"
+# Charon starts from [package.metadata.charon] start_from (0087 P4): a
+# module missing from it would ship unproved without any error.
+python3 - <<'PY'
+import re, tomllib
+with open("crates/strop-kernel/src/lib.rs") as handle:
+    declared = re.findall(r"^\s*pub(?:\([^)]*\))?\s+mod\s+(\w+)\s*;", handle.read(), re.M)
+with open("crates/strop-kernel/Cargo.toml", "rb") as handle:
+    listed = tomllib.load(handle)["package"]["metadata"]["charon"]["start_from"]
+expected = {f"strop_kernel::{module}" for module in declared}
+missing, stale = sorted(expected - set(listed)), sorted(set(listed) - expected)
+if missing or stale:
+    raise SystemExit(f"FAIL: Charon start_from must name every `pub mod` in strop-kernel's "
+                     f"lib.rs; missing {missing}, not a module {stale}")
+print(f"start_from covers {sorted(expected)}")
+PY
+
 stamp "extract: charon $(charon version) / aeneas $(aeneas -version)"
 rm -rf /tmp/gate-extract
 sh proofs/extract.sh crates/strop-kernel /tmp/gate-extract

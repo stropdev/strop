@@ -15,7 +15,8 @@ struct ExcerptPosition {
 
 pub(super) struct RebuildPositions {
     source: DocumentId,
-    changes: Vec<Change>,
+    /// The source's journal, `(start, old_end, new_end)` in application order.
+    journal: Vec<(usize, usize, usize)>,
     excerpts: Vec<ExcerptPosition>,
     title_end: usize,
     viewports: Vec<(usize, usize)>,
@@ -31,7 +32,7 @@ impl Editor {
         let buffer = &self.doc(document).buf;
         RebuildPositions {
             source,
-            changes: changes.to_vec(),
+            journal: changes.iter().map(Change::extent).collect(),
             excerpts: positions(&self.collections[&document]),
             title_end: buffer.line_start(1),
             viewports: self
@@ -135,15 +136,8 @@ impl RebuildPositions {
                 let mut source_position =
                     old.start + (position - old.view_start).min(old.end - old.start);
                 if old.source == self.source {
-                    for change in &self.changes {
-                        let edit = change.edit;
-                        source_position = strop_kernel::editmap::map_position(
-                            source_position,
-                            edit.start_byte,
-                            edit.old_end_byte,
-                            edit.new_end_byte,
-                        );
-                    }
+                    source_position =
+                        strop_kernel::editmap::map_through_edits(source_position, &self.journal);
                 }
                 if let Some(new) = next.get(index - 1).filter(|new| new.source == old.source) {
                     return new.view_start

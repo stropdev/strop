@@ -23,11 +23,10 @@ the common case stays `strop file.rs`.
 | `strop config` | show the config file and its current values |
 | `strop update` | self-update (`--check` only checks) |
 | `strop bench [SCENARIO]` | run the performance-gate scenarios |
-| `strop licenses` | built-in theme attributions |
 | `strop compat` | dump the vim-compatibility table |
 | `strop help` | print help |
 
-Every command also has its original flag spelling (`--licenses`,
+Every command also has its original flag spelling (`--dump-compat`,
 `--replay-script`, …); scripts and muscle memory keep working.
 
 ## Options

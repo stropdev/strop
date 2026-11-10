@@ -5,14 +5,15 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::editor::Editor;
 
-use super::{accent, base, muted, text};
+use super::card::Card;
+use super::style::Tokens;
 
-pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
+pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     // `?` is a first-class search sigil here (the old detection missed
     // it: backward searches never got the card)
     let Some(kind) = editor.pending_sigil() else {
@@ -57,8 +58,10 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
     } else {
         Vec::new()
     };
-    let width = ((u32::from(area.width) * 50 / 100) as u16)
-        .max(30)
+    // A typed field must not resize under the caret, so the card takes
+    // rule 9's cap (60 % of the columns, ≥ 32) rather than its content.
+    let width = ((u32::from(area.width) * 60 / 100) as u16)
+        .max(32)
         .min(area.width.saturating_sub(4));
     let height = (3 + candidates.len().min(6) as u16 + substitution_height as u16)
         .min(area.height.saturating_sub(1));
@@ -68,11 +71,10 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         width,
         height,
     };
-    frame.render_widget(Clear, card);
     let title = match kind {
-        ':' => " command ".to_owned(),
-        '|' => " pipe ".to_owned(),
-        _ => " search ".to_owned(),
+        ':' => "command".to_owned(),
+        '|' => "pipe".to_owned(),
+        _ => "search".to_owned(),
     };
     let title = editor
         .pending_field_state()
@@ -81,29 +83,17 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         })
         .map_or(title, |state| {
             format!(
-                " {} · field NORMAL · Esc cancels ",
+                "{} · field NORMAL · Esc cancels",
                 state.outer_operator.expect("filtered operator").key()
             )
         });
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(muted()))
-        .style(Style::default().bg(base()))
-        .title(Span::styled(
-            title,
-            Style::default().fg(text()).add_modifier(Modifier::BOLD),
-        ));
-    frame.render_widget(&block, card);
-    let inner = block.inner(card);
+    let inner = Card::new(&title).render(frame, card, t);
 
     // body: the payload, not the prefix — ":w" shows "w", "/foo" shows "foo"
     let body = pending.strip_prefix(kind).unwrap_or(pending);
     let text_area = Rect {
-        x: inner.x.saturating_add(1),
-        y: inner.y,
-        width: inner.width.saturating_sub(1),
         height: inner.height.min(1),
+        ..inner
     };
     let caret_byte = editor
         .pending()
@@ -116,6 +106,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         Vec::new()
     };
     let field = super::field::project(
+        t,
         &kind.to_string(),
         body,
         caret_byte,
@@ -150,7 +141,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         spans.push(Span::raw(" ".repeat(pad)));
         spans.push(Span::styled(
             label.into_owned(),
-            Style::default().fg(muted()),
+            Style::default().fg(t.muted),
         ));
     }
 
@@ -176,15 +167,15 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
             ..text_area
         };
         let (name_fg, doc_fg) = if i == 0 {
-            (accent(), text())
+            (t.accent, t.text)
         } else {
-            (text(), muted())
+            (t.text, t.muted)
         };
         let marker = if name == &body_str { "▌" } else { " " };
         let doc_budget = usize::from(text_area.width).saturating_sub(1 + name_w + 2 + 1);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(marker, Style::default().fg(accent())),
+                Span::styled(marker, Style::default().fg(t.accent)),
                 Span::styled(
                     format!("{:<name_w$}  ", super::clip::clip_end(name, name_w)),
                     Style::default().fg(name_fg).add_modifier(Modifier::BOLD),
@@ -203,22 +194,22 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
         if y < inner.y + inner.height {
             let (label, color) = match state {
                 crate::editor::SubstitutePreviewState::Ready(preview) => {
-                    (preview.summary(), muted())
+                    (preview.summary(), t.muted)
                 }
                 crate::editor::SubstitutePreviewState::Resolving => {
-                    ("resolving substitution…".into(), muted())
+                    ("resolving substitution…".into(), t.muted)
                 }
                 crate::editor::SubstitutePreviewState::NoTarget => {
-                    ("0 substitutions · pattern not found".into(), muted())
+                    ("0 substitutions · pattern not found".into(), t.muted)
                 }
                 crate::editor::SubstitutePreviewState::Incomplete(error) => {
-                    (error.clone(), muted())
+                    (error.clone(), t.muted)
                 }
                 crate::editor::SubstitutePreviewState::Invalid(error) => {
-                    (format!("invalid · {error}"), super::diff::del_fg())
+                    (format!("invalid · {error}"), t.error)
                 }
                 crate::editor::SubstitutePreviewState::Unavailable(error) => {
-                    (format!("unavailable · {error}"), super::diff::del_fg())
+                    (format!("unavailable · {error}"), t.error)
                 }
             };
             frame.render_widget(
@@ -253,7 +244,7 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
                 let y = y + 1 + index as u16 + u16::from(elided);
                 if changed_row_count > 8 && index == 4 && y - 1 < inner.y + inner.height {
                     frame.render_widget(
-                        Paragraph::new(Line::from(Span::styled("…", Style::default().fg(muted())))),
+                        Paragraph::new(Line::from(Span::styled("…", Style::default().fg(t.muted)))),
                         Rect {
                             y: y - 1,
                             height: 1,
@@ -265,8 +256,8 @@ pub fn render_cmd_card(editor: &Editor, frame: &mut Frame) {
                     break;
                 }
                 let color = match row {
-                    crate::editor::ReviewRow::Removed => super::diff::del_fg(),
-                    crate::editor::ReviewRow::Added => super::diff::add_fg(),
+                    crate::editor::ReviewRow::Removed => t.diff_del,
+                    crate::editor::ReviewRow::Added => t.diff_add,
                     _ => unreachable!("filtered changed rows"),
                 };
                 frame.render_widget(
@@ -293,13 +284,17 @@ mod tests {
     use super::*;
     use strop_core::Buffer;
 
+    fn tokens() -> Tokens {
+        Tokens::new(strop_core::theme::ThemeId::Hone)
+    }
+
     fn draw_search(prompt: &str) -> ratatui::buffer::Buffer {
         let mut editor = Editor::new(Buffer::from_text("Needle\nneedle\n"));
         editor.feed_text(prompt);
         let backend = ratatui::backend::TestBackend::new(80, 8);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal
-            .draw(|frame| render_cmd_card(&editor, frame))
+            .draw(|frame| render_cmd_card(&editor, &tokens(), frame))
             .unwrap();
         terminal.backend().buffer().clone()
     }
@@ -317,8 +312,10 @@ mod tests {
 
     #[test]
     fn buffer_case_and_picker_language_share_field_styles() {
+        let t = tokens();
         let picker = strop_picker::query::SearchQuery::parse("language:cpp");
         let picker = super::super::field::project(
+            &t,
             "/",
             "language:cpp",
             "language:cpp".len(),
@@ -341,14 +338,14 @@ mod tests {
             let start = search_start(&grid, "case:sensitive");
             for x in start..start + 4 {
                 assert_eq!(grid[(x, 2)].fg, picker_style("l").fg.unwrap());
-                assert_eq!(grid[(x, 2)].fg, accent());
+                assert_eq!(grid[(x, 2)].fg, t.accent);
                 assert!(grid[(x, 2)].modifier.contains(Modifier::BOLD));
             }
             assert_eq!(grid[(start + 4, 2)].fg, picker_style(":").fg.unwrap());
-            assert_eq!(grid[(start + 4, 2)].fg, muted());
+            assert_eq!(grid[(start + 4, 2)].fg, t.muted);
             for x in start + 5..start + 14 {
                 assert_eq!(grid[(x, 2)].fg, picker_style("c").fg.unwrap());
-                assert_eq!(grid[(x, 2)].fg, text());
+                assert_eq!(grid[(x, 2)].fg, t.text);
             }
         }
     }
@@ -358,7 +355,7 @@ mod tests {
         let grid = draw_search("/needlecase:sensitive");
         let start = search_start(&grid, "needlecase:sensitive");
         for x in start..start + "needlecase:sensitive".len() as u16 {
-            assert_eq!(grid[(x, 2)].fg, text());
+            assert_eq!(grid[(x, 2)].fg, tokens().text);
             assert!(!grid[(x, 2)].modifier.contains(Modifier::BOLD));
         }
     }
@@ -367,7 +364,7 @@ mod tests {
         let backend = ratatui::backend::TestBackend::new(100, rows);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal
-            .draw(|frame| render_cmd_card(editor, frame))
+            .draw(|frame| render_cmd_card(editor, &tokens(), frame))
             .unwrap();
         terminal.backend().buffer().clone()
     }

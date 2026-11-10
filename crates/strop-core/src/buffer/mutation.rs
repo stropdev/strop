@@ -20,6 +20,18 @@ pub struct Change {
     pub history: Option<crate::history::EditRef>,
 }
 
+impl Change {
+    /// The journal entry the proved kernel maps through:
+    /// `(start, old_end, new_end)` in the coordinates this change addressed
+    /// (`strop_kernel::editmap::map_through_edits`).
+    pub fn extent(&self) -> (usize, usize, usize) {
+        let edit = self.edit;
+        debug_assert!(edit.start_byte <= edit.old_end_byte);
+        debug_assert!(edit.start_byte <= edit.new_end_byte);
+        (edit.start_byte, edit.old_end_byte, edit.new_end_byte)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EditError {
     #[error("readonly buffer")]
@@ -160,6 +172,12 @@ impl Buffer {
             .iter()
             .map(|edit| (edit.range.start.get(), edit.range.end.get()))
             .collect();
+        // The sort above is trusted, not proved (0087 P2): admission keeps
+        // its typed `Unsorted` refusal, and debug builds check the order.
+        debug_assert!(
+            pairs.windows(2).all(|pair| pair[0] <= pair[1]),
+            "replacements reach admission sorted by (start, end)"
+        );
         validate_batch(self.len_bytes(), &pairs).map_err(|refusal| match refusal {
             BatchRefusal::Overlap => EditError::Overlap,
             BatchRefusal::OutOfBounds => EditError::InvalidRange,

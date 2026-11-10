@@ -24,8 +24,10 @@ pub const MAX_SESSIONS: usize = 16;
 #[serde(transparent)]
 pub struct SessionId(u64);
 impl SessionId {
-    pub fn from_request(request: strop_core::worker::WorkerId) -> Self {
-        Self(request.get())
+    /// The owner (the editor) numbers its sessions; the value is both the
+    /// identity and the user-facing `terminal #N`.
+    pub const fn new(value: u64) -> Self {
+        Self(value)
     }
     pub fn get(self) -> u64 {
         self.0
@@ -136,15 +138,10 @@ pub struct Palette {
     pub colors: Vec<Rgb>,
 }
 impl Palette {
-    /// The strop-owned default (0065 D3): theme-seed foreground and
-    /// background plus the harmonized ANSI-16 over the standard
-    /// 6×6×6/grayscale ramps. One source — `strop_core::theme` — feeds
-    /// both this and the frontend's render constants.
-    pub fn strop() -> Self {
-        Self::for_theme(strop_core::theme::current_id())
-    }
-
-    /// Resolve a captured selection once on the terminal owner, not per frame.
+    /// The strop-owned defaults for one palette (0065 D3): theme-seed
+    /// foreground and background plus the harmonized ANSI-16 over the
+    /// standard 6×6×6/grayscale ramps. Resolved once on the terminal
+    /// owner from the editor's selection, never per frame.
     pub fn for_theme(theme: strop_core::theme::ThemeId) -> Self {
         let theme = theme.palette();
         let rgb = |value: strop_core::theme::Rgb| Rgb {
@@ -153,8 +150,8 @@ impl Palette {
             blue: value.b,
         };
         Self {
-            foreground: rgb(theme.text),
-            background: rgb(theme.base),
+            foreground: rgb(theme.fg.text),
+            background: rgb(theme.bg.base),
             colors: theme.ansi256().iter().map(|value| rgb(*value)).collect(),
         }
     }

@@ -10,12 +10,20 @@ use strop_core::Buffer;
 fn coverage_shape() {
     for section in SECTIONS {
         assert!(
-            BINDINGS.iter().any(|b| b.sections.contains(section)),
-            "section {section} is empty"
+            BINDINGS.iter().any(|b| b.sections.contains(&section.id)),
+            "section {} is empty",
+            section.id
         );
     }
     for b in BINDINGS {
         assert!(!b.keys.is_empty() && !b.desc.is_empty());
+        for section in b.sections {
+            assert!(
+                SECTIONS.iter().any(|known| known.id == *section),
+                "{}: unknown section {section:?}",
+                b.keys
+            );
+        }
         assert!(
             !b.desc.contains("(soon)"),
             "{}: '(soon)' belongs to live:false, not the desc",

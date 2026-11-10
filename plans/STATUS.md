@@ -15,6 +15,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0008](0008-input-layer-keymap.md) | the input walker and the one keymap table |
 | [0079](0079-local-linux-release.md) | local Linux release procedure (its completion freeze is retired by 0086) |
 | [0086](0086-verified-foundation.md) | verified foundation: rings, Lean-proved kernel, survival and release rules, gates |
+| [0088](0088-the-look.md) | design language, token set and the six original palettes; echo row; golden snapshots |
 
 ## Proposed — not implemented
 
@@ -39,6 +40,8 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | Plan | Note |
 |---|---|
 | [0085](0085-independent-critique-0.52.md) | independent critique of 0.52.0; adoption decided in 0086 §5 |
+| [0087](0087-independent-critique-0.53.md) | independent critique of 0.53.0; adoption decided in 0088 §4 |
+| [0089](0089-functionality-critique-0.54.md) | functionality critique of 0.54 (scope, terminal, remote, bugs); adoption pending the owner |
 
 ## Implemented — history
 

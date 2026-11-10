@@ -117,12 +117,6 @@ fn execute(
 ) -> Result<(), Box<dyn Error>> {
     match command {
         cli::Command::Help => print_help(),
-        cli::Command::ThemeLicenses => {
-            println!(
-                "Built-in theme licenses\n\n{}",
-                strop_core::theme::THEME_NOTICES
-            );
-        }
         cli::Command::Version => println!("strop {}", env!("CARGO_PKG_VERSION")),
         cli::Command::Compat => print!("{}", keymap::compat_report()),
         cli::Command::Config => {
@@ -150,7 +144,7 @@ fn execute(
             editor.set_terminal_capture(terminal_capture);
             editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
             let (configuration, error) = config::Config::load();
-            strop_core::theme::set_current(theme_flag.unwrap_or(configuration.theme));
+            editor.set_theme(theme_flag.unwrap_or(configuration.theme));
             editor.set_config(configuration);
             editor.reresolve_indents();
             editor.set_state_dir(session::state_root());
@@ -184,7 +178,7 @@ fn execute(
             editor.set_terminal_capture(terminal_capture);
             editor.set_frame_draw(Some(headless::frame_draw));
             let (configuration, error) = config::Config::load();
-            strop_core::theme::set_current(theme_flag.unwrap_or(configuration.theme));
+            editor.set_theme(theme_flag.unwrap_or(configuration.theme));
             editor.set_config(configuration);
             editor.reresolve_indents();
             editor.set_state_dir(session::state_root());
@@ -347,7 +341,6 @@ fn print_help() {
             ("config", "show the config file and its current values"),
             ("update", "self-update (--check only checks)"),
             ("bench", "run the performance-gate scenarios"),
-            ("licenses", "built-in theme attributions"),
             ("compat", "dump the vim-compatibility table"),
             ("help", "print this help"),
         ],

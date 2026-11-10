@@ -60,6 +60,11 @@ MUTANTS = (
            "            if previous.0 == current.0 || previous.1 > current.0 {",
            "            if previous.0 == current.0 || previous.1 > current.1 {",
            ("Strop.Kernel.validate_batch_loop_spec",)),
+    # a journal maps in application order: the batch's last edit first
+    Mutant("journal-reversed", "editmap.rs",
+           "        let edit = edits[k];\n        mapped = map_position",
+           "        let edit = edits[edits.len() - 1 - k];\n        mapped = map_position",
+           ("Strop.Kernel.map_through_edits_loop_spec",)),
     # the header bound counts the 4-byte terminator
     Mutant("frame-header-off-by-one", "frame.rs",
            "    header_end < MAX_HEADER_BYTES - 3",

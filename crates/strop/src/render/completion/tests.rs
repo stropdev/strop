@@ -20,24 +20,22 @@ fn fixture(text: &str, keys: &str) -> Editor {
     editor
 }
 
+fn t() -> Tokens {
+    crate::render::tokens()
+}
+
 #[test]
 fn kind_and_source_colors_reuse_picker_families() {
-    let theme = strop_core::theme::current();
-    assert_eq!(
-        kind_color("func"),
-        crate::render::seed(theme.class_function)
-    );
-    assert_eq!(
-        kind_color("ctor"),
-        crate::render::seed(theme.class_function)
-    );
-    assert_eq!(kind_color("class"), crate::render::seed(theme.class_type));
-    assert_eq!(kind_color("type"), crate::render::seed(theme.class_type));
-    assert_eq!(kind_color("var"), crate::render::seed(theme.class_string));
-    assert_eq!(kind_color("mod"), crate::render::seed(theme.class_type));
-    assert_eq!(kind_color("word"), secondary());
-    assert_eq!(source_color("lsp"), crate::render::seed(theme.class_type));
-    assert_eq!(source_color("buf"), crate::render::seed(theme.class_string));
+    let t = t();
+    assert_eq!(t.kind("func"), t.syn.function);
+    assert_eq!(t.kind("ctor"), t.syn.function);
+    assert_eq!(t.kind("class"), t.syn.r#type);
+    assert_eq!(t.kind("type"), t.syn.r#type);
+    assert_eq!(t.kind("var"), t.syn.string);
+    assert_eq!(t.kind("mod"), t.syn.namespace);
+    assert_eq!(t.kind("word"), t.secondary);
+    assert_eq!(t.source("lsp"), t.syn.r#type);
+    assert_eq!(t.source("buf"), t.syn.string);
 }
 
 #[test]
@@ -55,28 +53,32 @@ fn selected_word_cells_keep_prefix_hierarchy_and_real_unicode_anchor() {
     assert_eq!(grid[(anchor, caret.y + 1)].symbol(), "╭");
     let row = caret.y + 2;
     assert_eq!(grid[(anchor + 1, row)].symbol(), "▌");
+    let card_right = (anchor + 1..100)
+        .find(|&x| grid[(x, caret.y + 1)].symbol() == "╮")
+        .unwrap();
     let mut column = anchor + 1;
-    while column < anchor + MENU_WIDTH - 1 {
+    while column < card_right {
         let cell = &grid[(column, row)];
-        assert_eq!(cell.bg, select_bg(), "selection band at {column}");
+        assert_eq!(cell.bg, t().raised, "selection band at {column}");
         // A wide glyph paints its covered cell; TestBackend stores a reset
         // placeholder there, just as the canonical frame dumper accounts for.
         column += Span::raw(cell.symbol()).width().max(1) as u16;
     }
-    let label = anchor + 9;
+    let label = anchor + 10;
     assert_eq!(grid[(label, row)].symbol(), "界");
     assert_eq!(grid[(label + 4, row)].symbol(), "r");
     assert_eq!(grid[(label + 5, row)].symbol(), "e");
     for column in [label, label + 2, label + 4, label + 5] {
-        assert_eq!(grid[(column, row)].fg, accent());
+        assert_eq!(grid[(column, row)].fg, t().accent);
         assert!(grid[(column, row)].modifier.contains(Modifier::BOLD));
     }
-    assert_eq!(grid[(label + 6, row)].fg, text());
-    assert_eq!(grid[(anchor + 2, row)].fg, secondary()); // kind
-    for column in anchor + MENU_WIDTH - 5..anchor + MENU_WIDTH - 2 {
+    assert_eq!(grid[(label + 6, row)].fg, t().text);
+    assert_eq!(grid[(anchor + 3, row)].fg, t().secondary); // kind
+    for column in card_right - 4..card_right - 1 {
         assert_eq!(
             grid[(column, row)].fg,
-            crate::render::seed(strop_core::theme::current().class_string) // source
+            t().syn.string,
+            "source tag at {column}"
         );
     }
     assert_eq!(
@@ -109,7 +111,7 @@ fn narrow_split_and_bottom_edge_keep_card_inside_owning_pane_off_caret() {
         let mut selected_cells = Vec::new();
         for y in 0..rows {
             for x in 0..columns {
-                if grid[(x, y)].bg == select_bg() {
+                if grid[(x, y)].bg == t().raised {
                     selected_cells.push((x, y));
                 }
             }
@@ -129,7 +131,7 @@ fn narrow_split_and_bottom_edge_keep_card_inside_owning_pane_off_caret() {
                     && grid[(*x + 2, selected_row)].symbol() == "f"
             })
             .unwrap();
-        assert_eq!(grid[(source, selected_row)].fg, source_color("buf"));
+        assert_eq!(grid[(source, selected_row)].fg, t().source("buf"));
         assert_eq!(editor.buf().text().to_string(), text);
     }
 }
@@ -160,6 +162,7 @@ fn documentation_uses_shared_syntax_styles_and_never_reclaims_the_caret_row() {
     terminal
         .draw(|frame| {
             render_documentation(
+                &t(),
                 CompletionDocumentation {
                     text: "fn response()",
                     spans: &spans,
@@ -171,11 +174,8 @@ fn documentation_uses_shared_syntax_styles_and_never_reclaims_the_caret_row() {
         })
         .unwrap();
     let grid = terminal.backend().buffer();
-    assert_eq!(grid[(1, 1)].symbol(), "f");
-    assert_eq!(
-        grid[(1, 1)].fg,
-        crate::render::class_color(strop_syntax::Class::Keyword)
-    );
-    assert_eq!(grid[(4, 1)].fg, text());
-    assert_eq!(grid[(0, 1)].fg, muted());
+    assert_eq!(grid[(2, 1)].symbol(), "f");
+    assert_eq!(grid[(2, 1)].fg, t().class(strop_syntax::Class::Keyword));
+    assert_eq!(grid[(5, 1)].fg, t().text);
+    assert_eq!(grid[(0, 1)].fg, t().faint, "unfocused card border");
 }

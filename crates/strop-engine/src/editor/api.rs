@@ -200,7 +200,7 @@ impl Editor {
     /// The cursor fade-in's start tick, while fading (readonly; AR02) —
     /// progress itself is [`Editor::cursor_fade_progress`].
     pub fn cursor_fade(&self) -> Option<strop_trace::replay::Tick> {
-        self.cursor_fade
+        self.presentation.cursor_fade
     }
 
     /// Fixture hook (tests only): admit an attach completion through its real
@@ -237,6 +237,6 @@ impl Editor {
     /// Fixture hook (tests only): plant the cursor fade-in clock.
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture_set_cursor_fade(&mut self, fade: Option<strop_trace::replay::Tick>) {
-        self.cursor_fade = fade;
+        self.presentation.cursor_fade = fade;
     }
 }

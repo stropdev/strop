@@ -416,6 +416,10 @@ impl Editor {
                     id
                 };
                 self.message.clear();
+                let user_open = matches!(
+                    key.intent,
+                    OpenIntent::Switch { .. } | OpenIntent::Split { .. }
+                );
                 self.finish_open(id, key.intent);
                 if self.current() == id {
                     if matches!(&key.path, FileTarget::Container { .. }) {
@@ -441,6 +445,14 @@ impl Editor {
                             "remote browse is read-only — :remote worker for search/Git/LSP; :remote edit applies to files"
                         }
                         .into();
+                    } else if matches!(&key.path, FileTarget::Local(_))
+                        && user_open
+                        && matches!(self.cur().source, super::super::DocumentSource::File)
+                        && self.buf().disk_stamp().is_none()
+                    {
+                        // Vim's `"name" [New]`: the path did not exist, so an
+                        // empty buffer was opened and only `:w` creates it.
+                        self.message = format!("\"{}\" [new file]", self.cur().label(&self.cwd));
                     }
                 }
                 // WK07: an opened remote workspace on an admitted

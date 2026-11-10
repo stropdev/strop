@@ -8,7 +8,7 @@
 //! indent_style = "spaces"   # or "tabs"
 //! indent_detect = true      # infer a document's indent from its content
 //! auto_format = true        # LSP format before :w (helix parity)
-//! theme = "catppuccin-mocha" # built-in palette (default "dark"; :theme lists choices)
+//! theme = "vellum"          # built-in palette (default "hone"; :theme lists choices)
 //! ```
 //!
 //! LSP server config is a separate file with its own layering —
@@ -127,7 +127,7 @@ impl Default for Config {
             search_respect_ignore: true,
             cursor_fade: true,
             completion: CompletionSettings::default(),
-            theme: strop_core::theme::ThemeId::Dark,
+            theme: strop_core::theme::ThemeId::Hone,
             provenance: Provenance::default(),
         }
     }
@@ -494,7 +494,7 @@ mod tests {
         const CHILD: &str = "STROP_CONFIG_COLUMNS_TEST_CHILD";
         if std::env::var_os(CHILD).is_some() {
             let config = Config {
-                theme: strop_core::theme::ThemeId::CatppuccinMocha,
+                theme: strop_core::theme::ThemeId::PaperDark,
                 ..Config::default()
             };
             println!();
@@ -519,7 +519,7 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("catppuccin-mocha"), "{stdout}");
+        assert!(stdout.contains("paper-dark"), "{stdout}");
 
         let mut description_column = None;
         for knob in KNOBS {

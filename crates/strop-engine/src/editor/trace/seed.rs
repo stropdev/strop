@@ -105,7 +105,7 @@ impl Seed {
             terminal_capture: editor.terminal_capture_enabled(),
             terminal_keyboard: editor.terminal_keyboard_flags(),
             config: editor.config.clone(),
-            theme: Some(strop_core::theme::current_id()),
+            theme: Some(editor.presentation.theme),
             git: editor.git.clone(),
             git_view: editor.git_view,
             git_discovery: editor.git_discovery.clone(),
@@ -220,7 +220,7 @@ impl Seed {
             .set_terminal_keyboard(self.terminal_keyboard)
             .map_err(io::Error::other)?;
         editor.config = self.config;
-        strop_core::theme::set_current(self.theme.unwrap_or(editor.config.theme));
+        editor.presentation.theme = self.theme.unwrap_or(editor.config.theme);
         editor.git = self.git;
         editor.git_view = self.git_view;
         editor.git_discovery = self.git_discovery;

@@ -1,11 +1,12 @@
-//! The keymap table (0008 §3 — keymaps as data). v1: this table drives
-//! the `Space ?` keybinds popup and the which-key prefix cards; the trie
-//! dispatch cutover (0008 §5) makes it the dispatch source later.
+//! The keymap table (0008 §3 — keymaps as data). This table drives the
+//! `Space ?` help buffer, the which-key prefix cards and the dispatch
+//! trie: one source, grouped by section (0088 A7 — `bindings/` holds one
+//! file per section, in the curated order `SECTIONS` fixes).
 //!
 //! Coverage contract (0003 §5.7): every dispatchable binding renders in
-//! the popup; the tests below pin both directions. `live: false` rows
-//! are planned slots — reserved keys with no dispatch yet (0003 §6) —
-//! and render muted with a "(soon)" suffix, never as live bindings.
+//! help; the tests pin both directions. `live: false` rows are planned
+//! slots — reserved keys with no dispatch yet (0003 §6) — and render
+//! muted with a "(soon)" suffix, never as live bindings.
 //!
 //! ## Notation
 //!
@@ -72,20 +73,83 @@ pub enum AbsorbKind {
 /// One binding as it appears in `Space ?` / which-key AND in dispatch
 /// (0008 stage 2: one table). `id` is the stable command identity —
 /// macros, dot-repeat, a future palette, and config rebinds ride it.
+#[derive(Clone, Copy)]
 pub struct Binding {
     pub keys: &'static str,
     pub desc: &'static str,
+    /// Section ids (`SECTIONS`); the first is the row's home group.
     pub sections: &'static [&'static str],
     pub live: bool,
     pub id: &'static str,
     pub handler: Handler,
 }
 
-pub const SECTIONS: &[&str] = &[
-    "normal", "visual", "insert", "leader", "git", "ex+panes", "terminal",
+/// A help/which-key group: the stable id rows name and the title the
+/// help buffer prints. Order here is the curated reading order.
+pub struct Section {
+    pub id: &'static str,
+    pub title: &'static str,
+}
+
+pub const SECTIONS: &[Section] = &[
+    Section {
+        id: "moving",
+        title: "Moving",
+    },
+    Section {
+        id: "editing",
+        title: "Editing",
+    },
+    Section {
+        id: "insert",
+        title: "Insert",
+    },
+    Section {
+        id: "visual",
+        title: "Visual",
+    },
+    Section {
+        id: "search",
+        title: "Search",
+    },
+    Section {
+        id: "leader",
+        title: "Leader (space)",
+    },
+    Section {
+        id: "panes",
+        title: "Panes",
+    },
+    Section {
+        id: "git",
+        title: "Git",
+    },
+    Section {
+        id: "pickers",
+        title: "Pickers",
+    },
+    Section {
+        id: "terminal",
+        title: "Terminal",
+    },
+    Section {
+        id: "ex",
+        title: "Ex commands",
+    },
 ];
 
-include!("bindings_adapter.rs");
+impl Section {
+    /// Look a section up by id or title, case-insensitively (`:help git`).
+    pub fn find(name: &str) -> Option<&'static Section> {
+        let name = name.trim();
+        SECTIONS.iter().find(|section| {
+            section.id.eq_ignore_ascii_case(name) || section.title.eq_ignore_ascii_case(name)
+        })
+    }
+}
+
+mod bindings;
+pub use bindings::BINDINGS;
 
 pub(crate) mod lookup;
 

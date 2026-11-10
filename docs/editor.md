@@ -40,52 +40,71 @@ retain generic brace behavior. This is not a formatter, HTML tag
 indentation, or keyword-based `end`/`else` alignment. Large-file analysis
 runs on the existing revision-checked worker, never the render path.
 
+## The look
+
+Every surface reads its colours from one token set: three background
+planes (`base` < `surface` < `raised`), four greys for text, one accent,
+mode colours, diagnostic and diff inks, syntax roles. The accent means one
+thing — where you are and what will happen: the Normal chip, the current
+line number, the pending-operator footer, the input caret, matched
+characters. Cards (pickers, which-key, completion, hover, blame, command)
+share one primitive: rounded, title top-left, hints as keycaps in the
+bottom border. Selected rows are a raised band with `▌`; the applied theme
+and dirty buffers are marked `●`. Chrome appears only when it carries
+information: the scrollbar is a thumb that disappears when the file fits,
+pane titles sit in the pane's top border only with two or more panes, the
+`LSP!` badge appears only when a language server failed, `Spaces:N` only
+when a buffer's indent differs from your configured default, and the
+picker's scope row only when a scope differs from the default.
+
+Messages have their own echo row above the statusline, present only while
+something is live: the response to your last key first, then retained
+feedback by severity (`✗` failure, `▲` warning, `●` info) with its `space a`
+or `:explain` hint. The statusline itself is a fixed 8-cell mode chip,
+branch, path, then — only when non-zero — `●1 ▲2` diagnostics, the service
+badge, the indent, and the position.
+
 ## Themes
 
 `:theme` opens the searchable palette selector; Enter applies a choice and
 Escape leaves the current theme unchanged (once enters the picker's Normal
-mode; twice closes it). `:theme catppuccin-mocha` switches directly. Rows show
-human labels, palette swatches and a check on the applied theme; the selected
-row's canonical name and full description appear in a bounded detail area.
-Small terminals omit decoration before hiding identity or input.
+mode; twice closes it). `:theme vellum` switches directly. Rows show the
+human label, six swatches (base, surface, text, accent, keyword, string)
+and `●` on the applied theme; the selected row's canonical name and full
+description appear in a bounded detail area. Small terminals omit
+decoration before hiding identity or input.
+
+Six original palettes ship, every one holding the same contrast contract:
+text ≥ 10:1, secondary ≥ 7:1, comments and every syntax ink ≥ 4.5:1 on both
+the base and the surface plane, a visible Visual selection.
 
 | Name | Character |
 | --- | --- |
-| `dark` | Strop's original dark palette and amber accent; the default |
-| `light` | Strop's warm paper-and-ink counterpart |
-| `catppuccin-mocha` | Warm pastel dark, with violet and blue syntax |
-| `catppuccin-latte` | Light Catppuccin, adapted for readable editor contrasts |
-| `nord` | Restrained cool blue-grey, with brighter comments for legibility |
-| `strop-ink` | Original low-chroma graphite, ivory and restrained brass |
-| `paper` | Warm off-white paper, deep green ink and forest-green accents |
-| `paper-dark` | Warm green-black paper, soft ivory ink and muted sage accents |
+| `hone` | Graphite dark with the amber accent; the default |
+| `slate` | Low-chroma dark: syntax by luminance, one brass accent |
+| `carbide` | High-contrast dark for projectors and bright rooms (every ink ≥ 7:1) |
+| `vellum` | Warm paper, graphite ink, burnt-umber accent |
+| `paper` | Warm off-white paper with deep green ink and forest accents |
+| `paper-dark` | Warm green-black paper with soft ivory and sage accents |
 
-Choose at launch with `strop --theme paper file.rs` or
-`strop --theme paper-dark file.rs`, or persist either choice in
-`$XDG_CONFIG_HOME/strop/config.toml` (normally
+Choose at launch with `strop --theme vellum file.rs`, or persist the choice
+in `$XDG_CONFIG_HOME/strop/config.toml` (normally
 `~/.config/strop/config.toml`):
 
 ```toml
-theme = "paper"
-# Or: theme = "paper-dark"
+theme = "vellum"
 ```
 
-The same canonical names work for a session-only switch: `:theme paper` or
-`:theme paper-dark`.
-
+The same canonical names work for a session-only switch (`:theme slate`).
 Precedence is the built-in default, then the user config, then `--theme`.
 `:theme` changes the running session only; it does not rewrite the config.
-Syntax, pickers/previews, diffs, diagnostics, help and statusline share the
-palette. Existing terminal sessions update their default colors without
-overwriting child-selected truecolor or OSC palette customizations.
-
-Adaptations follow the [Catppuccin style guide] and [Nord color roles];
-they are not promises of exact upstream editor-port fidelity.
-`strop licenses` prints the bundled theme licenses. All palettes are
-compiled into the binary: no downloads, plugins or setup.
-
-[catppuccin style guide]: https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md
-[nord color roles]: https://www.nordtheme.com/docs/colors-and-palettes
+A config naming an unknown theme (including the retired `dark`, `light`,
+`strop-ink`, `catppuccin-*` and `nord`) starts on `hone` with a warning
+that lists the six names. Syntax, pickers/previews, diffs, diagnostics,
+help and statusline share the palette. Existing terminal sessions update
+their default colors without overwriting child-selected truecolor or OSC
+palette customizations. All palettes are original and compiled into the
+binary: no downloads, plugins, licences or setup.
 
 ## Panes, previews and language services
 
@@ -150,7 +169,7 @@ invocation and retires completion-only work.
 
 ## Syntax and display
 
-Tree-sitter highlighting for 23 languages (including CMake, Markdown,
+Tree-sitter highlighting for 26 languages (including CMake, Markdown,
 TOML, YAML, HTML and CSS); grammars and licensed queries ship in the
 binary. Markdown fences select any bundled language — not just Rust — and
 the same injection pipeline highlights fenced examples inside Rust

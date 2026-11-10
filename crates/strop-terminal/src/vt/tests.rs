@@ -7,7 +7,7 @@ fn terminal(columns: u16, rows: u16) -> Vt {
 
 fn themed_terminal(columns: u16, rows: u16, palette: Option<&Palette>) -> Vt {
     Vt::new(
-        SessionId::from_request(strop_core::worker::WorkerId::new(1)),
+        SessionId::new(1),
         Geometry {
             columns,
             rows,
@@ -245,7 +245,7 @@ fn the_embedder_palette_configures_defaults_and_survives_indexed_output() {
     // 0065 D3: the embedder-owned palette lands at creation; indexed and
     // default colors resolve through it, and one Arc serves every frame
     // until the child overrides a color itself.
-    let palette = Palette::for_theme(strop_core::theme::ThemeId::Dark);
+    let palette = Palette::for_theme(strop_core::theme::ThemeId::Hone);
     let mut vt = themed_terminal(20, 3, Some(&palette));
     vt.feed(b"\x1b[31mred \x1b[38;2;1;2;3mtrue \x1b[mplain")
         .unwrap();
@@ -288,8 +288,8 @@ fn the_embedder_palette_configures_defaults_and_survives_indexed_output() {
 fn live_defaults_preserve_osc_overrides_and_reset_to_the_selected_theme() {
     use strop_core::theme::ThemeId;
 
-    let original = Palette::for_theme(ThemeId::Dark);
-    let selected = Palette::for_theme(ThemeId::CatppuccinMocha);
+    let original = Palette::for_theme(ThemeId::Hone);
+    let selected = Palette::for_theme(ThemeId::Vellum);
     let mut vt = themed_terminal(20, 3, Some(&original));
     vt.feed(b"\x1b[31mI\x1b[38;2;1;2;3;48;2;4;5;6mT\x1b[mD")
         .unwrap();

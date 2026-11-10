@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-test,sharing=locked \
     cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
-    && STROP_REQUIRE_SSH_TESTS=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
+    && STROP_REQUIRE_SSH_TESTS=1 STROP_REQUIRE_NVIM=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
     && CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
         cargo test --locked -p strop-engine -p strop-lsp -p strop-worker loom
 

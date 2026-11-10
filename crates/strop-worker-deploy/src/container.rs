@@ -94,10 +94,10 @@ pub struct ContainerProvider {
     workdir: String,
     shell: ShellPolicy,
     token: CancelToken,
-    /// Dropping the provider cancels its token: in-flight operations
-    /// unwind typed instead of leaking daemon sessions.
-    #[allow(dead_code)]
-    handle: CancelHandle,
+    /// Held only to be dropped: dropping the provider cancels its token,
+    /// so in-flight operations unwind typed instead of leaking daemon
+    /// sessions. Never read, hence the guard-style name.
+    _cancel_on_drop: CancelHandle,
 }
 
 /// One `/etc/passwd` record's facts, decimal strings.
@@ -267,7 +267,7 @@ impl ContainerProvider {
             },
             shell,
             token: op_token,
-            handle,
+            _cancel_on_drop: handle,
         })
     }
 

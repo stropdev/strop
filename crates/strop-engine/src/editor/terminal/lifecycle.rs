@@ -7,13 +7,9 @@ use strop_terminal::{
 };
 
 impl Editor {
-    /// Capture the selected theme, then let each existing service update its
-    /// native defaults and publish through the ordinary replay-owned mailbox.
-    pub(crate) fn refresh_terminal_themes(&mut self) -> Result<(), String> {
-        self.set_terminal_themes(strop_core::theme::current_id())
-    }
-
-    pub(super) fn set_terminal_themes(
+    /// Let each existing service update its native defaults to `theme` and
+    /// publish through the ordinary replay-owned mailbox.
+    pub(crate) fn set_terminal_themes(
         &mut self,
         theme: strop_core::theme::ThemeId,
     ) -> Result<(), String> {
@@ -65,13 +61,6 @@ impl Editor {
             );
             return;
         }
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
         let keyboard = self.terminals.keyboard;
         if !self.terminals.capture {
             if let Err(error) = self.tape.omit_content("terminal") {
@@ -79,7 +68,10 @@ impl Editor {
                 return;
             }
         }
-        let session = SessionId::from_request(request);
+        let Some(session) = self.terminals.next_session() else {
+            self.message = "terminal session numbers exhausted".into();
+            return;
+        };
         let geometry = Geometry {
             columns: 80,
             rows: (self.view_rows.max(1).min(MAX_ROWS as usize)) as u16,
@@ -145,7 +137,7 @@ impl Editor {
                     launch,
                     geometry,
                     keyboard,
-                    Some(Palette::strop()),
+                    Some(Palette::for_theme(self.presentation.theme)),
                     move |session| {
                         let _ = sender.send(session);
                     },

@@ -78,7 +78,7 @@ fn content_start(row: &[(String, Color)]) -> usize {
         .unwrap_or(row.len())
 }
 fn keyword_color() -> Color {
-    crate::render::class_color(strop_syntax::Class::Keyword)
+    crate::render::tokens().class(strop_syntax::Class::Keyword)
 }
 
 fn keyword_fg_at(row: &[(String, Color)], needle: &str) -> Color {

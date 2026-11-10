@@ -17,6 +17,7 @@ mod perf;
 mod refusals;
 
 use std::io::Read as _;
+use std::io::Write as _;
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -47,12 +48,18 @@ struct ScopedFixture {
     _serial: MutexGuard<'static, ()>,
 }
 
-fn required() -> bool {
-    std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() == Some(std::ffi::OsStr::new("1"))
-}
-
+/// `None` outside the Docker gate (`STROP_REQUIRE_SSH_TESTS=1`), with a
+/// skip notice naming the caller: a host run never passes silently.
+#[track_caller]
 fn serial() -> Option<ScopedFixture> {
-    if !required() {
+    if std::env::var_os("STROP_REQUIRE_SSH_TESTS").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        // Straight to stderr: libtest captures eprintln!, which would hide it.
+        writeln!(
+            std::io::stderr().lock(),
+            "skipped worker_ssh journey at {}: set STROP_REQUIRE_SSH_TESTS=1 to run it",
+            std::panic::Location::caller()
+        )
+        .unwrap();
         return None;
     }
     let serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());

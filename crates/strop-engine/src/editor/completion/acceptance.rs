@@ -367,6 +367,10 @@ fn finish(
         .iter()
         .map(|edit| (edit.range.start.get(), edit.range.end.get()))
         .collect();
+    debug_assert!(
+        pairs.windows(2).all(|pair| pair[0] <= pair[1]),
+        "acceptance edits reach admission sorted by (start, end)"
+    );
     strop_kernel::editmap::validate_batch(length, &pairs).map_err(|refusal| match refusal {
         strop_kernel::editmap::BatchRefusal::Overlap => AcceptanceRefusal::Overlap,
         strop_kernel::editmap::BatchRefusal::OutOfBounds => AcceptanceRefusal::InvalidRange,

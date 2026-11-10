@@ -45,16 +45,20 @@ fn action(editor: &mut Editor, event: AppEvent) {
 fn cursor_fade_retriggers_only_on_focus_returns_and_large_jumps() {
     let mut editor = fixture_with(&"x\n".repeat(40));
     keys(&mut editor, "j"); // the first action adopts the track mark (Start does live)
-    assert_eq!(editor.cursor_fade, None, "adopting the mark is no fade");
+    assert_eq!(
+        editor.presentation.cursor_fade, None,
+        "adopting the mark is no fade"
+    );
     keys(&mut editor, "G"); // line 1 → 39, beyond half a screen
     let started = editor
+        .presentation
         .cursor_fade
         .expect("a large jump fades the cursor back in");
     assert_eq!(editor.cursor_fade_progress(), Some(0));
     keys(&mut editor, "kk"); // small steps keep the cursor steady
-    assert_eq!(editor.cursor_fade, Some(started));
+    assert_eq!(editor.presentation.cursor_fade, Some(started));
     action(&mut editor, AppEvent::Focus(true));
-    let refocused = editor.cursor_fade.unwrap();
+    let refocused = editor.presentation.cursor_fade.unwrap();
     assert!(refocused.monotonic_ms > started.monotonic_ms);
     // The window closes: 200 ms later the cursor is unfaded again.
     let mut tick = editor.tape.now();
@@ -62,10 +66,10 @@ fn cursor_fade_retriggers_only_on_focus_returns_and_large_jumps() {
     editor.tape.set_tick(tick).unwrap();
     assert_eq!(editor.cursor_fade_progress(), None);
     // The knob disables the feature wholesale.
-    editor.cursor_fade = None;
+    editor.presentation.cursor_fade = None;
     editor.config.cursor_fade = false;
     keys(&mut editor, "gg");
-    assert_eq!(editor.cursor_fade, None);
+    assert_eq!(editor.presentation.cursor_fade, None);
     // Replay reproduces the recorded journey exactly.
     let expected = editor.buf().text().to_string();
     let replayed = replay_fixture(&editor);

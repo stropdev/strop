@@ -1,30 +1,22 @@
-//! Compiled-in semantic palettes shared by every editor and terminal surface.
-//! The registry owns canonical selection names and metadata; palette data is
-//! static, and the live selector remains a single atomic value.
+//! Compiled-in palettes as one token set (0088 §3). Every surface reads
+//! colours through these tokens; nothing downstream names a hex value.
+//! The selected palette lives on the editor — there is no process-global
+//! selection — and frontends build their per-frame style table from
+//! `ThemeId::palette`.
 
-use std::sync::atomic::{AtomicU8, Ordering};
-
-mod builtin;
-mod catppuccin;
-mod ink;
-mod nord;
+mod carbide;
+mod hone;
 mod paper;
+mod slate;
 #[cfg(test)]
 mod tests;
+mod vellum;
 
-pub use builtin::{DARK, LIGHT};
-pub use catppuccin::{CATPPUCCIN_LATTE, CATPPUCCIN_MOCHA};
-pub use ink::STROP_INK;
-pub use nord::NORD;
+pub use carbide::CARBIDE;
+pub use hone::HONE;
 pub use paper::{PAPER, PAPER_DARK};
-
-/// Full upstream notices, embedded in the executable without runtime assets.
-pub const THEME_NOTICES: &str = concat!(
-    "Catppuccin palettes — https://catppuccin.com/palette/\n\n",
-    include_str!("../LICENSE-CATPPUCCIN"),
-    "\nNord palette — https://www.nordtheme.com/docs/colors-and-palettes\n\n",
-    include_str!("../LICENSE-NORD"),
-);
+pub use slate::SLATE;
+pub use vellum::VELLUM;
 
 /// An sRGB triple. Frontend and terminal layers convert to their own
 /// color types; the seed itself stays representation-free.
@@ -35,67 +27,110 @@ pub struct Rgb {
     pub b: u8,
 }
 
-const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
+pub(crate) const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
     Rgb { r, g, b }
 }
 
-const fn hex(value: u32) -> Rgb {
+pub(crate) const fn hex(value: u32) -> Rgb {
     rgb((value >> 16) as u8, (value >> 8) as u8, value as u8)
 }
 
-/// Opaque sRGB wash, used only in compiled-in palette initializers.
-const fn blend(base: Rgb, overlay: Rgb, percent: u8) -> Rgb {
-    assert!(percent <= 100);
-    const fn channel(base: u8, overlay: u8, percent: u8) -> u8 {
-        ((base as u32 * (100 - percent as u32) + overlay as u32 * percent as u32) / 100) as u8
-    }
-    rgb(
-        channel(base.r, overlay.r, percent),
-        channel(base.g, overlay.g, percent),
-        channel(base.b, overlay.b, percent),
-    )
+/// The three planes and the overlays painted on them (0088 §2 rule 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Backgrounds {
+    /// The editor plane.
+    pub base: Rgb,
+    /// Cards, previews and the statusline.
+    pub surface: Rgb,
+    /// Selected rows and keycaps.
+    pub raised: Rgb,
+    pub cursorline: Rgb,
+    pub selection: Rgb,
+    /// The operator preview wash.
+    pub preview: Rgb,
+    /// The substitution flash.
+    pub flash: Rgb,
+    /// Matching-delimiter overlay.
+    pub pair: Rgb,
+    pub diff_add: Rgb,
+    pub diff_del: Rgb,
+    pub diff_add_strong: Rgb,
+    pub diff_del_strong: Rgb,
 }
 
-/// A complete semantic palette; syntax roles are language-independent.
-/// Decorative borders/guides and child-selected ANSI colors are not text ink.
+/// The four greys plus the two non-text inks (0088 §2 rule 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Foregrounds {
+    pub text: Rgb,
+    pub secondary: Rgb,
+    pub muted: Rgb,
+    /// Borders, indent guides, inactive panes.
+    pub faint: Rgb,
+    pub guide: Rgb,
+    /// Text painted over the accent (the mode chip).
+    pub on_accent: Rgb,
+}
+
+/// Mode colours are their own tokens, never syntax slots (rule 2).
+/// Normal is the accent itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Modes {
+    pub insert: Rgb,
+    pub visual: Rgb,
+    pub replace: Rgb,
+    pub pending: Rgb,
+    pub terminal: Rgb,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Diagnostics {
+    pub error: Rgb,
+    pub warning: Rgb,
+    pub info: Rgb,
+    pub hint: Rgb,
+}
+
+/// Foregrounds for `+`/`-` text and gutter signs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Diffs {
+    pub add: Rgb,
+    pub del: Rgb,
+    pub change: Rgb,
+}
+
+/// Language-independent syntax roles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Syntax {
+    pub keyword: Rgb,
+    pub function: Rgb,
+    pub r#type: Rgb,
+    pub string: Rgb,
+    pub number: Rgb,
+    pub constant: Rgb,
+    pub attribute: Rgb,
+    pub operator: Rgb,
+    pub punctuation: Rgb,
+    /// Rendered italic (rule 7); never the same ink as punctuation
+    /// unless the italic alone carries the distinction.
+    pub comment: Rgb,
+    pub variable: Rgb,
+    pub property: Rgb,
+    pub namespace: Rgb,
+    pub heading: Rgb,
+    pub link: Rgb,
+    pub code: Rgb,
+}
+
+/// A complete palette: the 0087 §4.2 token set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
-    pub base: Rgb,
-    /// Elevated panels, pickers and help.
-    pub surface: Rgb,
-    pub statusline_bg: Rgb,
-    pub cursor_row_bg: Rgb,
-    pub inactive_bg: Rgb,
-    pub border: Rgb,
-    pub guide: Rgb,
-    pub text: Rgb,
-    /// Comment ink and subdued UI text, not decorative dimming.
-    pub muted: Rgb,
+    pub bg: Backgrounds,
+    pub fg: Foregrounds,
     pub accent: Rgb,
-    /// Accent, dimmed — the peek/preview backdrop.
-    pub preview_bg: Rgb,
-    /// Accent, stronger — the substitution flash.
-    pub flash_bg: Rgb,
-    pub select_bg: Rgb,
-    /// Matching-delimiter overlay: quiet, one step above the selection.
-    pub pair_bg: Rgb,
-    /// Useful secondary context: between text and muted.
-    pub secondary: Rgb,
-    pub diag_error: Rgb,
-    pub diag_info: Rgb,
-    pub warning: Rgb,
-    pub diff_add_bg: Rgb,
-    pub diff_del_bg: Rgb,
-    pub diff_add_strong_bg: Rgb,
-    pub diff_del_strong_bg: Rgb,
-    pub class_keyword: Rgb,
-    pub class_function: Rgb,
-    pub class_type: Rgb,
-    pub class_string: Rgb,
-    pub class_number: Rgb,
-    pub class_operator: Rgb,
-    pub class_punctuation: Rgb,
-    pub class_attribute: Rgb,
+    pub mode: Modes,
+    pub diag: Diagnostics,
+    pub diff: Diffs,
+    pub syn: Syntax,
     /// The terminal's default 16-color set. Terminal programs choose their
     /// own foreground/background pairings and may override these defaults.
     pub ansi16: [Rgb; 16],
@@ -140,40 +175,36 @@ const fn cube_level(index: u8) -> u8 {
 }
 
 /// The compiled-in palettes, selectable by name (`:theme`, `--theme`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "kebab-case")]
-#[repr(u8)]
 pub enum ThemeId {
-    Dark,
-    Light,
-    CatppuccinMocha,
-    CatppuccinLatte,
-    Nord,
-    StropInk,
+    #[default]
+    Hone,
+    Slate,
+    Carbide,
+    Vellum,
     Paper,
     PaperDark,
 }
 
 impl ThemeId {
-    pub const ALL: [ThemeId; 8] = [
-        Self::Dark,
-        Self::Light,
-        Self::CatppuccinMocha,
-        Self::CatppuccinLatte,
-        Self::Nord,
-        Self::StropInk,
+    pub const ALL: [ThemeId; 6] = [
+        Self::Hone,
+        Self::Slate,
+        Self::Carbide,
+        Self::Vellum,
         Self::Paper,
         Self::PaperDark,
     ];
 
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Dark => "dark",
-            Self::Light => "light",
-            Self::CatppuccinMocha => "catppuccin-mocha",
-            Self::CatppuccinLatte => "catppuccin-latte",
-            Self::Nord => "nord",
-            Self::StropInk => "strop-ink",
+            Self::Hone => "hone",
+            Self::Slate => "slate",
+            Self::Carbide => "carbide",
+            Self::Vellum => "vellum",
             Self::Paper => "paper",
             Self::PaperDark => "paper-dark",
         }
@@ -181,12 +212,10 @@ impl ThemeId {
 
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Dark => "Dark",
-            Self::Light => "Light",
-            Self::CatppuccinMocha => "Catppuccin Mocha",
-            Self::CatppuccinLatte => "Catppuccin Latte",
-            Self::Nord => "Nord",
-            Self::StropInk => "Strop Ink",
+            Self::Hone => "Hone",
+            Self::Slate => "Slate",
+            Self::Carbide => "Carbide",
+            Self::Vellum => "Vellum",
             Self::Paper => "Paper",
             Self::PaperDark => "Paper Dark",
         }
@@ -194,15 +223,18 @@ impl ThemeId {
 
     pub const fn description(self) -> &'static str {
         match self {
-            Self::Dark => "Strop's original warm amber on midnight",
-            Self::Light => "Warm paper with amber, violet and teal ink",
-            Self::CatppuccinMocha => "Pastel dark with a mauve accent",
-            Self::CatppuccinLatte => "Pastel light with contrast-tuned semantic ink",
-            Self::Nord => "Restrained cool dark with frost-blue accents",
-            Self::StropInk => "Original graphite and ivory with brass and slate",
+            Self::Hone => "Graphite dark with the amber accent; the default",
+            Self::Slate => "Low-chroma dark: syntax by luminance, one brass accent",
+            Self::Carbide => "High-contrast dark for projectors and bright rooms",
+            Self::Vellum => "Warm paper with graphite ink and a burnt-umber accent",
             Self::Paper => "Warm off-white paper with deep green ink and forest accents",
             Self::PaperDark => "Warm green-black paper with soft ivory and sage accents",
         }
+    }
+
+    /// True for the palettes drawn on a light base.
+    pub const fn is_light(self) -> bool {
+        matches!(self, Self::Vellum | Self::Paper)
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
@@ -211,43 +243,23 @@ impl ThemeId {
             .find(|id| id.name().eq_ignore_ascii_case(name.trim()))
     }
 
-    /// Pure palette access: does not read or change the live selection.
+    /// The six names, comma-separated, for refusals and warnings.
+    pub fn choices() -> String {
+        Self::ALL
+            .iter()
+            .map(|id| id.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     pub const fn palette(self) -> &'static Theme {
         match self {
-            Self::Dark => &DARK,
-            Self::Light => &LIGHT,
-            Self::CatppuccinMocha => &CATPPUCCIN_MOCHA,
-            Self::CatppuccinLatte => &CATPPUCCIN_LATTE,
-            Self::Nord => &NORD,
-            Self::StropInk => &STROP_INK,
+            Self::Hone => &HONE,
+            Self::Slate => &SLATE,
+            Self::Carbide => &CARBIDE,
+            Self::Vellum => &VELLUM,
             Self::Paper => &PAPER,
             Self::PaperDark => &PAPER_DARK,
         }
     }
-}
-
-static CURRENT: AtomicU8 = AtomicU8::new(0);
-
-/// The palette every surface renders with right now.
-pub fn current() -> &'static Theme {
-    current_id().palette()
-}
-
-pub fn current_id() -> ThemeId {
-    match CURRENT.load(Ordering::Relaxed) {
-        1 => ThemeId::Light,
-        2 => ThemeId::CatppuccinMocha,
-        3 => ThemeId::CatppuccinLatte,
-        4 => ThemeId::Nord,
-        5 => ThemeId::StropInk,
-        6 => ThemeId::Paper,
-        7 => ThemeId::PaperDark,
-        _ => ThemeId::Dark,
-    }
-}
-
-/// Select the editor palette. The editor separately queues updates to
-/// existing terminal services; native terminal work never runs here.
-pub fn set_current(id: ThemeId) {
-    CURRENT.store(id as u8, Ordering::Relaxed);
 }

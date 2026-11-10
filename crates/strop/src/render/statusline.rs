@@ -1,48 +1,53 @@
-//! The modeline (0032): one quiet row at the terminal's bottom edge.
+//! The modeline (0032, 0088 §2): one quiet row on the surface plane at
+//! the terminal's bottom edge.
 //!
-//! The hierarchy borrows from the observed OMP footer — a compact mode
-//! accent, a clear filename over muted directory context, and quiet,
-//! separated Git/diagnostic/position groups — in strop's own palette
-//! and without font-dependent glyphs. Every width here is a display
-//! cell (`text`), never a character: under pressure the row yields the
-//! directory first, then the Git context, then the optional signals,
-//! and only then clips the filename and the transient status. Owned LSP
-//! failures and presented warning/failure feedback retain compact textual
-//! badges through every degradation, including the mode-and-position-only
-//! fallback. Every gathered string passes the shared clipping helpers, so a
-//! control byte can never reach the terminal as protocol.
+//! `[ NORMAL ]  main*  crates/strop/src/render/ statusline.rs ●        ●1 ▲2  LSP!  98:9  17%`
+//!
+//! A fixed 8-cell mode chip, so the path never jumps; branch and path on
+//! the left; diagnostics only when non-zero, a 4-cell `LSP!` badge only
+//! on failure, `Spaces:N` only when it differs from the configured
+//! default, then the position — separated by two spaces. While an
+//! operator pends, the grammar's spec footer replaces the right side in
+//! the accent (0001 §4: "see the cut before you make it"). Messages never
+//! live here: they have their own echo row (`render/echo.rs`).
+//!
+//! Every width is a display cell, never a character: under pressure the
+//! row yields the directory first, then the Git context, then the
+//! optional signals, and only then clips the filename. Service failures
+//! keep their badge through every degradation, including the chip-and-
+//! position-only fallback.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
-use strop_engine::editor::feedback::FeedbackSeverity;
-use strop_lsp::Severity;
 
 use crate::editor::Editor;
 
+use super::card::{hint_spans, Hint};
 use super::clip::{clip_end, width};
-use super::{base, mode_color, muted, secondary, severity_color, text};
+use super::style::Tokens;
 
+mod chip;
 mod layout;
 mod services;
+mod spec;
 #[cfg(test)]
 mod tests;
-mod transient;
 
-/// A separator costs three cells (" │ ", padding included).
-const SEP: &str = " │ ";
-const SEP_W: usize = 3;
+/// Groups are separated by two cells.
+const SEP: &str = "  ";
+const SEP_W: usize = 2;
 /// The halves never jam together while a spare cell exists.
 const GAP: usize = 1;
 
-pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
+pub(super) fn render(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
         return; // a 0-sized resize must not underflow (0027 §2)
     }
     let cells = area.width as usize;
-    let mut row = Modeline::gather(editor);
+    let mut row = Modeline::gather(editor, t);
     row.fit(cells);
     let rect = Rect {
         y: area.bottom() - 1,
@@ -50,9 +55,7 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
         ..area
     };
     frame.render_widget(
-        Paragraph::new(Line::from(row.spans(cells))).style(Style::default().bg(
-            crate::render::seed(strop_core::theme::current().statusline_bg),
-        )),
+        Paragraph::new(Line::from(row.spans(t, cells))).style(Style::default().bg(t.surface)),
         rect,
     );
 }
@@ -63,21 +66,26 @@ pub(super) fn render(editor: &Editor, frame: &mut Frame, area: Rect) {
 /// Width fitting borrows the gathered fields; spans are allocated only
 /// for the final row, not for every degradation step.
 struct Modeline {
-    chip: String, // " NORMAL " — the label with its padding
-    accent: Color,
+    chip: String, // exactly `chip::WIDTH` cells unless the row is bare
+    chip_color: Color,
+    recording: bool,             // terminal capture: a `REC` badge after the chip
     git_context: String,         // branch or historical commit identity
     worktree_dirty: bool,        // "*" — unstaged or untracked changes
     staged_mark: bool,           // "+" — staged changes
     namespace: String,           // source identity, not optional Git context
-    dir: String,                 // muted context, trailing separator kept
+    dir: String,                 // secondary context, trailing separator kept
     name: String,                // the part that must survive truncation
     dirty: bool,                 // " ●" after the name
     readonly: bool,              // " [RO]"
     multicursor: Option<String>, // "3×", without its leading pad
-    status: String,              // the transient right-side text
-    feedback: Option<FeedbackSeverity>,
-    compact_feedback: bool, // "!" replaces status prose under pressure
-    services: services::Services,
+    /// The grammar footer (pending operator, live preview spec, walker
+    /// state): replaces the right-side signals while present.
+    spec: String,
+    /// Terminal keycap hints, whole chords only (rule 10).
+    hints: Vec<(String, &'static str)>,
+    /// Terminal attention badges (`out+`, `paste+`).
+    attention: Vec<&'static str>,
+    services: Option<services::Badge>,
     errors: usize,
     warnings: usize,
     show_diag: bool,
@@ -85,23 +93,17 @@ struct Modeline {
     col: usize,
     percent: Option<usize>,
     search: Option<(usize, usize)>, // current and total matches
-    indent: String,                 // "Spaces:4" — the effective setting (0051 R08)
-    terminal: bool,
-    terminal_attention: bool,
-    terminal_prefix: bool,
-    bare: bool,       // degenerate layout: mode accent · position only
-    bare_chip: usize, // cells the chip may occupy in that layout
+    indent: String,                 // "Spaces:2" — only when non-default (rule 4)
+    bare: bool,                     // degenerate layout: chip · position only
+    bare_chip: usize,               // cells the chip may occupy in that layout
 }
 
 impl Modeline {
-    fn gather(editor: &Editor) -> Self {
+    fn gather(editor: &Editor, t: &Tokens) -> Self {
         let buf = editor.buf();
         let (dir, name) = file_display(editor);
         let terminal_input = editor.terminal_input_active();
         let terminal = editor.terminal_document(editor.current()).is_some();
-        let terminal_attention = terminal
-            && (editor.terminal_has_new_output(editor.current())
-                || editor.terminal_paste_held(editor.current()));
         let (line, col) = if terminal_input {
             editor
                 .terminal_frame(editor.current(), true)
@@ -145,47 +147,25 @@ impl Modeline {
                 .unwrap_or_default(),
             None => String::new(),
         };
+        let (chip, chip_color) = chip::chip(editor, t);
+        let (hints, attention) = if terminal {
+            spec::terminal_hints(editor)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        let indent = editor.indentation_at(editor.current(), editor.head());
+        let config = editor.config();
+        let indent = if terminal
+            || (indent.width == config.tab_size && indent.style == config.indent_style)
+        {
+            String::new()
+        } else {
+            indent.label()
+        };
         Self {
-            chip: if let Some(glue) = editor.picker() {
-                format!(
-                    " {} {} ",
-                    glue.picker.kind.title().trim().to_uppercase(),
-                    if glue.picker.input_normal() {
-                        "NORMAL"
-                    } else {
-                        "INSERT"
-                    }
-                )
-            } else if let Some(sigil) = editor.pending_sigil() {
-                format!(" {sigil} INPUT ")
-            } else if terminal_input {
-                if editor.terminal_capture_enabled() {
-                    " TERMINAL REC ".into()
-                } else {
-                    " TERMINAL ".into()
-                }
-            } else if terminal {
-                if editor.terminal_capture_enabled() {
-                    " SNAPSHOT REC ".into()
-                } else {
-                    " SNAPSHOT ".into()
-                }
-            } else {
-                format!(
-                    " {}{} ",
-                    editor.mode().chip(),
-                    if terminal && editor.terminal_capture_enabled() {
-                        " REC"
-                    } else {
-                        ""
-                    }
-                )
-            },
-            accent: if terminal_input {
-                super::terminal_chip()
-            } else {
-                mode_color(editor.mode())
-            },
+            chip,
+            chip_color,
+            recording: terminal && editor.terminal_capture_enabled(),
             git_context: printable(git_context),
             namespace: printable(namespace),
             worktree_dirty: !terminal
@@ -197,10 +177,10 @@ impl Modeline {
             dirty: buf.dirty || editor.collection_unsaved(editor.current()),
             readonly: buf.readonly && !terminal_input && !terminal,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
-            status: printable(transient::transient(editor)),
-            feedback: editor.presented_feedback().map(|record| record.severity()),
-            compact_feedback: false,
-            services: services::Services::gather(editor),
+            spec: printable(spec::spec(editor)),
+            hints,
+            attention,
+            services: services::Badge::gather(editor),
             errors,
             warnings,
             show_diag: errors > 0 || warnings > 0,
@@ -208,131 +188,122 @@ impl Modeline {
             col,
             percent: (!terminal).then_some(percent),
             search: (!terminal).then(|| editor.search_position()).flatten(),
-            indent: if terminal {
-                String::new()
-            } else {
-                editor.indent_label()
-            },
-            terminal,
-            terminal_attention,
-            terminal_prefix: editor.terminal_prefix_hint().is_some(),
+            indent,
             bare: false,
             bare_chip: 0,
         }
     }
 
-    fn file_spans(&self) -> Vec<Span<'_>> {
+    fn file_spans<'a>(&'a self, t: &Tokens) -> Vec<Span<'a>> {
         let mut spans = Vec::new();
         if !self.namespace.is_empty() {
             spans.push(Span::styled(
                 self.namespace.as_str(),
-                Style::default().fg(muted()),
+                Style::default().fg(t.muted),
             ));
             spans.push(Span::raw(" "));
         }
         if !self.dir.is_empty() {
             spans.push(Span::styled(
                 self.dir.as_str(),
-                Style::default().fg(muted()),
+                Style::default().fg(t.secondary),
             ));
         }
         if !self.name.is_empty() {
             spans.push(Span::styled(
                 self.name.as_str(),
-                Style::default().fg(text()),
+                Style::default().fg(t.text),
             ));
         }
         if self.dirty {
-            spans.push(Span::styled(
-                " ●",
-                Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
-            ));
+            spans.push(Span::styled(" ●", Style::default().fg(t.warning)));
         }
         if self.readonly {
-            spans.push(Span::styled(
-                " [RO]",
-                Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
-            ));
+            spans.push(Span::styled(" [RO]", Style::default().fg(t.warning)));
         }
         if let Some(mark) = &self.multicursor {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 mark.as_str(),
                 Style::default()
-                    .fg(secondary())
+                    .fg(t.secondary)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         spans
     }
 
+    fn chip_span<'a>(&'a self, t: &Tokens) -> Span<'a> {
+        Span::styled(
+            self.chip.as_str(),
+            Style::default()
+                .fg(t.on_accent)
+                .bg(self.chip_color)
+                .add_modifier(Modifier::BOLD),
+        )
+    }
+
     /// Build the visible halves once, after all width decisions.
-    fn halves(&self) -> (Vec<Span<'_>>, Vec<Span<'_>>) {
-        let quiet = Style::default().fg(crate::render::seed(strop_core::theme::current().border));
-        let mut left = vec![
-            Span::styled("▌", Style::default().fg(self.accent)),
-            Span::styled(
-                self.chip.as_str(),
-                Style::default()
-                    .fg(base())
-                    .bg(self.accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ];
+    fn halves<'a>(&'a self, t: &Tokens) -> (Vec<Span<'a>>, Vec<Span<'a>>) {
+        let mut left = vec![self.chip_span(t)];
+        if self.recording {
+            left.push(Span::raw(" "));
+            left.push(Span::styled(
+                "REC",
+                Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+            ));
+        }
         if !self.git_context.is_empty() {
-            left.push(Span::styled(SEP, quiet));
+            left.push(Span::raw(SEP));
             left.push(Span::styled(
                 self.git_context.as_str(),
-                Style::default().fg(muted()),
+                Style::default().fg(t.muted),
             ));
             if self.worktree_dirty {
-                left.push(Span::styled(
-                    "*",
-                    Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
-                ));
+                left.push(Span::styled("*", Style::default().fg(t.warning)));
             }
             if self.staged_mark {
-                left.push(Span::styled(
-                    "+",
-                    Style::default().fg(crate::render::seed(strop_core::theme::current().warning)),
-                ));
+                left.push(Span::styled("+", Style::default().fg(t.warning)));
             }
         }
-        if !self.dir.is_empty()
-            || !self.name.is_empty()
-            || self.dirty
-            || self.readonly
-            || self.multicursor.is_some()
-        {
-            left.push(Span::styled(SEP, quiet));
-            left.extend(self.file_spans());
+        if self.has_file() {
+            left.push(Span::raw(SEP));
+            left.extend(self.file_spans(t));
         }
         let mut right = Vec::new();
-        if self.compact_feedback {
+        let group = |right: &mut Vec<Span<'a>>| {
+            if !right.is_empty() {
+                right.push(Span::raw(SEP));
+            }
+        };
+        if !self.spec.is_empty() {
             right.push(Span::styled(
-                "!",
-                Style::default().fg(self.feedback_color()),
-            ));
-        } else if !self.status.is_empty() {
-            right.push(Span::styled(
-                self.status.as_str(),
-                Style::default().fg(secondary()),
+                self.spec.as_str(),
+                Style::default().fg(t.accent),
             ));
         }
-        if !self.services.is_empty() {
-            if !right.is_empty() {
-                right.push(Span::styled(SEP, quiet));
-            }
-            self.services.extend_spans(&mut right);
+        for badge in &self.attention {
+            group(&mut right);
+            right.push(Span::styled(*badge, Style::default().fg(t.warning)));
+        }
+        if !self.hints.is_empty() {
+            let hints: Vec<Hint<'_>> = self
+                .hints
+                .iter()
+                .map(|(key, desc)| Hint { key, desc })
+                .collect();
+            right.extend(hint_spans(&hints, usize::MAX, t));
+        }
+        if let Some(badge) = &self.services {
+            group(&mut right);
+            right.push(badge.span(t));
         }
         if self.show_diag {
-            if !right.is_empty() {
-                right.push(Span::styled(SEP, quiet));
-            }
+            group(&mut right);
             if self.errors > 0 {
                 right.push(Span::styled(
                     format!("●{}", self.errors),
-                    Style::default().fg(severity_color(Severity::Error)),
+                    Style::default().fg(t.error),
                 ));
             }
             if self.warnings > 0 {
@@ -340,34 +311,30 @@ impl Modeline {
                     right.push(Span::raw(" "));
                 }
                 right.push(Span::styled(
-                    format!("●{}", self.warnings),
-                    Style::default().fg(severity_color(Severity::Warning)),
+                    format!("▲{}", self.warnings),
+                    Style::default().fg(t.warning),
                 ));
             }
         }
         if !self.indent.is_empty() {
-            if !right.is_empty() {
-                right.push(Span::styled(SEP, quiet));
-            }
+            group(&mut right);
             right.push(Span::styled(
                 self.indent.as_str(),
-                Style::default().fg(muted()),
+                Style::default().fg(t.muted),
             ));
         }
-        if !right.is_empty() {
-            right.push(Span::styled(SEP, quiet));
-        }
-        right.push(Span::styled(self.position(), Style::default().fg(muted())));
+        group(&mut right);
+        right.push(Span::styled(self.position(), Style::default().fg(t.muted)));
         (left, right)
     }
 
     /// The finished row: halves joined by a flexible gap that never
     /// closes while both halves are on screen.
-    fn spans(&self, cells: usize) -> Vec<Span<'_>> {
+    fn spans<'a>(&'a self, t: &Tokens, cells: usize) -> Vec<Span<'a>> {
         if self.bare {
-            return self.bare_spans(cells);
+            return self.bare_spans(t, cells);
         }
-        let (left, right) = self.halves();
+        let (left, right) = self.halves(t);
         // the fit invariant already reserved the gap: l + GAP + r
         // fits, so this pad is at least GAP cells wide
         let pad = cells.saturating_sub(span_width(&left) + span_width(&right));
@@ -377,33 +344,38 @@ impl Modeline {
         spans
     }
 
-    fn bare_spans(&self, cells: usize) -> Vec<Span<'static>> {
+    fn bare_spans(&self, t: &Tokens, cells: usize) -> Vec<Span<'static>> {
         let mut spans = Vec::new();
-        let mut chip_budget = self.bare_chip;
-        if self.compact_feedback && chip_budget >= 1 {
+        if self.bare_chip >= 1 {
+            // the leading cells carry the safety marks: cut, never elide
+            let shown: String =
+                unicode_segmentation::UnicodeSegmentation::graphemes(self.chip.as_str(), true)
+                    .scan(0usize, |used, grapheme| {
+                        *used += width(grapheme);
+                        (*used <= self.bare_chip).then_some(grapheme)
+                    })
+                    .collect();
             spans.push(Span::styled(
-                "!",
-                Style::default().fg(self.feedback_color()),
-            ));
-            chip_budget -= 1;
-        }
-        if chip_budget >= 1 {
-            spans.push(Span::styled("▌", Style::default().fg(self.accent)));
-        }
-        if chip_budget >= 2 {
-            spans.push(Span::styled(
-                clip_end(&self.chip, chip_budget - 1).into_owned(),
+                shown,
                 Style::default()
-                    .fg(base())
-                    .bg(self.accent)
+                    .fg(t.on_accent)
+                    .bg(self.chip_color)
                     .add_modifier(Modifier::BOLD),
             ));
         }
         spans.push(Span::styled(
             clip_end(&self.position(), cells.saturating_sub(self.bare_chip)).into_owned(),
-            Style::default().fg(muted()),
+            Style::default().fg(t.muted),
         ));
         spans
+    }
+
+    fn has_file(&self) -> bool {
+        !self.dir.is_empty()
+            || !self.name.is_empty()
+            || self.dirty
+            || self.readonly
+            || self.multicursor.is_some()
     }
 }
 

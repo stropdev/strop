@@ -370,6 +370,7 @@ fn modal_terminal_baseline_journey() {
     let session = editor.terminal_document(id).unwrap().session;
     let updated = fixture_frame(
         session,
+        editor.presentation.theme,
         &[
             ("first", Style::default()),
             ("second", Style::default()),
@@ -441,6 +442,7 @@ fn terminal_refresh_remaps_anchors_across_scrollback_drops() {
     let session = editor.terminal_document(id).unwrap().session;
     let updated = fixture_frame(
         session,
+        editor.presentation.theme,
         &[
             ("kept-one", Style::default()),
             ("kept-two", Style::default()),

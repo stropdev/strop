@@ -15,13 +15,16 @@ Theorems over the Aeneas translation of `strop_kernel::editmap`
   front (`validate_batch_spec`): strictly ascending starts, each edit in
   bounds, no edit reaching past the next one's start. Each refusal names a
   real defect of the input.
-- Composition (`batch_map_composition`): folding the per-edit mapping over a
-  batch in production's reverse application order — `apply_prepared`
-  publishes the last edit first and `editor/transact.rs` folds the journal in
-  order, each step in original coordinates — equals classifying the anchor
-  once against the original coordinates and adding the deltas of the edits
-  wholly before it. `consecutive_of_batchOk` connects `validate_batch`'s
-  acceptance to the composition's premise.
+- `map_through_edits` folds `map_position` over a journal in application
+  order (`map_through_edits_spec`) and is monotone
+  (`map_through_edits_monotone`). Composition
+  (`map_through_edits_composition`): over the journal of a batch applied
+  back to front — `apply_prepared` publishes the last edit first, and
+  `editor/transact.rs`, collection rebuilds and snippet stops map through
+  that journal with this function — it equals classifying the anchor once
+  against the original coordinates and adding the deltas of the edits wholly
+  before it. `consecutive_of_batchOk` connects `validate_batch`'s acceptance
+  to the composition's premise.
 -/
 
 open Aeneas Aeneas.Std Result
@@ -250,8 +253,9 @@ theorem mapSpec_eq_mapNat {p s oe ne : Nat} (h : ne + (p - oe) ≤ Usize.max) :
   simp only
   split_ifs <;> omega
 
-/-- Production's fold: `edits` sorted by start, applied (and journaled) last
-first; each step maps in original coordinates. -/
+/-- The reverse-order fold over a batch sorted by start, in `Nat` (no
+platform bound): the proof device `map_through_edits_composition` reduces
+the extracted loop to. -/
 def batchMap (p : Nat) (es : List Extent) : Nat :=
   es.foldr (fun e acc => mapNat acc e) p
 
@@ -309,8 +313,8 @@ theorem batchMap_lower {p b : Nat} {es : List Extent} (hchain : Chain3 es)
     unfold mapNat
     split_ifs <;> omega
 
-/-- Composition: production's reverse-order fold equals the direct map. -/
-theorem batch_map_composition (p : Nat) (es : List Extent) (hchain : Chain3 es) :
+/-- The reverse-order fold equals the direct map. -/
+theorem batchMap_eq_directMap (p : Nat) (es : List Extent) (hchain : Chain3 es) :
     (batchMap p es : Int) = directMap p es := by
   induction es with
   | nil => simp [batchMap, directMap]
@@ -363,5 +367,107 @@ theorem consecutive_of_batchOk (len : Nat) :
         exact hends (i + 1) (by simpa using h₁) (by simpa using h₂)
       · exact ⟨ fun x hx => hin x (by simp [hx]),
           fun i hi => hdis (i + 1) (by simp; omega) ⟩
+
+/-! ## Mapping through a journal -/
+
+/-- One journaled edit `(start, old_end, new_end)` as an extent. -/
+def extent (e : Usize × Usize × Usize) : Extent := (e.1.val, e.2.1.val, e.2.2.val)
+
+/-- The journal fold `map_through_edits` computes: `mapSpec` through each
+edit in application order. -/
+def journalSpec (p : Nat) (es : List (Usize × Usize × Usize)) : Nat :=
+  es.foldl (fun q e => mapSpec q e.1.val e.2.1.val e.2.2.val) p
+
+/-- The loop from position `k` folds the rest of the journal. -/
+theorem map_through_edits_loop_spec (edits : Slice (Usize × Usize × Usize)) (mapped k : Usize)
+    (hk : k.val ≤ edits.val.length) :
+    editmap.map_through_edits_loop edits mapped k ⦃ r =>
+      r.val = journalSpec mapped.val (edits.val.drop k.val) ⦄ := by
+  unfold editmap.map_through_edits_loop
+  apply loop.spec_decr_nat (fun s : Usize × Usize => edits.val.length - s.2.val)
+    (fun s : Usize × Usize => s.2.val ≤ edits.val.length ∧
+      journalSpec s.1.val (edits.val.drop s.2.val) = journalSpec mapped.val (edits.val.drop k.val))
+  · intro ⟨ m, j ⟩ ⟨ hj, hinv ⟩
+    simp only at hj hinv
+    unfold editmap.map_through_edits_loop.body
+    try dsimp only
+    split
+    next hlt =>
+      have hlt' : j.val < edits.val.length := by scalar_tac
+      step as ⟨ s, oe, ne, hcur ⟩
+      step with map_position_spec as ⟨ m1, hm1 ⟩
+      step as ⟨ j1, hj1 ⟩
+      and_intros
+      all_goals try scalar_tac
+      rw [← hinv, hj1, List.drop_eq_getElem_cons hlt']
+      simp only [journalSpec, List.foldl_cons, ← hcur, hm1]
+    next hge =>
+      have hend : j.val = edits.val.length := by scalar_tac
+      simp only [WP.spec_ok]
+      rw [← hinv, hend, List.drop_length]
+      rfl
+  · exact ⟨ hk, rfl ⟩
+
+/-- `map_through_edits` folds `map_position` over the journal in application
+order, for every input. -/
+theorem map_through_edits_spec (p : Usize) (edits : Slice (Usize × Usize × Usize)) :
+    editmap.map_through_edits p edits ⦃ r => r.val = journalSpec p.val edits.val ⦄ := by
+  unfold editmap.map_through_edits
+  apply WP.spec_mono (map_through_edits_loop_spec edits p 0#usize (by simp))
+  intro r hr
+  simpa using hr
+
+theorem journalSpec_monotone {a b : Nat} (es : List (Usize × Usize × Usize))
+    (hsn : ∀ e ∈ es, e.1.val ≤ e.2.2.val) (hab : a ≤ b) :
+    journalSpec a es ≤ journalSpec b es := by
+  induction es generalizing a b with
+  | nil => simpa [journalSpec]
+  | cons e rest ih =>
+    simp only [journalSpec, List.foldl_cons] at *
+    apply ih (fun x hx => hsn x (by simp [hx]))
+    exact mapSpec_monotone (hsn e (by simp)) (by scalar_tac) hab
+
+/-- Anchors keep their relative order through a whole journal. -/
+theorem map_through_edits_monotone (a b : Usize) (edits : Slice (Usize × Usize × Usize))
+    (hsn : ∀ e ∈ edits.val, e.1.val ≤ e.2.2.val) (hab : a.val ≤ b.val) :
+    editmap.map_through_edits a edits ⦃ ra =>
+      editmap.map_through_edits b edits ⦃ rb => ra.val ≤ rb.val ⦄ ⦄ := by
+  apply WP.spec_mono (map_through_edits_spec a edits)
+  intro ra hra
+  apply WP.spec_mono (map_through_edits_spec b edits)
+  intro rb hrb
+  rw [hra, hrb]
+  exact journalSpec_monotone edits.val hsn hab
+
+/-- Below the platform bound the journal fold is the `Nat` fold. -/
+theorem journalSpec_eq_foldl (p : Nat) (es : List (Usize × Usize × Usize))
+    (hbound : p + (es.map (fun e => e.2.2.val)).sum ≤ Usize.max) :
+    journalSpec p es = (es.map extent).foldl mapNat p := by
+  induction es generalizing p with
+  | nil => rfl
+  | cons e rest ih =>
+    obtain ⟨ s, oe, ne ⟩ := e
+    simp only [List.map_cons, List.sum_cons] at hbound
+    simp only [journalSpec, List.foldl_cons, List.map_cons, extent] at *
+    rw [mapSpec_eq_mapNat (by omega)]
+    apply ih
+    have : mapNat p (s.val, oe.val, ne.val) ≤ p + ne.val := by
+      unfold mapNat; simp only; split_ifs <;> omega
+    omega
+
+/-- Composition over the extracted fold: through the journal of a batch
+applied back to front (`journal` is the batch reversed), an anchor lands
+where classifying it once against the original coordinates puts it. The
+bound keeps every intermediate offset below the platform maximum, as byte
+offsets into a rope always are. -/
+theorem map_through_edits_composition (p : Usize) (journal : Slice (Usize × Usize × Usize))
+    (hchain : Chain3 (journal.val.reverse.map extent))
+    (hbound : p.val + (journal.val.map (fun e => e.2.2.val)).sum ≤ Usize.max) :
+    editmap.map_through_edits p journal ⦃ r =>
+      (r.val : Int) = directMap p.val (journal.val.reverse.map extent) ⦄ := by
+  apply WP.spec_mono (map_through_edits_spec p journal)
+  intro r hr
+  rw [hr, journalSpec_eq_foldl _ _ hbound, ← batchMap_eq_directMap _ _ hchain]
+  simp only [batchMap, List.map_reverse, List.foldr_reverse]
 
 end Strop.Kernel

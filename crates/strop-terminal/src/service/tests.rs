@@ -6,7 +6,7 @@ fn service() -> (Service, mpsc::Receiver<Request>, UnixDatagram) {
     let (wake, listening) = UnixDatagram::pair().unwrap();
     wake.set_nonblocking(true).unwrap();
     listening.set_nonblocking(true).unwrap();
-    let session = SessionId::from_request(strop_core::worker::WorkerId::new(1));
+    let session = SessionId::new(1);
     (
         Service {
             sender,
@@ -31,14 +31,14 @@ fn theme_requests_coalesce_and_wake_even_when_child_input_is_full() {
     assert!(matches!(service.focus(true), Err(Error::InputFull)));
     for theme in [
         ThemeId::PaperDark,
-        ThemeId::Light,
+        ThemeId::Vellum,
         ThemeId::Paper,
-        ThemeId::Nord,
+        ThemeId::Slate,
     ] {
         service.set_theme(theme).unwrap();
     }
     let selected = service.budget.theme.load(Ordering::Acquire);
-    assert_eq!(ThemeId::ALL[usize::from(selected - 1)], ThemeId::Nord);
+    assert_eq!(ThemeId::ALL[usize::from(selected - 1)], ThemeId::Slate);
     assert_eq!(service.budget.count.load(Ordering::Acquire), MAX_COMMANDS);
     assert_eq!(service.budget.bytes.load(Ordering::Acquire), 0);
     assert!(matches!(
@@ -59,21 +59,18 @@ fn theme_requests_coalesce_and_wake_even_when_child_input_is_full() {
 #[test]
 fn startup_accepts_the_latest_theme_but_closed_services_reject_it() {
     let (mut service, _receiver, _listening) = service();
-    service.set_theme(ThemeId::Light).unwrap();
-    service.set_theme(ThemeId::CatppuccinMocha).unwrap();
+    service.set_theme(ThemeId::Vellum).unwrap();
+    service.set_theme(ThemeId::Carbide).unwrap();
     let selected = service.budget.theme.load(Ordering::Acquire);
-    assert_eq!(
-        ThemeId::ALL[usize::from(selected - 1)],
-        ThemeId::CatppuccinMocha
-    );
+    assert_eq!(ThemeId::ALL[usize::from(selected - 1)], ThemeId::Carbide);
     service.stop();
     assert!(matches!(
-        service.set_theme(ThemeId::Nord),
+        service.set_theme(ThemeId::Slate),
         Err(Error::Closed)
     ));
     service.budget.lifecycle.store(FINISHED, Ordering::Release);
     assert!(matches!(
-        service.set_theme(ThemeId::Dark),
+        service.set_theme(ThemeId::Hone),
         Err(Error::Closed)
     ));
 }

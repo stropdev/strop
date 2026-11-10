@@ -523,6 +523,8 @@ impl Editor {
             self.last_cmd_keys = if backward { "X" } else { "x" }.into();
             self.last_change = None;
             self.last_insert = None;
+            // one `x` is one undo step (vim): the group closes here
+            self.tx_commit();
         }
     }
 
