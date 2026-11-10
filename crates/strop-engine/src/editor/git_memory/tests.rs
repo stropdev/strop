@@ -362,7 +362,7 @@ fn stale_gutter_falls_back_to_card() {
     e.feed_text("fn c() {}");
     e.feed(Key::Esc);
     e.feed_text(":w<cr>");
-    pump_ready(&mut e, |e| !e.doc(e.first_doc()).buf.dirty);
+    pump_ready(&mut e, |e| !e.doc(e.first_doc()).buf.is_dirty());
     assert!(
         e.blame_gutter_for(e.first_doc()).is_none(),
         "edits void the line↔blame pairing"

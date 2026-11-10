@@ -149,7 +149,7 @@ impl Editor {
             return;
         }
         if !force {
-            let dirty = self.docs.iter().filter(|(_, d)| d.buf.dirty).count();
+            let dirty = self.docs.iter().filter(|(_, d)| d.buf.is_dirty()).count();
             if dirty > 0 {
                 self.message = format!("{dirty} unsaved buffer(s) — :qa! to discard");
                 return;

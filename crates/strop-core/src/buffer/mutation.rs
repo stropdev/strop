@@ -122,6 +122,13 @@ impl Buffer {
             change.history = None;
         }
         self.history = history;
+        // A clean buffer's text is the tip of the adopted history; a dirty
+        // one has no known clean node in it.
+        self.saved_at = if self.dirty {
+            None
+        } else {
+            self.history.committed_position()
+        };
     }
     pub fn clear_changes(&mut self) {
         self.changes.clear();
@@ -488,6 +495,9 @@ impl Buffer {
             );
             self.replace_validated(range, text, ChangeOrigin::History);
         }
+        // vim's 'modified': back at the saved node is clean, anywhere else
+        // is dirty (navigation commits, so the position is always known).
+        self.dirty = self.saved_at != self.history.committed_position();
         self.trace_history(&ops);
         Ok(Some(HistoryMove {
             start: start.into(),

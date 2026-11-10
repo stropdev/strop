@@ -389,7 +389,7 @@ fn collection_write_commands_never_save_dirty_sources() {
     for command in [":w\r", ":w!\r", ":wq\r", ":wq!\r"] {
         e.feed_text(command);
         assert_eq!(e.current(), collection, "{command} closed the view");
-        assert!(e.doc(source).buf.dirty, "{command} saved the source");
+        assert!(e.doc(source).buf.is_dirty(), "{command} saved the source");
         assert!(a.exists(), "{command}: source file is missing");
         assert_eq!(
             std::fs::read_to_string(&a).unwrap(),
@@ -415,7 +415,10 @@ fn collection_close_keeps_dirty_sources() {
     e.feed_text(":q\r");
     assert!(e.docs.get(collection).is_none());
     assert_eq!(e.doc(source).buf.text(), "Xlpha one\nalpha two\n");
-    assert!(e.doc(source).buf.dirty, "unsaved source edits are intact");
+    assert!(
+        e.doc(source).buf.is_dirty(),
+        "unsaved source edits are intact"
+    );
 }
 
 /// 0049 §5: g<Space> from a body row lands on the exact source position

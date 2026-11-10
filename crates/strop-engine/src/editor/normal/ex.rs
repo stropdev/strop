@@ -360,7 +360,7 @@ impl Editor {
             "undo-change" => self.undo_last_change(),
             "save-change" => self.save_changed_files_pub(),
             "e" | "e!" => {
-                if self.buf().dirty && cmd == "e" {
+                if self.buf().is_dirty() && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();
                 } else if arg.is_empty() {
                     if !self.refresh_current_resource() {

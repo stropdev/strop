@@ -57,7 +57,7 @@ fn symbols_in_a_buffer_without_a_language_says_so() {
 fn git_log_on_a_dirty_buffer_opens_the_log() {
     let (_dir, mut e) = crate::editor::test_support::git::fixture();
     e.feed_text("x");
-    assert!(e.buf().dirty);
+    assert!(e.buf().is_dirty());
     e.feed_text(" gl");
     assert!(matches!(e.surface(), Some(Surface::CommitLog { .. })));
 }

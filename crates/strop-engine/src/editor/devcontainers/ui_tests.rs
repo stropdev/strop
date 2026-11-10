@@ -384,14 +384,14 @@ fn dirty_stay_and_save_failure_preserve_original_work() {
     assert!(editor.devcontainers.pending_transition().is_some());
     let stay = dirty_action(&editor, DirtyTransitionChoice::Stay);
     editor.invoke_devcontainer_action(stay);
-    assert!(editor.buf().dirty && editor.devcontainers.active_environment().is_none());
+    assert!(editor.buf().is_dirty() && editor.devcontainers.active_environment().is_none());
 
     start(&mut editor, &key, OperationKind::Start);
     settle(&mut editor);
     let save = dirty_action(&editor, DirtyTransitionChoice::Save);
     editor.invoke_devcontainer_action(save);
     assert!(
-        editor.buf().dirty,
+        editor.buf().is_dirty(),
         "scratch without a save path remains untouched"
     );
     assert!(editor.devcontainers.active_environment().is_none());
@@ -423,7 +423,7 @@ fn successful_save_enters_exact_verified_root_and_rebuild_retires_old_editor_bin
         Err(std::io::Error::other("native container attach forbidden"))
     }));
     editor.handle_devcontainer_events();
-    assert!(!editor.doc(document).buf.dirty);
+    assert!(!editor.doc(document).buf.is_dirty());
     let active = editor.devcontainers.active_environment().unwrap().clone();
     assert_eq!(active.root.path, Path::new("/workspaces/project"));
     assert_eq!(active.identity.container_id, "a".repeat(64));

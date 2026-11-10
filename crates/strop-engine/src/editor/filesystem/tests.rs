@@ -330,7 +330,7 @@ fn dirty_file_rename_preserves_document_undo_and_writes_the_new_name() {
     command(&mut editor, ":apply-change<cr>");
     editor.feed_text("q");
     assert_eq!(editor.current(), document);
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert_eq!(
         editor.buf().file_identity(),
         Some(new.as_path()),
@@ -340,7 +340,7 @@ fn dirty_file_rename_preserves_document_undo_and_writes_the_new_name() {
     command(&mut editor, ":w<cr>");
     assert!(!old.exists());
     assert_eq!(std::fs::read_to_string(&new).unwrap(), "unsaved base\n");
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
     editor.feed_text("u");
     assert_eq!(editor.buf().text(), "base\n");
 }
@@ -380,7 +380,7 @@ fn directory_move_keeps_dirty_descendants_and_their_document_ids() {
         (second, "sub/b.txt", "two B\n"),
     ] {
         let entry = editor.docs.get(document).unwrap();
-        assert!(entry.buf.dirty);
+        assert!(entry.buf.is_dirty());
         assert_eq!(
             entry.buf.file_identity(),
             Some(destination.join(suffix).as_path())
@@ -432,11 +432,11 @@ fn permanent_removal_detaches_dirty_text_and_cannot_recreate_the_old_binding() {
     assert_eq!(editor.current(), document);
     assert!(!path.exists());
     assert_eq!(editor.buf().text(), "unsaved kept in memory\n");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(editor.buf().path.is_none());
     command(&mut editor, ":w!<cr>");
     assert!(!path.exists());
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert_eq!(
         editor
             .doc(document)
@@ -546,7 +546,7 @@ fn native_trash_restore_cleans_metadata_and_preserves_the_detached_draft() {
     assert_eq!(std::fs::read_to_string(source).unwrap(), "stored\n");
     assert_eq!(editor.doc(document).buf.text(), "unsaved stored\n");
     assert!(editor.doc(document).buf.path.is_none());
-    assert!(editor.doc(document).buf.dirty);
+    assert!(editor.doc(document).buf.is_dirty());
     {
         assert_eq!(
             std::fs::read_dir(root.path().join("data/Trash/files"))

@@ -63,7 +63,7 @@ impl<'de> Deserialize<'de> for Opened {
         let document = if let Some(source) = record.directory {
             if record.remote.is_some()
                 || buffer.path.is_some()
-                || buffer.dirty
+                || buffer.is_dirty()
                 || !source.validate()
                 || !record.canonical.matches_location(&source.location)
                 || buffer.text() != source.text().as_str()
@@ -77,7 +77,7 @@ impl<'de> Deserialize<'de> for Opened {
             match (&record.canonical, record.remote) {
                 (FileTarget::Local(_), None) => Document::new(buffer),
                 (FileTarget::Container { container, path }, None) => {
-                    if buffer.path.is_some() || buffer.dirty {
+                    if buffer.path.is_some() || buffer.is_dirty() {
                         return Err(serde::de::Error::custom(
                             "container completion has a local write binding",
                         ));
@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for Opened {
                     Document::container_file(buffer, container.clone(), path.clone())
                 }
                 (FileTarget::Remote(location), Some(metadata)) => {
-                    if buffer.path.is_some() || buffer.dirty {
+                    if buffer.path.is_some() || buffer.is_dirty() {
                         return Err(serde::de::Error::custom(
                             "remote completion has local or dirty content",
                         ));

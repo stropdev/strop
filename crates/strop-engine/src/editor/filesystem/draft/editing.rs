@@ -77,7 +77,7 @@ impl Editor {
             }
             doc.buf
                 .set_readonly(strop_core::ReadonlyReason::DirectoryOperation);
-            doc.buf.dirty = false;
+            doc.buf.mark_clean();
         }
         self.start_directory_task(document, DirectoryTask::Reload, None)
     }
@@ -157,7 +157,7 @@ impl Editor {
                 .docs
                 .iter()
                 .find_map(|(_, doc)| doc.matches_target(&target).then_some(doc));
-            if draft.copy_version.is_none() && open.is_some_and(|doc| doc.buf.dirty) {
+            if draft.copy_version.is_none() && open.is_some_and(|doc| doc.buf.is_dirty()) {
                 return Err("draft copies include unsaved sources; choose :fs copies stored or :fs copies buffer before :w".into());
             }
             if draft.copy_version == Some(CopyVersion::Buffer) {
@@ -309,7 +309,7 @@ impl Editor {
         }
         doc.buf.readonly = unconfirmed || committed;
         if committed && !unconfirmed {
-            doc.buf.dirty = false;
+            doc.buf.mark_clean();
             if let Err(error) = self.start_directory_task(document, DirectoryTask::Reload, None) {
                 self.message = error;
             }

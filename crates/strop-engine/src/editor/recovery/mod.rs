@@ -160,7 +160,7 @@ impl Editor {
     /// surfaces, terminals, containers and generated collections are never
     /// substitute source backups and stay out.
     fn recovery_doc_eligible(&self, doc: &super::Document) -> bool {
-        if !doc.buf.dirty {
+        if !doc.buf.is_dirty() {
             return false;
         }
         match &doc.source {

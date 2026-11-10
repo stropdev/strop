@@ -84,7 +84,7 @@ fn invalid_mutation_coordinates_do_not_clamp_into_valid_text() {
             edits: vec![replacement],
         }));
         assert_eq!(editor.doc(document).buf.text().to_string(), "a😀z");
-        assert!(!editor.doc(document).buf.dirty);
+        assert!(!editor.doc(document).buf.is_dirty());
     }
 }
 
@@ -365,6 +365,6 @@ fn a_stale_formatter_does_not_save_newer_user_input() {
         editor.doc(document).buf.text().to_string(),
         "NEW original\n"
     );
-    assert!(editor.doc(document).buf.dirty);
+    assert!(editor.doc(document).buf.is_dirty());
     assert!(editor.message.contains("write not started"));
 }

@@ -179,7 +179,7 @@ impl Editor {
             }
         };
         let mut buffer = Buffer::from_text(&text);
-        buffer.dirty = true;
+        buffer.mark_dirty();
         buffer.name = Some(format!("recovered: {label}"));
         let Ok(id) = self.docs.try_insert(Document::scratch(buffer)) else {
             // The durable checkpoint is untouched; the user can retry

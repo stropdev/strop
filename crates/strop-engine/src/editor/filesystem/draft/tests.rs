@@ -66,7 +66,7 @@ fn browsing_an_open_filename_draft_keeps_its_text_history_and_provenance() {
     );
     assert_eq!(editor.current(), document);
     assert_eq!(editor.buf().text().to_string(), text);
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(editor.filename_draft(document).is_some_and(Draft::editable));
     editor.feed(strop_core::frontend_input::Key::Char('u'));
     assert_eq!(editor.buf().text().to_string(), "a.txt\n");

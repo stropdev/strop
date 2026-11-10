@@ -459,7 +459,7 @@ impl Editor {
         self.docs
             .iter()
             .filter(|(_, document)| {
-                document.buf.dirty
+                document.buf.is_dirty()
                     && matches!(
                         &document.source,
                         DocumentSource::File | DocumentSource::Scratch
@@ -633,7 +633,7 @@ impl Editor {
                 waiting = true;
                 continue;
             }
-            if document.buf.dirty {
+            if document.buf.is_dirty() {
                 failure = Some(if document.buf.revision() == saved.revision {
                     format!("save failed for {}", document.label(&self.cwd))
                 } else {

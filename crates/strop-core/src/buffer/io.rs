@@ -138,7 +138,7 @@ impl Buffer {
         // The verified retirement rule: only the live revision retires.
         let current = crate::mutguard::save_ack_is_current(revision.get(), self.revision().get());
         if current {
-            self.dirty = false;
+            self.mark_clean();
         }
         current
     }

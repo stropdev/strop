@@ -57,3 +57,48 @@ fn readonly_buffers_refuse_undo() {
     assert!(e.message.contains("readonly"));
     assert_eq!(e.buf().text().to_string(), "x\n");
 }
+
+#[test]
+fn undo_back_to_the_loaded_text_clears_modified() {
+    // B3 / vim 'modified': the load is the save point; redo past it
+    // re-dirties, undo back clears, and :q no longer refuses.
+    let mut e = Editor::new(Buffer::from_text("abc\n"));
+    e.feed_text("x");
+    assert!(e.buf().is_dirty());
+    e.feed_text("u");
+    assert_eq!(e.buf().text().to_string(), "abc\n");
+    assert!(!e.buf().is_dirty(), "undo to the save point is clean");
+    e.feed(strop_core::frontend_input::Key::CtrlR);
+    assert!(e.buf().is_dirty(), "redo past the save point re-dirties");
+    e.feed_text("u");
+    assert!(!e.buf().is_dirty());
+    e.feed_text(":q\r");
+    assert!(e.should_quit, ":q accepts the clean buffer");
+}
+
+#[test]
+fn the_save_point_moves_with_each_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("saved.txt");
+    std::fs::write(&f, "abc\n").unwrap();
+    let mut e = Editor::new(Buffer::open(f.to_str().unwrap()).unwrap());
+    e.feed_text("x");
+    e.feed_text(":w\r");
+    e.wait_io().unwrap();
+    assert!(!e.buf().is_dirty());
+    e.feed_text("x");
+    assert!(e.buf().is_dirty());
+    e.feed_text("u");
+    assert!(!e.buf().is_dirty(), "back at the written text");
+    e.feed_text("u");
+    assert_eq!(e.buf().text().to_string(), "abc\n");
+    assert!(e.buf().is_dirty(), "the loaded text is no longer on disk");
+    // a branch off the save point never lands on it again
+    e.feed_text("iz");
+    e.feed(strop_core::frontend_input::Key::Esc);
+    e.feed_text("u");
+    assert!(
+        e.buf().is_dirty(),
+        "the original text is not what was written"
+    );
+}

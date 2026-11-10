@@ -494,7 +494,7 @@ impl Editor {
         // staging reads the *disk* file's hunk: a dirty buffer means the
         // two disagree, and auto-saving would silently write every
         // unrelated unsaved edit to the worktree (0014). Refuse loudly.
-        if self.doc(idx).buf.dirty {
+        if self.doc(idx).buf.is_dirty() {
             self.message = "unsaved changes — :w first, then stage".into();
             return;
         }
@@ -537,7 +537,7 @@ impl Editor {
             self.message = "remote Git mutations are not supported".into();
             return;
         }
-        if self.buf().dirty {
+        if self.buf().is_dirty() {
             self.message = "unsaved changes — :w first".into();
             return;
         }

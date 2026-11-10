@@ -118,7 +118,11 @@ impl Editor {
         let _ = writeln!(
             text,
             "  state     {}, revision {}",
-            if self.buf().dirty { "dirty" } else { "clean" },
+            if self.buf().is_dirty() {
+                "dirty"
+            } else {
+                "clean"
+            },
             self.buf().revision().get()
         );
         if self.buf().readonly {

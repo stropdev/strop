@@ -101,7 +101,7 @@ impl Editor {
     /// `ZZ`: write + close the window (vim's :x — only writes when
     /// dirty; a failed save keeps everything open).
     pub(crate) fn write_quit(&mut self) {
-        if self.buf().dirty {
+        if self.buf().is_dirty() {
             self.request_save(None, false, true);
             return;
         }

@@ -136,7 +136,7 @@ impl Editor {
         self.collections.get_mut(&id).unwrap().revision = revision;
         // The view is a presentation: its dirty bit is never the story
         // (0049 §5 — the sources own unsaved state).
-        self.docs.get_mut(id).unwrap().buf.dirty = false;
+        self.docs.get_mut(id).unwrap().buf.mark_clean();
     }
 }
 
@@ -173,7 +173,7 @@ impl Editor {
             .and_then(|index| collection.excerpts.get(index))
         {
             if let Some(source) = self.docs.get(excerpt.source) {
-                info.source_dirty = source.buf.dirty;
+                info.source_dirty = source.buf.is_dirty();
                 info.source_readonly = source.buf.readonly;
             }
             let active_index = collection
@@ -256,7 +256,7 @@ impl Editor {
             collection.excerpts.iter().any(|excerpt| {
                 self.docs
                     .get(excerpt.source)
-                    .is_some_and(|source| source.buf.dirty)
+                    .is_some_and(|source| source.buf.is_dirty())
             })
         })
     }

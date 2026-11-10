@@ -338,7 +338,7 @@ impl Editor {
                 let id = if let Some(id) = existing {
                     if self.doc(id).directory_metadata_ref().is_some()
                         || (matches!(key.path, FileTarget::Container { .. })
-                            && !self.doc(id).buf.dirty)
+                            && !self.doc(id).buf.is_dirty())
                     {
                         if matches!(key.path, FileTarget::Container { .. }) {
                             self.revoke_container_write(id);

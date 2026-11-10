@@ -85,12 +85,12 @@ fn local_save_rides_the_worker_store_intent() {
     let mut editor = Editor::new(Buffer::from_text(""));
     let document = editor.open_fixture(&path).unwrap();
     editor.feed_text("Oafter<esc>");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(editor.request_save_document(document, None, false, false));
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "after\nbefore\n");
     assert!(
-        !editor.buf().dirty,
+        !editor.buf().is_dirty(),
         "the committed store retires the revision"
     );
     assert_eq!(editor.message, "written");
@@ -168,7 +168,7 @@ fn save_conflict_on_a_moved_baseline_and_force_overwrites() {
         "typed conflict, dirty preserved: {}",
         editor.message
     );
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(editor.feedback()[0]
         .detail()
         .contains("file changed on disk"));
@@ -177,7 +177,7 @@ fn save_conflict_on_a_moved_baseline_and_force_overwrites() {
     assert!(editor.request_save_document(document, None, true, false));
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine\nbefore\n");
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
     assert_eq!(
         editor.feedback()[0].lifecycle(),
         crate::editor::feedback::FeedbackLifecycle::Resolved
@@ -244,7 +244,7 @@ fn same_size_content_change_commits_and_verifies() {
     assert!(editor.request_save_document(document, None, false, false));
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "bbbb\n");
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn unconfirmed_save_verifies_before_any_rewrite() {
         editor.message, "the original is unchanged on disk; :w writes again",
         "verification reconciles without writing"
     );
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");
     assert!(
         editor.io.store_attempts.is_empty(),
@@ -274,7 +274,7 @@ fn unconfirmed_save_verifies_before_any_rewrite() {
     assert!(editor.request_save_document(document, None, false, false));
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "mine\nbefore\n");
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn dismissed_unconfirmed_save_still_offers_verification_and_resolves() {
     editor.wait_io().unwrap();
 
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert_eq!(
         editor.feedback()[0].lifecycle(),
         crate::editor::feedback::FeedbackLifecycle::Resolved
@@ -348,7 +348,7 @@ fn a_late_committed_store_reconciles_the_source_once() {
         editor.message
     );
     assert!(
-        !editor.buf().dirty,
+        !editor.buf().is_dirty(),
         "the late committed receipt retires the saved revision"
     );
     assert!(editor.io.store_attempts.is_empty());
@@ -367,5 +367,5 @@ fn a_forced_rewrite_cannot_bypass_an_unverified_outcome() {
     assert!(editor.request_save_document(document, None, true, false));
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "before\n");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
 }

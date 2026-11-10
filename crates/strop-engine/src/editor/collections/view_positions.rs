@@ -79,7 +79,7 @@ impl Editor {
             self.message = error;
         }
         doc.buf.clear_changes();
-        doc.buf.dirty = false;
+        doc.buf.mark_clean();
         collection.revision = doc.buf.revision();
         let title_end = doc.buf.line_start(1);
         let length = doc.buf.len_bytes();

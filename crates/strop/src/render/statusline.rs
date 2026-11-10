@@ -174,7 +174,7 @@ impl Modeline {
             staged_mark: !terminal && commit.is_none() && !editor.staged_hunks().is_empty(),
             dir: printable(dir),
             name: printable(name),
-            dirty: buf.dirty || editor.collection_unsaved(editor.current()),
+            dirty: buf.is_dirty() || editor.collection_unsaved(editor.current()),
             readonly: buf.readonly && !terminal_input && !terminal,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
             spec: printable(spec::spec(editor)),

@@ -280,7 +280,7 @@ impl Editor {
                         if Some(id) == Some(self.current()) {
                             git_touched = true;
                         }
-                        if document.buf.dirty {
+                        if document.buf.is_dirty() {
                             if !dirty.contains(&id) {
                                 dirty.push(id);
                             }
@@ -349,7 +349,7 @@ impl Editor {
             }
             if matches!(self.doc(id).source, DocumentSource::Directory(_)) {
                 let _ = self.start_directory_task(id, DirectoryTask::Reload, None);
-            } else if self.doc(id).buf.dirty {
+            } else if self.doc(id).buf.is_dirty() {
                 self.notify_mark_external(id);
             } else {
                 self.request_notify_reload(id);
@@ -385,7 +385,7 @@ impl Editor {
         let Some(document_ref) = self.docs.get(document) else {
             return;
         };
-        if document_ref.buf.dirty || !matches!(document_ref.source, DocumentSource::File) {
+        if document_ref.buf.is_dirty() || !matches!(document_ref.source, DocumentSource::File) {
             return;
         }
         let Some(path) = document_ref.buf.path.clone().or_else(|| {
@@ -454,11 +454,11 @@ impl Editor {
         if !still_bound {
             return; // the binding moved on (save-as, operation receipt)
         }
-        if document.buf.revision() != key.revision || document.buf.dirty {
+        if document.buf.revision() != key.revision || document.buf.is_dirty() {
             // Edits landed while the job was in flight: the snapshot is
             // stale and never publishes. A dirty buffer takes
             // external-change state instead.
-            if document.buf.dirty {
+            if document.buf.is_dirty() {
                 self.notify_mark_external(key.document);
             }
             return;
@@ -517,7 +517,7 @@ impl Editor {
             && self
                 .docs
                 .get(key.document)
-                .is_some_and(|document| !document.buf.dirty)
+                .is_some_and(|document| !document.buf.is_dirty())
         {
             self.request_notify_reload(key.document);
         }

@@ -58,7 +58,15 @@ pub struct Buffer {
     /// String path makes the filesystem model a UI model). Display via
     /// to_string_lossy at the edge only.
     pub path: Option<std::path::PathBuf>,
-    pub dirty: bool,
+    /// Unsaved changes. Private so every writer goes through
+    /// [`Buffer::mark_clean`] / [`Buffer::mark_dirty`], which keep
+    /// `saved_at` honest.
+    dirty: bool,
+    /// The history node whose text is the saved (or loaded) state, when it
+    /// is one: undo/redo landing there clears `dirty`, leaving it sets it
+    /// (vim's 'modified'). `None` when no committed node matches the
+    /// saved text.
+    saved_at: Option<usize>,
     /// Monotonic edit counter; async readers (git gutter) diff lazily.
     epoch: u64,
     /// Read-only views (git surfaces): motions/yank work, edits refuse.
@@ -124,6 +132,25 @@ impl Buffer {
     pub fn history(&self) -> &History {
         &self.history
     }
+
+    /// Unsaved changes: the text differs from the saved (or loaded) state.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// The current text is the saved reference (a confirmed save, a reload,
+    /// a presentation view): undo away from here re-dirties, back clears.
+    pub fn mark_clean(&mut self) {
+        self.dirty = false;
+        self.saved_at = self.history.committed_position();
+    }
+
+    /// The text matches no saved state any more (a detached file, a
+    /// recovered draft): no history position is clean.
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+        self.saved_at = None;
+    }
     pub fn revision(&self) -> id::BufferRevision {
         id::BufferRevision::new(self.epoch)
     }
@@ -157,6 +184,7 @@ impl Buffer {
             rope,
             path: None,
             dirty: false,
+            saved_at: Some(0),
             readonly_reason: None,
             epoch: 0,
             readonly: false,
@@ -193,6 +221,7 @@ impl Buffer {
             rope,
             path: Some(path.to_path_buf()),
             dirty: false,
+            saved_at: Some(0),
             epoch: 0,
             readonly: false,
             readonly_reason: None,
@@ -230,6 +259,7 @@ impl Buffer {
             rope,
             path: Some(path),
             dirty: false,
+            saved_at: Some(0),
             epoch: 0,
             readonly: false,
             readonly_reason: None,

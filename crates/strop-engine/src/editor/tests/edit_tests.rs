@@ -400,7 +400,7 @@ fn wq_never_closes_a_failed_save() {
     e.feed_text(":wq\r");
     e.wait_io().unwrap();
     assert!(!e.should_quit, "failed save must not close");
-    assert!(e.buf().dirty, "still dirty");
+    assert!(e.buf().is_dirty(), "still dirty");
     assert_eq!(std::fs::read_to_string(&f).unwrap(), "external\n");
     e.feed_text(":wq!\r");
     e.wait_io().unwrap();

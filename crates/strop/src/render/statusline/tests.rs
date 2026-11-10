@@ -387,7 +387,7 @@ fn modeline_search_position_includes_zero_width_line_boundaries() {
 #[test]
 fn git_marks_and_flags_render_quietly() {
     let mut editor = editor("a\n", Some("/w/f.rs"));
-    editor.fixture_buf_mut().dirty = true;
+    editor.fixture_buf_mut().mark_dirty();
     editor.fixture_buf_mut().readonly = true;
     editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {

@@ -758,7 +758,7 @@ pub fn state_json(editor: &Editor) -> String {
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).text,
-        "dirty": editor.buf().dirty,
+        "dirty": editor.buf().is_dirty(),
         "terminal":editor.terminal_status(editor.current()),
         "completion": editor.completion_snapshot(true),
     })

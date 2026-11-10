@@ -94,13 +94,13 @@ fn displayed_snapshot_permit_admits_real_edit_and_conditional_save() {
     let mut fixture = fixture("before\n");
     enable(&mut fixture);
     fixture.editor.feed_text("A after<esc>");
-    assert!(fixture.editor.buf().dirty);
+    assert!(fixture.editor.buf().is_dirty());
     assert!(fixture
         .editor
         .request_save_document(fixture.document, None, false, false,));
     fixture.editor.wait_io().unwrap();
     assert_eq!(std::fs::read(&fixture.path).unwrap(), b"before after\n");
-    assert!(!fixture.editor.buf().dirty);
+    assert!(!fixture.editor.buf().is_dirty());
     assert_eq!(fixture.editor.message, "written in container");
     fixture.worker.shutdown().unwrap();
 }
@@ -171,7 +171,7 @@ fn recycled_incarnation_cannot_borrow_document_permit() {
         .request_save_document(fixture.document, None, false, false,));
     assert!(fixture.editor.message.contains("recycled"));
     assert_eq!(std::fs::read(&fixture.path).unwrap(), b"before\n");
-    assert!(fixture.editor.buf().dirty);
+    assert!(fixture.editor.buf().is_dirty());
     assert!(!fixture
         .editor
         .current_namespace_capabilities()
@@ -191,7 +191,7 @@ fn moved_baseline_conflicts_without_overwriting_foreign_bytes() {
         .request_save_document(fixture.document, None, false, false,));
     fixture.editor.wait_io().unwrap();
     assert_eq!(std::fs::read(&fixture.path).unwrap(), b"foreign\n");
-    assert!(fixture.editor.buf().dirty);
+    assert!(fixture.editor.buf().is_dirty());
     assert!(fixture.editor.message.contains("Conflict"));
     fixture.worker.shutdown().unwrap();
 }
@@ -271,7 +271,7 @@ fn unconfirmed_save_verifies_frozen_receipt_instead_of_rewriting() {
             receipt: Box::new(receipt.clone()),
         }),
     });
-    assert!(fixture.editor.buf().dirty);
+    assert!(fixture.editor.buf().is_dirty());
     assert!(fixture.editor.message.contains("unconfirmed"));
 
     fixture.editor.tape = std::rc::Rc::new(strop_trace::replay::Tape::fixture(|_, _| {
@@ -285,7 +285,7 @@ fn unconfirmed_save_verifies_frozen_receipt_instead_of_rewriting() {
         .editor
         .accept_container_receipt(ticket.key, *verified);
     assert!(
-        !fixture.editor.buf().dirty,
+        !fixture.editor.buf().is_dirty(),
         "verified completion left dirty buffer: {}",
         fixture.editor.message
     );
