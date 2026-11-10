@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **`strop -` edits stdin**: `cmd | strop -` opens the output in a buffer named `stdin`; `tail -f app.log | strop -` keeps streaming in (the cursor on the last line follows) and the buffer becomes editable when the pipe closes.
+- **`:messages`** lists the last 50 echo-row messages — refusals and ex errors included, with severity where known — in a read-only buffer.
+- **Recovery drafts are offered when their file opens**: after a crash, opening the file shows a card — recover (one undoable edit), open read-only, delete the draft, or edit anyway — instead of leaving the draft in `:recover list`. A new session no longer overwrites an earlier session's drafts before you answer.
+- **`Space a` is one "actions" list**: retained fixes, the language server's code actions and the file operations valid here, together; the help's language list is now "LSP servers" with each server's install hint, and Remote help starts with how to open a remote file.
+
+### Fixed
+
+- **Undo back to the saved text clears the modified flag** (`x` `u` no longer leaves `●` and blocks `:qa`); redo past it sets it again, as in vim — checked against Neovim.
+- **A fast double Escape is two Escapes**: `Esc Esc` arriving in one read used to be swallowed, so closing a picker needed a pause.
+- **Long messages wrap** to up to three rows above the statusline instead of being cut with `…`.
+- **Search and the file finder own their margins**: a collection's card border no longer shows as `╮`/`╯` fragments beside the picker.
+- **`strop replay --script` works on a trace recorded without `--log-content`**: it extracts the keys and names the original file to run them against, instead of refusing with "input precedes the initial document snapshot".
+- **Pickers other than file operations are no longer titled "filesystem actions"**.
+
 ### Removed
 
 - **Containers and dev containers**: `:containers`, `:container-worker`, `:container-edit`, **Space o → Containers…**, the dev container offer and its review/lifecycle actions, `container:` resource URIs and the `strop-containers` crate. To work inside a container, open `:terminal` and run `docker exec -it <container> sh`.

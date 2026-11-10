@@ -120,6 +120,8 @@ pub struct PickerGlue {
     /// `kind:` narrowing re-filters these candidates locally as the
     /// picker's query changes.
     pub(crate) symbols_candidates: Vec<strop_lsp::ProtoSymbol>,
+    /// `Space a`: the typed owners behind the rows.
+    pub(crate) actions: Option<super::actions::ActionOwner>,
 }
 
 /// The visible suggestion list: static candidates from the query's own
@@ -161,6 +163,7 @@ impl PickerGlue {
             preview_witness: None,
             symbols_candidates: Vec::new(),
             wsymbols_generation: 0,
+            actions: None,
         }
     }
 
@@ -287,7 +290,6 @@ impl Editor {
         };
         glue.revoke(CancelReason::OwnerClosed);
         self.revoke_remote_chooser(glue.id);
-        self.revoke_filesystem_actions(glue.id);
         self.revoke_picker_previews(glue.id);
         if glue.rank_alive {
             self.picker_ranking.retiring.insert(glue.id);
@@ -422,13 +424,12 @@ impl Editor {
             self.accept_indent_choice(document, choice, &draft);
             return;
         }
-        if glue.picker.kind == Kind::FilesystemActions {
-            let Some(Payload::FilesystemAction(index)) = payload else {
-                self.message = "no matching filesystem action".into();
+        if glue.picker.kind == Kind::Actions {
+            let Some(Payload::Action(index)) = payload else {
+                self.message = "no matching action".into();
                 return;
             };
-            let picker = glue.id;
-            self.accept_filesystem_action(picker, index);
+            self.accept_action(index);
             return;
         }
         let Some(payload) = payload else {

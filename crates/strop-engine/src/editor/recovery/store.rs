@@ -29,8 +29,17 @@ pub struct PendingRecord {
     pub document: DocumentId,
     pub origin: DraftOrigin,
     pub revision: BufferRevision,
-    pub source_path: Option<PathBuf>,
+    pub source: RecordSource,
     pub text: ropey::Rope,
+}
+
+/// Where a record's source observation comes from.
+pub enum RecordSource {
+    /// A live draft: observe this local file (if any) at publication.
+    Live(Option<PathBuf>),
+    /// A draft an earlier session left: its capture-time observation is
+    /// kept, and it is no live document's durable checkpoint.
+    Inherited(Option<SourceObservation>),
 }
 
 /// What a publication left durable, per record.
@@ -102,7 +111,10 @@ pub fn publish_cohort(
 ) -> Result<Published, SessionError> {
     let mut drafted = Vec::with_capacity(records.len());
     for record in records {
-        let source = record.source_path.as_deref().and_then(observe);
+        let source = match &record.source {
+            RecordSource::Live(path) => path.as_deref().and_then(observe),
+            RecordSource::Inherited(observed) => *observed,
+        };
         drafted.push((record, source));
     }
     // Budget the cohort: every draft fits whole or is reported over-bound.
@@ -193,6 +205,7 @@ pub fn publish_cohort(
         records: drafted
             .iter()
             .zip(&snapshots)
+            .filter(|((record, _), _)| matches!(record.source, RecordSource::Live(_)))
             .map(|((record, _), snapshot)| PublishedRecord {
                 document: record.document,
                 revision: record.revision,
@@ -202,6 +215,7 @@ pub fn publish_cohort(
         over_bound: drafted
             .iter()
             .zip(&snapshots)
+            .filter(|((record, _), _)| matches!(record.source, RecordSource::Live(_)))
             .filter_map(|((record, _), snapshot)| match snapshot {
                 Snapshot::OverBound { bytes } => Some((record.document, *bytes)),
                 Snapshot::Captured { .. } => None,

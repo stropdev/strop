@@ -1,6 +1,6 @@
 //! Tier 1 differential harness (0001 §5.10, 0006): the same key sequence
 //! drives strop (headless) and pinned nvim (`-u NONE -i NONE -n`);
-//! final text, cursor, and the unnamed register must agree.
+//! final text, cursor, the unnamed register and 'modified' must agree.
 //!
 //! Deviations are bugs by doctrine (0001 pillar 1). Genuinely intended
 //! deviations live in KNOWN_DIVERGENCES with a reason — the list is
@@ -363,6 +363,28 @@ const CASES: &[Case] = &[
         text: "aBc\n",
         keys: "~~",
     },
+    // 'modified' tracks the save point through the undo tree (B3)
+    Case {
+        name: "undo to the save point is unmodified",
+        text: "abc\n",
+        keys: "xu",
+    },
+    Case {
+        name: "redo past the save point is modified",
+        text: "abc\n",
+        keys: "xu<c-r>",
+    },
+    Case {
+        name: "a branch off the save point stays modified",
+        text: "abc\n",
+        keys: "xuxu<c-r>",
+    },
+    // two Escapes in a row are two Escapes, never Alt-Esc (B4)
+    Case {
+        name: "double escape leaves insert and stays in normal",
+        text: "abc\n",
+        keys: "ix<esc><esc>x",
+    },
 ];
 
 /// Cases where strop deliberately differs — each with the doctrine reason.
@@ -386,6 +408,7 @@ fn keys_to_bytes(keys: &str) -> Vec<u8> {
                 "bs" => out.push(0x7f),
                 "tab" => out.push(b'\t'),
                 "c-o" => out.push(0x0f),
+                "c-r" => out.push(0x12),
                 "c-i" => out.push(0x09),
                 "space" => out.push(b' '),
                 other => panic!("unknown token <{other}> in case"),
@@ -403,6 +426,7 @@ struct State {
     line: usize,
     col: usize,
     register: String,
+    modified: bool,
 }
 
 fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
@@ -414,7 +438,7 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
         "call feedkeys(join(readfile('{}', 'b'), ''), 'xt')",
         keysf.display()
     );
-    let dump = "call writefile(getline(1,'$') + ['POS:'.line('.').':'.col('.'), 'REG:'.json_encode(getreg('\"'))], '/dev/stdout')";
+    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'POS:'.line('.').':'.col('.'), 'REG:'.json_encode(getreg('\"'))], '/dev/stdout')";
     let out = Command::new("nvim")
         .args(["--headless", "-u", "NONE", "-i", "NONE", "-n"])
         .args(["+set noswapfile", "+set shiftwidth=4 expandtab"])
@@ -432,17 +456,20 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
             String::from_utf8_lossy(&out.stderr)
         );
     }
-    // dump layout: text lines…, then "POS:L:C" and a JSON-encoded register.
+    // dump layout: text lines…, then "MOD:0|1", "POS:L:C" and a
+    // JSON-encoded register.
     let mut lines: Vec<&str> = stdout.lines().collect();
     let register = lines.pop().unwrap().strip_prefix("REG:").unwrap();
     let register: String = serde_json::from_str(register).unwrap();
     let pos = lines.pop().unwrap_or("POS:1:1").trim_start_matches("POS:");
     let (line, col) = pos.split_once(':').unwrap();
+    let modified = lines.pop().unwrap().strip_prefix("MOD:").unwrap() == "1";
     State {
         text: lines.join("\n"),
         line: line.parse().unwrap(),
         col: col.parse().unwrap(),
         register,
+        modified,
     }
 }
 
@@ -452,7 +479,7 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
     let script = dir.join("script.strop");
     writeln!(
         std::fs::File::create(&script).unwrap(),
-        "resize 80 23\nkeys {keys}\nkeys :w<cr>\nstate"
+        "resize 80 23\nkeys {keys}\nstate\nkeys :w<cr>"
     )
     .unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_strop"))
@@ -472,12 +499,14 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
             )
         });
     let v: serde_json::Value = serde_json::from_str(json.trim_start_matches("─── state ")).unwrap();
-    // Text isn't in state JSON; :w wrote the buffer into the fixture.
+    // Text isn't in state JSON; :w (after the state dump, so 'modified'
+    // is observed before the save) wrote the buffer into the fixture.
     State {
         text: read_buffer(dir),
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
         register: v["register"].as_str().unwrap().to_owned(),
+        modified: v["dirty"].as_bool().unwrap(),
     }
 }
 
@@ -533,20 +562,23 @@ fn differential_vs_nvim() {
         let same = nv.text == st.text
             && nv.line == st.line
             && nv.col == st.col
-            && nv.register == st.register;
+            && nv.register == st.register
+            && nv.modified == st.modified;
         if known.is_none() && !same {
             failures.push(format!(
-                "=== {} diverges\n  keys: {:?}\n  nvim:  text={:?} cursor={}:{} register={:?}\n  strop: text={:?} cursor={}:{} register={:?}",
+                "=== {} diverges\n  keys: {:?}\n  nvim:  text={:?} cursor={}:{} register={:?} modified={}\n  strop: text={:?} cursor={}:{} register={:?} modified={}",
                 case.name,
                 case.keys,
                 nv.text,
                 nv.line,
                 nv.col,
                 nv.register,
+                nv.modified,
                 st.text,
                 st.line,
                 st.col,
-                st.register
+                st.register,
+                st.modified
             ));
         }
         if let Some(reason) = known {

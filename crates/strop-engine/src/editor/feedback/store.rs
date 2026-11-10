@@ -9,6 +9,9 @@ pub(crate) const FEEDBACK_HISTORY_BOUND: usize = 64;
 pub(crate) struct FeedbackStore {
     records: Vec<FeedbackRecord>,
     next_id: u64,
+    /// `:messages`: every summary this store presented, and the echo row's
+    /// ephemeral messages.
+    pub(crate) log: super::messages::MessageLog,
 }
 
 impl FeedbackStore {
@@ -28,6 +31,7 @@ impl FeedbackStore {
     }
 
     pub(crate) fn record(&mut self, event: FeedbackEvent) -> Option<FeedbackId> {
+        self.log.push(Some(event.severity), &event.summary);
         if let Some(existing) = self.records.iter_mut().find(|record| {
             record.unresolved() && record.owner() == &event.owner && record.kind == event.kind
         }) {

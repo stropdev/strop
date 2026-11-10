@@ -14,7 +14,7 @@ impl Editor {
     pub(crate) fn start_remote_follow(&mut self, document: DocumentId, limit: ReadLimit) {
         if self.remote_write_blocks_refresh(document)
             || self.docs.get(document).is_some_and(|doc| {
-                doc.buf.dirty
+                doc.buf.is_dirty()
                     || doc
                         .remote_metadata()
                         .is_some_and(|source| source.write.is_some())

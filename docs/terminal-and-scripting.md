@@ -118,7 +118,9 @@ contain documents, pastes, service results and rendered cells. **Inspect
 before sharing.** Existing files are never overwritten. Use the recording
 version of strop for full replay: it requires a complete capture and does
 not repeat native side effects. The input-only script is different: it can
-run commands again and does not reproduce external service results.
+run commands again and does not reproduce external service results. From
+a metadata-only capture it carries the keys without the document text;
+run it against the original file (`strop headless replay.keys FILE`).
 
 Terminal content is excluded even by ordinary `--log-content`. Entering a
 private terminal boundary records an opaque marker and leaves the remaining

@@ -1593,6 +1593,7 @@ dependencies = [
  "ropey",
  "serde_json",
  "sha2",
+ "signal-hook",
  "strop-core",
  "strop-engine",
  "strop-git",

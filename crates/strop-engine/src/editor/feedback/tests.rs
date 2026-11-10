@@ -135,7 +135,7 @@ fn context_actions_drop_retry_after_revision_changes() {
         .items
         .iter()
         .any(|item| item.text.contains("Retry the failed save")));
-    assert_eq!(picker.kind, strop_picker::Kind::FilesystemActions);
+    assert_eq!(picker.kind, strop_picker::Kind::Actions);
     editor.close_picker();
 
     editor.feed_text("ichanged<esc>");
@@ -245,4 +245,54 @@ fn repeats_coalesce_and_unresolved_history_is_never_evicted() {
     assert_eq!(store.records().len(), FEEDBACK_HISTORY_BOUND);
     assert!(store.unresolved().next().is_none());
     assert!(!store.saturated());
+}
+
+fn messages_text(editor: &mut Editor) -> String {
+    editor.feed_text(":messages\r");
+    assert_eq!(editor.buf().name.as_deref(), Some("messages"));
+    assert!(editor.buf().readonly, "the history is a read-only surface");
+    editor.buf().text().to_string()
+}
+
+/// B5: `:messages` keeps what the echo row said — refusals, ex errors and
+/// feedback with its severity — in order, the same refusal once per key.
+#[test]
+fn messages_retains_refusals_errors_and_feedback() {
+    let mut editor = Editor::new(Buffer::from_text("scratch\n"));
+    editor.feed_text(":nonsense\r");
+    let refusal = editor.message().to_owned();
+    assert!(!refusal.is_empty());
+    editor.feed_text("j");
+    editor.feed_text(":nonsense\r");
+    failed_scratch_save(&mut editor);
+    let save = editor.feedback()[0].summary().to_owned();
+    let text = messages_text(&mut editor);
+    assert_eq!(
+        text.matches(&format!("› {refusal}")).count(),
+        2,
+        "each refusal is logged when it is said: {text}"
+    );
+    assert!(text.contains(&format!("✗ {save}")), "{text}");
+    assert!(
+        text.find(&refusal).unwrap() < text.find(&save).unwrap(),
+        "oldest first: {text}"
+    );
+    // q restores the buffer the user came from
+    editor.feed_text("q");
+    assert_eq!(editor.buf().text().to_string(), "scratch\n");
+}
+
+#[test]
+fn messages_keeps_the_last_fifty() {
+    let mut editor = Editor::new(Buffer::from_text("scratch\n"));
+    for n in 0..60 {
+        editor.feed_text("j");
+        editor.message = format!("message number {n}");
+        editor.log_echo_message();
+    }
+    let text = messages_text(&mut editor);
+    assert!(!text.contains("message number 9\n"), "{text}");
+    assert!(text.contains("message number 10\n"), "{text}");
+    assert!(text.contains("message number 59\n"), "{text}");
+    assert_eq!(text.matches("message number").count(), 50);
 }

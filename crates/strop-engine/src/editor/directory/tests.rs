@@ -121,7 +121,7 @@ fn local_reload_preserves_identity_readonly_and_adopts_the_observed_save_baselin
     editor.feed_text(":set noro<cr>Iedited <esc>:w<cr>");
     editor.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(path).unwrap(), "edited changed\n");
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
 }
 
 #[test]

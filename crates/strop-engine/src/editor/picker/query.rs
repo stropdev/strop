@@ -527,7 +527,7 @@ impl Editor {
             .docs
             .iter()
             .filter_map(|(_, document)| {
-                if !document.buf.dirty {
+                if !document.buf.is_dirty() {
                     return None;
                 }
                 let location = document.file_target(&self.cwd)?.resource_location()?;

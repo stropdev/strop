@@ -1,5 +1,5 @@
 //! Filesystem proposal and mutation lifetime is independent of its originating view.
-mod actions;
+pub(crate) mod actions;
 mod commands;
 pub(crate) mod draft;
 mod lsp_rename;
@@ -90,7 +90,6 @@ pub(crate) struct FsState {
     running: Option<WorkerId>,
     verifying: Option<Ticket<VerifyKey>>,
     history: VecDeque<Attempt>,
-    actions: Option<actions::ActionOwner>,
     reports: std::collections::HashSet<DocumentId>,
 }
 impl Default for FsState {
@@ -105,7 +104,6 @@ impl Default for FsState {
             running: None,
             verifying: None,
             history: VecDeque::new(),
-            actions: None,
             reports: Default::default(),
         }
     }

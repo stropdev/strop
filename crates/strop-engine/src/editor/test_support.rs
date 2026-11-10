@@ -21,6 +21,15 @@ impl Editor {
         self.handle_notify();
     }
 
+    /// An earlier session's draft for `path`, as the startup read would
+    /// adopt it; opening `path` then offers it.
+    pub fn fixture_recovery_draft(&mut self, path: &std::path::Path, text: &str) {
+        let document = self.current();
+        self.recovery
+            .prior
+            .push(super::recovery::fixture_inherited(path, text, document));
+    }
+
     /// A named local repository for pure surface fixtures; no discovery or I/O.
     pub fn fixture_git_context(&mut self) {
         self.git = Some(strop_git::GitContext {

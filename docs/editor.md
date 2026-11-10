@@ -187,6 +187,14 @@ Horizontal views, block selection and carets share display-cell geometry;
 new edits preserve the buffer's line endings. The modeline keeps filenames,
 live status and position legible at narrow widths.
 
+## Reading stdin
+
+`strop -` edits standard input: `cmd | strop -` opens the output in a buffer
+named `stdin`. The buffer streams — `tail -f app.log | strop -` keeps
+appending while you read, the cursor on the last line follows new output,
+and it stays read-only until the pipe closes. Then it is an ordinary scratch
+buffer: edit it, `:w path` saves it. Keys come from the terminal, not stdin.
+
 ## Sessions
 
 File/native work runs on owned jobs rather than blocking keystrokes.

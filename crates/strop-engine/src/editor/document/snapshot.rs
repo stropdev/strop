@@ -129,7 +129,7 @@ impl Editor {
             doc.source = replacement.source;
             doc.buf.name = replacement.buf.name;
             doc.buf.readonly = replacement.buf.readonly;
-            doc.buf.dirty = false;
+            doc.buf.mark_clean();
             let revision = doc.buf.revision();
             if let Some(source) = doc.directory_metadata_mut() {
                 source.view_revision = revision;

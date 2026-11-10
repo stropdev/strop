@@ -4,8 +4,8 @@ use super::{Editor, Item, Kind, Payload, Picker, PickerGlue};
 
 impl Editor {
     pub fn open_picker(&mut self, kind: Kind) {
-        if kind == Kind::FilesystemActions {
-            self.open_filesystem_actions();
+        if kind == Kind::Actions {
+            self.context_actions();
             return;
         }
         if kind == Kind::Search {
@@ -72,18 +72,12 @@ impl Editor {
             }
             // Grep/Replace stream only once input registers a request;
             // Files launches its walk right after install.
-            Kind::Files
-            | Kind::Search
-            | Kind::RemoteHosts
-            | Kind::RemoteAddress
-            | Kind::CodeActions => vec![],
+            Kind::Files | Kind::Search | Kind::RemoteHosts | Kind::RemoteAddress => vec![],
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
             Kind::SearchOptions => unreachable!("search options build their own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
             Kind::Theme => unreachable!("the theme selector builds its own items"),
-            Kind::FilesystemActions => {
-                unreachable!("filesystem actions build their own captured selector")
-            }
+            Kind::Actions => unreachable!("actions build their own captured selector"),
             Kind::Symbols | Kind::WorkspaceSymbols => vec![],
             Kind::Diagnostics | Kind::Locations => {
                 unreachable!("location lists use PickerGlue::diagnostics")

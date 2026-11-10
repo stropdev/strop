@@ -70,7 +70,7 @@ fn a_hint_reloads_a_clean_buffer() {
     assert_eq!(editor.buf().text(), "one\n");
     std::fs::write(&path, "two\n").unwrap();
     pump_until(&mut editor, |e| e.buf().text() == "two\n");
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
     assert!(!editor.cur().external_change);
 }
 
@@ -84,11 +84,11 @@ fn a_hint_preserves_a_dirty_buffer_with_external_change_state() {
     let mut editor = subscribed_editor(dir.path());
     editor.open_fixture(&path).unwrap();
     editor.feed_text("imine <esc>");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     std::fs::write(&path, "theirs\n").unwrap();
     pump_until(&mut editor, |e| e.cur().external_change);
     assert_eq!(editor.buf().text(), "mine one\n");
-    assert!(editor.buf().dirty, "edits are preserved");
+    assert!(editor.buf().is_dirty(), "edits are preserved");
 }
 
 /// Overflow is an explicit rescan obligation: with no usable hint
@@ -107,7 +107,7 @@ fn overflow_rescans_conservatively() {
     editor.open_fixture(&dirty).unwrap();
     let dirty_doc = editor.current();
     editor.feed_text("imine <esc>");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
 
     std::fs::write(&clean, "clean-two\n").unwrap();
     std::fs::write(&dirty, "dirty-two\n").unwrap();
@@ -266,7 +266,7 @@ fn worker_loss_reestablishes_with_a_fresh_generation() {
 fn remote_hints_mark_dirty_remote_documents_and_never_clobber() {
     let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
     let document = editor.current();
-    editor.doc_mut(document).buf.dirty = true;
+    editor.doc_mut(document).buf.mark_dirty();
     let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap();
     let root = ResourceLocation::remote(endpoint.clone(), "/repo".into());
     let identity = Subscription {
@@ -296,7 +296,7 @@ fn remote_hints_mark_dirty_remote_documents_and_never_clobber() {
         "the dirty remote document gains external-change state"
     );
     assert_eq!(editor.buf().text(), "remote bytes\n", "never clobbered");
-    assert!(editor.buf().dirty, "edits are preserved");
+    assert!(editor.buf().is_dirty(), "edits are preserved");
 }
 
 /// WK07: events stamped by an unknown or superseded remote identity
@@ -305,7 +305,7 @@ fn remote_hints_mark_dirty_remote_documents_and_never_clobber() {
 fn a_dead_remote_generation_never_acts() {
     let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
     let document = editor.current();
-    editor.doc_mut(document).buf.dirty = true;
+    editor.doc_mut(document).buf.mark_dirty();
     editor.notify.queue.push_hints(
         Subscription {
             id: 999,
@@ -326,7 +326,7 @@ fn a_dead_remote_generation_never_acts() {
 fn remote_subscription_identity_comes_from_the_settle_record() {
     let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
     let document = editor.current();
-    editor.doc_mut(document).buf.dirty = true;
+    editor.doc_mut(document).buf.mark_dirty();
     let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap();
     let root = ResourceLocation::remote(endpoint.clone(), "/repo".into());
     editor.notify.remote.insert(

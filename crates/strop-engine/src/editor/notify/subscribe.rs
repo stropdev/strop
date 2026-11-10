@@ -318,7 +318,7 @@ impl Editor {
                     }
                     DocumentSource::Remote(source)
                         if source.file.path() == absolute
-                            && document.buf.dirty
+                            && document.buf.is_dirty()
                             && !dirty.contains(&id) =>
                     {
                         dirty.push(id);
@@ -351,7 +351,7 @@ impl Editor {
                     directories.push(id);
                 }
                 DocumentSource::Remote(source)
-                    if source.file.path().starts_with(root) && document.buf.dirty =>
+                    if source.file.path().starts_with(root) && document.buf.is_dirty() =>
                 {
                     dirty.push(id);
                 }

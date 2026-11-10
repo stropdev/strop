@@ -64,6 +64,7 @@ impl Editor {
             Action::Start { open } => {
                 self.resolution.enabled = true;
                 let startup_message = self.message.clone();
+                self.recovery_read_prior();
                 if let Some(open) = open {
                     self.lsp_start_services();
                     self.request_target(open.target, open.intent);
@@ -110,6 +111,7 @@ impl Editor {
             }
         }
         self.track_cursor_fade(focus_gained);
+        self.log_echo_message();
         self.tape.healthy()?;
         if !frame && self.tape.observes() {
             // Frames check the canonical cell grid instead; every other

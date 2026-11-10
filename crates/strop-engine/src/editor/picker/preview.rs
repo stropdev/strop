@@ -362,8 +362,7 @@ impl PreviewProbe<'_> {
             | Payload::RemoteConnect
             | Payload::Jump { .. }
             | Payload::SearchOption(_)
-            | Payload::CodeAction(_)
-            | Payload::FilesystemAction(_)
+            | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
             | Payload::ThemeChoice(_) => None,
@@ -420,8 +419,7 @@ impl Editor {
             | Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
             | Payload::SearchOption(_)
-            | Payload::CodeAction(_)
-            | Payload::FilesystemAction(_)
+            | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
             | Payload::ThemeChoice(_) => {

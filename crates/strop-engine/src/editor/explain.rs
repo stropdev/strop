@@ -80,7 +80,11 @@ impl Editor {
         let _ = writeln!(
             text,
             "  state     {}, revision {}",
-            if self.buf().dirty { "dirty" } else { "clean" },
+            if self.buf().is_dirty() {
+                "dirty"
+            } else {
+                "clean"
+            },
             self.buf().revision().get()
         );
         if self.buf().readonly {
@@ -415,6 +419,9 @@ impl Editor {
             }
             Some(strop_core::ReadonlyReason::RecoveryCheckpoint) => {
                 "recovery checkpoint surface — :recover restore N opens a checked draft"
+            }
+            Some(strop_core::ReadonlyReason::Stdin) => {
+                "stdin is still streaming in (strop -) — editable once the pipe closes"
             }
             Some(strop_core::ReadonlyReason::OutsideWorkspace) => {
                 "outside the workspace root — :set noro to edit"

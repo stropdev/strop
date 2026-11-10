@@ -80,6 +80,7 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "explain",
         "why: workspaces, LSP readiness/failures, effective config",
     ),
+    ("messages", "message history: the last 50 echo-row messages"),
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
     ("symbols", "open the document symbols picker"),

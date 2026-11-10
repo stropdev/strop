@@ -307,7 +307,7 @@ fn a_cli_opened_missing_file_saves_under_the_editor_cwd() {
         "brand new text"
     );
     assert_eq!(e.message(), "written");
-    assert!(!e.buf().dirty);
+    assert!(!e.buf().is_dirty());
 }
 
 #[test]
@@ -327,7 +327,7 @@ fn write_to_path_respects_overwrite_policy() {
     e.wait_io().unwrap();
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "content b\n");
     assert!(e.buf().path.as_deref().unwrap().ends_with("a.txt"));
-    assert!(e.buf().dirty);
+    assert!(e.buf().is_dirty());
     // :w! b.txt — forced
     e.feed_text(&format!(":w! {}\r", b.display()));
     e.wait_io().unwrap();
@@ -335,7 +335,7 @@ fn write_to_path_respects_overwrite_policy() {
         .unwrap()
         .starts_with("xcontent a"));
     assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
-    assert!(!e.buf().dirty);
+    assert!(!e.buf().is_dirty());
     // a failed write (unwritable dir) keeps identity
     e.feed_text("iy");
     e.feed(strop_core::frontend_input::Key::Esc);
@@ -343,7 +343,7 @@ fn write_to_path_respects_overwrite_policy() {
     e.feed_text(&format!(":w {}<cr>", missing.display()));
     e.wait_io().unwrap();
     assert!(e.buf().path.as_deref().unwrap().ends_with("b.txt"));
-    assert!(e.buf().dirty);
+    assert!(e.buf().is_dirty());
 }
 
 #[test]

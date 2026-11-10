@@ -73,7 +73,7 @@ impl Editor {
         }
         let documents: Vec<_> = self.docs.iter().map(|(id, document)| json!({
             "document":id,"buffer":document.buf.trace_id(),"revision":document.buf.revision(),
-            "bytes":document.buf.len_bytes(),"dirty":document.buf.dirty,"history_nodes":document.buf.history().depth(),
+            "bytes":document.buf.len_bytes(),"dirty":document.buf.is_dirty(),"history_nodes":document.buf.history().depth(),
         })).collect();
         let cursor = self.panes.get(self.active_pane).and_then(|pane| {
             let document = self.docs.get(pane.doc)?;

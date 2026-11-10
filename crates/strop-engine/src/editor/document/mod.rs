@@ -307,7 +307,7 @@ impl Editor {
         let scratch = self.docs.iter().find_map(|(id, d)| {
             let b = &d.buf;
             (b.path.is_none()
-                && !b.dirty
+                && !b.is_dirty()
                 && b.len_bytes() == 0
                 && b.name.is_none()
                 && id != replacement)
@@ -462,7 +462,7 @@ impl Editor {
         // A collection's dirty bit is presentation state (0049 §5): the
         // sources hold the real unsaved edits — the view always closes.
         let view_only = self.collections.contains_key(&self.current());
-        if self.buf().dirty && !force && !view_only {
+        if self.buf().is_dirty() && !force && !view_only {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
@@ -548,7 +548,7 @@ impl Editor {
     }
     /// Any path-backed or scratch document holding unsaved content.
     pub fn any_dirty(&self) -> bool {
-        self.docs.iter().any(|(_, d)| d.buf.dirty)
+        self.docs.iter().any(|(_, d)| d.buf.is_dirty())
     }
 
     /// Fixture convenience exercises the production request and completion path.

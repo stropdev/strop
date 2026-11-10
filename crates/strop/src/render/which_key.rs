@@ -57,7 +57,8 @@ pub fn render_which_key(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         Vec::new()
     };
     let rows = rows(&hints, &marks);
-    render_rows(frame, t, title, &rows, super::echo::visible(editor));
+    let echo_rows = super::echo::rows(editor, t, frame.area().width);
+    render_rows(frame, t, title, &rows, echo_rows);
 }
 
 struct Row {
@@ -127,7 +128,7 @@ fn column_width(rows: &[Row]) -> (usize, usize) {
     (key_w, key_w + 2 + 1 + desc_w)
 }
 
-fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], above_echo: bool) {
+fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], echo_rows: u16) {
     let area = frame.area();
     if area.width < 12 || area.height < 6 || rows.is_empty() {
         // nothing legible fits; a hard-clipped card would lie (0068 C1)
@@ -139,8 +140,8 @@ fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], above_e
     } else {
         1
     };
-    // borders (2) + statusline + echo row + one row of breathing room
-    let reserved = 4 + u16::from(above_echo);
+    // borders (2) + statusline + one row of breathing room + echo rows
+    let reserved = 4 + echo_rows;
     let per_column = rows.len().div_ceil(columns);
     let body_budget = usize::from(area.height.saturating_sub(reserved)).max(1);
     let shown_per_column = if per_column > body_budget {
@@ -164,9 +165,7 @@ fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], above_e
     let height = body_rows as u16 + 2;
     let card = Rect {
         x: area.width.saturating_sub(card_w) / 2, // bottom-center
-        y: area
-            .height
-            .saturating_sub(height + 1 + u16::from(above_echo)),
+        y: area.height.saturating_sub(height + 1 + echo_rows),
         width: card_w,
         height,
     };
@@ -328,7 +327,7 @@ mod tests {
         );
         let files = frame
             .lines()
-            .position(|line| line.contains("files"))
+            .position(|line| line.contains("file finder"))
             .unwrap();
         let git = frame
             .lines()

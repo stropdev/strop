@@ -581,3 +581,31 @@ fn solver_split(
         .split(rows[1]);
     split(cols[0], Some(cols[1]))
 }
+
+/// B10: nothing of the pane layer shows beside the workspace card — a
+/// collection's card border (or any long line) under Search used to leave
+/// `╮`/`╯` fragments in the two-cell margin next to the picker border.
+#[test]
+fn the_workspace_card_margin_shows_no_backdrop() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("wide.txt");
+    let wide: String = (0..30)
+        .map(|n| format!("{n:>3} {}╮\n", "x".repeat(140)))
+        .collect();
+    std::fs::write(&path, &wide).unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    editor.open_fixture(&path).unwrap();
+    editor.open_picker(strop_picker::Kind::Search);
+    editor.wait_picker();
+    let grid = draw(&mut editor, 120, 30);
+    for y in 0..29 {
+        for x in [0u16, 1, 118, 119] {
+            assert_eq!(grid[(x, y)].symbol(), " ", "backdrop leaked at ({x}, {y})");
+            assert_eq!(grid[(x, y)].bg, crate::render::tokens().base);
+        }
+    }
+    assert!(
+        (0..120).any(|x| grid[(x, 29)].symbol() != " "),
+        "the statusline row stays"
+    );
+}

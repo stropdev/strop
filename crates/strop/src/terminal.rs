@@ -1,7 +1,6 @@
 //! Real terminal lifecycle and event loop. No alternate-screen writes escape
 //! this boundary; the trace writer owns a different, private file.
 use crate::editor::{self, events::AppEvent, Editor, Mode};
-use crossterm::event::{self, Event};
 use crossterm::event::{
     DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
     KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
@@ -11,8 +10,8 @@ use crossterm::terminal::{
 };
 use std::io::{self, Write};
 use std::time::Duration;
-use strop_trace::{record_with, EventKind};
-mod input;
+mod decode;
+mod reader;
 
 /// Terminal restoration runs exactly once across the normal drop and
 /// the panic hook (0048 §B): popping the keyboard-enhancement stack
@@ -72,41 +71,11 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(output))?;
     let (sender, receiver) = editor::events::channel();
     let (input_sender, input_receiver) = editor::events::channel();
-    editor.connect_events(sender);
-    std::thread::spawn(move || loop {
-        let application_event = match event::read() {
-            Ok(Event::Key(key)) => {
-                AppEvent::Input(strop_core::frontend_input::Input::Key(input::key(key)))
-            }
-            Ok(Event::Paste(text)) => {
-                AppEvent::Input(strop_core::frontend_input::Input::Paste(text))
-            }
-            Ok(Event::FocusLost) => AppEvent::Focus(false),
-            Ok(Event::FocusGained) => AppEvent::Focus(true),
-            Ok(Event::Resize(columns, rows)) => {
-                record_with(
-                    EventKind::Resize,
-                    || serde_json::json!({"columns":columns,"rows":rows}),
-                );
-                AppEvent::Resize { columns, rows }
-            }
-            Ok(_) => continue,
-            Err(error) => {
-                record_with(
-                    EventKind::Error,
-                    || serde_json::json!({"source":"terminal_read","message":error.to_string()}),
-                );
-                break;
-            }
-        };
-        // FIFO input ownership is resolved by the engine, never this reader.
-        // Blocking admission (0056 AR06): input/paste/quit may never be
-        // dropped, so backpressure parks THIS reader against the OS
-        // buffer — the UI thread never blocks on a send.
-        if input_sender.send_blocking(application_event).is_err() {
-            return;
-        }
-    });
+    editor.connect_events(sender.clone());
+    if editor.stdin_streaming() {
+        reader::spawn_stdin(sender.clone());
+    }
+    reader::spawn(input_sender)?;
     editor.trace_state();
     let mut redraw = true;
     let mut painted_flash = false;

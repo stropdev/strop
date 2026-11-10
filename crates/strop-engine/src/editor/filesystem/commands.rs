@@ -270,11 +270,9 @@ impl Editor {
             for source in &sources {
                 let target = crate::files::FileTarget::from_location(source)
                     .map_err(|error| error.to_string())?;
-                if self
-                    .docs
-                    .iter()
-                    .any(|(_, document)| document.matches_target(&target) && document.buf.dirty)
-                {
+                if self.docs.iter().any(|(_, document)| {
+                    document.matches_target(&target) && document.buf.is_dirty()
+                }) {
                     return Err("source has unsaved text; choose :fs copy stored DEST or :fs copy buffer DEST".into());
                 }
             }

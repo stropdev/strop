@@ -3,6 +3,7 @@
 //!
 //! Mode handlers live beside this file: `normal`, `visual`, `insert`.
 
+mod actions;
 mod api;
 mod blame;
 pub mod block;
@@ -582,6 +583,7 @@ impl Editor {
         });
         self.trace_state();
         self.recovery_after_event();
+        self.log_echo_message();
     }
 
     fn feed_inner(&mut self, key: Key) {
@@ -595,6 +597,7 @@ impl Editor {
         }
         self.revoke_shell_focus();
         self.message.clear();
+        self.feedback.log.forget_echo();
         if key == Key::Esc
             && self.mode == Mode::Normal
             && !self.pending.is_active()
@@ -748,7 +751,7 @@ pub fn state_json(editor: &Editor) -> String {
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).text,
-        "dirty": editor.buf().dirty,
+        "dirty": editor.buf().is_dirty(),
         "terminal":editor.terminal_status(editor.current()),
         "completion": editor.completion_snapshot(true),
     })

@@ -18,64 +18,64 @@
   │                                                                                │                                                     │  
   │                                                                                │                                                     │  
   │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ │                                                                                │                                                     │  
-~ ╰  enter  open   ctrl-r  replace   ctrl-x  drop hit   ctrl-d  drop file   ctrl-o  collect   ctrl-space  suggest   esc  close ──────────╯  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  │                                                                                │                                                     │  
+  ╰  enter  open   ctrl-r  replace   ctrl-x  drop hit   ctrl-d  drop file   ctrl-o  collect   ctrl-space  suggest   esc  close ──────────╯  
  SEARCH   src/render/statusline.rs                                                                                                   1:1  5%
 
-  0: 1:#464b54/#17191f+b 1:#73572f/#17191f 1:#858c9a/#1c1f25 8:#e6e1d6/#1c1f25+b 127:#858c9a/#1c1f25 1:#17191f/#17191f 1:reset/reset
-  1: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25 8:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 117:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  2: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 134:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  3: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 14:#e6e1d6/#1c1f25 61:reset/#1c1f25 1:#a8adb8/#1c1f25 2:reset/#1c1f25 1:#4a5160/#1c1f25 18:#a8adb8/#1c1f25 35:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  4: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 7:#a8adb8/#23272f 4:#e6e1d6/#23272f 8:#e8a848/#23272f+b 25:#e6e1d6/#23272f 33:reset/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 8:#e6e1d6/#1c1f25 39:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  5: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 4:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 22:#e6e1d6/#1c1f25 37:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 47:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  6: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 24:#e6e1d6/#1c1f25 51:reset/#1c1f25 1:#a8adb8/#1c1f25 2:reset/#1c1f25 1:#4a5160/#1c1f25 1:#e8a848/#23272f 2:#e6e1d6/#23272f+b 3:#4a5160/#23272f 4:#e6e1d6/#23272f 8:#e8a848/#23272f+b 25:#e6e1d6/#23272f 10:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  7: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 8:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 35:#e6e1d6/#1c1f25 20:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 47:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  8: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 11:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 2:#e6e1d6/#1c1f25 50:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 34:#e6e1d6/#1c1f25 13:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
-  9: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 5:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 2:#e6e1d6/#1c1f25 56:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 10: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 11: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 12: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 13: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 14: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 15: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 16: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 17: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 18: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 19: 1:#464b54/#15171c+b 1:#464b54/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 20: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 21: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 22: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 23: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 24: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 25: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 26: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 27: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 28: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 29: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 30: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 31: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 32: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 33: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 34: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 35: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 36: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 37: 1:#2c303a/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 38: 1:#2c303a/#15171c 1:reset/#15171c 2:#858c9a/#1c1f25 7:#e8a848/#23272f+b 7:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 8:#e8a848/#23272f+b 11:#858c9a/#1c1f25 8:#e8a848/#23272f+b 12:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 12:#e8a848/#23272f+b 10:#858c9a/#1c1f25 5:#e8a848/#23272f+b 18:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
+  0: 2:reset/#15171c 1:#858c9a/#1c1f25 8:#e6e1d6/#1c1f25+b 127:#858c9a/#1c1f25 2:reset/#15171c
+  1: 2:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25 8:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 117:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  2: 2:reset/#15171c 1:#858c9a/#1c1f25 134:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  3: 2:reset/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 14:#e6e1d6/#1c1f25 61:reset/#1c1f25 1:#a8adb8/#1c1f25 2:reset/#1c1f25 1:#4a5160/#1c1f25 18:#a8adb8/#1c1f25 35:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  4: 2:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 7:#a8adb8/#23272f 4:#e6e1d6/#23272f 8:#e8a848/#23272f+b 25:#e6e1d6/#23272f 33:reset/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 8:#e6e1d6/#1c1f25 39:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  5: 2:reset/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 4:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 22:#e6e1d6/#1c1f25 37:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 47:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  6: 2:reset/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 24:#e6e1d6/#1c1f25 51:reset/#1c1f25 1:#a8adb8/#1c1f25 2:reset/#1c1f25 1:#4a5160/#1c1f25 1:#e8a848/#23272f 2:#e6e1d6/#23272f+b 3:#4a5160/#23272f 4:#e6e1d6/#23272f 8:#e8a848/#23272f+b 25:#e6e1d6/#23272f 10:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  7: 2:reset/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 8:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 35:#e6e1d6/#1c1f25 20:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 47:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  8: 2:reset/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 11:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 2:#e6e1d6/#1c1f25 50:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 34:#e6e1d6/#1c1f25 13:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+  9: 2:reset/#15171c 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 5:#e6e1d6/#1c1f25 8:#e8a848/#1c1f25+b 2:#e6e1d6/#1c1f25 56:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 10: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 11: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 12: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 13: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 14: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 15: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 16: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 17: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 18: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 19: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 20: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 21: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 22: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 23: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 24: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 25: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 26: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 27: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 28: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 29: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 30: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 31: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 32: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 33: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 34: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 35: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 36: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 37: 2:reset/#15171c 1:#858c9a/#1c1f25 80:reset/#1c1f25 1:#4a5160/#1c1f25 53:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
+ 38: 2:reset/#15171c 2:#858c9a/#1c1f25 7:#e8a848/#23272f+b 7:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 8:#e8a848/#23272f+b 11:#858c9a/#1c1f25 8:#e8a848/#23272f+b 12:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 12:#e8a848/#23272f+b 10:#858c9a/#1c1f25 5:#e8a848/#23272f+b 18:#858c9a/#1c1f25 2:reset/#15171c
  39: 8:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 99:reset/#17191f 7:#464b54/#17191f

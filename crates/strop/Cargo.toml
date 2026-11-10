@@ -20,6 +20,7 @@ strop-workspace = { path = "../strop-workspace", version = "0.54.0" }
 strop-remote = { path = "../strop-remote", version = "0.54.0" }
 unicode-segmentation = "1"
 crossterm = "0.28"
+signal-hook = "0.3"
 ratatui = "0.29"
 ropey = "1"
 serde_json = "1"

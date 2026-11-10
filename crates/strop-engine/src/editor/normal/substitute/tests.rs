@@ -45,7 +45,7 @@ fn preview_apply_and_cancel_share_one_plan_without_composition_effects() {
 
     assert_eq!(editor.buf().text().to_string(), original);
     assert_eq!(editor.buf().revision(), revision);
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
     assert!(editor.last_search.is_none());
     assert!(editor.register(None).text.is_empty());
     let preview = ready(&editor);

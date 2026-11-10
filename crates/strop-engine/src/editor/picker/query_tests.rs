@@ -262,7 +262,7 @@ fn workspace_symbols_lists_and_jump_lands_on_the_declaration() {
         .matches_target(&crate::files::FileTarget::from_location(&path).unwrap()));
     // The cursor sits on the name: line 2, byte column 4 (`fn |wrap`).
     assert_eq!(editor.head(), editor.buf().line_start(1) + 3);
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
 }
 
 #[test]

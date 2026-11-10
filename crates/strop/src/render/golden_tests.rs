@@ -136,6 +136,34 @@ fn echo_row() {
     });
 }
 
+/// B5: a refusal longer than the row wraps (at most three rows, then
+/// clips) instead of losing its tail to `…` on the first row.
+#[test]
+fn echo_row_wraps() {
+    each("echo-wrapped", |editor| {
+        editor.feed_text("9j");
+        editor.set_message(
+            "terminal refused: this buffer belongs to ssh://build-host/srv/project and a remote \
+             terminal needs an admitted worker on that host — run :remote worker to admit one, or \
+             :terminal-local for a shell on this machine; the full text of every message stays in \
+             :messages after the echo row moves on",
+        );
+        settle_analysis()
+    });
+}
+
+/// 0090 §3: opening a file with an earlier session's draft asks first.
+#[test]
+fn recovery_offer() {
+    each("recovery", |editor| {
+        let path = editor.buf().path.clone().unwrap();
+        editor.fixture_recovery_draft(&path, "//! a draft\n");
+        editor.open_fixture(&path).unwrap();
+        assert!(editor.recovery_offer().is_some());
+        settle_analysis()
+    });
+}
+
 #[test]
 fn split() {
     each("split", |editor| {

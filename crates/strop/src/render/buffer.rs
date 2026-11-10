@@ -158,7 +158,7 @@ fn render_title_border(
     // before the name clips, so focus, dirty and read-only survive narrow.
     let flags = format!(
         "{}{}",
-        if document.buf.dirty { " ●" } else { "" },
+        if document.buf.is_dirty() { " ●" } else { "" },
         if document.buf.readonly { " [RO]" } else { "" }
     );
     let number = format!("{} ", index + 1);
@@ -190,7 +190,7 @@ fn render_title_border(
         Span::styled(number, ink),
         Span::styled(name.into_owned(), ink.add_modifier(Modifier::BOLD)),
     ];
-    if document.buf.dirty {
+    if document.buf.is_dirty() {
         spans.push(Span::styled(" ●", Style::default().fg(t.warning)));
     }
     if document.buf.readonly {
