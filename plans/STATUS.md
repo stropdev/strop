@@ -17,6 +17,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0086](0086-verified-foundation.md) | verified foundation: rings, Lean-proved kernel, survival and release rules, gates |
 | [0088](0088-the-look.md) | design language, token set and the six original palettes; echo row; golden snapshots |
 | [0090](0090-one-editor.md) | containers cut, nvim terminal model, remote over plain SSH behind an ergonomics gate (0.55–0.56) |
+| [0091](0091-registers-and-pinned-project.md) | one register file with Neovim's rules and one read path for every text input; project root pinned at launch; library files owned by the project's server; crashed servers restart within a budget. Amends 0074 (field registers), 0053 (Search toggle is `ctrl-t`), 0049 §4.6 |
 
 ## Proposed — not implemented
 
