@@ -151,7 +151,7 @@ impl fmt::Display for RemoteFailureKind {
     }
 }
 
-/// The failure a worker sees before diagnostics are attached. The
+/// The failure a job sees before diagnostics are attached. The
 /// orchestrator turns it into a [`RemoteError`] with stderr, exit
 /// status and the remote URI.
 #[derive(Debug, Clone)]

@@ -193,7 +193,7 @@ impl NotifyManager {
     }
 
     /// Block until any subscription's queue is readable or `timeout`
-    /// elapses (the worker loop's wait primitive). `true` means at least
+    /// elapses (the watcher loop's wait primitive). `true` means at least
     /// one fd reports readable/error/hang-up; `false` is timeout or no
     /// live subscriptions.
     pub fn poll(&mut self, timeout: Option<Duration>) -> Result<bool, NotifyError> {

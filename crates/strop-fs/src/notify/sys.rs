@@ -1,12 +1,12 @@
 //! Thin direct inotify(2) binding (Linux). Four syscalls — `inotify_init1`,
 //! `inotify_add_watch`, `inotify_rm_watch`, `read` — plus `poll` for the
-//! worker's event loop. No crate sits between us and the kernel queue, so
+//! watcher thread's loop. No crate sits between us and the kernel queue, so
 //! overflow (`IN_Q_OVERFLOW`), queue bounds and watch lifetimes are exactly
 //! what the kernel reports, and a musl static build carries no extra weight
 //! (`libc` is already a workspace dependency).
 //!
 //! Raw masks never leave the `notify` module; the wire contract
-//! (`strop_worker_protocol::NotifyKind`) is produced by the manager, never
+//! (`super::NotifyKind`) is produced by the manager, never
 //! by exposing these bits.
 
 use std::ffi::CString;
