@@ -133,10 +133,7 @@ fn admit(path: &Path, expect: Expect, existing: Option<Attrs>) -> Result<Destina
             return Err(Fault::new(
                 RemoteStage::Inspect,
                 RemoteFailureKind::Changed,
-                format!(
-                    "{} changed on disk since it was read (read {expected}, now {found})",
-                    path.display()
-                ),
+                format!("changed on disk since it was read (read {expected}, now {found})"),
             ))
         }
         _ => {}

@@ -243,6 +243,14 @@ impl ExecHost {
     }
 }
 
+/// Whether a master's socket in `control_dir` fits `sun_path`.
+pub(crate) fn fits_socket_path(control_dir: &Path) -> bool {
+    control_dir.as_os_str().len() + 1 + SOCKET_NAME_LEN <= MAX_SOCKET_PATH
+}
+
+/// Hex digits in a socket name.
+const SOCKET_NAME_LEN: usize = 16;
+
 /// A stable short socket name per endpoint (FNV-1a over its URI): the
 /// same endpoint finds the same master across editor restarts.
 fn socket_name(endpoint: &RemoteEndpoint) -> String {
@@ -251,7 +259,7 @@ fn socket_name(endpoint: &RemoteEndpoint) -> String {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    format!("{hash:016x}")
+    format!("{hash:0width$x}", width = SOCKET_NAME_LEN)
 }
 
 /// Create `path` 0700 if missing; refuse one that is a symlink, not a
@@ -294,7 +302,9 @@ mod tests {
         let other = RemoteEndpoint::parse("ssh://dev@box").unwrap();
         assert_eq!(socket_name(&one), socket_name(&one.clone()));
         assert_ne!(socket_name(&one), socket_name(&other));
-        assert_eq!(socket_name(&one).len(), 16);
+        assert_eq!(socket_name(&one).len(), SOCKET_NAME_LEN);
+        assert!(fits_socket_path(Path::new("/run/user/1000/strop-ssh")));
+        assert!(!fits_socket_path(&Path::new("/").join("x".repeat(80))));
     }
 
     #[test]

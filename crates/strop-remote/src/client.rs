@@ -141,17 +141,22 @@ impl Default for RemoteClient {
     }
 }
 impl RemoteClient {
-    /// Control sockets live in `$XDG_RUNTIME_DIR/strop-ssh`, else in a
-    /// per-user directory under the system temporary directory; either
-    /// is created private and refused when it is not.
+    /// Control sockets live in `$XDG_RUNTIME_DIR/strop-ssh` when a socket
+    /// path there fits `sun_path`, else in a per-user directory under the
+    /// system temporary directory (`/tmp` when that is long too); the
+    /// directory is created private and refused when it is not.
     pub fn new() -> Self {
+        let user = format!("strop-ssh-{}", rustix::process::geteuid().as_raw());
         let control = std::env::var_os("XDG_RUNTIME_DIR")
             .filter(|dir| !dir.is_empty())
             .map(|dir| std::path::PathBuf::from(dir).join("strop-ssh"))
-            .unwrap_or_else(|| {
-                std::env::temp_dir()
-                    .join(format!("strop-ssh-{}", rustix::process::geteuid().as_raw()))
-            });
+            .into_iter()
+            .chain([
+                std::env::temp_dir().join(&user),
+                std::path::Path::new("/tmp").join(&user),
+            ])
+            .find(|dir| crate::exec::fits_socket_path(dir))
+            .unwrap_or_else(|| std::path::Path::new("/tmp").join(user));
         Self::with_control_dir(control)
     }
 

@@ -201,6 +201,9 @@ fn listing_reports_kinds_and_sizes_and_the_client_owns_its_master() {
     assert_eq!(entries[0].kind, RemoteEntryKind::Directory);
     assert_eq!(entries[1].kind, RemoteEntryKind::File);
     assert_eq!(entries[1].size, Some(5));
+    // A held connection (an open document holds one) answers the input
+    // path's host lookup without I/O.
+    let lease = client.connect(&endpoint("fixture"), &token).unwrap();
     let host = client.host(&endpoint("fixture"), &token).unwrap();
     assert!(host.is_connected());
     assert_eq!(
@@ -208,6 +211,7 @@ fn listing_reports_kinds_and_sizes_and_the_client_owns_its_master() {
         Some(host.clone())
     );
     // Dropping the last client stops the master it authenticated.
+    drop(lease);
     drop(client);
     assert!(!host.is_connected());
 }

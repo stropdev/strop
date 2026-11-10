@@ -12,7 +12,7 @@ fn remote_file_operations_are_refused_and_change_nothing() {
     std::fs::write(&original, "original\n").unwrap();
     let steps = fixture.script(
         "operations.steps",
-        "settle\nkeys :fs create created.txt<cr>\nsettle\nkeys :apply-change<cr>\nsettle\nstate\nkeys :qa!<cr>\nsettle\n",
+        "settle\nkeys :fs create created.txt<cr>\nsettle\nstate\nkeys :apply-change<cr>\nsettle\nkeys :qa!<cr>\nsettle\n",
     );
     let output = fixture.run(&[
         "--headless".into(),

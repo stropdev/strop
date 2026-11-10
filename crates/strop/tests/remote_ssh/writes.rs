@@ -70,22 +70,26 @@ fn a_file_changed_on_the_host_is_refused_until_forced_and_save_as_never_clobbers
         "{output}"
     );
     assert_eq!(observed[0]["dirty"], true);
-    assert_eq!(observed[1]["message"], "written", "{output}");
-    assert_eq!(observed[1]["dirty"], false);
+    // The message after `:w!` may already be the local copy's reload
+    // notice (the same file is open locally): the outcome is the state.
+    assert_eq!(observed[1]["dirty"], false, "{output}");
     assert_eq!(std::fs::read(&path).unwrap(), b"cccc\n");
 
     // `:w other` writes a copy on the host and never replaces a file.
     let copy = fixture.root().join("copy.txt");
     let output = fixture.open(
         &target,
-        &format!(
-            "settle\nkeys ggciwmine<esc>:w copy.txt<cr>\nsettle\nstate\nkeys :w {}<cr>\nsettle\nstate\n",
-            uri("fixture", &path)
-        ),
+        "settle\nkeys ggciwmine<esc>:w copy.txt<cr>\nsettle\nstate\nkeys ggciwagain<esc>:w copy.txt<cr>\nsettle\nstate\n",
     );
     let observed = states(&output);
-    assert_eq!(std::fs::read(&copy).unwrap(), b"mine\n", "{output}");
     assert_eq!(observed[0]["dirty"], true, "a copy leaves the buffer dirty");
+    assert!(
+        observed[1]["message"]
+            .as_str()
+            .unwrap()
+            .contains("already exists"),
+        "{output}"
+    );
+    assert_eq!(std::fs::read(&copy).unwrap(), b"mine\n", "{output}");
     assert_eq!(std::fs::read(&path).unwrap(), b"cccc\n");
-    let _ = observed;
 }

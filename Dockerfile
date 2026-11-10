@@ -47,7 +47,7 @@ RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-ssh,sharing=locked \
     ! command -v python && ! command -v python2 && ! command -v python3 \
-    && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor \
+    && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked --no-fail-fast -p strop-editor \
         --test ssh_exec --test remote_ssh -- --test-threads=1
 
 # Remote latency measurement (plan 0090 §7), not a gate: open, save,
