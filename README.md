@@ -105,7 +105,9 @@ the authority for every behavior above.
 
 ```sh
 strop --log-file issue.jsonl path/to/file.rs
-strop replay issue-full.jsonl        # full forensic replay
+strop replay --script issue.jsonl > replay.keys   # the keys, inspectable
+strop --log-file issue-full.jsonl --log-content path/to/file.rs
+strop replay issue-full.jsonl                     # full forensic replay
 ```
 
 Details, content-privacy knobs and the input-only script extraction:
