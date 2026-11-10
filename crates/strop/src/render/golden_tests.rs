@@ -201,7 +201,10 @@ fn completion() {
             editor.handle_app_event(receiver.recv_timeout(remaining).unwrap());
         }
         Box::new(move |editor| {
-            while let Ok(event) = receiver.recv_timeout(std::time::Duration::from_millis(400)) {
+            while editor.analysis_pending() {
+                let event = receiver
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .expect("analysis settles through the app channel");
                 editor.handle_app_event(event);
             }
         })

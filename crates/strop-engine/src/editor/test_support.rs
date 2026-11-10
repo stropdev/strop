@@ -119,6 +119,12 @@ impl Editor {
         self.wait_picker();
     }
 
+    /// Whether admitted syntax analysis has not yet landed — the settle
+    /// condition for scenes whose analysis flows through the app channel.
+    pub fn analysis_pending(&self) -> bool {
+        self.analysis.pending()
+    }
+
     pub fn wait_analysis(&mut self) {
         while self.analysis.pending() {
             let event = self
