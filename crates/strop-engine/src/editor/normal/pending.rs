@@ -114,8 +114,7 @@ impl Editor {
         }
         match self.pending.reduce(event) {
             PendingEffect::ReadRegister(name) => {
-                let text = self.register(name).text.clone();
-                self.feed_pending_event(PendingEvent::Paste(text));
+                self.paste_from(name, super::super::registers::PasteDestination::Prompt);
             }
             PendingEffect::None | PendingEffect::ModeChanged => {}
             PendingEffect::Edited => self.incsearch_jump(),
@@ -135,7 +134,13 @@ impl Editor {
             return;
         }
         match prompt.context() {
-            PromptContext::Ex(_) => self.run_ex(prompt.body()),
+            PromptContext::Ex(_) => {
+                // vim's `":` keeps the last line that had any text
+                if !prompt.body().is_empty() {
+                    self.registers.command_line = Some(prompt.body().to_owned());
+                }
+                self.run_ex(prompt.body())
+            }
             PromptContext::Pipe { range, visual, .. } => {
                 if self.buf().readonly {
                     self.message = "readonly buffer".into();

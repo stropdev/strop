@@ -77,7 +77,7 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
             (":s replacement", "Literal text; escaped delimiter and \\\\ are unescaped"),
             ("buffer / ?", "Case-insensitive by default; case:sensitive forces exact case"),
             ("buffer case:ignore", "Explicit insensitive search (alias: case:insensitive)"),
-            ("input ctrl-r {reg}", "Insert a register; field Normal p/P pastes; no Ctrl-C quit"),
+            ("input ctrl-r {reg}", "Insert a register in any input: insert mode, : / ?, Files, Search, With"),
             ("visual ctrl-c", "Toggle line comments on the selected lines"),
         ],
     ),
@@ -86,7 +86,7 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
         &[
             ("space /", "Open/resume the retained local Search investigation"),
             ("space R", "Resume the same Search with replacement visible"),
-            ("ctrl-r", "Toggle With without restarting Search or losing its draft"),
+            ("ctrl-t", "Toggle With without restarting Search or losing its draft"),
             ("Find enter", "Open selected source, even when With is visible"),
             ("With enter", "Prepare Review; never apply or save directly"),
             ("tab / s-tab", "Switch visible fields; otherwise move results"),

@@ -52,8 +52,7 @@ impl Editor {
     }
 
     pub(crate) fn insert_register(&mut self, name: Option<char>) {
-        let text = self.register(name).text.clone();
-        self.insert_literal(&text, replay::InsertTargets::All);
+        self.paste_from(name, super::registers::PasteDestination::Insert);
     }
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
@@ -144,7 +143,13 @@ impl Editor {
         self.last_insert_pos = Some(self.head());
         match key {
             Key::CtrlC => self.feed_insert(Key::Esc),
-            Key::CtrlW | Key::CtrlX | Key::CtrlD | Key::CtrlO | Key::CtrlL | Key::CtrlSpace => {
+            Key::CtrlW
+            | Key::CtrlX
+            | Key::CtrlD
+            | Key::CtrlO
+            | Key::CtrlL
+            | Key::CtrlT
+            | Key::CtrlSpace => {
                 if key == Key::CtrlL {
                     self.needs_repaint = true; // desync recovery
                 }

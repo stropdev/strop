@@ -161,7 +161,8 @@ Generated from the command table (`strop compat`).
 - `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
 - `✓ ctrl-d` — Search: exclude/include file
-- `✓ ctrl-r` — Search: toggle replacement; document: redo
+- `✓ ctrl-r` — input field: insert register {reg} (" is the last yank/delete)
+- `✓ ctrl-t` — Search: toggle replacement
 - `✓ enter` — Search Find: open source; With: prepare review
 - `✓ ctrl-o` — Search: collect included matches
 

@@ -143,7 +143,7 @@ impl Editor {
         self.clamp_cursor();
     }
 
-    pub(crate) fn block_yank(&mut self) {
+    pub(crate) fn block_yank(&mut self, register: Option<char>) {
         let Some(rect) = self.block_rect() else {
             return;
         };
@@ -153,8 +153,8 @@ impl Editor {
                     .selected
             })
             .collect();
-        self.set_register(
-            None,
+        self.yank_register(
+            register,
             Register::blockwise(
                 rows.join("\n"),
                 DisplayColumn::new(rect.right_cell - rect.left_cell + 1),
@@ -164,13 +164,13 @@ impl Editor {
         self.apply_pending_diagnostics();
         self.land_at_cell(rect.first_line, rect.left_cell);
     }
-    pub(crate) fn block_delete(&mut self) {
-        self.block_edit(false);
+    pub(crate) fn block_delete(&mut self, register: Option<char>) {
+        self.block_edit(false, register);
     }
-    pub(crate) fn block_change(&mut self) {
-        self.block_edit(true);
+    pub(crate) fn block_change(&mut self, register: Option<char>) {
+        self.block_edit(true, register);
     }
-    fn block_edit(&mut self, insert: bool) {
+    fn block_edit(&mut self, insert: bool, register: Option<char>) {
         let Some(rect) = self.block_rect() else {
             return;
         };
@@ -198,12 +198,13 @@ impl Editor {
             self.message = error.to_string();
             return;
         }
-        self.set_register(
-            None,
+        self.delete_register(
+            register,
             Register::blockwise(
                 selected.join("\n"),
                 DisplayColumn::new(rect.right_cell - rect.left_cell + 1),
             ),
+            false,
         );
         self.mode = if insert { Mode::Insert } else { Mode::Normal };
         self.land_at_cell(rect.first_line, rect.left_cell);

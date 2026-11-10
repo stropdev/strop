@@ -238,35 +238,22 @@ impl PendingInput {
             }
             PendingEvent::Key(Key::Backspace) if prompt.line.normal => {
                 // vim: BS in normal mode is h — a pure grammar motion
-                let _ = self.machine.feed(&mut prompt.line, Key::Char('h'), |_| {
-                    super::field::FieldReply::Consumed
-                });
+                let _ = self.machine.feed(&mut prompt.line, Key::Char('h'));
             }
             PendingEvent::Key(Key::Backspace) => {
                 prompt.line.backspace();
             }
             PendingEvent::Key(key @ (Key::Char(_) | Key::CtrlR))
-                if key == Key::CtrlR || self.machine.register =>
+                if key == Key::CtrlR || self.machine.register || prompt.line.normal =>
             {
-                let mut register = None;
-                let reply = self.machine.feed(&mut prompt.line, key, |name| {
-                    register = Some(name);
-                    super::field::FieldReply::Consumed
-                });
-                if let Some(name) = register {
-                    return PendingEffect::ReadRegister(name);
-                }
-                if let super::field::FieldReply::Refused(message) = reply {
-                    return PendingEffect::Rejected(message);
-                }
-            }
-            PendingEvent::Key(Key::Char(c)) if prompt.line.normal => {
-                if let super::field::FieldReply::Refused(message) =
-                    self.machine.feed(&mut prompt.line, Key::Char(c), |_| {
-                        super::field::FieldReply::Consumed
-                    })
-                {
-                    return PendingEffect::Rejected(message);
+                match self.machine.feed(&mut prompt.line, key) {
+                    super::field::FieldReply::Consumed => {}
+                    super::field::FieldReply::ReadRegister(name) => {
+                        return PendingEffect::ReadRegister(name);
+                    }
+                    super::field::FieldReply::Refused(message) => {
+                        return PendingEffect::Rejected(message);
+                    }
                 }
             }
             PendingEvent::Key(Key::Char(c)) => {

@@ -197,7 +197,7 @@ mod tests {
         e.occurrence_next_pub();
         e.feed_text("y");
         assert_eq!(text(&e), "foo a\nfoo b\n");
-        assert_eq!(e.registers[&'"'].text, "foo\nfoo"); // helix join rule
+        assert_eq!(e.register(None).text, "foo\nfoo"); // helix join rule
         assert_eq!(e.mode, Mode::Visual, "yank keeps the selections");
         assert_eq!(spans(&e), vec![(0, 2), (6, 8)]);
     }

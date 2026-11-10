@@ -82,7 +82,7 @@ impl Editor {
     fn finish_permalink(&mut self, intent: PermalinkIntent, url: String) {
         match intent {
             PermalinkIntent::Yank => {
-                self.set_register(None, super::Register::characterwise(url.clone()));
+                self.yank_register(None, super::Register::characterwise(url.clone()));
                 self.osc52 = Some(url);
                 self.message = "permalink copied".into();
             }

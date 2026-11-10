@@ -92,11 +92,9 @@ impl Editor {
                 if glue.picker.input_normal() {
                     // vim: BS in normal mode is h — a pure motion, so
                     // it never notifies the ranking seams
-                    let _ =
-                        glue.field_keys
-                            .feed(glue.picker.active_field(), Key::Char('h'), |_| {
-                                super::super::field::FieldReply::Consumed
-                            });
+                    let _ = glue
+                        .field_keys
+                        .feed(glue.picker.active_field(), Key::Char('h'));
                 } else if replace && glue.picker.field == strop_picker::Field::Replace {
                     glue.picker.pop_replace_char();
                     self.search_intent_changed();
@@ -106,8 +104,8 @@ impl Editor {
                 }
             }
             Key::CtrlL => self.needs_repaint = true,
-            Key::CtrlR if search => self.toggle_search_replacement(),
-            Key::CtrlW => {}
+            Key::CtrlT if search => self.toggle_search_replacement(),
+            Key::CtrlW | Key::CtrlT => {}
             Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret | Key::CtrlC => {}
             Key::CtrlY | Key::CtrlE => {}
             Key::Up | Key::CtrlP => glue.picker.move_by(-1),
@@ -118,13 +116,6 @@ impl Editor {
             Key::Right => glue.picker.caret_right(),
             // bare j/k walk the result list (a picker, not a buffer);
             // mid-composition they are grammar (dj, 3j as motions)
-            Key::Char('p' | 'P') if glue.picker.input_normal() && glue.field_keys.is_ground() => {
-                if key == Key::Char('P') {
-                    glue.picker.active_field().move_left();
-                }
-                let text = self.register(None).text.clone();
-                self.paste_picker(&text);
-            }
             Key::Char('j') if glue.picker.input_normal() && glue.field_keys.is_ground() => {
                 glue.picker.move_by(1)
             }
@@ -140,11 +131,7 @@ impl Editor {
                     let replace_field =
                         replace && glue.picker.field == strop_picker::Field::Replace;
                     let before = glue.picker.active_field().revision();
-                    let reply = glue
-                        .field_keys
-                        .feed(glue.picker.active_field(), key, |name| {
-                            super::super::field::FieldReply::ReadRegister(name)
-                        });
+                    let reply = glue.field_keys.feed(glue.picker.active_field(), key);
                     match reply {
                         super::super::field::FieldReply::Consumed => {
                             if glue.picker.active_field().revision() != before {
@@ -156,8 +143,10 @@ impl Editor {
                             }
                         }
                         super::super::field::FieldReply::ReadRegister(name) => {
-                            let text = self.register(name).text.clone();
-                            self.paste_picker(&text);
+                            self.paste_from(
+                                name,
+                                crate::editor::registers::PasteDestination::Picker,
+                            );
                         }
                         super::super::field::FieldReply::Refused(message) => self.message = message,
                     }

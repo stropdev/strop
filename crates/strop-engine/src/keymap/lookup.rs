@@ -98,6 +98,7 @@ pub(crate) const NAMED: &[&str] = &[
     "enter",
     "backspace",
     "ctrl-r",
+    "ctrl-t",
     "ctrl-x",
     "ctrl-d",
     "ctrl-u",
