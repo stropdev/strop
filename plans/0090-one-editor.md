@@ -107,4 +107,29 @@ tmux smoke of every surface the release touched, and for 0.56 the SSH journeys i
 
 ## 7. Implementation record
 
-Filled in per release.
+### 0.55.0
+
+Shipped: containers and dev containers deleted (−21.5K lines, one crate, one CI
+lane); the terminal on Neovim's model (`Space t`/`Space T`, `<C-\><C-n>` only, a
+live NORMAL buffer that follows output, view restored on re-entry, `:q` hides,
+`:bd!` stops, `:qa` one notice, `term://` names, `TERMINAL` chip, `:r !cmd`,
+remote login shell); local terminal PTYs run in the editor process; B2–B4, B7,
+B10, B11, B13; the echo row wraps to three rows and `:messages` keeps the last 50;
+recovery drafts are offered on open (and a new session no longer overwrites an
+earlier session's drafts — found while building the offer); `Space a` is one
+typed-owner list; `strop -` streams stdin; untested ex commands tested; legacy
+flag spellings removed. The Neovim differential harness now compares `&modified`.
+
+Departures and notes:
+
+- strop reads its own input bytes (`crates/strop/src/terminal/decode.rs`): crossterm
+  0.28/0.29 decodes `ESC ESC` in one read as one key (B4) with no fixed release.
+- Local PTYs reuse `strop-worker`'s `launch_pty`/supervisor, so `strop-terminal`
+  depends on `strop-worker` for now. The 0.56 worker removal must move that code
+  into `strop-terminal` first.
+- The legacy `0x1c` byte that tmux without kitty keys sends for `Ctrl-\` decodes as
+  Ctrl-4 in crossterm; it is treated as the same chord, not a second one.
+- `:r FILE` is not implemented; the message points to `:r !cmd`.
+- Known cosmetic: in NORMAL on a terminal buffer the statusline column can carry
+  the child cursor's column.
+- `--tail/--range/--follow` stay until 0.56 decides them with the worker.
