@@ -1,0 +1,49 @@
+   1 replace: 2 file(s) to change                                              ▮
+   2 Enter applies and writes the files · q cancels                            ▮
+   3 5 matches included, 0 excluded                                            ▮
+   4                                                                           ▮
+   5 --- a/docs/remote.md                                                      ▮
+   6 +++ b/docs/remote.md                                                      ▮
+   7 @@ -1,5 +1,5 @@                                                           ▮
+   8  # Remote                                                                 ▮
+   9                                                                           ▮
+  10 -The modeline identifies the endpoint.                                    ▮
+  11 +The status row identifies the endpoint.                                  ▮
+  12                                                                           ▮
+  13 -The modeline names the fixed root.                                       ▮
+  14 +The status row names the fixed root.                                      
+  15                                                                            
+  16 --- a/src/render/statusline.rs                                             
+  17 +++ b/src/render/statusline.rs                                             
+  18 @@ -1,17 +1,17 @@                                                          
+  19 -//! The modeline: one quiet row at the bottom edge.                       
+  20 +//! The status row: one quiet row at the bottom edge.                     
+  21  //!                                                                       
+  22  //! Every width is a display cell, never a character.                     
+ › replace: review of 2 file(s) — Enter applies and writes                      
+ NORMAL   review: replace [RO]                                           1:1  2%
+
+  0: 1:#858c9a/#1b1e24+b 32:#e8a848/#1b1e24 46:#1b1e24/#1b1e24 1:#858c9a/#15171c
+  1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 46:#e6e1d6/#15171c 28:reset/#15171c 1:#858c9a/#15171c
+  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 30:#e6e1d6/#15171c 44:reset/#15171c 1:#858c9a/#15171c
+  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:#858c9a/#15171c
+  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 20:#e8a848/#15171c 54:reset/#15171c 1:#858c9a/#15171c
+  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 20:#e8a848/#15171c 54:reset/#15171c 1:#858c9a/#15171c
+  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 15:#858c9a/#1c1f25 59:#1c1f25/#1c1f25 1:#858c9a/#15171c
+  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 9:#e6e1d6/#15171c 65:reset/#15171c 1:#858c9a/#15171c
+  8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 73:reset/#15171c 1:#858c9a/#15171c
+  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 38:#e8707c/#331f24 36:#331f24/#331f24 1:#858c9a/#15171c
+ 10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 40:#8fc48a/#1e2d22 34:#1e2d22/#1e2d22 1:#858c9a/#15171c
+ 11: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 73:reset/#15171c 1:#858c9a/#15171c
+ 12: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 35:#e8707c/#331f24 39:#331f24/#331f24 1:#858c9a/#15171c
+ 13: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 37:#8fc48a/#1e2d22 37:#1e2d22/#1e2d22 1:reset/reset
+ 14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
+ 15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 30:#e8a848/#15171c 44:reset/#15171c 1:reset/reset
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 30:#e8a848/#15171c 44:reset/#15171c 1:reset/reset
+ 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 17:#858c9a/#1c1f25 57:#1c1f25/#1c1f25 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 52:#e8707c/#331f24 22:#331f24/#331f24 1:reset/reset
+ 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 54:#8fc48a/#1e2d22 20:#1e2d22/#1e2d22 1:reset/reset
+ 20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 4:#e6e1d6/#15171c 70:reset/#15171c 1:reset/reset
+ 21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 54:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
+ 22: 3:#e6e1d6/#1c1f25+b 55:#e6e1d6/#1c1f25 22:reset/#1c1f25
+ 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 15:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 43:reset/#1c1f25 7:#858c9a/#1c1f25

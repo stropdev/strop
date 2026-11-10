@@ -77,15 +77,7 @@ pub(crate) struct ActionOwner {
 impl Editor {
     /// `Space a`.
     pub(crate) fn context_actions(&mut self) {
-        let mut entries: Vec<Entry> = self
-            .review_actions()
-            .into_iter()
-            .map(Entry::Review)
-            .collect();
-        entries.extend(self.context_entries());
-        if self.directory().is_some() {
-            entries.extend(self.filesystem_entries().into_iter().map(Entry::Filesystem));
-        }
+        let entries = self.local_entries();
         let code = self.lsp_serves(self.current());
         if entries.is_empty() && !code {
             // nothing else to offer: the language request names why
@@ -107,6 +99,37 @@ impl Editor {
         if code {
             self.lsp_code_actions();
         }
+    }
+
+    /// Every row this view offers without asking a language server.
+    fn local_entries(&self) -> Vec<Entry> {
+        let mut entries: Vec<Entry> = self
+            .review_actions()
+            .into_iter()
+            .map(Entry::Review)
+            .collect();
+        entries.extend(self.context_entries());
+        if self.directory().is_some() {
+            entries.extend(self.filesystem_entries().into_iter().map(Entry::Filesystem));
+        }
+        entries
+    }
+
+    /// Fixture hook (tests only): `Space a` as it looks once a language
+    /// server has answered with `titles`, without a server round-trip.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixture_code_actions(&mut self, titles: &[&str]) {
+        let entries = self.local_entries();
+        self.open_actions(entries, true, "actions");
+        let actions = titles
+            .iter()
+            .map(|title| strop_lsp::ProtoAction {
+                title: (*title).into(),
+                edits: None,
+                has_external_command: false,
+            })
+            .collect();
+        self.deliver_code_actions(actions, strop_lsp::PositionEncoding::Utf16);
     }
 
     /// `:fs` without a verb: the filesystem rows only.

@@ -372,3 +372,97 @@ fn terminal_normal_mode() {
         settle_analysis()
     });
 }
+
+/// 0094 §3.1: the collection after an edit through it. The edited excerpt
+/// shows the new text, its card is marked modified, and the chip reads
+/// NORMAL without `[RO]`: it is an editing surface.
+#[test]
+fn editable_collection() {
+    each("collection", |editor| {
+        editor.open_search(false);
+        editor.paste_bracketed("modeline");
+        editor.wait_picker();
+        editor.feed(strop_core::frontend_input::Key::CtrlO);
+        editor.wait_io().unwrap();
+        editor.feed_text("/identifies<cr>x");
+        settle_analysis()
+    });
+}
+
+fn replace_review(editor: &mut Editor) {
+    editor.open_search(true);
+    editor.paste_bracketed("modeline");
+    editor.wait_picker();
+    editor.feed(strop_core::frontend_input::Key::Tab);
+    editor.paste_bracketed("status row");
+    editor.feed(strop_core::frontend_input::Key::Enter);
+    editor.wait_io().unwrap();
+}
+
+/// 0094 §3.2: the review a project replace opens — the diff, and the one
+/// key that applies it.
+#[test]
+fn review() {
+    each("review", |editor| {
+        replace_review(editor);
+        settle_analysis()
+    });
+}
+
+/// The same buffer after `Enter`: the diff stays under a heading that says
+/// what happened and how to take it back.
+#[test]
+fn review_applied() {
+    each("review-applied", |editor| {
+        replace_review(editor);
+        editor.feed(strop_core::frontend_input::Key::Enter);
+        editor.wait_io().unwrap();
+        settle_analysis()
+    });
+}
+
+/// 0094 §3.4: `Space a` on a source line with a diagnostic lists the
+/// language server's fixes and nothing about files.
+#[test]
+fn actions_on_a_source_buffer() {
+    each("actions", |editor| {
+        editor.feed_text("8j");
+        editor.fixture_insert_diagnostics(
+            editor.current(),
+            crate::editor::DocumentDiagnostics {
+                revision: editor.buf().revision(),
+                items: vec![strop_lsp::ResolvedDiag {
+                    line: strop_core::id::LineIndex::new(8),
+                    col: strop_core::id::ByteColumn::new(4),
+                    severity: strop_lsp::Severity::Warning,
+                    end_line: strop_core::id::LineIndex::new(8),
+                    end_col: strop_core::id::ByteColumn::new(8),
+                    message: "field `chip` is never read".into(),
+                }],
+            },
+        );
+        editor.fixture_code_actions(&[
+            "Remove unused field `chip`",
+            "Prefix with an underscore: `_chip`",
+            "Allow `dead_code` on this struct",
+        ]);
+        editor.wait_picker();
+        settle_picker()
+    });
+}
+
+/// 0091 B2: the `:s` card with a change far to the right of a long line.
+/// Both rows are cut to the same window, on the change.
+#[test]
+fn substitute_card() {
+    each("substitute", |editor| {
+        editor.fixture_buf_mut().insert(
+            0,
+            "const LABELS: &[&str] = &[\"alpha\", \"beta\", \"gamma\", \"delta\", \"epsilon\", \
+             \"zeta\", \"eta\", \"theta\", \"iota\", \"kappa\", \"lambda\", \"mu\", \"nu\", \
+             \"xi\", \"omicron\", \"modeline\", \"rho\"];\n",
+        );
+        editor.feed_text(":%s/modeline/statusline/g");
+        settle_analysis()
+    });
+}

@@ -3,9 +3,10 @@
 Open a directory with `strop DIRECTORY`, `:browse`, or `:e DIRECTORY`.
 `Space e` reveals the current source in its parent. Browsing keeps the
 process cwd unchanged; Enter opens a structured entry and `-`/Backspace
-goes to its parent. `Space a` lists the actions valid here: in a directory
-the filesystem operations, in a file its operations plus any code actions
-the language server offers, all in one **actions** list.
+goes to its parent. In a Directory buffer `Space a` lists the filesystem
+operations valid there; `:fs` with no verb lists them from anywhere. On a
+source file `Space a` is about the code: the language server's actions and
+any recovery a failed save or connection left behind.
 
 Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
 hosts (see [SSH hosts](#ssh-hosts) for what differs there):
@@ -19,12 +20,15 @@ hosts (see [SSH hosts](#ssh-hosts) for what differs there):
 :fs copy buffer edited-copy.txt
 :fs trash
 :fs remove
-:apply-change
-:cancel-change
+:fs apply
+:fs cancel
 :fs operations
 :fs verify OPERATION STEP
 :fs undo OPERATION STEP
 ```
+
+Each verb opens a review of the exact steps. `Enter` in the review (or
+`:fs apply`) performs them; `q` (or `:fs cancel`) discards them.
 
 Relative filesystem destinations use the current Directory, or the current
 source's parent; source-less buffers use the workspace root. Explicit
@@ -40,8 +44,8 @@ are refused.
 
 `:fs edit` enters a name-only **filename draft**. Ordinary motions, edits,
 whole-line yank/paste, undo/redo and macros change the draft, not disk.
-`:w` prepares review; `:apply-change` performs filesystem changes;
-`:cancel-change` returns to the intact draft. Browsing or refreshing the
+`:w` prepares review; `Enter` or `:fs apply` performs the filesystem
+changes; `q` or `:fs cancel` returns to the intact draft. Browsing or refreshing the
 directory retains edited names and source provenance. Use `:fs discard` to
 discard explicitly. Copies need a distinct name; ambiguous joins and
 conflicting targets refuse instead of guessing which file a row represents.

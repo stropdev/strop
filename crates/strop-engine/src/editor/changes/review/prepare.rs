@@ -385,8 +385,7 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
         targets: Vec::new(),
         refused: Vec::new(),
         summary: format!(
-            "{}: {} matches included, {excluded} excluded",
-            input.scope.root.label(),
+            "{} matches included, {excluded} excluded",
             input.catalog.len().saturating_sub(excluded)
         ),
     };

@@ -716,6 +716,7 @@ pub fn state_json(editor: &Editor) -> String {
         // the lifecycle registers the differential harness diffs (0092)
         "registers": lifecycle_registers,
         "dirty": editor.buf().is_dirty(),
+        "dirty_buffers": editor.docs.iter().filter(|(_, doc)| doc.buf.is_dirty()).count(),
         "terminal":editor.terminal_status(editor.current()),
         "completion": editor.completion_snapshot(true),
     })

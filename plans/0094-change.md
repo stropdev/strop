@@ -58,10 +58,18 @@ diagnostics collects the included hits. The collection buffer is writable:
   changes, with one message.
 - `:w` in a collection writes every dirty source it shows. `:wq` does that and
   closes the view.
-- `u` and `Ctrl-R` walk the view's own history; each step writes through like
-  any other edit. When a shown source is edited somewhere else, that edit
-  appears in the view and the view's history starts over (its recorded
-  offsets no longer describe the text). The source's own `u` still works.
+- `u` and `Ctrl-R` walk the view's own history, and every source that step
+  changed takes the same step in its own history. Translating the view's
+  inverse edit a second time was tried first and was wrong at an
+  unterminated last line (the convergence test found it): the source's own
+  history holds the exact inverse, so it is the one that moves. This is
+  sound because a view's step and its sources' steps are recorded together
+  (one undo group in each, closed together), and because any edit of a
+  shown source that the view did not make starts the view's history over.
+  The source's own `u` still works.
+- A refused edit that was the first thing its command tried voids the rest
+  of that command: `J` on an excerpt's last line must not keep the space it
+  adds after the join it could not make.
 - The newest collection is the quickfix list. `:copen` focuses it. `]q`/`[q`,
   `:cnext`/`:cprev` (`:cn`/`:cp`) and `:cc N` jump to a hit in its source.
   `:cdo {cmd}` runs an ex command with the cursor on each hit line;
@@ -82,10 +90,12 @@ through the source edit (`map_position` on both sides, so
 `map_through_edits` composes it over a journal). Two mutants.
 
 What stays in ring 1 (property-tested, not proved): finding the excerpt for a
-byte, composing a sequential journal into disjoint replacements
+byte, composing a batch's journal into disjoint replacements
 (`collections/journal.rs`, already tested), and the view's added terminator
-when a source's last line has no newline. That last case re-renders the view
-when the body and the source disagree after the write.
+when a source's last line has no newline: lines added below such a line put
+their newline in front, so the file stays unterminated as it was. An excerpt
+whose lines were all deleted shows no rows (it used to show one empty row,
+which no source byte backed).
 
 ### 3.2 Replace is two steps
 
@@ -114,7 +124,10 @@ A literal term keeps With literal.
 
 `grn` opens the `:rename ` prompt filled with the name under the cursor. A
 rename touching one buffer applies directly and flashes; one touching several
-opens the same review, with the same `Enter`/`u`.
+opens the same review, with the same `Enter`/`u`. `grn` needs `gr` to be a
+prefix, so references move from `gr` to `grr`: Neovim 0.11's own pair
+(`:help grr`, `:help grn`). The keys track owns the rest of that family
+(`gra`, `gri`).
 
 ### 3.4 `Space a`
 
@@ -147,13 +160,32 @@ semantics stay with the keys track, this is the three-line default.
 - Goldens: editable collection, the review before and after apply, `Space a`
   on a source with a diagnostic, the `:s` card at 90×24 and 90×8.
 
+The convergence test compares edits that mean the same thing at a caret in
+the view and in the source. It leaves out `dw` and `cw`: at the end of a line
+strop's `dw`, and `cw` on an empty line, reach into the next line (a fidelity
+bug for the keys track), which in a view is the border and is refused.
+
+Found on the way and fixed here because the test could not pass without it:
+`cc` planted a second cursor stacked on the first, which survived the insert
+session and `u` and then edited a second place.
+
 ## 5. Deferred
+
+- Closing the buffers a replace loaded once its review closes (0091 §4.3's
+  "36 buffers open"). `close_buffer` closes the buffer in view and resets
+  the cursor of the one it lands on; closing others needs a close that does
+  neither, which is a document-lifecycle change of its own.
+- The undo tree (`Space u`) of a collection: restoring an arbitrary revision
+  there is written through as a plain edit, not as source history moves.
 
 - `:cdo norm` (keys track owns `:norm`).
 - A collection's history surviving foreign edits to its sources. It needs the
-  history's offsets mapped through system edits; the kernel fold can do it,
-  the history store cannot yet.
+  history's offsets mapped through system edits and a way to tell whose step
+  a source's newest one is.
 - Captures in `:s`. The buffer-search engine is the keys track's; the With
   field uses the `regex` crate and could ship now.
 - Remote (SSH) replace stays unavailable; collections over SSH are editable
   like any other since they write to buffers.
+- `:s` case semantics beyond the default (`'ignorecase'`, `'smartcase'`, the
+  `i`/`I` flags) belong to the keys track; here `:s` appends the grammar's
+  own `\C` unless the pattern already names a case.

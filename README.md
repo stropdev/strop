@@ -28,7 +28,7 @@ A few longer ones show what they will change first:
 | `vi[` then `c`, and other Visual selections | The selection, before you press the operator. |
 | `d/pattern` while you type the pattern | The range that will be deleted, until Enter. |
 | `:s` while you type it | The changed lines, before and after, and how many. |
-| Project replace, file operations | Every change as a diff. You apply it, then save, as separate steps. |
+| Project replace, a rename across files, file operations | Every change as a diff. `Enter` applies and writes it; `u` in the review puts the buffers and the files back. |
 | Macros, shell commands | Nothing. |
 
 ## Install
@@ -96,7 +96,8 @@ contract against nvim) and [nucleo-decision.md](docs/nucleo-decision.md).
 - **Async invariant**: input→render never crosses an `await`. Data sources
   (rg, git, LSP) are jobs posting onto the event loop — no exceptions.
 - **Everything is a real buffer**: terminals, directory listings, search
-  collections — every widget still knows how to be a text editor.
+  collections — every widget still knows how to be a text editor. A
+  collection of search hits is one you edit: the changes land in the files.
 - **Zero-config single static binary**: no required setup, no downloads at
   runtime; grammars, queries and palettes are compiled in. rustls only —
   a dependency dragging in openssl is a bug.
