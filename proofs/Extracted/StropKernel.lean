@@ -228,51 +228,6 @@ def editmap.validate_batch
   := do
   editmap.validate_batch_loop len edits 0#usize
 
-/-- [strop_kernel::frame::MAX_HEADER_BYTES]
-    Source: 'crates/strop-kernel/src/frame.rs', lines 11:0-11:41
-    Visibility: public -/
-@[global_simps, irreducible]
-def frame.MAX_HEADER_BYTES : Std.Usize := 8192#usize
-
-/-- [strop_kernel::frame::MAX_BODY_BYTES]
-    Source: 'crates/strop-kernel/src/frame.rs', lines 15:0-15:46
-    Visibility: public -/
-@[global_simps, irreducible]
-def frame.MAX_BODY_BYTES : Result Std.Usize := 1024#usize * 1024#usize
-
-/-- [strop_kernel::frame::header_admitted]:
-    Source: 'crates/strop-kernel/src/frame.rs', lines 19:0-21:1
-    Visibility: public -/
-def frame.header_admitted (header_end : Std.Usize) : Result Bool := do
-  let i ← frame.MAX_HEADER_BYTES - 3#usize
-  ok (header_end < i)
-
-/-- [strop_kernel::frame::body_admitted]:
-    Source: 'crates/strop-kernel/src/frame.rs', lines 24:0-26:1
-    Visibility: public -/
-def frame.body_admitted (length : Std.Usize) : Result Bool := do
-  let i ← frame.MAX_BODY_BYTES
-  ok (length <= i)
-
-/-- [strop_kernel::frame::frame_ready]:
-    Source: 'crates/strop-kernel/src/frame.rs', lines 31:0-36:1
-    Visibility: public -/
-def frame.frame_ready
-  (header_end : Std.Usize) (length : Std.Usize) (buffered : Std.Usize) :
-  Result Bool
-  := do
-  let b ← frame.header_admitted header_end
-  if b
-  then
-    let b1 ← frame.body_admitted length
-    if b1
-    then
-      let i ← header_end + 4#usize
-      let i1 ← i + length
-      ok (buffered >= i1)
-    else ok false
-  else ok false
-
 /-- [strop_kernel::generation::next_generation]:
     Source: 'crates/strop-kernel/src/generation.rs', lines 11:0-17:1
     Visibility: public -/
