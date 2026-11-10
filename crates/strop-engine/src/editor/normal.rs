@@ -80,6 +80,10 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
         "explain",
         "why: workspaces, LSP readiness/failures, effective config",
     ),
+    (
+        "messages",
+        "message history: the last 50 echo-row messages",
+    ),
     ("containers", "attach to a running container (read-only)"),
     (
         "container-worker",

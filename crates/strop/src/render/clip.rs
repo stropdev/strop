@@ -41,6 +41,41 @@ pub(super) fn clip_end(text: &str, cells: usize) -> Cow<'_, str> {
     printable_text(text)
 }
 
+/// Word-wrap into at most `rows` lines of `cells` cells. A word wider than
+/// a line breaks between graphemes; text left over after the last line
+/// clips it with an ellipsis.
+pub(super) fn wrap(text: &str, cells: usize, rows: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut rest = text.trim_start();
+    while !rest.is_empty() && lines.len() < rows && cells > 0 {
+        if width(rest) <= cells {
+            lines.push(printable_text(rest).into_owned());
+            break;
+        }
+        if lines.len() + 1 == rows {
+            lines.push(clip_end(rest, cells).into_owned());
+            break;
+        }
+        // the longest prefix that fits, broken after its last space
+        let (mut used, mut fit, mut space) = (0, 0, None);
+        for (byte, grapheme) in rest.grapheme_indices(true) {
+            used += grapheme_width(grapheme);
+            if used > cells {
+                break;
+            }
+            fit = byte + grapheme.len();
+            if grapheme == " " {
+                space = Some(byte);
+            }
+        }
+        let fit = fit.max(rest.graphemes(true).next().map_or(0, str::len));
+        let cut = space.filter(|&at| at > 0).unwrap_or(fit);
+        lines.push(printable_text(rest[..cut].trim_end()).into_owned());
+        rest = rest[cut..].trim_start();
+    }
+    lines
+}
+
 /// Keep the end, so a long path can retain its filename instead of its prefix.
 pub(super) fn clip_start(text: &str, cells: usize) -> Cow<'_, str> {
     if cells == 0 {
@@ -138,6 +173,20 @@ pub(super) fn path_suffix(text: &str, cells: usize) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wrap_breaks_at_spaces_then_clips_the_last_row() {
+        assert_eq!(
+            super::wrap("alpha beta gamma", 11, 3),
+            ["alpha beta", "gamma"]
+        );
+        assert_eq!(super::wrap("abcdefgh", 3, 3), ["abc", "def", "gh"]);
+        assert_eq!(
+            super::wrap("one two three four five", 9, 2),
+            ["one two", "three fo…"]
+        );
+        assert_eq!(super::wrap("界界界", 3, 3), ["界", "界", "界"]);
+    }
+
     use super::*;
 
     #[test]

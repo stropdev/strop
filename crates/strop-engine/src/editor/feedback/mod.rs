@@ -5,6 +5,7 @@
 //! recovery tied to the exact document/endpoint/container incarnation.
 
 pub(crate) mod actions;
+mod messages;
 mod model;
 mod store;
 #[cfg(test)]
@@ -39,6 +40,24 @@ impl Editor {
     /// presented as the current notice.
     pub fn presented_feedback(&self) -> Option<&FeedbackRecord> {
         self.feedback.presented()
+    }
+
+    /// After every event: retain whatever the echo row now says.
+    pub(crate) fn log_echo_message(&mut self) {
+        self.feedback.log.observe(&self.message);
+    }
+
+    /// `:messages`: the retained history as a temporary output buffer.
+    pub(crate) fn open_messages(&mut self) {
+        // the command's own echo is not history
+        self.log_echo_message();
+        let mut buffer = strop_core::Buffer::from_text(&self.feedback.log.render());
+        buffer.name = Some("messages".into());
+        if self.open_temporary_output(buffer).is_some() {
+            // land on the newest message, like vim's pager end
+            let last = self.buf().len_lines().saturating_sub(2);
+            self.set_head(self.buf().line_start(last));
+        }
     }
 
     pub(crate) fn remote_feedback_owner(&self, endpoint: &RemoteEndpoint) -> FeedbackOwner {

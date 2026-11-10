@@ -591,6 +591,7 @@ impl Editor {
         });
         self.trace_state();
         self.recovery_after_event();
+        self.log_echo_message();
     }
 
     fn feed_inner(&mut self, key: Key) {
@@ -604,6 +605,7 @@ impl Editor {
         }
         self.revoke_shell_focus();
         self.message.clear();
+        self.feedback.log.forget_echo();
         if key == Key::Esc
             && self.mode == Mode::Normal
             && !self.pending.is_active()

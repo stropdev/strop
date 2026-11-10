@@ -119,6 +119,7 @@ impl Editor {
             }
         }
         self.track_cursor_fade(focus_gained);
+        self.log_echo_message();
         self.tape.healthy()?;
         if !frame && self.tape.observes() {
             // Frames check the canonical cell grid instead; every other

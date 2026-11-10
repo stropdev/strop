@@ -341,6 +341,7 @@ impl Editor {
             }
             "symbols" => self.lsp_document_symbols_pub(),
             "explain" => self.open_explain(),
+            "messages" => self.open_messages(),
             "recover" => self.run_recovery_ex(arg),
             "containers" => self.request_containers(),
             "container-worker" => self.request_container_worker(),
