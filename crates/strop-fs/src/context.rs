@@ -10,7 +10,7 @@
 
 use crate::failure;
 use strop_workspace::operation::{FsFailure, FsFailureKind, OperationCapability};
-use strop_workspace::{ContainerId, Filesystem, RemoteEndpoint, ResourceLocation};
+use strop_workspace::{Filesystem, RemoteEndpoint, ResourceLocation};
 
 /// One admitted filesystem namespace, as data — never a client handle.
 /// `Native` is the filesystem of the process running the kernel, the only
@@ -23,8 +23,6 @@ pub enum NamespaceView {
     Native,
     /// One remote endpoint's namespace (identity only).
     Remote(RemoteEndpoint),
-    /// One running container's namespace (identity only; read-only by policy).
-    Container(ContainerId),
 }
 
 impl NamespaceView {
@@ -33,7 +31,6 @@ impl NamespaceView {
         match self {
             Self::Native => Filesystem::Local,
             Self::Remote(endpoint) => Filesystem::Remote(endpoint.clone()),
-            Self::Container(id) => Filesystem::Container(id.clone()),
         }
     }
 

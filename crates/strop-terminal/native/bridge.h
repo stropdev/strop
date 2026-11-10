@@ -30,7 +30,7 @@ int strop_vt_graphemes(void *, int32_t, uint16_t, uint32_t *, size_t, size_t *);
 int strop_vt_mark_history(void *);
 int strop_vt_key(void *, const char *, uint32_t, uint32_t, uint32_t, uint32_t,
                  const char *, size_t, uint8_t *, size_t, size_t *);
-int strop_vt_paste(void *, const uint8_t *, size_t, int);
+int strop_vt_paste(void *, const uint8_t *, size_t);
 int strop_vt_text(void *, uint32_t, uint8_t *, size_t, size_t *);
 int strop_vt_focus(void *, int, uint8_t *, size_t, size_t *);
 int strop_vt_keyboard(void *, uint8_t);

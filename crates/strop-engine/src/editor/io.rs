@@ -142,9 +142,6 @@ pub enum SaveOutcome {
 pub enum IoEvent {
     Open(Box<Completion<OpenKey, Opened>>),
     Save(Box<Completion<SaveKey, SaveOutcome>>),
-    ContainerWrite(
-        Box<Completion<save::container::ContainerWriteKey, save::container::ContainerWriteResult>>,
-    ),
     Native(Box<Completion<native::NativeKey, native::NativeResult>>),
     Remote(super::remote::RemoteEvent),
     DirectoryFilter(Box<Completion<super::directory::FilterKey, Opened>>),
@@ -181,12 +178,13 @@ pub struct IoState {
     /// entry here verifies on its next `:w` before any rewrite.
     store_attempts: HashMap<DocumentId, StoreAttempt>,
     saves: HashMap<DocumentId, Ticket<SaveKey>>,
-    pub(crate) container_writes: save::container::ContainerWriteState,
     session: Option<WorkerId>,
     queued_session: Option<crate::session::SaveRequest>,
     native: HashMap<WorkerId, native::NativeKey>,
     pub session_error: Option<String>,
     pub(crate) format_warnings: HashMap<DocumentId, String>,
+    /// `strop -`: the scratch document stdin streams into, until EOF.
+    stdin: Option<DocumentId>,
 }
 
 impl Default for IoState {
@@ -199,12 +197,12 @@ impl Default for IoState {
             navigation: None,
             store_attempts: HashMap::new(),
             saves: HashMap::new(),
-            container_writes: save::container::ContainerWriteState::default(),
             session: None,
             queued_session: None,
             native: HashMap::new(),
             session_error: None,
             format_warnings: HashMap::new(),
+            stdin: None,
         }
     }
 }
@@ -214,7 +212,6 @@ impl Editor {
         super::trace::services::io(&event);
         match event {
             IoEvent::Native(completion) => self.handle_native(*completion),
-            IoEvent::ContainerWrite(completion) => self.container_write_done(*completion),
             IoEvent::Remote(event) => self.handle_remote_event(event),
             IoEvent::Review(completion) => self.handle_review_prepared(*completion),
             IoEvent::DirectoryFilter(completion) => self.directory_filter_done(*completion),
@@ -299,7 +296,6 @@ impl Editor {
             || !self.directories.filters.is_empty()
             || self.filesystem.pending()
             || !self.io.saves.is_empty()
-            || self.io.container_writes.pending()
             || self.io.session.is_some()
             || !self.io.native.is_empty()
             || self.remote_work_pending()
@@ -309,11 +305,68 @@ impl Editor {
 }
 
 impl Editor {
+    /// `strop -`: the current scratch buffer receives stdin. It reads as
+    /// `stdin` and stays read-only while the pipe streams (a live
+    /// `tail -f`); EOF hands it to the user like any scratch buffer.
+    pub fn adopt_stdin(&mut self) {
+        let document = self.current();
+        {
+            let mut doc = self.doc_mut(document);
+            doc.buf.name = Some("stdin".into());
+            doc.buf.set_readonly(strop_core::ReadonlyReason::Stdin);
+        }
+        self.io.stdin = Some(document);
+    }
+
+    /// Whether a stdin reader must be started (frontends ask once).
+    pub fn stdin_streaming(&self) -> bool {
+        self.io.stdin.is_some()
+    }
+
+    /// One read of stdin (`Some`) or its end (`None`). Text appends at
+    /// the end as a system edit — never undo history, never dirty; a
+    /// cursor on the last line follows the stream like `tail -f`.
+    pub(crate) fn handle_stdin(&mut self, chunk: Option<String>) {
+        let live = self.io.stdin.filter(|id| self.docs.get(*id).is_some());
+        let Some(document) = live else {
+            self.io.stdin = None;
+            return;
+        };
+        let Some(text) = chunk else {
+            self.io.stdin = None;
+            let lines = {
+                let mut doc = self.doc_mut(document);
+                if doc.buf.readonly_reason == Some(strop_core::ReadonlyReason::Stdin) {
+                    doc.buf.clear_readonly();
+                }
+                doc.buf.last_content_line() + 1
+            };
+            self.message = format!("stdin closed — {lines} lines, editable now");
+            return;
+        };
+        let following = self.current() == document
+            && self.buf().line_of(self.head()) >= self.buf().last_content_line();
+        let end = self.doc(document).buf.len_bytes();
+        let appended = self
+            .doc_mut(document)
+            .buf
+            .system_edit()
+            .replace(strop_core::Range::charwise(end, end), &text);
+        if let Err(error) = appended {
+            self.message = format!("stdin: {error}");
+            return;
+        }
+        if following {
+            let last = self.buf().last_content_line();
+            self.set_head(self.buf().line_start(last));
+            self.clamp_cursor();
+        }
+    }
+
     pub(crate) fn io_write_pending(&self, request: WorkerId) -> bool {
         self.io.session == Some(request)
             || self.recovery.write_pending(request)
             || self.remote_write_pending(request)
-            || self.container_write_pending(request)
             || self.destination_write_pending(request)
             || self.filesystem.mutation_pending(request)
             || self
@@ -330,9 +383,6 @@ impl Editor {
     }
     pub fn io_status(&self) -> Option<&'static str> {
         if let Some(status) = self.remote_write_status() {
-            return Some(status);
-        }
-        if let Some(status) = self.container_write_status() {
             return Some(status);
         }
         if !self.io.saves.is_empty() {

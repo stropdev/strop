@@ -16,25 +16,18 @@ pub(super) fn run_completion(
         client,
         worker,
         remote,
-        container_worker,
     } = job;
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
     match query {
-        RemoteCompletionQuery::Directory {
-            location,
-            segment,
-            container,
-        } => directory::run(
+        RemoteCompletionQuery::Directory { location, segment } => directory::run(
             location,
             &segment,
             directory::Sources {
                 client: &client,
                 worker: &worker,
                 remote: &remote,
-                container: container.as_ref(),
-                container_worker: container_worker.as_deref(),
             },
             &cancel,
         ),

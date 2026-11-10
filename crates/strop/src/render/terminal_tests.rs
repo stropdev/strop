@@ -253,7 +253,7 @@ fn terminal_pane_titles_show_immutable_launch_identity() {
             strop_terminal::model::Phase::Running,
         );
         let terminal_name = format!(
-            "terminal #{}",
+            "//{}:sh",
             editor
                 .terminal_document(editor.current())
                 .unwrap()
@@ -268,8 +268,10 @@ fn terminal_pane_titles_show_immutable_launch_identity() {
                 .unwrap();
             let titles = row_text(terminal.backend().buffer(), 0);
             assert!(titles.contains(&terminal_name), "{titles}");
+            // a terminal is read-only by nature: no `[RO]` (0090 §4)
+            assert!(!titles.contains("[RO]"), "{titles}");
             if columns >= 80 {
-                assert!(titles.contains("launch"), "{titles}");
+                assert!(titles.contains("term://"), "{titles}");
                 if namespace == "local" {
                     assert!(titles.contains("/host/launch"), "{titles}");
                 } else {
@@ -283,24 +285,17 @@ fn terminal_pane_titles_show_immutable_launch_identity() {
     }
 }
 
-/// 0065 S1: terminal-input and inspection are glanceably distinct,
-/// honest states — chip text, chip hue and the transient hint all say
-/// which side of the glass the keys are on.
+/// 0090 §4: TERMINAL is a distinct mode chip in its own hue with the one
+/// escape chord as its hint; NORMAL on a terminal buffer is plain NORMAL
+/// in the accent, no hint, no entry message.
 #[test]
-fn terminal_input_and_inspection_present_distinct_states() {
+fn terminal_and_normal_present_distinct_states() {
     let mut editor = modal_terminal_editor();
     let mut terminal = Terminal::new(TestBackend::new(110, 12)).unwrap();
     let statusline_y = 11;
     editor.feed_text("i");
     assert!(editor.terminal_input_active());
-    // The entry message names the direct inspection key and fallback.
-    assert!(editor.message().contains("F2"), "{}", editor.message());
-    assert!(
-        editor.message().contains("Ctrl-\\ Ctrl-N"),
-        "{}",
-        editor.message()
-    );
-    editor.set_message("");
+    assert_eq!(editor.message(), "");
     terminal
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
@@ -312,10 +307,10 @@ fn terminal_input_and_inspection_present_distinct_states() {
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
-    assert!(row.contains("  TERM  "), "{row}");
-    assert!(row.contains(" F2  inspect"), "{row}");
-    assert!(row.contains(" ctrl-\\ ctrl-n  inspect"), "{row}");
-    let (x, _) = find_cell(&buffer, "  TERM  ").unwrap();
+    assert!(row.contains("TERMINAL"), "{row}");
+    assert!(row.contains(" ctrl-\\ ctrl-n  NORMAL"), "{row}");
+    assert!(!row.contains("F2"), "{row}");
+    let (x, _) = find_cell(&buffer, "TERMINAL").unwrap();
     assert_eq!(
         buffer[(x, statusline_y)].bg,
         crate::render::tokens().mode_terminal
@@ -327,26 +322,18 @@ fn terminal_input_and_inspection_present_distinct_states() {
         .unwrap();
     let row = row_text(terminal.backend().buffer(), statusline_y);
     assert!(row.contains("sends to child"), "{row}");
-    // F2 leaves directly to inspection, even while another prefix pends.
-    editor.handle_app_event(crate::editor::events::AppEvent::Input(
-        strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent::press(
-            strop_core::frontend_input::KeyCode::Function(2),
-        )),
-    ));
+    ctrl(&mut editor, 'n');
     assert!(!editor.terminal_input_active());
-    assert!(
-        editor.message().contains("snapshot"),
-        "{}",
-        editor.message()
-    );
-    editor.set_message("");
+    assert_eq!(editor.message(), "", "no echo row over the prompt (T12)");
     terminal
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let buffer = terminal.backend().buffer().clone();
     let row = row_text(&buffer, statusline_y);
-    assert!(row.contains("  TERM  "), "{row}");
-    let (x, _) = find_cell(&buffer, "  TERM  ").unwrap();
+    assert!(row.contains(" NORMAL "), "{row}");
+    assert!(!row.contains("TERMINAL"), "{row}");
+    assert!(!row.contains("[RO]"), "{row}");
+    let (x, _) = find_cell(&buffer, " NORMAL ").unwrap();
     assert_eq!(buffer[(x, statusline_y)].bg, crate::render::tokens().accent);
 }
 

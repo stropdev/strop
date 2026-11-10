@@ -42,23 +42,11 @@ impl Editor {
                     }
                     return;
                 }
-                strop_workspace::Filesystem::Container(container) => {
-                    self.discover_container_git(container.clone(), directory.path.clone());
-                    return;
-                }
                 strop_workspace::Filesystem::Local => {}
             }
         }
         if let Some(file) = self.remote_file().cloned() {
             self.discover_remote_git(file);
-            return;
-        }
-        // A container document discovers its repository inside the
-        // container (0037 DC1b) — the local cwd is never consulted.
-        if let crate::editor::document::DocumentSource::Container { container, path } =
-            &self.cur().source
-        {
-            self.discover_container_git(container.clone(), path.clone());
             return;
         }
         let from = directory
@@ -181,95 +169,6 @@ impl Editor {
                         ),
                         partial: None,
                     },
-                }
-            },
-        );
-    }
-    /// Container discovery (0037 DC1b): the repository containing the
-    /// current container document, inside that container. `Ok(None)` (no
-    /// repository there) is an honest answer, published like any other.
-    fn discover_container_git(
-        &mut self,
-        container: strop_workspace::ContainerId,
-        path: std::path::PathBuf,
-    ) {
-        let from_dir = if self.directory().is_some() {
-            path.clone()
-        } else {
-            path.parent()
-                .unwrap_or(std::path::Path::new("/"))
-                .to_owned()
-        };
-        let from = FileTarget::Container {
-            container: container.clone(),
-            path: from_dir.clone(),
-        };
-        if matches!(&self.git_discovery, Load::Running(current) if current.key.from == from) {
-            return;
-        }
-        let running = match &self.git_discovery {
-            Load::Running(current) => Some(current.request),
-            _ => None,
-        };
-        if let Some(request) = running {
-            self.cancel_git_worker(request, CancelReason::Superseded);
-        }
-        let Some(ticket) = self.git_ticket(ContextKey { from }) else {
-            return;
-        };
-        self.git_discovery = Load::Running(ticket.clone());
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
-                "service":"git","request":"discover","target":"container",
-                "container":container.to_string(),"from":from_dir.to_string_lossy(),
-            })
-        });
-        let args = ticket.clone();
-        let container_worker = self
-            .containers
-            .attached
-            .get(container.as_str())
-            .and_then(|identity| self.containers.workers.get(identity))
-            .map(|lease| lease.worker().clone());
-        self.launch_git_job(
-            "git-discover-container",
-            "git.discover",
-            ticket,
-            &args,
-            GitJob::Context,
-            move |cancel| {
-                if cancel.is_cancelled() {
-                    return Outcome::Cancelled(CancelReason::Superseded);
-                }
-                let fail = |error: &dyn ToString| Outcome::Failed {
-                    failure: strop_core::worker::Failure::new(
-                        strop_core::worker::FailureKind::Exit,
-                        error.to_string(),
-                    ),
-                    partial: None,
-                };
-                // No Git query acquires deployment authority. A missing
-                // container worker refuses typed; the tar browser stays
-                // read-only without falling back to docker-exec sh.
-                match strop_git::container::discover(
-                    &container,
-                    &from_dir,
-                    container_worker.as_ref(),
-                    &cancel,
-                ) {
-                    Ok(None) => Outcome::Success(None),
-                    Ok(Some(workdir)) => {
-                        match strop_git::container::context(
-                            &container,
-                            &workdir,
-                            container_worker.as_ref(),
-                            &cancel,
-                        ) {
-                            Ok(context) => Outcome::Success(Some(context)),
-                            Err(error) => fail(&error),
-                        }
-                    }
-                    Err(error) => fail(&error),
                 }
             },
         );

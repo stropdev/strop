@@ -1,8 +1,8 @@
-//! Editor-side LSP event handling and asynchronous navigation. Local,
-//! SSH and container documents share request/server/incarnation/revision
+//! Editor-side LSP event handling and asynchronous navigation. Local
+//! and SSH documents share request/server/incarnation/revision
 //! ownership; every non-local workspace keeps its namespace in every
 //! identity — diagnostics, bindings and navigation never alias its paths
-//! onto the local disk (0036 RW8, 0037 DC1b).
+//! onto the local disk (0036 RW8).
 
 use super::{trace, Editor};
 use std::path::{Path, PathBuf};
@@ -85,12 +85,6 @@ impl Editor {
                     file.file.endpoint().clone(),
                     file.file.path().to_path_buf(),
                 ))
-            }
-            crate::editor::document::DocumentSource::Container { container, path } => {
-                Some(ResourceLocation {
-                    filesystem: strop_workspace::Filesystem::Container(container.clone()),
-                    path: path.clone(),
-                })
             }
             _ => document
                 .buf
@@ -194,7 +188,18 @@ impl Editor {
     pub(crate) fn lsp_document_symbols(&mut self) {
         self.lsp_request(strop_lsp::RequestKind::DocumentSymbols);
     }
-    /// `Space a` — code actions at the cursor, offered as a picker.
+    /// Whether a language server serves `document` now: `Space a` asks it
+    /// for code actions only then, and stays quiet otherwise.
+    pub(crate) fn lsp_serves(&self, document: strop_core::id::DocumentId) -> bool {
+        self.lsp_document_location(document)
+            .and_then(|doc| {
+                let language = self.lsp_doc_language(document, &doc.path)?;
+                self.lsp_server_for(document, &doc.path, &language, &doc.filesystem)
+            })
+            .is_some()
+    }
+
+    /// `Space a` — code actions at the cursor, joining the actions list.
     pub(crate) fn lsp_code_actions(&mut self) {
         self.lsp_change_request(strop_lsp::RequestKind::CodeAction, None);
     }
@@ -286,27 +291,6 @@ impl Editor {
                             path: doc.path.clone(),
                             line,
                             col,
-                        },
-                    }),
-                    Filesystem::Container(container) => items.push(Item {
-                        badge: None,
-                        text: format!(
-                            "container:{}{}:{} {} {}",
-                            &container.as_str()[..12],
-                            doc.path.display(),
-                            line,
-                            d.severity_char(),
-                            d.message
-                        ),
-                        payload: Payload::Grep {
-                            location: ResourceLocation {
-                                filesystem: Filesystem::Container(container.clone()),
-                                path: doc.path.clone(),
-                            },
-                            line,
-                            col,
-                            match_len: 1,
-                            line_text: d.message.clone().into(),
                         },
                     }),
                 }

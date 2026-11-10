@@ -4,6 +4,7 @@ use strop_core::Buffer;
 use strop_terminal::{
     launch::Launch,
     model::{Effect, Palette, Update, MAX_COLUMNS, MAX_ROWS, MAX_SESSIONS},
+    service::Target,
 };
 
 impl Editor {
@@ -34,6 +35,7 @@ impl Editor {
         }
     }
 
+    /// `:terminal [cmd]` / `Space T`: a new session in the current pane.
     pub(crate) fn launch_terminal(&mut self, command: &str, local: bool) {
         let location = if local {
             strop_workspace::ResourceLocation::local(self.cwd.clone())
@@ -43,13 +45,26 @@ impl Editor {
         self.launch_terminal_at(location, command);
     }
 
+    /// `Space t`: a new session in a horizontal split below the current
+    /// pane (0090 §4). The split opens on the current document, then the
+    /// launch replaces it in that pane — one jump record, as `:terminal`.
+    pub(crate) fn launch_terminal_split(&mut self) {
+        let before = self.panes.len();
+        self.split_document(false, self.current());
+        self.launch_terminal("", false);
+        if self.terminal_document(self.current()).is_none() && self.panes.len() > before {
+            // The launch was refused: do not leave an empty split behind.
+            self.close_pane_or_buffer(false);
+        }
+    }
+
     pub(crate) fn launch_terminal_at(
         &mut self,
         location: strop_workspace::ResourceLocation,
         command: &str,
     ) {
-        let worker = match terminal_worker(self, &location) {
-            Ok(worker) => worker,
+        let target = match terminal_target(self, &location) {
+            Ok(target) => target,
             Err(message) => {
                 self.message = message;
                 return;
@@ -78,8 +93,33 @@ impl Editor {
             revision: 1,
         };
         let directory = location.path.clone();
+        let launch = match &location.filesystem {
+            strop_workspace::Filesystem::Local => Launch::shell(
+                directory.clone(),
+                (!command.is_empty()).then(|| command.into()),
+            ),
+            // A remote namespace never receives the editor's
+            // environment (0058 WK12 privacy): minimal identity only.
+            _ => Launch::shell_remote(
+                directory.clone(),
+                (!command.is_empty()).then(|| command.into()),
+            ),
+        };
+        let program = if command.is_empty() {
+            match &location.filesystem {
+                strop_workspace::Filesystem::Local => std::path::Path::new(&launch.program)
+                    .file_name()
+                    .map_or_else(
+                        || launch.program.to_string_lossy().into_owned(),
+                        |name| name.to_string_lossy().into_owned(),
+                    ),
+                _ => "sh".to_owned(),
+            }
+        } else {
+            command.to_owned()
+        };
         let mut buffer = Buffer::from_text("");
-        buffer.name = Some(format!("terminal #{}", session.get()));
+        buffer.name = Some(terminal_name(session, &location, &program));
         let mut document = Document::output(buffer);
         // Entering a terminal is a jump: ctrl-o returns to the editing
         // position the way any other buffer landing does.
@@ -99,13 +139,12 @@ impl Editor {
             Entry {
                 document: id,
                 phase: Phase::Starting,
-                live: None,
                 service: None,
                 launch: location.clone(),
                 title: None,
                 geometry,
-                paste: None,
                 keyboard,
+                view: None,
             },
         );
         self.drop_stale_scratch(id);
@@ -118,22 +157,9 @@ impl Editor {
             "terminal.start",
             &(session, &location, command, geometry, keyboard),
             || {
-                let launch = match &location.filesystem {
-                    strop_workspace::Filesystem::Local => Launch::shell(
-                        directory.clone(),
-                        (!command.is_empty()).then(|| command.into()),
-                    ),
-                    // A remote namespace never receives the editor's
-                    // environment (0058 WK12 privacy): minimal identity
-                    // only.
-                    _ => Launch::shell_remote(
-                        directory.clone(),
-                        (!command.is_empty()).then(|| command.into()),
-                    ),
-                };
                 Service::start(
                     session,
-                    worker,
+                    target,
                     launch,
                     geometry,
                     keyboard,
@@ -196,18 +222,6 @@ impl Editor {
             return;
         };
         let document = entry.document;
-        if let Some(frame) = update.frame {
-            if frame.session != update.session
-                || entry
-                    .live
-                    .as_ref()
-                    .is_some_and(|old| frame.revision <= old.revision)
-            {
-                self.message = "terminal publication has stale or foreign identity".into();
-                return;
-            }
-            entry.live = Some(frame);
-        }
         if entry.phase != Phase::Closing || update.phase != Phase::Running {
             entry.phase = update.phase;
         }
@@ -220,18 +234,6 @@ impl Editor {
         for effect in update.effects {
             match effect {
                 Effect::Title(title) => entry.title = Some(title),
-                Effect::PasteConfirmationRequested { ticket } => {
-                    entry.paste = Some(HeldPaste { ticket });
-                }
-                Effect::PasteConfirmationCleared { ticket } => {
-                    if entry
-                        .paste
-                        .as_ref()
-                        .is_some_and(|paste| paste.ticket == ticket)
-                    {
-                        entry.paste = None;
-                    }
-                }
                 // Reported cwd is untrusted metadata, not an editor context change.
                 Effect::ReportedDirectory(_) | Effect::Bell => {}
                 Effect::ClipboardWriteDenied | Effect::HostControlDenied => {
@@ -242,22 +244,25 @@ impl Editor {
             }
         }
         if !entry.phase.live() {
-            entry.paste = None;
             entry.service = None;
         }
         let phase = entry.phase.clone();
         if self.docs.get(document).is_none() {
             return;
         }
-        let inspecting = self
-            .panes
-            .iter()
-            .any(|pane| pane.doc == document && !pane.terminal_input);
         let initial = self
             .terminal_document(document)
             .is_some_and(|source| source.frame.is_none());
-        if initial || !inspecting {
-            self.install_terminal_frame(document);
+        if let Some(frame) = update.frame {
+            let stale = frame.session != update.session
+                || self
+                    .terminal_frame(document)
+                    .is_some_and(|old| frame.revision <= old.revision);
+            if stale {
+                self.message = "terminal publication has stale or foreign identity".into();
+                return;
+            }
+            self.install_terminal_frame(document, frame);
         }
         if !phase.live() {
             for pane in &mut self.panes {
@@ -291,18 +296,29 @@ impl Editor {
         self.sync_terminal_feedback(document, denied);
     }
 
-    pub(super) fn install_terminal_frame(&mut self, document: DocumentId) {
-        let Some(source) = self.terminal_document(document) else {
-            return;
-        };
-        let old_origin = source.frame.as_ref().map_or(0, |frame| frame.origin);
-        let Some(frame) = self
-            .terminals
-            .entries
-            .get(&source.session)
-            .and_then(|entry| entry.live.clone())
-        else {
-            return;
+    /// Install a published frame as the buffer's text — the live buffer
+    /// of 0090 §4. Positions map by stream byte, so a cursor, selection
+    /// or mark stays on the same content when scrollback drops rows.
+    /// Views then settle like Neovim's windows: a TERMINAL view sits on
+    /// the child's cursor; a NORMAL view whose cursor was on the last
+    /// line follows output to the new last line; any other NORMAL view
+    /// stays where it was.
+    fn install_terminal_frame(&mut self, document: DocumentId, frame: Arc<Frame>) {
+        let old_origin = self
+            .terminal_frame(document)
+            .map_or(frame.origin, |old| old.origin);
+        let following = {
+            let buf = &self.doc(document).buf;
+            let last = buf.last_content_line();
+            self.panes
+                .iter()
+                .enumerate()
+                .filter(|(_, pane)| pane.doc == document && !pane.terminal_input)
+                .filter_map(|(index, pane)| {
+                    let head = pane.sels.primary().head.min(buf.len_bytes());
+                    (buf.line_of(head) >= last).then(|| (index, buf.col_of(head)))
+                })
+                .collect::<Vec<_>>()
         };
         let origin = frame.origin;
         let length = frame.projection.len_bytes();
@@ -318,53 +334,37 @@ impl Editor {
             self.message = format!("terminal projection failed: {error}");
             return;
         }
+        let cursor = frame.cursor_byte();
         if let DocumentSource::Terminal(source) = &mut self.doc_mut(document).source {
-            source.frame = Some(frame.clone());
+            source.frame = Some(frame);
         }
-        if self.current() == document && self.view().terminal_input {
-            self.set_head(frame.cursor_byte());
-        }
-    }
-
-    /// D2's explicit refresh: reinstall the latest published frame into an
-    /// inspected (pinned) terminal. Explicit-only — output never drags a
-    /// view — and the origin-based remap in `install_terminal_frame`
-    /// carries cursor, selections and anchors to the same content.
-    pub(crate) fn refresh_terminal(&mut self) {
-        let document = self.current();
-        let Some(session) = self
-            .terminal_document(document)
-            .map(|source| source.session)
-        else {
-            self.message = "current buffer is not a terminal".into();
-            return;
+        let (last_start, last_end) = {
+            let buf = &self.doc(document).buf;
+            let last = buf.last_content_line();
+            (buf.line_start(last), buf.line_end(last))
         };
-        if self.terminal_input_active() {
-            self.message =
-                "terminal input follows live output; Ctrl-\\ Ctrl-N inspects a snapshot".into();
-            return;
+        let active = self.active_pane;
+        for (index, pane) in self.panes.iter_mut().enumerate() {
+            if pane.doc != document {
+                continue;
+            }
+            if pane.terminal_input {
+                pane.sels.collapse_primary(cursor);
+                pane.desired_column = None;
+                continue;
+            }
+            if let Some((_, column)) = following.iter().find(|(follower, _)| *follower == index) {
+                pane.sels
+                    .set_head(last_start.saturating_add(*column).min(last_end));
+                pane.desired_column = None;
+                if index != active {
+                    // The viewport clamp in `prepare` pulls this back to
+                    // "last line at the bottom"; the active pane's own
+                    // cursor scroll reveals its cursor instead.
+                    pane.view_top = pane.view_top.max(last_start);
+                }
+            }
         }
-        if !self
-            .terminals
-            .entries
-            .get(&session)
-            .is_some_and(|entry| entry.live.is_some())
-        {
-            self.message = "terminal has no output yet".into();
-            return;
-        }
-        let stale = self.terminal_has_new_output(document);
-        if self.terminals.capture {
-            self.install_terminal_frame(document);
-        } else {
-            strop_trace::without_content(|| self.install_terminal_frame(document));
-        }
-        self.message = if stale {
-            "terminal view refreshed to the latest output".into()
-        } else {
-            "terminal view already shows the latest output".into()
-        };
-        self.sync_terminal_feedback(document, false);
     }
 
     pub fn prepare_terminal_geometry(&mut self, document: DocumentId, columns: u16, rows: u16) {
@@ -417,16 +417,6 @@ impl Editor {
         }
     }
 
-    pub(crate) fn stop_terminal(&mut self) {
-        if let Some(session) = self
-            .terminal_document(self.current())
-            .map(|source| source.session)
-        {
-            self.stop_terminal_session(session);
-        } else {
-            self.message = "current buffer is not a terminal".into();
-        }
-    }
     pub(crate) fn stop_terminal_session(&mut self, session: SessionId) {
         let tape = self.tape.clone();
         if let Some(entry) = self.terminals.entries.get_mut(&session) {
@@ -450,6 +440,20 @@ impl Editor {
             self.stop_terminal_session(session);
         }
     }
+    /// `:bd!` on a running terminal: stop the child and drop the session
+    /// so the buffer can close like any other. The final update for a
+    /// dropped session has nowhere to land and is ignored.
+    pub(crate) fn kill_terminal_document(&mut self, document: DocumentId) {
+        let Some(session) = self
+            .terminal_document(document)
+            .map(|source| source.session)
+        else {
+            return;
+        };
+        self.stop_terminal_session(session);
+        self.resolve_terminal_session_feedback(session);
+        self.terminals.entries.remove(&session);
+    }
     pub(crate) fn forget_terminal_document(&mut self, document: DocumentId) {
         if let Some(session) = self
             .terminal_document(document)
@@ -464,6 +468,67 @@ impl Editor {
             self.terminals.entries.remove(&session);
         }
     }
+
+    /// Leaving a terminal buffer (0090 §4): keep its cursor and viewport
+    /// as stream positions so re-entry lands where the user was, and
+    /// keeps following output if they were at the bottom.
+    pub(crate) fn remember_terminal_view(&mut self) {
+        // A switch away from an already-removed document carries no view.
+        let document = self.current();
+        let Some(DocumentSource::Terminal(source)) =
+            self.docs.get(document).map(|document| &document.source)
+        else {
+            return;
+        };
+        let session = source.session;
+        let origin = source.frame.as_ref().map_or(0, |frame| frame.origin);
+        let view = self.view();
+        let buf = &self.doc(document).buf;
+        let head = view.sels.primary().head.min(buf.len_bytes());
+        let top = buf.line_start(view.view_top.min(buf.len_lines().saturating_sub(1)));
+        let saved = SavedView {
+            head: origin.saturating_add(head as u64),
+            top: origin.saturating_add(top as u64),
+            following: view.terminal_input || buf.line_of(head) >= buf.last_content_line(),
+        };
+        if let Some(entry) = self.terminals.entries.get_mut(&session) {
+            entry.view = Some(saved);
+        }
+    }
+
+    /// Arriving at a terminal buffer: NORMAL mode, cursor and viewport
+    /// restored (a following view lands on the last line again).
+    pub(crate) fn restore_terminal_view(&mut self, document: DocumentId) {
+        let Some(source) = self.terminal_document(document) else {
+            return;
+        };
+        let session = source.session;
+        let origin = source.frame.as_ref().map_or(0, |frame| frame.origin);
+        let Some(saved) = self
+            .terminals
+            .entries
+            .get(&session)
+            .and_then(|entry| entry.view)
+        else {
+            return;
+        };
+        let buf = &self.doc(document).buf;
+        let map = |stream: u64| {
+            buf.clamp_boundary(stream.saturating_sub(origin).min(buf.len_bytes() as u64) as usize)
+        };
+        let (head, top) = if saved.following {
+            let last = buf.last_content_line();
+            (buf.line_start(last), buf.line_start(last))
+        } else {
+            (map(saved.head), buf.line_of(map(saved.top)))
+        };
+        let view = self.view_mut();
+        view.sels.collapse_primary(head);
+        view.desired_column = None;
+        view.view_top = top;
+        view.terminal_input = false;
+    }
+
     pub fn drain_terminals(&mut self) {
         for _ in 0..super::super::events::EVENTS_PER_TURN {
             let session = self
@@ -477,27 +542,22 @@ impl Editor {
     }
 }
 
-/// The worker owning one terminal's namespace (0058 WK12): the PTY
-/// spawns, feeds, resizes and settles through the same admitted worker
-/// as every other owned execution there — never a guessed local launch
-/// for a remote path, never a second transport. The local namespace
-/// rides the session's local worker lease; an SSH workspace rides its
-/// already-admitted endpoint lease (deploy is consent-gated and
-/// blocking, so a terminal never triggers it from the input path — an
-/// endpoint without a live lease is a typed refusal). An attached container
-/// rides its incarnation-pinned admitted lease the same way; no path falls
-/// back to the host or an implicit docker-exec.
-fn terminal_worker(
+/// Where one terminal's PTY runs (0090 §4). A local directory spawns the
+/// PTY in the editor process; an SSH workspace rides its already-admitted
+/// worker lease (deploy is consent-gated and blocking, so a terminal never
+/// triggers it from the input path — an endpoint without a live lease is
+/// a typed refusal). No remote path ever falls back to the host.
+fn terminal_target(
     editor: &Editor,
     location: &strop_workspace::ResourceLocation,
-) -> Result<strop_worker_client::Worker, String> {
+) -> Result<Target, String> {
     match &location.filesystem {
-        strop_workspace::Filesystem::Local => Ok(editor.filesystem.worker().clone()),
+        strop_workspace::Filesystem::Local => Ok(Target::Local),
         strop_workspace::Filesystem::Remote(endpoint) => editor
             .remote
             .workers
             .get(endpoint)
-            .map(|worker| worker.worker().clone())
+            .map(|worker| Target::Worker(worker.worker().clone()))
             .ok_or_else(|| {
                 format!(
                     "no admitted worker on {endpoint}: interactive terminals there need one \
@@ -505,24 +565,5 @@ fn terminal_worker(
                      use :terminal-local for an explicit local shell"
                 )
             }),
-        strop_workspace::Filesystem::Container(id) => {
-            let identity = editor.containers.attached.get(id.as_str()).ok_or_else(|| {
-                format!(
-                    "interactive terminal refused in container {}: attach its current incarnation first",
-                    &id.as_str()[..12]
-                )
-            })?;
-            editor
-                .containers
-                .workers
-                .get(identity)
-                .map(|lease| lease.worker().clone())
-                .ok_or_else(|| {
-                    format!(
-                        "interactive terminal refused in container {}: :container-worker admits this incarnation's worker; use :terminal-local for an explicit local shell",
-                        &id.as_str()[..12]
-                    )
-                })
-        }
     }
 }

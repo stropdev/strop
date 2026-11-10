@@ -33,21 +33,6 @@ impl Editor {
                     worker,
                 }
             }
-            // The container workspace roots at the document's directory;
-            // the id is the canonical inspect identity.
-            Filesystem::Container(id) => {
-                let worker = self
-                    .containers
-                    .attached
-                    .get(id.as_str())
-                    .and_then(|identity| self.containers.workers.get(identity))
-                    .map(|lease| lease.worker().clone());
-                attach::DiscoverPlace::Container {
-                    root: doc.path.parent().unwrap_or(Path::new("/")).to_path_buf(),
-                    id,
-                    worker,
-                }
-            }
         };
         let input = attach::DiscoverInput {
             ticket,

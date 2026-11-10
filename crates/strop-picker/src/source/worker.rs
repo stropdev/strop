@@ -18,18 +18,15 @@ use strop_core::worker::{
     self, CancelHandle, CancelReason, CancelToken, Failure, FailureKind, Outcome, PreparedWork,
 };
 use strop_remote::worker_transport::RemoteWorker;
-use strop_worker_client::Worker;
 use strop_workspace::{Filesystem, ResourceLocation};
 
 pub type WorkerAdmission = Box<dyn FnOnce(&CancelToken) -> Result<RemoteWorker, Failure> + Send>;
 
 /// Authority for a non-local search. SSH may explicitly admit its worker on
-/// this source thread; containers only use an already-admitted, incarnation-
-/// pinned worker captured by the editor. Neither path has a host fallback.
+/// this source thread; there is no host fallback.
 pub enum SearchWorker {
     Admitted(RemoteWorker),
     Admit(WorkerAdmission),
-    Container(Worker),
 }
 
 const STALL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -360,27 +357,9 @@ impl SourceWorker {
                             }
                         }
                     },
-                    Some(SearchWorker::Container(_)) => {
-                        return Outcome::failed(
-                            FailureKind::Protocol,
-                            "SSH search received a container worker lease",
-                        )
-                    }
                     None => None,
                 };
                 super::remote::run_search(query, policy, root, snapshots, admitted, &tx, token)
-            }
-            Filesystem::Container(_) => {
-                let _remote_work = tx.remote_work();
-                let Some(SearchWorker::Container(worker)) = lease else {
-                    return Outcome::failed(
-                        FailureKind::Unavailable,
-                        "container search requires an admitted worker for this incarnation; no local fallback",
-                    );
-                };
-                super::remote::run_container_search(
-                    query, policy, root, snapshots, worker, &tx, token,
-                )
             }
         })
     }

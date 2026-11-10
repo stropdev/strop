@@ -5,7 +5,6 @@ use crate::editor::remote::RemoteControl;
 
 use super::model::{FeedbackKind, SaveRetry, TypedAction};
 use super::{FeedbackId, FeedbackOwner, FeedbackRecord};
-use crate::editor::containers::ContainerJob;
 use crate::editor::Editor;
 
 pub(crate) struct FeedbackChoice {
@@ -29,14 +28,7 @@ impl Editor {
                     choices.push(FeedbackChoice {
                         id: record.id(),
                         action: index,
-                        title: format!(
-                            "{} — {}",
-                            match action {
-                                TypedAction::Devcontainer(action) => action.title(),
-                                _ => action.label().into(),
-                            },
-                            record.summary()
-                        ),
+                        title: format!("{} — {}", action.label(), record.summary()),
                     });
                 }
             }
@@ -65,22 +57,11 @@ impl Editor {
                 .remote_endpoint()
                 .is_some_and(|current| current == endpoint),
             FeedbackOwner::RemoteControls => self.remote_endpoint().is_some(),
-            FeedbackOwner::ContainerDiscovery => true,
-            FeedbackOwner::Container { id, .. } => matches!(
-                &self.directory_context().filesystem,
-                strop_workspace::Filesystem::Container(current) if current.as_str() == id
-            ),
-            FeedbackOwner::Devcontainer { workspace, .. } => {
-                self.devcontainers.document_workspace(document).as_ref() == Some(workspace)
-                    || (self.current_workspace_root().filesystem == workspace.filesystem
-                        && self.current_workspace_root().path == workspace.root)
-            }
             FeedbackOwner::Terminal {
                 session,
                 incarnation,
                 phase,
-                ticket,
-            } => self.terminal_owner_matches(*session, *incarnation, *phase, *ticket, document),
+            } => self.terminal_owner_matches(*session, *incarnation, *phase, document),
         }
     }
 
@@ -137,20 +118,6 @@ impl Editor {
                     _ => false,
                 }
             }
-            TypedAction::RetryContainer { job, started_at } => match job {
-                ContainerJob::Discover => true,
-                ContainerJob::Attach { id, .. } => match self.containers.attached.get(id) {
-                    Some(identity) => started_at.as_ref() == Some(&identity.started_at),
-                    None => started_at.is_none(),
-                },
-                ContainerJob::EnableWorker { id } => {
-                    self.containers.attached.get(id).is_some_and(|identity| {
-                        started_at.as_ref() == Some(&identity.started_at)
-                            && self.containers.workers.get(identity).is_none()
-                    })
-                }
-            },
-            TypedAction::Devcontainer(action) => self.devcontainer_action_valid(action),
             TypedAction::Terminal(action) => self.terminal_action_valid(action),
         }
     }
@@ -239,10 +206,6 @@ impl Editor {
             TypedAction::RetryRemote { operation, .. } => {
                 self.request_remote_control(operation);
             }
-            TypedAction::RetryContainer { job, .. } => {
-                self.start_container_job(job);
-            }
-            TypedAction::Devcontainer(action) => self.invoke_devcontainer_action(action),
             TypedAction::Terminal(action) => self.invoke_terminal_action(action),
         }
     }
@@ -252,12 +215,9 @@ impl Editor {
         record: &FeedbackRecord,
         action: &TypedAction,
     ) -> String {
-        let title = match action {
-            TypedAction::Devcontainer(action) => action.title(),
-            _ => action.label().into(),
-        };
+        let title = action.label();
         if self.feedback_action_valid(record, action) {
-            title
+            title.to_owned()
         } else {
             format!("{title} (stale; no effect)")
         }
@@ -274,12 +234,6 @@ impl Editor {
             FeedbackKind::Connection => "connection",
             FeedbackKind::WorkerConnection => "worker connection",
             FeedbackKind::WorkerAdmission => "worker admission",
-            FeedbackKind::ContainerSetup => "container setup",
-            FeedbackKind::ContainerAdmission => "container admission",
-            FeedbackKind::DevcontainerOffer => "devcontainer offer",
-            FeedbackKind::DevcontainerOperation => "devcontainer operation",
-            FeedbackKind::TerminalOutput => "terminal output",
-            FeedbackKind::TerminalPaste => "terminal held paste",
             FeedbackKind::TerminalProcess => "terminal process",
             FeedbackKind::TerminalHostControl => "terminal host control",
         }

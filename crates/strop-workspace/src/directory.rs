@@ -1,4 +1,4 @@
-//! Pure directory identity and metadata, shared by local, SSH and container views.
+//! Pure directory identity and metadata, shared by local and SSH views.
 use crate::ResourceLocation;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;

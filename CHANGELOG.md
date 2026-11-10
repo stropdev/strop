@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.55.0 — 2026-11-10
+
+### Changed
+
+- **The terminal follows Neovim's model** (plans/0090 §4): `Space t` opens a shell in a split below and `Space T` in the current pane (`:terminal [cmd]`, `:term`); TERMINAL mode sends every key to the child, Esc and Ctrl-W included, and `Ctrl-\ Ctrl-N` is the one way back to NORMAL; `i a I A` return to TERMINAL at the child's cursor.
+- **NORMAL on a terminal is a live buffer**: output lands as it arrives and the view follows it while the cursor is on the last line — `k`, `Ctrl-U` or a search stop following, `G` resumes — instead of a pinned snapshot that needed an explicit refresh.
+- **`TERMINAL` is its own mode chip**; NORMAL on a terminal buffer is plain `NORMAL`, with no `[RO]` and no hint row. Terminal buffers are named `term://{cwd}//{N}:{program}` in `Space b`, pane titles and the modeline.
+- **`:q` hides a running terminal, `:bd!` stops it**; `:qa` with running sessions is one notice (`N terminals running — :qa! stops them`) instead of a picker, and `:qa!` stops them and quits.
+- **Local terminals run their PTY in the editor process** instead of on the local worker: no worker round trip between a keystroke and the shell. Remote (SSH) sessions keep the worker path and start the user's login shell (`$SHELL -l` on the host) instead of `/bin/sh`.
+
+### Added
+
+- **`strop -` edits stdin**: `cmd | strop -` opens the output in a buffer named `stdin`; `tail -f app.log | strop -` keeps streaming in (the cursor on the last line follows) and the buffer becomes editable when the pipe closes.
+- **`:messages`** lists the last 50 echo-row messages — refusals and ex errors included, with severity where known — in a read-only buffer.
+- **Recovery drafts are offered when their file opens**: after a crash, opening the file shows a card — recover (one undoable edit), open read-only, delete the draft, or edit anyway — instead of leaving the draft in `:recover list`. A new session no longer overwrites an earlier session's drafts before you answer.
+- **`Space a` is one "actions" list**: retained fixes, the language server's code actions and the file operations valid here, together; the help's language list is now "LSP servers" with each server's install hint, and Remote help starts with how to open a remote file.
+- **`:r !cmd`** inserts a command's output below the cursor, as in vim; **`:bd` / `:bd!`** delete a buffer.
+
+### Removed
+
+- **Pinned terminal snapshots and `:terminal-refresh`**, **Space a → Refresh**, the **held-paste review** (`:terminal-paste`, `:terminal-paste-cancel`, Space a → Review held paste): pastes are bracketed when the child asked for bracketed paste and raw otherwise, like every terminal. **F2** and **Ctrl-4 Ctrl-N** as separate escapes (the 0x1c byte legacy terminals send for `Ctrl-\` still works), and **`:terminal-stop`** (use `:bd!`).
+- **Containers and dev containers**: `:containers`, `:container-worker`, `:container-edit`, **Space o → Containers…**, the dev container offer and its review/lifecycle actions, `container:` resource URIs and the `strop-containers` crate. To work inside a container, open `:terminal` and run `docker exec -it <container> sh`.
+- **Legacy flag spellings `--dump-compat`, `--replay-script` and `--export-metadata`**: use `strop compat`, `strop replay --script TRACE` and `strop export TRACE`.
+
+### Fixed
+
+- **Undo back to the saved text clears the modified flag** (`x` `u` no longer leaves `●` and blocks `:qa`); redo past it sets it again, as in vim — checked against Neovim.
+- **A fast double Escape is two Escapes**: `Esc Esc` arriving in one read used to be swallowed, so closing a picker needed a pause.
+- **Long messages wrap** to up to three rows above the statusline instead of being cut with `…`.
+- **Search and the file finder own their margins**: a collection's card border no longer shows as `╮`/`╯` fragments beside the picker.
+- **`strop replay --script` works on a trace recorded without `--log-content`**: it extracts the keys and names the original file to run them against, instead of refusing with "input precedes the initial document snapshot".
+- **Pickers other than file operations are no longer titled "filesystem actions"**.
+- **Re-entering a terminal buffer** (`Ctrl-^`, `Space b`, pane focus) restores its cursor and viewport and lands in NORMAL mode, instead of resetting to 1:1 at the top of scrollback and treating the next keys as motions.
+- **Leaving TERMINAL mode no longer posts a message** that covered the prompt line with the echo row.
+
 ## 0.54.0 — 2026-11-10
 
 ### Changed

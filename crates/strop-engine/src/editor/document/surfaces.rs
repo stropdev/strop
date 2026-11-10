@@ -20,12 +20,6 @@ pub enum DocumentSource {
     Remote(Box<super::RemoteDocument>),
     /// One namespace-aware directory listing or filename draft.
     Directory(Box<super::Directory>),
-    /// A file inside a container. Write authority is a separate per-document
-    /// permit; the path never becomes an analogous local path.
-    Container {
-        container: strop_workspace::ContainerId,
-        path: std::path::PathBuf,
-    },
     /// A git-memory surface: job-owned content, readonly.
     Surface(Box<GitSurface>),
     /// `:!cmd` output / help: named virtual content, readonly. The

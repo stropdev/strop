@@ -387,7 +387,7 @@ fn modeline_search_position_includes_zero_width_line_boundaries() {
 #[test]
 fn git_marks_and_flags_render_quietly() {
     let mut editor = editor("a\n", Some("/w/f.rs"));
-    editor.fixture_buf_mut().dirty = true;
+    editor.fixture_buf_mut().mark_dirty();
     editor.fixture_buf_mut().readonly = true;
     editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {
@@ -472,19 +472,22 @@ fn historical_delta_names_its_revision_and_file_not_the_worktree() {
     );
 }
 
+/// 0090 §4: the modeline names a terminal by its `term://` buffer name —
+/// the launch directory (or remote endpoint) is inside it — never with
+/// `[RO]`, at every width.
 #[test]
-fn terminal_modeline_names_its_launch_namespace_at_every_width() {
-    for (location, expected_namespace) in [
+fn terminal_modeline_shows_the_term_name_at_every_width() {
+    for (location, expected) in [
         (
             strop_workspace::ResourceLocation::local("/w/launch".into()),
-            "local",
+            "term:///w/launch//1:sh",
         ),
         (
             strop_workspace::ResourceLocation::remote(
                 strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap(),
                 "/srv/launch".into(),
             ),
-            "ssh://fixture",
+            "term://ssh://fixture/srv/launch//1:sh",
         ),
     ] {
         let mut editor = editor("origin", None);
@@ -495,27 +498,22 @@ fn terminal_modeline_names_its_launch_namespace_at_every_width() {
         );
         for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
             let shown = row(&editor, columns, rows);
-            assert!(shown.contains("TERM"), "{columns}x{rows}: {shown}");
+            assert!(shown.contains("NORMAL"), "{columns}x{rows}: {shown}");
+            assert!(!shown.contains("[RO]"), "{columns}x{rows}: {shown}");
             if columns >= 80 {
-                assert!(
-                    shown.contains(expected_namespace),
-                    "{columns}x{rows}: {shown}"
-                );
-                assert!(shown.contains("launch"), "{columns}x{rows}: {shown}");
-            } else if expected_namespace == "local" {
-                assert!(shown.contains("local"), "{columns}x{rows}: {shown}");
+                assert!(shown.contains(expected), "{columns}x{rows}: {shown}");
             } else {
-                assert!(shown.contains("ssh://"), "{columns}x{rows}: {shown}");
-                assert!(!shown.contains("local"), "{columns}x{rows}: {shown}");
+                assert!(shown.contains("term://"), "{columns}x{rows}: {shown}");
             }
         }
     }
 }
 
-/// Terminal hints are whole chords (rule 10) and attention badges name
-/// pinned output and a held paste; every width stays cell-bounded.
+/// Terminal hints are whole chords (rule 10): the one escape chord in
+/// TERMINAL mode, nothing in NORMAL on a live session, the phase once it
+/// ended; every width stays cell-bounded.
 #[test]
-fn terminal_hints_and_attention_survive_golden_cell_sizes() {
+fn terminal_hints_survive_golden_cell_sizes() {
     let mut editor = editor("origin", None);
     let document = editor.terminal_fixture(
         &[("safe", strop_terminal::model::Style::default())],
@@ -524,17 +522,35 @@ fn terminal_hints_and_attention_survive_golden_cell_sizes() {
     editor.feed_text("i");
     for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
         let shown = row(&editor, columns, rows);
-        assert!(shown.contains(" F2  inspect"), "{columns}x{rows}: {shown}");
+        assert!(shown.contains("TERMINAL"), "{columns}x{rows}: {shown}");
+        if columns >= 80 {
+            assert!(
+                shown.contains(" ctrl-\\ ctrl-n  NORMAL"),
+                "{columns}x{rows}: {shown}"
+            );
+        }
+        assert!(!shown.contains("F2"), "{columns}x{rows}: {shown}");
         assert!(
             !shown.contains("ctrl-\\ ctrl-n alt"),
             "no clipped chords: {shown}"
         );
     }
-    editor.handle_app_event(strop_engine::editor::events::AppEvent::Input(
-        strop_core::frontend_input::Input::Key(strop_core::frontend_input::KeyEvent::press(
-            strop_core::frontend_input::KeyCode::Function(2),
-        )),
-    ));
+    let ctrl = |editor: &mut Editor, ch: char| {
+        use strop_core::frontend_input::{Input, KeyCode, KeyEvent, Modifiers};
+        let code = KeyCode::Char(ch);
+        editor.handle_app_event(strop_engine::editor::events::AppEvent::Input(Input::Key(
+            KeyEvent {
+                code,
+                modifiers: Modifiers {
+                    control: true,
+                    ..Default::default()
+                },
+                ..KeyEvent::press(code)
+            },
+        )));
+    };
+    ctrl(&mut editor, '\\');
+    ctrl(&mut editor, 'n');
     editor.terminal_fixture_publish(
         document,
         &[
@@ -542,18 +558,17 @@ fn terminal_hints_and_attention_survive_golden_cell_sizes() {
             ("new", strop_terminal::model::Style::default()),
         ],
     );
-    editor.terminal_fixture_hold_paste(document, 7);
     editor.feed_text("l");
-    assert!(editor.terminal_has_new_output(document));
-    assert!(editor.terminal_paste_held(document));
     for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
         let shown = row(&editor, columns, rows);
-        assert!(shown.contains("TERM"), "{columns}x{rows}: {shown}");
-        assert!(shown.contains("out+"), "{columns}x{rows}: {shown}");
-        if columns >= 80 {
-            assert!(shown.contains(" i  input"), "{shown}");
-            assert!(shown.contains("paste+"), "{shown}");
-        }
+        assert!(shown.contains("NORMAL"), "{columns}x{rows}: {shown}");
+        assert!(!shown.contains("out+"), "{columns}x{rows}: {shown}");
+        assert!(!shown.contains("input"), "{columns}x{rows}: {shown}");
+    }
+    editor.terminal_fixture_exit(document, 0);
+    for (columns, rows) in [(100, 30), (80, 24), (48, 16)] {
+        let shown = row(&editor, columns, rows);
+        assert!(shown.contains("exited"), "{columns}x{rows}: {shown}");
     }
     for (columns, rows) in [(24, 8), (8, 2), (1, 1)] {
         let shown = row(&editor, columns, rows);

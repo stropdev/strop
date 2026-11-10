@@ -109,7 +109,7 @@ binary: no downloads, plugins, licences or setup.
 ## Panes, previews and language services
 
 Local pane titles use workspace-relative paths; duplicate directories,
-outside-workspace paths and remote/container authority remain identifiable.
+outside-workspace paths and remote authority remain identifiable.
 Pane numbers, focus, dirty and read-only markers survive narrow layouts.
 File, search and symbol previews automatically reclaim unused result-list
 width from short admitted labels, within bounded stable layout limits. Long
@@ -125,8 +125,8 @@ server exits during source navigation, the next language request names that
 failure and starts one scoped reattach instead of claiming the installed
 server is missing; repeat the request after it is ready.
 
-Failed or unconfirmed saves, connection/admission failures, terminal decisions
-and Dev Container outcomes use the same owner-scoped retained feedback. They
+Failed or unconfirmed saves, connection/admission failures and terminal
+decisions use the same owner-scoped retained feedback. They
 survive motions, search and unrelated success messages. **Space a** exposes
 only currently valid recovery actions; **`:explain`** retains the complete
 owner, detail and evidence. A compact textual severity marker remains in the
@@ -186,6 +186,14 @@ horizontal navigation and typing from repeatedly walking the line prefix.
 Horizontal views, block selection and carets share display-cell geometry;
 new edits preserve the buffer's line endings. The modeline keeps filenames,
 live status and position legible at narrow widths.
+
+## Reading stdin
+
+`strop -` edits standard input: `cmd | strop -` opens the output in a buffer
+named `stdin`. The buffer streams — `tail -f app.log | strop -` keeps
+appending while you read, the cursor on the last line follows new output,
+and it stays read-only until the pipe closes. Then it is an ordinary scratch
+buffer: edit it, `:w path` saves it. Keys come from the terminal, not stdin.
 
 ## Sessions
 

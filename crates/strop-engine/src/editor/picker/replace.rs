@@ -215,8 +215,8 @@ mod tests {
         e.review_apply_pub();
         assert_eq!(text_of(&e, a_doc), "alpha bar\nbeta bar\ngamma\n");
         assert_eq!(text_of(&e, b_doc), "bar one\n");
-        assert!(e.docs.get(a_doc).unwrap().buf.dirty);
-        assert!(e.docs.get(b_doc).unwrap().buf.dirty);
+        assert!(e.docs.get(a_doc).unwrap().buf.is_dirty());
+        assert!(e.docs.get(b_doc).unwrap().buf.is_dirty());
         // apply ≠ save: both buffers dirty, both files untouched on disk
         assert!(!e.io_pending(), "apply schedules no saves");
         assert_eq!(
@@ -236,7 +236,7 @@ mod tests {
         std::fs::write(&c, "unrelated\n").unwrap();
         let c_doc = e.open_fixture(&c).unwrap();
         e.feed_text("Ihand edited \x1b");
-        assert!(e.docs.get(c_doc).unwrap().buf.dirty);
+        assert!(e.docs.get(c_doc).unwrap().buf.is_dirty());
         e.save_changed_files_pub();
         e.wait_io().unwrap();
         assert_eq!(
@@ -244,14 +244,14 @@ mod tests {
             "alpha bar\nbeta bar\ngamma\n"
         );
         assert_eq!(std::fs::read_to_string(&b).unwrap(), "bar one\n");
-        assert!(!e.docs.get(a_doc).unwrap().buf.dirty);
-        assert!(!e.docs.get(b_doc).unwrap().buf.dirty);
+        assert!(!e.docs.get(a_doc).unwrap().buf.is_dirty());
+        assert!(!e.docs.get(b_doc).unwrap().buf.is_dirty());
         assert_eq!(
             std::fs::read_to_string(&c).unwrap(),
             "unrelated\n",
             ":save-change saves exactly the change-plan documents"
         );
-        assert!(e.docs.get(c_doc).unwrap().buf.dirty);
+        assert!(e.docs.get(c_doc).unwrap().buf.is_dirty());
 
         // the receipt anchors grouped undo of the applied group
         e.feed_text(":undo-change\r");
@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
         e.review_cancel_pub();
         assert_eq!(text_of(&e, a_doc), "alpha foo\n");
-        assert!(!e.docs.get(a_doc).unwrap().buf.dirty);
+        assert!(!e.docs.get(a_doc).unwrap().buf.is_dirty());
         e.wait_picker();
         assert!(!e.io_pending(), "cancel schedules no saves");
         assert_eq!(std::fs::read_to_string(&a).unwrap(), "alpha foo\n");

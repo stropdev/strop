@@ -9,12 +9,18 @@
 //! stay separate. Remote/sensitive drafts persist only with explicit
 //! session consent; memory-only mode persists nothing and says so.
 
+mod offer;
+#[cfg(test)]
+mod offer_tests;
 mod record;
 mod store;
 mod surface;
 #[cfg(test)]
 mod tests;
 
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use offer::fixture_inherited;
+pub use offer::RecoveryOffer;
 pub use record::{
     CohortHeader, DraftOrigin, DraftRecord, Snapshot, SourceObservation, WorkspaceBinding,
 };
@@ -65,6 +71,8 @@ enum Publication {
 /// completion runs it (`:recover` surfaces are read-before-act).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceIntent {
+    /// The startup read of drafts an earlier session left.
+    Startup,
     List,
     Restore(usize),
     Discard(usize),
@@ -95,6 +103,16 @@ pub struct RecoveryState {
     announced: bool,
     pub(crate) loaded: Option<StoredCohort>,
     intent: Option<SurfaceIntent>,
+    /// Drafts an earlier session left, carried into every publication
+    /// until recovered or deleted (see `offer.rs`).
+    pub(crate) prior: Vec<offer::Inherited>,
+    /// The startup read is in flight: publishing now would overwrite the
+    /// earlier session's checkpoint before it is read.
+    reading_prior: bool,
+    /// `prior` lost a draft: the next publication must drop it.
+    prior_changed: bool,
+    /// The open recovery offer (a modal card).
+    pub(crate) offer: Option<offer::Offer>,
 }
 
 impl Default for RecoveryState {
@@ -116,6 +134,10 @@ impl Default for RecoveryState {
             announced: false,
             loaded: None,
             intent: None,
+            prior: Vec::new(),
+            reading_prior: false,
+            prior_changed: false,
+            offer: None,
         }
     }
 }
@@ -157,10 +179,10 @@ impl Editor {
 
     /// Default coverage (0056 AR04 §5): ordinary local dirty documents and
     /// scratch drafts. Remote drafts need explicit session consent;
-    /// surfaces, terminals, containers and generated collections are never
+    /// surfaces, terminals and generated collections are never
     /// substitute source backups and stay out.
     fn recovery_doc_eligible(&self, doc: &super::Document) -> bool {
-        if !doc.buf.dirty {
+        if !doc.buf.is_dirty() {
             return false;
         }
         match &doc.source {
@@ -177,6 +199,9 @@ impl Editor {
     /// The latest capture is stale when an eligible draft moved past it or
     /// a captured draft left eligibility (saved, closed, consent revoked).
     fn recovery_stale(&self) -> bool {
+        if self.recovery.prior_changed {
+            return true;
+        }
         // The verified staleness decisions (0057 VF18,
         // strop_core::cohortguard): an eligible draft whose live revision
         // moved past its capture republishes; a captured draft that
@@ -207,7 +232,7 @@ impl Editor {
     /// Coalesced capture trigger after input and job events. Cheap when
     /// nothing changed: a revision comparison per open document.
     pub(crate) fn recovery_after_event(&mut self) {
-        if !self.recovery_persistent() || !self.recovery_stale() {
+        if !self.recovery_persistent() || self.recovery.reading_prior || !self.recovery_stale() {
             return;
         }
         let publication = self.build_capture();
@@ -269,19 +294,34 @@ impl Editor {
                     DraftOrigin::Scratch { id: scratch }
                 }
             };
-            let source_path = match &origin {
+            let source = store::RecordSource::Live(match &origin {
                 DraftOrigin::LocalFile { path, .. } => Some(path.clone()),
                 _ => None,
-            };
+            });
             records.push(store::PendingRecord {
                 document: id,
                 origin,
                 revision,
-                source_path,
+                source,
                 text: doc.buf.snapshot(),
             });
             captured.insert(id, revision);
         }
+        // An earlier session's drafts ride along until resolved; a rope
+        // clone, never a copy of the text.
+        for inherited in &self.recovery.prior {
+            let Some(text) = &inherited.text else {
+                continue;
+            };
+            records.push(store::PendingRecord {
+                document: inherited.record.document,
+                origin: inherited.record.origin.clone(),
+                revision: inherited.record.revision,
+                source: store::RecordSource::Inherited(inherited.record.source),
+                text: text.clone(),
+            });
+        }
+        self.recovery.prior_changed = false;
         self.recovery.captured = captured;
         Publication::Capture {
             cohort,
@@ -429,6 +469,11 @@ impl Editor {
                 }
                 Outcome::Failed { failure, .. } => {
                     self.recovery.last_error = Some(failure.message.clone());
+                    // An unreadable earlier checkpoint must not stall
+                    // this session's own publications.
+                    if std::mem::take(&mut self.recovery.reading_prior) {
+                        self.recovery_after_event();
+                    }
                     // A failed read must not replay a stale restore/discard
                     // intent against the next successful load.
                     self.recovery.intent = None;
@@ -463,6 +508,14 @@ impl Editor {
                 }
             }
             Outcome::Success(RecoveryReport::Discarded(kept)) => {
+                // a deliberately discarded earlier-session draft must not
+                // ride back in with the next publication
+                self.recovery.prior.retain(|draft| {
+                    kept.header
+                        .records
+                        .iter()
+                        .any(|record| draft.same_draft(record))
+                });
                 self.recovery.durable.retain(|document, _| {
                     kept.header
                         .records

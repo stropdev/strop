@@ -47,19 +47,13 @@ pub struct Document {
 impl Document {
     pub fn label(&self, cwd: &std::path::Path) -> String {
         if let DocumentSource::Terminal(terminal) = &self.source {
-            format!(
-                "terminal #{} · launch {}",
-                terminal.session.get(),
-                terminal.launch.label()
-            )
+            // `term://{cwd}//{N}:{program}` — the buffer carries its own
+            // Neovim-style name; the launch identity is immutable.
+            self.buf.name.clone().unwrap_or_else(|| {
+                super::terminal::terminal_name(terminal.session, &terminal.launch, "sh")
+            })
         } else if let Some(remote) = self.remote_metadata() {
             remote.file.to_string()
-        } else if let DocumentSource::Container { container, path } = &self.source {
-            strop_workspace::ResourceLocation {
-                filesystem: strop_workspace::Filesystem::Container(container.clone()),
-                path: path.clone(),
-            }
-            .label()
         } else {
             self.buf
                 .path
@@ -138,27 +132,6 @@ impl Document {
         }
     }
 
-    /// A file read from a container. Its source starts read-only; a separate
-    /// verified per-document permit may grant edit authority without ever
-    /// giving the path a local filesystem identity.
-    pub fn container_file(
-        mut buf: Buffer,
-        container: strop_workspace::ContainerId,
-        path: std::path::PathBuf,
-    ) -> Self {
-        buf.set_readonly(strop_core::ReadonlyReason::Container);
-        let detection = Some(detect_indent(buf.text()));
-        Self {
-            buf,
-            syntax_hint: None,
-            indent: Indent::default(),
-            indent_override: IndentOverride::default(),
-            detection,
-            source: DocumentSource::Container { container, path },
-            external_change: false,
-        }
-    }
-
     /// Syntax identity is data; parsers live on the display-analysis worker.
     pub fn syntax_path(&self) -> Option<&std::path::Path> {
         if let Some(path) = &self.syntax_hint {
@@ -175,7 +148,6 @@ impl Document {
                 _ => None,
             },
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
-            DocumentSource::Container { path, .. } => Some(path),
             DocumentSource::Directory(_)
             | DocumentSource::Output { .. }
             | DocumentSource::Terminal(_) => None,
@@ -190,13 +162,6 @@ impl Document {
             (DocumentSource::Directory(source), target) => {
                 target.matches_location(&source.location)
             }
-            (
-                DocumentSource::Container { container, path },
-                crate::files::FileTarget::Container {
-                    container: expected,
-                    path: requested,
-                },
-            ) => container == expected && path == requested,
             (DocumentSource::File, crate::files::FileTarget::Local(path)) => {
                 self.buf.path.as_ref() == Some(path)
                     || self.buf.file_identity() == Some(path.as_path())
@@ -210,10 +175,6 @@ impl Document {
         match &self.source {
             DocumentSource::Remote(source) => Some(FileTarget::Remote(source.file.clone().into())),
             DocumentSource::Directory(source) => FileTarget::from_location(&source.location).ok(),
-            DocumentSource::Container { container, path } => Some(FileTarget::Container {
-                container: container.clone(),
-                path: path.clone(),
-            }),
             _ => self
                 .buf
                 .file_identity()
@@ -346,7 +307,7 @@ impl Editor {
         let scratch = self.docs.iter().find_map(|(id, d)| {
             let b = &d.buf;
             (b.path.is_none()
-                && !b.dirty
+                && !b.is_dirty()
                 && b.len_bytes() == 0
                 && b.name.is_none()
                 && id != replacement)
@@ -383,13 +344,15 @@ impl Editor {
 
     /// Switch the active view to a document.
     pub fn switch_to(&mut self, id: strop_core::id::DocumentId) {
-        if self.current() != id {
+        let switching = self.current() != id;
+        if switching {
             self.remember_directory_view();
+            self.remember_terminal_view();
         }
         self.cancel_pending();
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.focus_epoch += 1;
-        if self.current() != id {
+        if switching {
             let view = self.view_mut();
             view.sels = strop_core::selection::SelectionSet::default();
             view.view_top = 0;
@@ -398,6 +361,9 @@ impl Editor {
             view.terminal_input = false;
         }
         self.view_mut().doc = id;
+        if switching {
+            self.restore_terminal_view(id);
+        }
         self.touch_mru(id);
     }
 
@@ -461,13 +427,13 @@ impl Editor {
     /// ids mean no reindexing anywhere (0014 wave 2).
     pub fn close_buffer(&mut self, force: bool) -> bool {
         self.remember_directory_view();
+        // `:q` on a running terminal hides it (Neovim: the job keeps
+        // running, `Space b` returns to it); `:bd!` is the kill (0090 §4).
+        // Only the last buffer refuses, and `:q!` there stops and quits.
         if self
             .terminal_phase(self.current())
             .is_some_and(strop_terminal::model::Phase::live)
         {
-            if force {
-                self.stop_terminal();
-            }
             if let Some(next) = self
                 .mru
                 .iter()
@@ -476,20 +442,15 @@ impl Editor {
             {
                 self.switch_to(next);
                 self.mode = super::Mode::Normal;
-                self.message = if force {
-                    "terminal closing; final output remains in its buffer"
-                } else {
-                    "terminal hidden and still running; Space b returns to it"
-                }
-                .into();
+                self.message = "terminal hidden and still running; Space b returns to it".into();
                 return true;
             }
             if force {
+                self.stop_all_terminals();
                 self.should_quit = true;
                 return true;
             }
-            self.message =
-                "terminal is running; :terminal-stop ends it, :q! stops and quits".into();
+            self.message = "terminal is running — :q! stops it and quits, :bd! kills it".into();
             return false;
         }
         if !force && self.docs.len() == 1 && self.filesystem.unconfirmed() > 0 {
@@ -501,7 +462,7 @@ impl Editor {
         // A collection's dirty bit is presentation state (0049 §5): the
         // sources hold the real unsaved edits — the view always closes.
         let view_only = self.collections.contains_key(&self.current());
-        if self.buf().dirty && !force && !view_only {
+        if self.buf().is_dirty() && !force && !view_only {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
@@ -528,7 +489,6 @@ impl Editor {
             }
         }
         self.revoke_remote_write(closed);
-        self.revoke_container_write(closed);
         self.analysis
             .forget(super::analysis::AnalysisTarget::Document(closed));
         self.stop_remote_follow(closed);
@@ -586,9 +546,27 @@ impl Editor {
         self.lsp_retire_workspace_servers();
         true
     }
+    /// `:bd` / `:bd!`: delete the document, not just a pane. A running
+    /// terminal refuses without `!`; with it the child is stopped and the
+    /// buffer goes (Neovim's E89 and `:bd!`, 0090 §4).
+    pub(crate) fn delete_buffer(&mut self, force: bool) {
+        let document = self.current();
+        if self
+            .terminal_phase(document)
+            .is_some_and(strop_terminal::model::Phase::live)
+        {
+            if !force {
+                self.message = "terminal is running — :bd! stops it".into();
+                return;
+            }
+            self.kill_terminal_document(document);
+        }
+        self.close_buffer(force);
+    }
+
     /// Any path-backed or scratch document holding unsaved content.
     pub fn any_dirty(&self) -> bool {
-        self.docs.iter().any(|(_, d)| d.buf.dirty)
+        self.docs.iter().any(|(_, d)| d.buf.is_dirty())
     }
 
     /// Fixture convenience exercises the production request and completion path.

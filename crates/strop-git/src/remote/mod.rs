@@ -44,7 +44,7 @@ use parsers::{
     parse_tree_entry,
 };
 
-/// Why a remote or in-container Git query failed — typed at this
+/// Why a remote Git query failed — typed at this
 /// boundary, never a bare string and never an empty list standing in
 /// for "failed".
 #[derive(Debug, Clone, PartialEq, Eq)]

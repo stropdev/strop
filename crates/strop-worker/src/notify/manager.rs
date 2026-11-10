@@ -127,7 +127,7 @@ impl NotifyManager {
 
     /// Install a subscription over one local scope. Reinstalling a live
     /// scope root retires the old registration promptly and re-enters with
-    /// the same id and a bumped generation. Remote/container scopes are a
+    /// the same id and a bumped generation. Remote scopes are a
     /// typed refusal here; the relay is a later slice.
     pub fn subscribe(
         &mut self,

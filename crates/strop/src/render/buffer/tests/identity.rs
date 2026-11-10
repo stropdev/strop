@@ -90,7 +90,7 @@ fn duplicate_outside_dirty_and_readonly_titles_keep_their_context() {
     editor.split_document(true, second);
     {
         let mut buffer = editor.fixture_buf_mut();
-        buffer.dirty = true;
+        buffer.mark_dirty();
         buffer.readonly = true;
     }
 
@@ -157,7 +157,7 @@ fn narrow_titles_preserve_focus_flags_geometry_and_single_vertical_rule() {
         let mut editor = Editor::new_in(Buffer::open(&path).unwrap(), root.path().to_path_buf());
         {
             let mut buffer = editor.fixture_buf_mut();
-            buffer.dirty = true;
+            buffer.mark_dirty();
             buffer.readonly = true;
         }
         editor.split(vertical, None);

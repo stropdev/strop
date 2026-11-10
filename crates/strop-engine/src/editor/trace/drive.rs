@@ -41,17 +41,8 @@ pub enum Action {
 }
 
 impl Editor {
-    /// Live drivers: record the action, then run the shared body. Dev Container
-    /// wakes are the one exception to literal action transcription: their facts
-    /// live in an owned channel, so settle that channel first and tape the pure
-    /// outcome payload instead of a non-replayable native polling hint.
+    /// Live drivers: record the action, then run the shared body.
     pub fn recorded_action(&mut self, action: Action, tick: Tick) -> io::Result<()> {
-        let action = match action {
-            Action::Event(AppEvent::Devcontainer) => {
-                Action::Event(AppEvent::DevcontainerSettled(self.devcontainers.poll()))
-            }
-            action => action,
-        };
         if self.tape_action_private(&action) {
             self.tape.omit_content("terminal")?;
             self.tape.action(tick, &action)?;
@@ -73,6 +64,7 @@ impl Editor {
             Action::Start { open } => {
                 self.resolution.enabled = true;
                 let startup_message = self.message.clone();
+                self.recovery_read_prior();
                 if let Some(open) = open {
                     self.lsp_start_services();
                     self.request_target(open.target, open.intent);
@@ -119,6 +111,7 @@ impl Editor {
             }
         }
         self.track_cursor_fade(focus_gained);
+        self.log_echo_message();
         self.tape.healthy()?;
         if !frame && self.tape.observes() {
             // Frames check the canonical cell grid instead; every other

@@ -66,7 +66,10 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
         first_edit < commit,
         "uncommitted typing is visible before Esc"
     );
-    let text = successful(run(root, &["--replay-script".as_ref(), trace.as_os_str()]));
+    let text = successful(run(
+        root,
+        &["replay".as_ref(), "--script".as_ref(), trace.as_os_str()],
+    ));
     let replay = root.join("replay.keys");
     std::fs::write(&replay, text).unwrap();
     let replayed = successful(run(root, &["--headless".as_ref(), replay.as_os_str()]));
@@ -288,4 +291,57 @@ fn asynchronous_completion_macros_keep_vim_order_in_native_free_replay() {
     assert_eq!(state["cursor"], 19);
     assert_eq!(state["mode"], "NORMAL");
     assert_eq!(state["completion"]["worker"], "idle");
+}
+
+/// B11: the documented flow — record a headless run with `--log-file`
+/// (metadata only, no document text), extract its input with
+/// `replay --script`, run that script against the original file — lands
+/// on the recorded final state. It used to refuse with "input precedes
+/// the initial document snapshot".
+#[test]
+fn metadata_trace_extracts_a_script_that_reproduces_the_run() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let file = root.join("notes.txt");
+    let script = root.join("steps.keys");
+    let trace = root.join("headless.jsonl");
+    std::fs::write(&file, "alpha beta\ngamma\n").unwrap();
+    std::fs::write(&script, "keys dwjx\nstate\n").unwrap();
+    let recorded = successful(run(
+        root,
+        &[
+            "headless".as_ref(),
+            script.as_os_str(),
+            file.as_os_str(),
+            "--log-file".as_ref(),
+            trace.as_os_str(),
+        ],
+    ));
+    let saved = std::fs::read_to_string(&trace).unwrap();
+    assert!(
+        !saved.contains("alpha beta"),
+        "metadata capture holds no text"
+    );
+    let extracted = successful(run(
+        root,
+        &["replay".as_ref(), "--script".as_ref(), trace.as_os_str()],
+    ));
+    assert!(extracted.contains("Metadata-only trace"), "{extracted}");
+    assert!(extracted.contains("# Original file: "), "{extracted}");
+    assert!(!extracted.contains("\nbuffer "), "{extracted}");
+    let replay = root.join("replay.keys");
+    std::fs::write(&replay, &extracted).unwrap();
+    let replayed = successful(run(
+        root,
+        &["headless".as_ref(), replay.as_os_str(), file.as_os_str()],
+    ));
+    let final_state = |text: &str| -> Value {
+        serde_json::from_str(
+            text.lines()
+                .find_map(|line| line.strip_prefix("─── state "))
+                .unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(final_state(&replayed), final_state(&recorded));
 }

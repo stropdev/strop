@@ -23,19 +23,19 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
-~                                                                                                                                           
 ~                     ╭ space ──────────────────────────────────────────────────────────────────────────────────────╮                       
-~                     │  |  pipe line/selection through shell (:! runs)    d  diagnostics picker                    │                       
-~                     │  e  reveal source in its Directory buffer          k  hover docs                            │                       
-~                     │  f  file finder                                    a  context actions (code / filesystem)   │                       
-~                     │  o  open remote destination                        s  document symbols picker               │                       
-~                     │  b  buffers (MRU)                                  S  workspace symbols picker              │                       
-~                     │  /  Search workspace (resume investigation)        j  jumplist picker                       │                       
-~                     │  R  Search with replacement                        u  undo-tree browser                     │                       
-~                     │  ?  help buffer                                    c  cursor on next line too (multicursor) │                       
-~                     │  y  yank motion → system clipboard                 w  pane move / cycle / focus 1-9         │                       
-~                     │  p  paste clipboard after                          g  git…                                  │                       
-~                     │  P  paste clipboard before                                                                  │                       
+~                     │  |  pipe line/selection through shell (:! runs)    P  paste clipboard before                │                       
+~                     │  e  reveal source in its Directory buffer          d  diagnostics picker                    │                       
+~                     │  f  file finder                                    k  hover docs                            │                       
+~                     │  o  open remote destination                        a  actions here (fixes, code, files)     │                       
+~                     │  t  terminal in a split below (TERMINAL mode)      s  document symbols picker               │                       
+~                     │  T  terminal in this pane (= :terminal)            S  workspace symbols picker              │                       
+~                     │  b  buffers (MRU)                                  j  jumplist picker                       │                       
+~                     │  /  Search workspace (resume investigation)        u  undo-tree browser                     │                       
+~                     │  R  Search with replacement                        c  cursor on next line too (multicursor) │                       
+~                     │  ?  help buffer                                    w  pane move / cycle / focus 1-9         │                       
+~                     │  y  yank motion → system clipboard                 g  git…                                  │                       
+~                     │  p  paste clipboard after                                                                   │                       
 ~                     ╰─────────────────────────────────────────────────────────────────────────────────────────────╯                       
 PENDING   src/render/statusline.rs                                                                                            space  1:1  5%
 
@@ -64,18 +64,18 @@ PENDING   src/render/statusline.rs                                              
  22: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  23: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  24: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
- 25: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
- 26: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 87:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 27: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 44:#262a30/#fdfbf6 3:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 19:#262a30/#fdfbf6 20:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 28: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 38:#262a30/#fdfbf6 9:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 11:#262a30/#fdfbf6 28:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 29: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 35:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 36:#262a30/#fdfbf6 3:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 30: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 23:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 15:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 31: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 14:#262a30/#fdfbf6 33:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 25:#262a30/#fdfbf6 14:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 32: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 40:#262a30/#fdfbf6 7:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 16:#262a30/#fdfbf6 23:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 33: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 23:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 18:#262a30/#fdfbf6 21:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 34: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 35:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 38:#262a30/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 35: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 31:#262a30/#fdfbf6 16:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 30:#262a30/#fdfbf6 9:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 36: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 22:#262a30/#fdfbf6 25:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 5:#262a30/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
- 37: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 23:#262a30/#fdfbf6 66:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 25: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 87:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 26: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 44:#262a30/#fdfbf6 3:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 23:#262a30/#fdfbf6 16:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 27: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 38:#262a30/#fdfbf6 9:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 19:#262a30/#fdfbf6 20:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 28: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 35:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 11:#262a30/#fdfbf6 28:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 29: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 23:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 34:#262a30/#fdfbf6 5:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 30: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 42:#262a30/#fdfbf6 5:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 15:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 31: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 36:#262a30/#fdfbf6 11:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 25:#262a30/#fdfbf6 14:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 32: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 14:#262a30/#fdfbf6 33:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 16:#262a30/#fdfbf6 23:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 33: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 40:#262a30/#fdfbf6 7:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 18:#262a30/#fdfbf6 21:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 34: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 23:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 38:#262a30/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 35: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 35:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 30:#262a30/#fdfbf6 9:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 36: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 31:#262a30/#fdfbf6 16:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 5:#262a30/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
+ 37: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 22:#262a30/#fdfbf6 67:reset/#fdfbf6 1:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
  38: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 95:#656d7b/#fdfbf6 22:reset/#f6f2e9 1:reset/reset
  39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 92:reset/#fdfbf6 5:#8a510f/#fdfbf6 2:reset/#fdfbf6 7:#656d7b/#fdfbf6

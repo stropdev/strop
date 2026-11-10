@@ -30,7 +30,7 @@ fn terminal_fixtures_retain_full_launch_identity_and_ignore_shell_metadata() {
     );
     assert_eq!(editor.terminal_launch_location(remote_id), Some(&remote));
     let remote_label = format!(
-        "terminal #{} · launch ssh://fixture/srv/launch",
+        "term://ssh://fixture/srv/launch//{}:sh",
         editor.terminal_document(remote_id).unwrap().session.get()
     );
     assert_eq!(
@@ -70,29 +70,22 @@ fn terminal_fixtures_retain_full_launch_identity_and_ignore_shell_metadata() {
     editor.open_picker(strop_picker::Kind::Buffers);
     let rows = &editor.picker.as_ref().unwrap().picker.items;
     let local_prefix = format!(
-        "terminal #{}",
+        "term:///host/launch//{}:",
         editor.terminal_document(local_id).unwrap().session.get()
     );
     let remote_prefix = format!(
-        "terminal #{}",
+        "term://ssh://fixture/srv/launch//{}:",
         editor.terminal_document(remote_id).unwrap().session.get()
     );
     let local_row = rows
         .iter()
         .find(|item| item.text.starts_with(&local_prefix))
-        .unwrap();
+        .unwrap_or_else(|| panic!("{local_prefix} in {rows:?}"));
     let remote_row = rows
         .iter()
         .find(|item| item.text.starts_with(&remote_prefix))
-        .unwrap();
-    assert!(
-        local_row.text.contains("launch /host/launch"),
-        "{local_row:?}"
-    );
-    assert!(
-        remote_row.text.contains("launch ssh://fixture/srv/launch"),
-        "{remote_row:?}"
-    );
+        .unwrap_or_else(|| panic!("{remote_prefix} in {rows:?}"));
+    assert!(local_row.text.ends_with("· running"), "{local_row:?}");
     assert!(!remote_row.text.contains("spoofed"), "{remote_row:?}");
     assert!(!remote_row.text.contains("shell-owned"), "{remote_row:?}");
 }
@@ -149,21 +142,23 @@ fn terminal_start_trace_retains_location_and_terminal_local_stays_local() {
 }
 
 #[test]
-fn refused_container_terminal_never_falls_back_to_the_host() {
+fn unadmitted_remote_terminal_never_falls_back_to_the_host() {
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
     let origin = editor.current();
     editor.launch_terminal_at(
-        strop_workspace::ResourceLocation {
-            filesystem: strop_workspace::Filesystem::Container(
-                strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap(),
-            ),
-            path: "/srv".into(),
-        },
+        strop_workspace::ResourceLocation::remote(
+            strop_workspace::RemoteEndpoint::parse("ssh://fixture.example").unwrap(),
+            "/srv".into(),
+        ),
         "touch should-not-execute",
     );
     assert_eq!(editor.current(), origin);
     assert!(editor.terminals.entries.is_empty());
-    assert!(editor.message.contains("refused"), "{}", editor.message);
+    assert!(
+        editor.message.contains("no admitted worker"),
+        "{}",
+        editor.message
+    );
     assert!(!directory.path().join("should-not-execute").exists());
 }

@@ -1,6 +1,5 @@
 use super::*;
 use strop_core::id::LineIndex;
-use strop_workspace::Filesystem;
 impl Editor {
     pub(crate) fn filesystem_completion_context(
         &self,
@@ -271,11 +270,9 @@ impl Editor {
             for source in &sources {
                 let target = crate::files::FileTarget::from_location(source)
                     .map_err(|error| error.to_string())?;
-                if self
-                    .docs
-                    .iter()
-                    .any(|(_, document)| document.matches_target(&target) && document.buf.dirty)
-                {
+                if self.docs.iter().any(|(_, document)| {
+                    document.matches_target(&target) && document.buf.is_dirty()
+                }) {
                     return Err("source has unsaved text; choose :fs copy stored DEST or :fs copy buffer DEST".into());
                 }
             }
@@ -289,14 +286,10 @@ impl Editor {
         }
         let mut intents = Vec::with_capacity(sources.len());
         for source in &sources {
-            if matches!(source.filesystem, Filesystem::Container(_)) {
-                return Err("container filesystem operations are read-only by policy".into());
-            }
             let destination = if needs_destination {
                 let mut target = if command == "rename"
                     && !argument.contains('/')
                     && !argument.starts_with("file:")
-                    && !argument.starts_with("container:")
                 {
                     let parent = strop_fs::parent(source).ok_or("source has no parent")?;
                     ResourceLocation {

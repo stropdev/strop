@@ -222,28 +222,7 @@ impl Editor {
                     trace::services::rejected("lsp", "code-action owner/revision changed");
                     return;
                 }
-                if actions.is_empty() {
-                    self.message = "no code actions here".into();
-                    return;
-                }
-                let items = actions
-                    .iter()
-                    .enumerate()
-                    .map(|(index, action)| strop_picker::Item {
-                        badge: None,
-                        text: action.title.clone(),
-                        payload: strop_picker::Payload::CodeAction(index),
-                    })
-                    .collect();
-                self.changes.pending_actions = actions;
-                self.open_picker(strop_picker::Kind::CodeActions);
-                self.changes.pending_encoding = context.encoding;
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.picker.append(items);
-                }
-                // Same post-append re-rank as the symbols arm above:
-                // the initial ranking ran over an empty catalog.
-                self.request_picker_ranking();
+                self.deliver_code_actions(actions, context.encoding);
             }
             LspEvent::GotoLocation { context, location } => {
                 if !self.finish_lsp_reply(&context) {
@@ -296,16 +275,6 @@ impl Editor {
                                         path: location.doc.path,
                                         line,
                                         col,
-                                    },
-                                    Filesystem::Container(container) => Payload::Grep {
-                                        location: ResourceLocation {
-                                            filesystem: Filesystem::Container(container),
-                                            path: location.doc.path,
-                                        },
-                                        line,
-                                        col,
-                                        match_len: 1,
-                                        line_text: "".into(),
                                     },
                                 };
                                 Item {
@@ -493,14 +462,11 @@ impl Editor {
                 )) {
                     return None;
                 }
-                let shown = match &symbol.location.doc.filesystem {
-                    Filesystem::Container(_) => symbol.location.doc.label(),
-                    _ => path
-                        .strip_prefix(&root)
-                        .map(strop_picker::display_path)
-                        .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
-                        .into_owned(),
-                };
+                let shown = path
+                    .strip_prefix(&root)
+                    .map(strop_picker::display_path)
+                    .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
+                    .into_owned();
                 let payload = match symbol.location.doc.filesystem {
                     Filesystem::Local => Payload::Grep {
                         location: strop_workspace::ResourceLocation::local(path),
@@ -514,16 +480,6 @@ impl Editor {
                         path,
                         line,
                         col,
-                    },
-                    Filesystem::Container(container) => Payload::Grep {
-                        location: ResourceLocation {
-                            filesystem: Filesystem::Container(container),
-                            path,
-                        },
-                        line,
-                        col,
-                        match_len: 1,
-                        line_text: "".into(),
                     },
                 };
                 Some(Item {
@@ -631,16 +587,6 @@ fn document_symbol_items(
                     path,
                     line,
                     col,
-                },
-                Filesystem::Container(container) => Payload::Grep {
-                    location: ResourceLocation {
-                        filesystem: Filesystem::Container(container.clone()),
-                        path,
-                    },
-                    line,
-                    col,
-                    match_len: 1,
-                    line_text: "".into(),
                 },
             };
             // The kind moves into the chip; the row text is

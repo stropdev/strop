@@ -2,9 +2,10 @@
 //!
 //! `Editor.message` remains the ephemeral confirmation channel. Records here
 //! survive unrelated input, project through `Space a` and `:explain`, and keep
-//! recovery tied to the exact document/endpoint/container incarnation.
+//! recovery tied to the exact document/endpoint incarnation.
 
 pub(crate) mod actions;
+mod messages;
 mod model;
 mod store;
 #[cfg(test)]
@@ -23,7 +24,6 @@ use std::path::PathBuf;
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_workspace::RemoteEndpoint;
 
-use super::containers::ContainerJob;
 use super::remote::RemoteControl;
 use super::Editor;
 
@@ -39,6 +39,24 @@ impl Editor {
     /// presented as the current notice.
     pub fn presented_feedback(&self) -> Option<&FeedbackRecord> {
         self.feedback.presented()
+    }
+
+    /// After every event: retain whatever the echo row now says.
+    pub(crate) fn log_echo_message(&mut self) {
+        self.feedback.log.observe(&self.message);
+    }
+
+    /// `:messages`: the retained history as a temporary output buffer.
+    pub(crate) fn open_messages(&mut self) {
+        // the command's own echo is not history
+        self.log_echo_message();
+        let mut buffer = strop_core::Buffer::from_text(&self.feedback.log.render());
+        buffer.name = Some("messages".into());
+        if self.open_temporary_output(buffer).is_some() {
+            // land on the newest message, like vim's pager end
+            let last = self.buf().len_lines().saturating_sub(2);
+            self.set_head(self.buf().line_start(last));
+        }
     }
 
     pub(crate) fn remote_feedback_owner(&self, endpoint: &RemoteEndpoint) -> FeedbackOwner {
@@ -253,107 +271,5 @@ impl Editor {
     pub(crate) fn note_remote_worker_recovered(&mut self, endpoint: &RemoteEndpoint) {
         self.feedback
             .resolve_remote(endpoint, FeedbackKind::WorkerConnection);
-    }
-
-    pub(crate) fn note_container_failure(&mut self, job: &ContainerJob, detail: String) {
-        let (owner, kind, summary) = match job {
-            ContainerJob::Discover => (
-                FeedbackOwner::ContainerDiscovery,
-                FeedbackKind::ContainerSetup,
-                "container discovery failed".into(),
-            ),
-            ContainerJob::Attach { id, .. } => (
-                FeedbackOwner::Container {
-                    id: id.clone(),
-                    started_at: self
-                        .containers
-                        .attached
-                        .get(id)
-                        .map(|identity| identity.started_at.clone()),
-                },
-                FeedbackKind::ContainerSetup,
-                format!("container setup failed for {id}"),
-            ),
-            ContainerJob::EnableWorker { id } => (
-                FeedbackOwner::Container {
-                    id: id.clone(),
-                    started_at: self
-                        .containers
-                        .attached
-                        .get(id)
-                        .map(|identity| identity.started_at.clone()),
-                },
-                FeedbackKind::ContainerAdmission,
-                format!("container worker admission failed for {id}"),
-            ),
-        };
-        let started_at = match &owner {
-            FeedbackOwner::Container { started_at, .. } => started_at.clone(),
-            _ => None,
-        };
-        self.record(FeedbackEvent {
-            severity: FeedbackSeverity::Failure,
-            owner,
-            kind,
-            summary,
-            detail,
-            reference: None,
-            actions: vec![
-                TypedAction::RetryContainer {
-                    job: job.clone(),
-                    started_at,
-                },
-                TypedAction::Dismiss,
-            ],
-        });
-    }
-
-    pub(crate) fn note_container_recovered(&mut self, job: &ContainerJob) {
-        if let ContainerJob::Attach { id, .. } = job {
-            let current = self
-                .containers
-                .attached
-                .get(id)
-                .map(|identity| identity.started_at.clone());
-            for started_at in [current.clone(), None] {
-                self.feedback.resolve_owner(
-                    &FeedbackOwner::Container {
-                        id: id.clone(),
-                        started_at,
-                    },
-                    FeedbackKind::ContainerSetup,
-                );
-            }
-            return;
-        }
-        let (owner, kind) = match job {
-            ContainerJob::Discover => (
-                FeedbackOwner::ContainerDiscovery,
-                FeedbackKind::ContainerSetup,
-            ),
-            ContainerJob::Attach { id, .. } => (
-                FeedbackOwner::Container {
-                    id: id.clone(),
-                    started_at: self
-                        .containers
-                        .attached
-                        .get(id)
-                        .map(|identity| identity.started_at.clone()),
-                },
-                FeedbackKind::ContainerSetup,
-            ),
-            ContainerJob::EnableWorker { id } => (
-                FeedbackOwner::Container {
-                    id: id.clone(),
-                    started_at: self
-                        .containers
-                        .attached
-                        .get(id)
-                        .map(|identity| identity.started_at.clone()),
-                },
-                FeedbackKind::ContainerAdmission,
-            ),
-        };
-        self.feedback.resolve_owner(&owner, kind);
     }
 }

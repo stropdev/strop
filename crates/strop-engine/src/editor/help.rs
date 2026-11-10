@@ -28,7 +28,9 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
     (
         "Remote",
         &[
-            ("space o / :remote", "Choose SSH or a running container; Add a host… enters an address"),
+            ("strop ssh://host/path", "How to open: a remote file or directory from the shell"),
+            (":browse ssh://host/path", "How to open: a remote directory from inside the editor"),
+            ("space o / :remote", "Choose an SSH destination; Add a host… enters an address"),
             ("- / backspace", "Visit parent directory and retain the selected child"),
             (":remote root / home", "Browse remote root or negotiated home directory"),
             (":remote worker [URI]", "Explicit worker consent for Git/LSP/search; no edit permit"),
@@ -59,7 +61,7 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
             ("one language", "Identical local-workspace qualifiers on every surface above"),
             ("language:rust", "Include a language family (alias: language:rs)"),
             ("scope", "Regular local files; directory links and special files are not searched"),
-            ("SSH/container listings", "Hidden entries included; no ignore-file filtering (local search defaults do not apply)"),
+            ("SSH listings", "Hidden entries included; no ignore-file filtering (local search defaults do not apply)"),
             ("path:src/", "Literal substring in the workspace-relative path"),
             ("glob:\"**/*.rs\"", "Explicit path glob; quote values with spaces"),
             ("fpath:modules/jweb/", "Fuzzy scope over full workspace-relative path"),
@@ -133,9 +135,6 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
         "Documentation",
         &[
             ("enter on hover", "Open full searchable documentation; Ctrl-O returns"),
-            (":containers", "Attach to a running container (read-only browse)"),
-            (":container-worker", "Enable verified services for the attached container"),
-            (":container-edit", "Verify the snapshot and enable conditional file saves"),
         ],
     ),
 ];
@@ -186,15 +185,36 @@ impl Editor {
                 push_row(&mut text, keys, width, desc, false);
             }
         }
-        push_rule(&mut text, "Languages");
-        text.push_str("   ");
-        for (index, language) in strop_core::languages::language_names().enumerate() {
-            if index > 0 {
-                text.push_str(if index % 8 == 0 { "\n   " } else { " " });
+        // Which server each language family (the `language:` values)
+        // starts, and how to get it; families without one say so.
+        push_rule(&mut text, "LSP servers");
+        let languages: Vec<_> = strop_core::languages::language_names().collect();
+        let width = languages.iter().map(|name| name.len()).max().unwrap_or(0);
+        let mut serverless = Vec::new();
+        for language in languages {
+            match strop_lsp::registry::embedded_server(language) {
+                Some((server, hint)) => push_row(
+                    &mut text,
+                    language,
+                    width,
+                    &format!("{server} · {hint}"),
+                    false,
+                ),
+                None => serverless.push(language),
             }
-            text.push_str(language);
         }
-        text.push('\n');
+        if !serverless.is_empty() {
+            push_row(
+                &mut text,
+                "",
+                width,
+                &format!(
+                    "no built-in server: {} (config: [language.NAME])",
+                    serverless.join(", ")
+                ),
+                false,
+            );
+        }
         let mut buf = Buffer::from_text(&text);
         buf.name = Some("help".into());
         // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
@@ -272,15 +292,31 @@ mod tests {
             missing.is_empty(),
             "dispatchable Ex commands missing from generated help: {missing:?}"
         );
-        // 0065 S2: the terminal section names every dispatchable escape —
-        // the exit from terminal input is discoverable from `?` alone.
-        for escape in ["ctrl-\\ ctrl-n", "ctrl-4 ctrl-n", ":terminal-refresh"] {
-            assert!(text.contains(escape), "help lost the {escape} escape");
+        // 0090 §4: the terminal section opens with how to open one and
+        // names the one escape chord — discoverable from `?` alone.
+        for row in ["space t", ":terminal", "ctrl-\\ ctrl-n", ":bd!"] {
+            assert!(text.contains(row), "help lost the {row} terminal row");
         }
+        assert!(
+            !text.contains("ctrl-4"),
+            "help still lists the deleted Ctrl-4 chord"
+        );
+        assert!(
+            !text.contains("terminal-refresh"),
+            "help still lists :terminal-refresh"
+        );
         assert!(
             text.contains(":explain") && text.contains("LSP readiness/failures"),
             "help makes retained LSP failures discoverable"
         );
+        // the language list says what it is: the server each family starts
+        let servers = text.find("─ LSP servers ─").expect("LSP servers section");
+        assert!(text[servers..].contains("rust          rust-analyzer · rustup"));
+        assert!(!text.contains("─ Languages ─"));
+        // Remote opens with how to get there
+        let remote = text.find("─ Remote ─").expect("Remote section");
+        let first = text[remote..].lines().nth(1).unwrap();
+        assert!(first.contains("How to open"), "{first:?}");
         // it's a real buffer: / searches it
         e.feed_text("/undo-tree\r");
         assert!(e.head() > 0, "search moved into the help text");
@@ -299,6 +335,11 @@ mod tests {
         let line = e.buf().line_of(e.head());
         let text = e.buf().text().line(line).to_string();
         assert!(text.starts_with("─ Git ─"), "{text:?}");
+        // vim's `:h` abbreviation reaches the same topic
+        e.feed_text("q");
+        e.feed_text(":h git\r");
+        let line = e.buf().line_of(e.head());
+        assert!(e.buf().text().line(line).to_string().starts_with("─ Git ─"));
     }
 
     #[test]

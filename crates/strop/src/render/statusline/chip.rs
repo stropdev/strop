@@ -26,9 +26,9 @@ pub(super) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
         };
         (label, typing(editor.input_normal()))
     } else if editor.terminal_input_active() {
-        ("TERM", t.mode_terminal)
-    } else if editor.terminal_document(editor.current()).is_some() {
-        ("TERM", t.accent)
+        // TERMINAL is its own mode (0090 §4); NORMAL on a terminal buffer
+        // is plain NORMAL.
+        ("TERMINAL", t.mode_terminal)
     } else if editor.pending().is_active()
         || !editor.walker().prefix_display().is_empty()
         || !editor.walker().state.empty()
@@ -60,10 +60,8 @@ fn picker_label(kind: strop_picker::Kind) -> &'static str {
         Kind::Jumps => "JUMPS",
         Kind::Theme => "THEME",
         Kind::Locations => "LOCS",
-        Kind::RemoteHosts | Kind::RemoteAddress | Kind::Containers => "REMOTE",
-        Kind::SearchOptions | Kind::TabSize | Kind::CodeActions | Kind::FilesystemActions => {
-            "PICKER"
-        }
+        Kind::RemoteHosts | Kind::RemoteAddress => "REMOTE",
+        Kind::SearchOptions | Kind::TabSize | Kind::Actions => "PICKER",
     }
 }
 
@@ -74,7 +72,7 @@ mod tests {
     #[test]
     fn every_label_pads_to_the_chip_width() {
         for label in [
-            "NORMAL", "INSERT", "VISUAL", "V-LINE", "V-BLOCK", "PENDING", "TERM", "FILES",
+            "NORMAL", "INSERT", "VISUAL", "V-LINE", "V-BLOCK", "PENDING", "TERMINAL", "FILES",
             "SEARCH", "SYMBOLS", "BUFFERS", "COMMAND", "PIPE", "DIAG", "JUMPS", "THEME", "LOCS",
             "REMOTE", "PICKER", "",
         ] {
@@ -83,6 +81,7 @@ mod tests {
         }
         assert_eq!(pad("NORMAL"), " NORMAL ");
         assert_eq!(pad("V-BLOCK"), "V-BLOCK ");
+        assert_eq!(pad("TERMINAL"), "TERMINAL");
         assert_eq!(pad("TOO-LONG-LABEL"), "TOO-LONG");
     }
 }

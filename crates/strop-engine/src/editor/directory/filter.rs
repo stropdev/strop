@@ -121,7 +121,7 @@ impl Editor {
                     });
                 if key.task == DirectoryTask::Reload && !retained {
                     if let Some(doc) = self.docs.get_mut(key.document) {
-                        doc.buf.dirty = false;
+                        doc.buf.mark_clean();
                     }
                 }
                 let marks = self

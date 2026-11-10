@@ -191,6 +191,12 @@ pub fn language_for_extension_name(ext: &str) -> Option<&'static str> {
     strop_core::languages::language_for_extension_name(ext)
 }
 
+/// The built-in server for a language and how to install it, for the
+/// help buffer's `LSP servers` section.
+pub fn embedded_server(language: &str) -> Option<(&'static str, &'static str)> {
+    embedded_by_name(embedded_name_for_language(language)?).map(|server| (server.name, server.hint))
+}
+
 fn embedded_name_for_language(lang: &str) -> Option<&'static str> {
     Some(match lang {
         "rust" => "rust-analyzer",

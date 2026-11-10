@@ -54,7 +54,7 @@ v V                           visual           u ctrl-r .           undo, redo, 
 "a … "+                       registers        :w :q :e :help        ex line
 Q                            multicursor      Space c              cursor below
 
-Space  f files · o remote/containers · b buffers · / Search · R replace · ? help
+Space  f files · o remote · b buffers · / Search · R replace · ? help
 Space w  - horizontal · v vertical · 1-9 focus · h/j/k/l/w move · q close
 Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
 ```
@@ -72,13 +72,15 @@ Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
   **[docs/search.md](docs/search.md)**
 - **Editor surfaces** — themes, completion, structural + label-colon
   indentation, syntax, sessions → **[docs/editor.md](docs/editor.md)**
-- **SSH, remote editing, containers** — read-only snapshots, explicit
-  `:remote edit` write authority, remote LSP/Git/search, dev containers →
+- **SSH and remote editing** — read-only snapshots, explicit
+  `:remote edit` write authority, remote LSP/Git/search; for containers,
+  `:terminal` then `docker exec -it <container> sh` →
   **[docs/remote.md](docs/remote.md)**
 - **Filesystem workspace** — directory browsing and Review → Apply →
   Receipt mutations, locally and over SSH →
   **[docs/filesystem.md](docs/filesystem.md)**
-- **Terminals, headless scripts, traces** — real PTYs in splits, the
+- **Terminals, headless scripts, traces** — `Space t` opens a real PTY in
+  a split below, Neovim's `Ctrl-\ Ctrl-N` and a live NORMAL mode; the
   scripted driver, and how to capture a reproducible bug →
   **[docs/terminal-and-scripting.md](docs/terminal-and-scripting.md)**
 
@@ -105,7 +107,9 @@ the authority for every behavior above.
 
 ```sh
 strop --log-file issue.jsonl path/to/file.rs
-strop replay issue-full.jsonl        # full forensic replay
+strop replay --script issue.jsonl > replay.keys   # the keys, inspectable
+strop --log-file issue-full.jsonl --log-content path/to/file.rs
+strop replay issue-full.jsonl                     # full forensic replay
 ```
 
 Details, content-privacy knobs and the input-only script extraction:
@@ -120,7 +124,7 @@ Charon/Aeneas translate to Lean 4. It is proved there: how cursors, marks and
 selections move through an edit, which edit batches are safe to apply, and the
 worker wire's frame bounds. Calibration mutants show each theorem actually
 constrains the code. Everything further out is covered by tests that drive the
-real binary over real sshd and Docker. The design is
+real binary over real sshd. The design is
 [plans/0086](plans/0086-verified-foundation.md); the claim list is what
 `docker compose run --build --rm proofs` prints.
 

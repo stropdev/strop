@@ -13,7 +13,7 @@ fn admitted_ssh_terminal_executes_remotely_and_retains_launch_identity() {
     let target = uri("fixture", &source);
     let steps = fixture.script(
         "terminal.steps",
-        "settle\nkeys :remote worker<cr>\nsettle\nkeys :terminal /bin/sh<cr>\nsettle\nkeys echo REMOTE_TERMINAL<cr>\nwait 1000\nsettle\nkeys <f2>\nstate\nframe\nkeys :qa!<cr>\nsettle\n",
+        "settle\nkeys :remote worker<cr>\nsettle\nkeys :terminal /bin/sh<cr>\nsettle\nkeys echo REMOTE_TERMINAL<cr>\nwait 1000\nsettle\nkeys <c-\\><c-n>\nstate\nframe\nkeys :qa!<cr>\nsettle\n",
     );
     let output = fixture.run(&["--headless".into(), steps.into(), target.into()]);
     let observed = states(&output);

@@ -288,7 +288,7 @@ impl Editor {
                     id
                 }
             };
-            if self.doc(document).buf.dirty {
+            if self.doc(document).buf.is_dirty() {
                 body.line(
                     &format!(
                         "{} — unsaved source buffer is authoritative",

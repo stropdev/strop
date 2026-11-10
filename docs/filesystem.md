@@ -3,7 +3,9 @@
 Open a directory with `strop DIRECTORY`, `:browse`, or `:e DIRECTORY`.
 `Space e` reveals the current source in its parent. Browsing keeps the
 process cwd unchanged; Enter opens a structured entry and `-`/Backspace
-goes to its parent. Directory-local `Space a` opens filesystem actions.
+goes to its parent. `Space a` lists the actions valid here: in a directory
+the filesystem operations, in a file its operations plus any code actions
+the language server offers, all in one **actions** list.
 
 Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
 hosts where the native worker is admitted (restricted/SFTP-only hosts
@@ -51,8 +53,7 @@ Confirmed relocation keeps source text, history and document identity.
 Remote relocation revokes old write authority; use `:remote edit` again
 before saving the renamed buffer. Pending saves and unconfirmed operations
 block conflicting work. Receipts survive leaving the view; verification
-never blindly retries a mutation. Containers remain read-only through these
-actions.
+never blindly retries a mutation.
 
 Local saves/save-as and local filesystem mutations use a conservative
 per-editor write barrier, including parent aliases. Let an admitted save
@@ -62,9 +63,7 @@ post-publication version: finding the same inode at a pathname is not
 sufficient ownership evidence. Receipts are in-memory, not crash recovery.
 Graceful global exit refuses unresolved outcomes; explicit `:qa!` reports
 them and exits unsuccessfully rather than claiming they were resolved or
-persisted. Container filesystem mutations remain refused through these
-actions; ordinary file editing/saving is a separate `:container-edit` and
-worker-Store authority path.
+persisted.
 
 Removing an otherwise empty directory may retire its validated, quiescent
 protocol locks. Active locks, unknown entries and other directory contents

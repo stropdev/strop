@@ -125,7 +125,7 @@ Ordinary `u` and `:undo-change` are not interchangeable guarantees: the latter
 reverts the newest applied multi-file change only while its recorded target
 revisions still own that change.
 
-## SSH and container scopes
+## SSH scopes
 
 Search here uses the same query fields, inclusion decisions and source
 previews as local Search, on explicitly scoped SSH directories. Starting a
@@ -138,8 +138,4 @@ Source enumeration is limited to 100,000 selected paths or 16 MiB of names;
 rg records to 1 MiB and 4,096 submatches; decoded batches to 4 MiB; a
 request publishes at most 100,000 rows or 64 MiB of owned row data. Limits
 and malformed output produce a visible failure, never a silently complete
-partial result. Container Search uses the same bounded protocol through the
-attached incarnation's admitted worker and selected root; without that worker
-it refuses, never falls back to the host. **With/Review remain unavailable in
-both SSH and container scopes**; individual write permits do not authorize
-project replacement.
+partial result.

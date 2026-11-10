@@ -20,6 +20,10 @@ pub struct BufferSeed {
     pub path: Option<std::path::PathBuf>,
     pub name: Option<String>,
     pub dirty: bool,
+    /// The history node holding the saved text (see `Buffer::mark_clean`);
+    /// absent in seeds written before the save point was tracked.
+    #[serde(default)]
+    pub saved_at: Option<usize>,
     pub readonly: bool,
     /// Typed owner of the readonly policy (0056 AR14); absent in seeds
     /// written before reasons existed.
@@ -39,6 +43,7 @@ impl Buffer {
             path: self.path.clone(),
             name: self.name.clone(),
             dirty: self.dirty,
+            saved_at: self.saved_at,
             readonly: self.readonly,
             readonly_reason: self.readonly_reason,
             disk_stamp: self.disk_stamp,
@@ -61,6 +66,7 @@ pub struct BufferWitness {
     pub path: Option<std::path::PathBuf>,
     pub name: Option<String>,
     pub dirty: bool,
+    pub saved_at: Option<usize>,
     pub readonly: bool,
     pub readonly_reason: Option<super::ReadonlyReason>,
     pub disk_stamp: Option<std::time::SystemTime>,
@@ -80,6 +86,7 @@ impl Buffer {
             path: self.path.clone(),
             name: self.name.clone(),
             dirty: self.dirty,
+            saved_at: self.saved_at,
             readonly: self.readonly,
             readonly_reason: self.readonly_reason,
             disk_stamp: self.disk_stamp,
@@ -114,6 +121,10 @@ impl BufferSeed {
         buffer.path = self.path;
         buffer.name = self.name;
         buffer.dirty = self.dirty;
+        // Older seeds carry no save point: a clean one is clean at its tip.
+        if self.saved_at.is_some() || self.dirty {
+            buffer.saved_at = self.saved_at;
+        }
         buffer.readonly = self.readonly;
         buffer.readonly_reason = self.readonly_reason;
         buffer.disk_stamp = self.disk_stamp;
@@ -135,14 +146,15 @@ mod tests {
             .replace(crate::Range::charwise(5, 8), "XY")
             .unwrap();
         buffer.commit_undo_group();
-        buffer.dirty = true;
         buffer.disk_stamp = Some(std::time::UNIX_EPOCH);
         let seed = buffer.seed();
         let mut restored = seed.into_buffer().unwrap();
         assert_eq!(restored.text().to_string(), "line\nXYe two\n");
         // The undo that survived the seed still runs on the rebuilt buffer.
+        assert!(restored.is_dirty());
         restored.undo().unwrap();
         assert_eq!(restored.text().to_string(), "line\nline two\n");
+        assert!(!restored.is_dirty(), "the save point survives the seed");
     }
 
     #[test]

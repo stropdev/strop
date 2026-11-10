@@ -22,21 +22,8 @@ impl Editor {
                 .and_then(|phase| phase.as_str())
                 .unwrap_or("unknown")
         );
-        let _ = writeln!(
-            text,
-            "  paste     {}",
-            if status
-                .get("paste_held")
-                .and_then(|held| held.as_bool())
-                .unwrap_or(false)
-            {
-                "held for explicit ticket-bound decision"
-            } else {
-                "none held"
-            }
+        text.push_str(
+            "  buffer    live; NORMAL follows output while the cursor is on the last line\n",
         );
-        if self.terminal_has_new_output(document) {
-            text.push_str("  snapshot  pinned; newer output is retained for explicit refresh\n");
-        }
     }
 }

@@ -47,8 +47,8 @@ pub enum WorkspaceRootError {
 /// One bound project: which filesystem, anchored where, which incarnation.
 pub struct WorkspaceContext {
     pub filesystem: Filesystem,
-    /// Always absolute. Directory browsing and container WorkingDir hints do
-    /// not mutate this selected identity.
+    /// Always absolute. Directory browsing does not mutate this selected
+    /// identity.
     pub root: PathBuf,
     /// Bumps on disconnect; reconnecting the same exact root reuses its ID.
     pub incarnation: u64,
@@ -97,8 +97,7 @@ impl WorkspaceRegistry {
     }
 
     /// Resolve a resource to the longest selected root that covers it in the
-    /// same namespace. In particular, `/work/a` does not cover `/work/ab`, and
-    /// an unselected container WorkingDir is never promoted to repository proof.
+    /// same namespace. In particular, `/work/a` does not cover `/work/ab`.
     pub fn resolve(&self, resource: &ResourceLocation) -> Option<(WorkspaceId, &WorkspaceContext)> {
         self.resolve_path(&resource.filesystem, &resource.path)
     }
@@ -159,20 +158,13 @@ impl WorkspaceRegistry {
 }
 
 impl super::Editor {
-    /// Explicit project-open/root-selection boundary for UI, terminal and
-    /// container integration. This never changes process cwd or another root.
+    /// Explicit project-open/root-selection boundary for UI and terminal
+    /// integration. This never changes process cwd or another root.
     pub fn select_root(
         &mut self,
         root: ResourceLocation,
     ) -> Result<WorkspaceId, WorkspaceRootError> {
-        let id = self.workspaces.select_root(root.clone())?;
-        if root.filesystem == Filesystem::Local {
-            let key = WorkspaceKey::new(root)?;
-            if let Err(error) = self.devcontainers.rediscover(key) {
-                self.message = error.to_string();
-            }
-        }
-        Ok(id)
+        self.workspaces.select_root(root)
     }
 
     pub fn workspace_root_for(&self, resource: &ResourceLocation) -> Option<ResourceLocation> {
@@ -289,33 +281,6 @@ mod tests {
             Err(WorkspaceRootError::RelativePath)
         );
         assert_eq!(registry.iter().count(), 0);
-    }
-
-    #[test]
-    fn container_working_dir_is_only_a_hint_until_explicitly_selected() {
-        let mut registry = WorkspaceRegistry::default();
-        let container = strop_workspace::ContainerId::canonical("a".repeat(64)).unwrap();
-        let working_dir = ResourceLocation {
-            filesystem: Filesystem::Container(container.clone()),
-            path: "/workdir".into(),
-        };
-        assert!(registry.resolve(&working_dir).is_none());
-        let project = ResourceLocation {
-            filesystem: Filesystem::Container(container),
-            path: "/workdir/project".into(),
-        };
-        let selected = registry.select_root(project.clone()).unwrap();
-        assert!(registry.resolve(&working_dir).is_none());
-        assert_eq!(
-            registry
-                .resolve(&ResourceLocation {
-                    filesystem: project.filesystem.clone(),
-                    path: project.path.join("src/lib.rs"),
-                })
-                .unwrap()
-                .0,
-            selected
-        );
     }
 
     #[test]

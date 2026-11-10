@@ -154,8 +154,6 @@ impl Editor {
         let target = ticket.key.target.clone();
         let captured_hunks = self.hunks.clone();
         let workers = self.remote.workers.clone();
-        let containers = self.containers.workers.clone();
-        let container_started = self.git_container_started(&repo);
         self.launch_git_job(
             "git-dive",
             "git.dive",
@@ -179,12 +177,7 @@ impl Editor {
                     },
                     DiveTarget::CommitFiles { sha } => {
                         // numstat is one bounded run on either backend
-                        let lease = super::git_memory::repo_lease(
-                            &workers,
-                            &containers,
-                            container_started.as_deref(),
-                            &repo,
-                        );
+                        let lease = super::git_memory::repo_lease(&workers, &repo);
                         let exec =
                             match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
                                 Ok(exec) => exec,
@@ -252,16 +245,6 @@ impl Editor {
                                 },
                             }
                         }
-                        // Container repos report context this round;
-                        // per-commit diffs inside a container are not
-                        // wired — refuse by name, never a local fallback.
-                        strop_git::RepoTarget::Container { .. } => Outcome::Failed {
-                            failure: strop_core::worker::Failure::new(
-                                strop_core::worker::FailureKind::Exit,
-                                "container commit diffs are not wired yet (0037 DC1b)".to_string(),
-                            ),
-                            partial: None,
-                        },
                     },
                 }
             },

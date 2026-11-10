@@ -149,15 +149,21 @@ impl Editor {
             return;
         }
         if !force {
-            let dirty = self.docs.iter().filter(|(_, d)| d.buf.dirty).count();
+            let dirty = self.docs.iter().filter(|(_, d)| d.buf.is_dirty()).count();
             if dirty > 0 {
                 self.message = format!("{dirty} unsaved buffer(s) — :qa! to discard");
                 return;
             }
         }
+        // Running terminals block `:qa` with one notice, like Neovim's
+        // E947 (0090 §4); `:qa!` stops them and quits.
         if self.terminals.live() {
             if !force {
-                self.open_terminal_quit_review();
+                let running = self.terminals.live_count();
+                self.message = format!(
+                    "{running} terminal{} running — :qa! stops them",
+                    if running == 1 { "" } else { "s" }
+                );
                 return;
             }
             self.stop_all_terminals();

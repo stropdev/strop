@@ -69,7 +69,7 @@ fn find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope() {
             .doc(editor.current())
             .matches_target(&crate::files::FileTarget::from_location(&path).unwrap()));
         assert_eq!(editor.head(), editor.buf().line_start(line - 1) + col - 1);
-        assert!(!editor.buf().dirty);
+        assert!(!editor.buf().is_dirty());
         let unrelated = tempfile::tempdir().unwrap();
         editor.cwd = unrelated.path().to_path_buf();
         editor.open_search(false);
@@ -184,7 +184,7 @@ fn obsolete_review_completion_cannot_publish_after_search_reentry() {
         .iter()
         .all(|(_, doc)| doc.buf.name.as_deref() != Some("change proposal 1")));
     editor.review_apply_pub();
-    assert!(editor.docs.iter().all(|(_, doc)| !doc.buf.dirty));
+    assert!(editor.docs.iter().all(|(_, doc)| !doc.buf.is_dirty()));
 }
 
 #[test]

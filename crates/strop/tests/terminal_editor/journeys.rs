@@ -5,14 +5,22 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::process::Command;
 use std::time::Duration;
 
-/// Terminal input: the `TERM` chip with the `F2  inspect` escape hint.
+/// TERMINAL mode: its own chip with the one escape chord as the hint.
 fn terminal_input(screen: &str) -> bool {
-    screen.contains("  TERM  ") && screen.contains("F2  inspect")
+    screen.contains("TERMINAL") && screen.contains("ctrl-\\ ctrl-n  NORMAL")
 }
 
-/// Terminal inspection: the same chip, no input hint — `i` re-enters.
+/// The shell prompt on a grid row. The buffer name in the modeline quotes
+/// the launch command (`term://…:env PS1='STROP-PTY> ' …`), so a bare
+/// substring search would match the modeline, not the child.
+fn at_prompt(screen: &str) -> bool {
+    screen.lines().any(|row| row.starts_with("STROP-PTY>"))
+}
+
+/// NORMAL on a terminal buffer: a plain `NORMAL` chip over a `term://`
+/// name — `i` re-enters TERMINAL mode.
 fn terminal_inspection(screen: &str) -> bool {
-    screen.contains("  TERM  ") && !screen.contains("F2  inspect")
+    screen.contains(" NORMAL ") && screen.contains("term://") && !screen.contains("TERMINAL")
 }
 
 #[test]
@@ -33,15 +41,21 @@ fn kitty_shifted_punctuation_opens_ex_commands() {
     assert!(tui.wait_exit().success());
 }
 
+/// The legacy C0 byte of `Ctrl-\` (0x1c) followed by `Ctrl-N` is the
+/// one escape chord; F2 is just a key the child receives.
 #[test]
-fn real_f2_enters_terminal_inspection() {
+fn real_ctrl_backslash_ctrl_n_enters_normal_and_f2_stays_with_the_child() {
     let directory = tempfile::tempdir().unwrap();
     let trace = directory.path().join("terminal.jsonl");
     let mut tui = Tui::start(directory.path(), &trace);
     tui.until(|screen| screen.contains("NORMAL"));
     tui.send(b":terminal env PS1='STROP-PTY> ' /bin/sh -i\r");
-    tui.until(|screen| terminal_input(screen) && screen.contains("STROP-PTY>"));
-    tui.send(b"\x1bOQ");
+    tui.until(|screen| terminal_input(screen) && at_prompt(screen));
+    tui.send(b"stty -echo; printf 'F2-READY\\n'; cat -v\r");
+    tui.until(|screen| line(screen, "F2-READY"));
+    tui.send(b"\x1bOQ\r");
+    tui.until(|screen| line(screen, "^[OQ") && terminal_input(screen));
+    tui.send(b"\x1c\x0e");
     tui.until(terminal_inspection);
 }
 
@@ -59,18 +73,14 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     let mut tui = Tui::start(directory.path(), &trace);
     tui.until(|screen| screen.contains("NORMAL"));
     tui.send(b":terminal env PS1='STROP-PTY> ' /bin/sh -i\r");
-    tui.until(|screen| terminal_input(screen) && screen.contains("STROP-PTY>"));
+    tui.until(|screen| terminal_input(screen) && at_prompt(screen));
     tui.send(b"printf x >> run-count; printf 'PTY-INPUT-OK\\n'\r");
     tui.until(|screen| line(screen, "PTY-INPUT-OK"));
+    // A multiline paste into a child without bracketed paste goes through
+    // raw, as every terminal sends it (0090 §4): no held paste, no review.
     tui.send(b"printf '\\033[?2004lPASTE-READY\\n'; read first; read second; printf 'PASTE:%s|%s\\n' \"$first\" \"$second\"\r");
     tui.until(|screen| line(screen, "PASTE-READY"));
     tui.send(b"\x1b[200~alpha\nbeta\n\x1b[201~");
-    let held = tui.until(|screen| screen.contains("paste+"));
-    assert!(!line(&held, "alpha") && !line(&held, "beta"));
-    tui.send(b"\x1c");
-    tui.send(b"\x0e");
-    tui.until(terminal_inspection);
-    tui.send(b":terminal-paste\r");
     tui.until(|screen| line(screen, "PASTE:alpha|beta") && terminal_input(screen));
     tui.send(b"nvim --clean nested.txt\r");
     tui.until(|screen| {
@@ -81,23 +91,20 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1b");
     tui.until(|screen| !screen.contains("-- INSERT --") && screen.contains("NESTED-EDITOR-OK"));
     tui.send(b":wq\r");
-    tui.until(|screen| screen.contains("STROP-PTY>") && terminal_input(screen));
-    assert_eq!(
-        std::fs::read_to_string(directory.path().join("nested.txt")).unwrap(),
-        "NESTED-EDITOR-OK\n"
-    );
+    tui.until(|screen| at_prompt(screen) && terminal_input(screen));
+    let nested = std::fs::read_to_string(directory.path().join("nested.txt"))
+        .unwrap_or_else(|error| panic!("{error}:\n{}", tui.screen.screen().contents()));
+    assert_eq!(nested, "NESTED-EDITOR-OK\n");
     tui.send(b"less pager.txt\r");
     tui.until(|screen| {
-        screen.contains("PAGER-LINE-000")
-            && screen.contains("pager.txt")
-            && !screen.contains("STROP-PTY>")
+        screen.contains("PAGER-LINE-000") && screen.contains("pager.txt") && !at_prompt(screen)
     });
     tui.send(b"q");
-    tui.until(|screen| screen.contains("STROP-PTY>") && terminal_input(screen));
+    tui.until(|screen| at_prompt(screen) && terminal_input(screen));
     tui.send(b"printf '\\033[2J\\033[HINTERRUPT-READY\\n'; cat\r");
     tui.until(|screen| line(screen, "INTERRUPT-READY"));
     tui.send(b"\x03");
-    tui.until(|screen| screen.contains("STROP-PTY>") && terminal_input(screen));
+    tui.until(|screen| at_prompt(screen) && terminal_input(screen));
     // (raw Esc/Alt byte fidelity is asserted exactly by the od step below)
     tui.send(b"printf 'ESC-REMAINED\\n'\r");
     tui.send(b"stty raw -echo; printf 'BYTE-READY\\n'; dd bs=1 count=8 2>/dev/null | od -An -tx1; stty sane; printf '\\r\\nBYTE-DONE\\n'\r");
@@ -170,8 +177,8 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         })
     });
     tui.until(|screen| line(screen, "MODE-DONE"));
-    // F2 enters inspection directly at a calm prompt.
-    tui.send(b"\x1bOQ");
+    // The chord enters NORMAL at a calm prompt; `i` returns.
+    tui.send(b"\x1c\x0e");
     tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     tui.send(b"i");
     tui.until(terminal_input);
@@ -188,12 +195,10 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x0e");
     // The capture's per-update frame records queue ahead of this escape on
     // slow runners; the escape still lands in order — the mid-flood input
-    // contract. The pinned-view proof is the mode chip: the transient
-    // "snapshot" message is cleared by the very next update while the
-    // flood streams.
+    // contract. The mode chip is the proof.
     tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     tui.send(b"i");
-    let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && screen.contains("STROP-PTY>"));
+    let settled = tui.until(|screen| line(screen, "FLOOD-DONE") && at_prompt(screen));
     assert!(
         !settled.contains("FLOOD-START"),
         "bounded history must drop the flood head"
@@ -210,42 +215,18 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         .unwrap()
         .write_all(b"go\n")
         .unwrap();
-    let frozen = tui.until(|screen| screen.contains("out+"));
-    assert!(!line(&frozen, "ASYNC-INSPECTION-OUTPUT"));
-    // The pinned view never drags to new output (0065): refresh installs
-    // the latest published frame, and a search inside the pinned buffer
-    // is the honest probe that the deferred line landed — the caret
-    // follows the match, revealing it. Frames may still be arriving at
-    // the first refresh, so iterate the documented signal→refresh loop
-    // like a user, bounded.
-    let mut installed = false;
-    for _ in 0..5 {
-        tui.send(b":terminal-refresh\r");
-        tui.until(|s| s.contains("refreshed") || s.contains("already shows"));
-        tui.send(b"/ASYNC-INSPECTION-OUTPUT\r");
-        if tui
-            .until_soft(Duration::from_secs(5), |s| {
-                numbered_line(s, "ASYNC-INSPECTION-OUTPUT")
-            })
-            .is_some()
-        {
-            installed = true;
-            break;
-        }
-        // The refreshed frame predated the deferred line; let the
-        // remaining frames settle, then refresh again.
-        let _ = tui.until_soft(Duration::from_secs(2), |_| false);
-    }
-    assert!(
-        installed,
-        "terminal-refresh installs the deferred output into the pinned view"
-    );
+    // NORMAL is a live buffer (0090 §4): the deferred line lands in the
+    // numbered view by itself, and the cursor on the last line follows
+    // it — no refresh, no attention badge.
+    let landed = tui.until(|screen| numbered_line(screen, "ASYNC-INSPECTION-OUTPUT"));
+    assert!(terminal_inspection(&landed), "{landed}");
+    assert!(!landed.contains("out+"), "{landed}");
     tui.send(b"gg/^INSPECTION-READY\ryy:e yank-target.txt\r");
-    tui.until(|screen| screen.contains("yank-target.txt") && !screen.contains("terminal #"));
+    tui.until(|screen| screen.contains("yank-target.txt") && !screen.contains("term://"));
     tui.send(b"p");
-    tui.until(|screen| !screen.contains("terminal #") && numbered_line(screen, "INSPECTION-READY"));
+    tui.until(|screen| !screen.contains("term://") && numbered_line(screen, "INSPECTION-READY"));
     tui.send(b":q!\r");
-    tui.until(|screen| terminal_inspection(screen) && screen.contains("terminal #"));
+    tui.until(|screen| terminal_inspection(screen) && screen.contains("term://"));
     tui.send(b":vs\ri");
     // 0064 §1 geometry: left pane cols 0..58, its track 58, divider 59,
     // right pane content 60..119, right track 119 — compare by range,
@@ -258,10 +239,10 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     assert!(!split
         .lines()
         .any(|row| cells(row, 0, 58).trim() == "ASYNC-INSPECTION-OUTPUT"));
-    // F2 followed by Space w moves panes without the child seeing a byte:
-    // focus lands on the left editor pane (NORMAL), then returns to the
-    // terminal pane and resumes live input with i.
-    tui.send(b"\x1bOQ w l");
+    // The chord then Space w moves panes without the child seeing a byte:
+    // focus lands on the left pane (NORMAL), then returns to the terminal
+    // pane and resumes live input with i.
+    tui.send(b"\x1c\x0e w l");
     tui.until(|screen| terminal_inspection(screen) && !terminal_input(screen));
     tui.send(b" w hi");
     tui.until(terminal_input);
@@ -283,11 +264,11 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
                 .take(29)
                 .any(|row| row.chars().take(119).any(|cell| cell == '\u{2502}'))
     });
+    // :qa with a running session is one notice, no picker (0089 B7);
+    // :qa! stops the shell and quits.
     tui.send(b"\x1c\x0e:qa\r");
-    tui.until(|screen| screen.contains("Stop terminal session"));
-    tui.send(b"\x1b[B\r");
-    tui.until(|screen| terminal_inspection(screen) && screen.contains("exited"));
-    tui.send(b":qa\r");
+    tui.until(|screen| screen.contains("1 terminal running") && screen.contains(":qa! stops them"));
+    tui.send(b":qa!\r");
     assert!(tui.wait_exit().success());
     // The flood never degraded the capture: the file says so itself.
     let terminal = std::fs::read_to_string(&trace)
@@ -323,4 +304,21 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         std::fs::read(directory.path().join("run-count")).unwrap(),
         before
     );
+}
+
+#[test]
+fn two_escapes_in_one_write_close_a_picker() {
+    // B4: a fast double Escape arrives as `\x1b\x1b` in one read; vim reads
+    // two keys. The first leaves the query field, the second closes.
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("main.rs"), "fn main() {}\n").unwrap();
+    let trace = directory.path().join("terminal.jsonl");
+    let mut tui = Tui::start(directory.path(), &trace);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b" f");
+    tui.until(|screen| screen.contains("FILES") && screen.contains("esc  close"));
+    tui.send(b"\x1b\x1b");
+    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("esc  close"));
+    tui.send(b":q\r");
+    assert!(tui.wait_exit().success());
 }

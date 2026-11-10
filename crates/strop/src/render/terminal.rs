@@ -55,7 +55,7 @@ pub(super) fn render(
     document: DocumentId,
     active: bool,
 ) {
-    let Some(frame) = editor.terminal_frame(document, true) else {
+    let Some(frame) = editor.terminal_frame(document) else {
         output.render_widget(
             Paragraph::new("terminal starting").style(Style::default().fg(t.muted).bg(t.base)),
             area,

@@ -35,6 +35,22 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| e.open_remote_picker()),
     },
     Binding {
+        keys: "space t",
+        desc: "terminal in a split below (TERMINAL mode)",
+        sections: &["leader", "terminal"],
+        live: true,
+        id: "terminal-split",
+        handler: Handler::Leaf(|e, _| e.launch_terminal_split()),
+    },
+    Binding {
+        keys: "space T",
+        desc: "terminal in this pane (= :terminal)",
+        sections: &["leader", "terminal"],
+        live: true,
+        id: "terminal-here",
+        handler: Handler::Leaf(|e, _| e.launch_terminal("", false)),
+    },
+    Binding {
         keys: "space b",
         desc: "buffers (MRU)",
         sections: &["leader"],
@@ -108,7 +124,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space a",
-        desc: "context actions (code / filesystem)",
+        desc: "actions here (fixes, code, files)",
         sections: &["leader"],
         live: true,
         id: "code-actions",

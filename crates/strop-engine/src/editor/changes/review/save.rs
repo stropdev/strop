@@ -23,7 +23,11 @@ impl Editor {
             .into_iter()
             .flat_map(|receipt| receipt.applied.iter().map(|(document, _, _)| *document))
             .filter(|document| seen.insert(*document))
-            .filter(|document| self.docs.get(*document).is_none_or(|doc| doc.buf.dirty))
+            .filter(|document| {
+                self.docs
+                    .get(*document)
+                    .is_none_or(|doc| doc.buf.is_dirty())
+            })
             .collect();
         if targets.is_empty() {
             self.message = "no changed files to save".into();

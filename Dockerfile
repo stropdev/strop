@@ -48,15 +48,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && STROP_REQUIRE_SSH_TESTS=1 cargo test --locked -p strop-editor \
         --test worker_ssh deploy_handshake_read_write_notify_parity_over_real_sshd
 
-# Container integration runner: a Docker client plus a warm debug build; the
-# compose service runs the container-gated tests against the host engine.
-FROM builder AS container-test
-RUN apk add --no-cache docker-cli openssh-client
-# No cache mounts: the compose service runs `cargo test` at container start,
-# so the registry and the warm target directory must live in the image.
-ENV CARGO_TARGET_DIR=/app/target
-RUN cargo build --locked -p strop-editor
-
 # Stripped static release binary. The gate: no NEEDED shared libraries and a
 # static ELF (readelf NEEDED is the truth; `ldd` lies on static-pie musl).
 FROM builder AS release

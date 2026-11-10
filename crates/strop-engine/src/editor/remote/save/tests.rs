@@ -174,7 +174,7 @@ fn pending_edit_admission_and_follow_cannot_share_a_document() {
         outcome: Outcome::Success(RemoteWriteResult::Enabled(ready)),
     });
     editor.feed_text("A draft<esc>");
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(!editor.remote_following(document));
     assert_eq!(editor.buf().text(), "before draft\n");
 }
@@ -194,7 +194,7 @@ fn lost_worker_reply_keeps_dirty_attempt_until_explicit_verification() {
             "worker connection lost after store submission",
         ),
     });
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(editor.remote.writes.attempts[&document].unconfirmed);
     assert!(editor.message.contains("unconfirmed"));
     editor.feed_text(":w<cr>");
@@ -206,7 +206,7 @@ fn lost_worker_reply_keeps_dirty_attempt_until_explicit_verification() {
         ticket,
         outcome: Outcome::Success(RemoteWriteResult::Verified(VerifiedWrite::Unchanged)),
     });
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(!editor.remote.writes.attempts.contains_key(&document));
     assert!(editor.message.contains("local edits remain unsaved"));
 }
@@ -244,15 +244,14 @@ fn remote_unconfirmed_feedback_offers_verify_not_blind_retry() {
         .items
         .iter()
         .any(|item| item.text.contains("Retry the failed save")));
-    let picker = editor.picker.as_ref().unwrap().id;
-    editor.accept_filesystem_action(picker, 0);
+    editor.accept_action(0);
     let ticket = editor.remote.writes.pending[&document].clone();
     assert_eq!(ticket.key.action, WriteAction::Verify);
     editor.remote_write_done(Completion {
         ticket,
         outcome: Outcome::Success(RemoteWriteResult::Verified(VerifiedWrite::Unchanged)),
     });
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert_eq!(
         editor.feedback()[0].lifecycle(),
         crate::editor::feedback::FeedbackLifecycle::Resolved
@@ -276,7 +275,7 @@ fn older_save_receipt_keeps_new_edits_and_does_not_close_the_pane() {
     });
     assert_eq!(editor.current(), document);
     assert!(!editor.should_quit);
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert_eq!(editor.buf().text(), "before first newer\n");
     assert!(
         editor.buf().path.is_none(),
@@ -301,7 +300,10 @@ fn write_and_quit_does_not_discard_an_explicit_destination() {
                 outcome: Outcome::Success(RemoteWriteResult::Saved(saved)),
             });
         }
-        assert!(editor.docs.get(document).is_some_and(|doc| doc.buf.dirty));
+        assert!(editor
+            .docs
+            .get(document)
+            .is_some_and(|doc| doc.buf.is_dirty()));
         assert_eq!(editor.current(), document);
         assert!(!editor.should_quit);
     }
@@ -322,8 +324,25 @@ fn cancellation_does_not_discard_a_save_receipt_already_queued() {
         outcome: Outcome::Success(RemoteWriteResult::Saved(saved)),
     });
     assert!(
-        !editor.buf().dirty,
+        !editor.buf().is_dirty(),
         "a confirmed commit outranks an ineffective late cancellation"
     );
     assert_eq!(editor.buf().text(), "before draft\n");
+}
+
+/// `:unfollow` keeps the snapshot and stops the follow clock; with
+/// nothing followed it says so.
+#[test]
+fn unfollow_stops_following_and_keeps_the_snapshot() {
+    let limit = ReadLimit::new(32).unwrap();
+    let mut editor = fixture(ReadSelection::Tail(limit));
+    let document = editor.current();
+    editor.start_remote_follow(document, limit);
+    assert!(editor.remote_following(document));
+    editor.feed_text(":unfollow\r");
+    assert_eq!(editor.message(), "follow stopped");
+    assert!(!editor.remote_following(document));
+    assert_eq!(editor.buf().text(), "before\n", "the snapshot stays");
+    editor.feed_text(":unfollow\r");
+    assert_eq!(editor.message(), "not following");
 }

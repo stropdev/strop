@@ -33,8 +33,8 @@ pub mod geometry;
 mod picker_tests;
 pub use geometry::{
     gutter_width, pane_cells, picker_card, picker_field_split, picker_inner, picker_input_height,
-    picker_rows_per_result, picker_split, preview_source_lines, preview_window, text_budget,
-    CellRect, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, STANDARD_GUTTER,
+    picker_owns_frame, picker_rows_per_result, picker_split, preview_source_lines, preview_window,
+    text_budget, CellRect, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, STANDARD_GUTTER,
 };
 
 /// The identity of one accepted preparation: the generation bumps on
@@ -521,7 +521,7 @@ impl Editor {
             pane.view_top.hash(&mut stamp);
             pane.hscroll.get().hash(&mut stamp);
             usize::from(pane.terminal_input).hash(&mut stamp);
-            self.terminal_frame(pane.doc, true)
+            self.terminal_frame(pane.doc)
                 .map(|frame| frame.revision)
                 .unwrap_or(0)
                 .hash(&mut stamp);

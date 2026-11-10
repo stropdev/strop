@@ -125,9 +125,6 @@ fn classify(event: &AppEvent) -> (Class, &'static str, usize) {
         AppEvent::Shell(_) => semantic("shell"),
         AppEvent::Io(_) => semantic("io"),
         AppEvent::RemoteCompletion(_) => semantic("remote completion"),
-        AppEvent::Container(_) => semantic("container"),
-        AppEvent::Devcontainer => (Class::Hint, "devcontainer wake", 0),
-        AppEvent::DevcontainerSettled(_) => semantic("devcontainer settled"),
         AppEvent::Git(_) => semantic("git"),
         AppEvent::Picker(_) => semantic("picker"),
         AppEvent::PickerRanking(_) => semantic("picker ranking"),
@@ -135,6 +132,7 @@ fn classify(event: &AppEvent) -> (Class, &'static str, usize) {
         AppEvent::Resolution(_) => semantic("resolution"),
         AppEvent::Preview(_) => semantic("preview"),
         AppEvent::Clipboard(_) => semantic("clipboard"),
+        AppEvent::Stdin(_) => semantic("stdin"),
     }
 }
 

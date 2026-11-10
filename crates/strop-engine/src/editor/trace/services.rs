@@ -56,7 +56,6 @@ pub fn io(event: &crate::editor::io::IoEvent) {
     record_with(EventKind::JobFinished, || match event {
         IoEvent::Open(value) => completion("io", "open", value),
         IoEvent::Save(value) => completion("io", "save", value),
-        IoEvent::ContainerWrite(value) => completion("container", "write", value),
         IoEvent::NotifyReload(value) => completion("io", "notify-reload", value),
         IoEvent::Native(value) => completion("io", "native", value),
         IoEvent::Review(value) => completion("search", "review", value),
@@ -140,6 +139,14 @@ pub fn shell(result: &ShellResult) {
             } => json!({
                 "kind":"pipe","document":super::snapshot::document_id(*document),
                 "revision":revision,"start_byte":start,"end_byte":end,
+            }),
+            crate::editor::ShellKey::Read {
+                document,
+                revision,
+                at,
+            } => json!({
+                "kind":"read","document":super::snapshot::document_id(*document),
+                "revision":revision,"at_byte":at,
             }),
         };
         let outcome = match &result.outcome {

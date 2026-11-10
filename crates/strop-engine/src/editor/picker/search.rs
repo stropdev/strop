@@ -226,8 +226,7 @@ impl Editor {
             return;
         }
         if replacement && scope.root.filesystem != Filesystem::Local {
-            self.message =
-                "SSH/container Search is read-only; With and Review are unavailable".into();
+            self.message = "SSH Search is read-only; With and Review are unavailable".into();
             return;
         }
         self.cancel_open(CancelReason::Superseded);
@@ -380,8 +379,7 @@ impl Editor {
                 .as_ref()
                 .is_some_and(|context| context.scope.root.filesystem != Filesystem::Local)
             {
-                self.message =
-                    "SSH/container Search is read-only; With and Review are unavailable".into();
+                self.message = "SSH Search is read-only; With and Review are unavailable".into();
                 return;
             }
             glue.picker.toggle_replacement();

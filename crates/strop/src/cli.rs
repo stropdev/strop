@@ -14,21 +14,25 @@ pub enum Command {
         path: Option<FileLocation>,
         readonly: bool,
         remote_view: RemoteView,
+        /// `strop -`: the buffer is stdin (streamed until EOF).
+        stdin: bool,
     },
     Headless {
         script: PathBuf,
         path: Option<FileLocation>,
         remote_view: RemoteView,
+        /// `-`: the initial buffer is stdin, read whole.
+        stdin: bool,
     },
     Replay {
         trace: PathBuf,
     },
-    /// `--replay TRACE`: full forensic replay of a complete full-content
-    /// capture (R11). Distinct from `--replay-script` input extraction.
+    /// `replay TRACE`: full forensic replay of a complete full-content
+    /// capture (R11). Distinct from `replay --script` input extraction.
     ReplayFull {
         trace: PathBuf,
     },
-    /// `--export-metadata TRACE`: positive-projection privacy export;
+    /// `export TRACE`: positive-projection privacy export;
     /// explicitly not replayable.
     ExportMetadata {
         trace: PathBuf,
@@ -73,6 +77,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     let mut operand = None;
     let mut command = None;
     let mut positional = false;
+    let mut stdin = false;
     while let Some(argument) = args.next() {
         let text = argument.to_string_lossy();
         if !positional {
@@ -125,16 +130,16 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     positional = true;
                     continue;
                 }
+                "-" => {
+                    stdin = true;
+                    continue;
+                }
                 "--help" | "-h" => {
                     command = Some(Command::Help);
                     continue;
                 }
                 "--version" | "-V" => {
                     command = Some(Command::Version);
-                    continue;
-                }
-                "--dump-compat" => {
-                    command = Some(Command::Compat);
                     continue;
                 }
                 "--readonly" | "-R" => {
@@ -173,31 +178,12 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     script = Some(args.next().ok_or("--script requires a path")?.into());
                     continue;
                 }
-                "--replay-script" => {
-                    replay = Some(
-                        args.next()
-                            .ok_or("--replay-script requires a trace file")?
-                            .into(),
-                    );
-                    continue;
-                }
                 "--replay" => {
                     let trace = args.next().ok_or("--replay requires a trace file")?.into();
                     if command.is_some() || replay.is_some() || headless {
                         return Err("--replay conflicts with other launch modes".into());
                     }
                     command = Some(Command::ReplayFull { trace });
-                    continue;
-                }
-                "--export-metadata" => {
-                    let trace = args
-                        .next()
-                        .ok_or("--export-metadata requires a trace file")?
-                        .into();
-                    if command.is_some() || replay.is_some() || headless {
-                        return Err("--export-metadata conflicts with other launch modes".into());
-                    }
-                    command = Some(Command::ExportMetadata { trace });
                     continue;
                 }
                 "--bench" => {
@@ -329,6 +315,9 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
             return Err("only one file or directory operand is supported".into());
         }
     }
+    if stdin && operand.is_some() {
+        return Err("`-` reads the buffer from stdin; give no file operand with it".into());
+    }
     let operand = match (operand, initial_line) {
         (Some(file), line) => Some(file.with_line(line).map_err(|error| error.to_string())?),
         (None, Some(_)) => return Err(location::LocationError::MissingPath.to_string()),
@@ -363,8 +352,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     ) && (trace_path.is_some() || content == ContentPolicy::Full || operand.is_some())
     {
         return Err(
-            "--replay/--export-metadata take exactly one trace and record no log; unset STROP_LOG"
-                .into(),
+            "replay/export take exactly one trace and record no log; unset STROP_LOG".into(),
         );
     }
     let command = match (command, replay, headless) {
@@ -374,11 +362,13 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
             script: script.ok_or("--headless requires a script path")?,
             path: operand,
             remote_view,
+            stdin,
         },
         (None, None, false) => Command::Edit {
             path: operand,
             readonly,
             remote_view,
+            stdin,
         },
         _ => return Err("conflicting launch modes".into()),
     };
@@ -397,6 +387,32 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<Options, String> {
         super::parse(args.iter().map(OsString::from).collect())
+    }
+
+    #[test]
+    fn a_dash_operand_reads_stdin() {
+        assert!(matches!(
+            parse(&["-"]).unwrap().command,
+            Command::Edit {
+                stdin: true,
+                path: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            parse(&["headless", "s.keys", "-"]).unwrap().command,
+            Command::Headless { stdin: true, .. }
+        ));
+        assert!(parse(&["-", "file.txt"]).is_err());
+        // after `--`, a file literally named `-`
+        assert!(matches!(
+            parse(&["--", "-"]).unwrap().command,
+            Command::Edit {
+                stdin: false,
+                path: Some(_),
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -481,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_flags_still_parse() {
+    fn flag_forms_parse_and_retired_spellings_refuse() {
         assert!(matches!(
             parse(&["--headless", "s.txt", "a.rs"]).unwrap().command,
             Command::Headless { .. }
@@ -490,10 +506,14 @@ mod tests {
             parse(&["--replay", "t.jsonl"]).unwrap().command,
             Command::ReplayFull { .. }
         ));
-        assert!(matches!(
-            parse(&["--replay-script", "t.jsonl"]).unwrap().command,
-            Command::Replay { .. }
-        ));
+        for retired in ["--dump-compat", "--replay-script", "--export-metadata"] {
+            assert!(
+                parse(&[retired, "t.jsonl"])
+                    .unwrap_err()
+                    .contains("unknown option"),
+                "{retired}"
+            );
+        }
         // The default edit form with no subcommand is untouched.
         assert!(matches!(
             parse(&["-R", "a.rs:12"]).unwrap().command,

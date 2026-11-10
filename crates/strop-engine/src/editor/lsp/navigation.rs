@@ -40,13 +40,6 @@ impl Editor {
                     }
                 }
             }
-            Filesystem::Container(container) => self.request_target(
-                crate::files::FileTarget::Container {
-                    container,
-                    path: location.doc.path,
-                },
-                intent,
-            ),
         }
     }
 
@@ -72,11 +65,6 @@ impl Editor {
             // comparing against local paths.
             crate::editor::document::DocumentSource::Remote(file) => {
                 !file.file.path().starts_with(&binding.root)
-            }
-            // Container paths are native to the replying server's root;
-            // the editor's host cwd never participates in this decision.
-            crate::editor::document::DocumentSource::Container { path, .. } => {
-                !path.starts_with(&binding.root)
             }
             _ => target_doc
                 .buf

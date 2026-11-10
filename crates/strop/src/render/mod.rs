@@ -36,6 +36,7 @@ mod help;
 mod hover_card;
 #[path = "picker/mod.rs"]
 mod picker;
+mod recovery_card;
 mod statusline;
 pub(crate) mod style;
 mod terminal;
@@ -117,6 +118,7 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
         None
     };
     picker::render_picker(editor, &t, frame);
+    recovery_card::render(editor, &t, frame);
     blame_card::render_blame_card(editor, &t, frame);
     hover_card::render_hover_card(editor, &t, frame);
     completion::render(editor, &t, frame, pane_area, caret);

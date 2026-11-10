@@ -61,7 +61,7 @@ fn dirty_document_checkpoints_and_restores_after_crash() {
     editor.feed_text("x");
     settle(&mut editor);
     // Checkpointing never marks text clean or advances its saved baseline.
-    assert!(editor.buf().dirty);
+    assert!(editor.buf().is_dirty());
     assert!(fixture.checkpoint().exists());
     // Crash: the editor drops without an orderly close.
     drop(editor);
@@ -81,7 +81,7 @@ fn dirty_document_checkpoints_and_restores_after_crash() {
         restarted.buf().path.is_none(),
         "a checked draft has no target"
     );
-    assert!(restarted.buf().dirty);
+    assert!(restarted.buf().is_dirty());
     // The disk was never touched by checkpoint or restore.
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "alpha\n");
 }
@@ -307,7 +307,7 @@ fn remote_drafts_persist_only_with_explicit_session_consent() {
             strop_remote::ReadSelection::Full,
         ))
         .unwrap();
-    editor.doc_mut(document).buf.dirty = true;
+    editor.doc_mut(document).buf.mark_dirty();
     editor.recovery_after_event();
     settle(&mut editor);
     assert!(
@@ -357,7 +357,7 @@ fn a_confirmed_save_retires_only_the_checkpoint_it_supersedes() {
 
     editor.feed_text(":w<cr>");
     settle(&mut editor);
-    assert!(!editor.buf().dirty);
+    assert!(!editor.buf().is_dirty());
     let stored = fixture.stored().expect("the retired cohort republishes");
     assert!(
         stored
@@ -419,7 +419,7 @@ fn a_persistence_failure_is_visible_and_writes_nothing() {
         editor.message
     );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "alpha\n");
-    assert!(editor.buf().dirty, "recovery failure is not a save");
+    assert!(editor.buf().is_dirty(), "recovery failure is not a save");
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn a_suppressed_tape_never_launches_recovery_natively() {
     }));
     editor.feed_text("x");
     editor.recovery_after_event();
-    assert!(editor.buf().dirty, "the draft itself is untouched");
+    assert!(editor.buf().is_dirty(), "the draft itself is untouched");
     let pending = editor
         .recovery
         .in_flight

@@ -136,6 +136,34 @@ fn echo_row() {
     });
 }
 
+/// B5: a refusal longer than the row wraps (at most three rows, then
+/// clips) instead of losing its tail to `…` on the first row.
+#[test]
+fn echo_row_wraps() {
+    each("echo-wrapped", |editor| {
+        editor.feed_text("9j");
+        editor.set_message(
+            "terminal refused: this buffer belongs to ssh://build-host/srv/project and a remote \
+             terminal needs an admitted worker on that host — run :remote worker to admit one, or \
+             :terminal-local for a shell on this machine; the full text of every message stays in \
+             :messages after the echo row moves on",
+        );
+        settle_analysis()
+    });
+}
+
+/// 0090 §3: opening a file with an earlier session's draft asks first.
+#[test]
+fn recovery_offer() {
+    each("recovery", |editor| {
+        let path = editor.buf().path.clone().unwrap();
+        editor.fixture_recovery_draft(&path, "//! a draft\n");
+        editor.open_fixture(&path).unwrap();
+        assert!(editor.recovery_offer().is_some());
+        settle_analysis()
+    });
+}
+
 #[test]
 fn split() {
     each("split", |editor| {
@@ -208,5 +236,74 @@ fn completion() {
                 editor.handle_app_event(event);
             }
         })
+    });
+}
+
+/// A terminal session in a split below the file, as `Space t` opens it:
+/// a fixed launch directory and a small styled transcript, no PTY.
+fn terminal_below(editor: &mut Editor) {
+    use strop_terminal::model::{Color, Phase, Style};
+    let plain = Style::default();
+    let green = Style {
+        foreground: Color::Indexed(2),
+        ..plain
+    };
+    let bold = Style {
+        bold: true,
+        ..plain
+    };
+    editor.split_document(false, editor.current());
+    editor.terminal_fixture_at(
+        strop_workspace::ResourceLocation::local("/work".into()),
+        &[
+            ("$ cargo test", bold),
+            ("   Compiling demo v0.1.0", plain),
+            ("running 3 tests", plain),
+            ("test render::chip ... ok", green),
+            ("test render::echo ... ok", green),
+            ("test result: ok. 3 passed", green),
+            ("$ ", plain),
+        ],
+        Phase::Running,
+    );
+}
+
+fn ctrl_key(editor: &mut Editor, ch: char) {
+    use strop_core::frontend_input::{Input, KeyCode, KeyEvent, Modifiers};
+    let code = KeyCode::Char(ch);
+    editor.handle_app_event(strop_engine::editor::events::AppEvent::Input(Input::Key(
+        KeyEvent {
+            code,
+            modifiers: Modifiers {
+                control: true,
+                ..Default::default()
+            },
+            ..KeyEvent::press(code)
+        },
+    )));
+}
+
+/// TERMINAL mode (0090 §4): the child's grid in the lower pane, the
+/// `TERMINAL` chip and the one escape chord as the hint.
+#[test]
+fn terminal_mode() {
+    each("terminal", |editor| {
+        terminal_below(editor);
+        editor.feed_text("i");
+        settle_analysis()
+    });
+}
+
+/// NORMAL on the same buffer: a numbered, read-only live transcript with
+/// the cursor at the top, plain `NORMAL` chip, no `[RO]`, no hint.
+#[test]
+fn terminal_normal_mode() {
+    each("terminal-normal", |editor| {
+        terminal_below(editor);
+        editor.feed_text("i");
+        ctrl_key(editor, '\\');
+        ctrl_key(editor, 'n');
+        editor.feed_text("gg");
+        settle_analysis()
     });
 }

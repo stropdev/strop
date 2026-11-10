@@ -171,7 +171,7 @@ fn stage_refuses_a_dirty_buffer() {
     // after an explicit save, staging works (the mutation settles
     // off the input path; the message reports the outcome)
     e.feed_text(":w\r");
-    settle(&mut e, |e| !e.doc(e.first_doc()).buf.dirty);
+    settle(&mut e, |e| !e.doc(e.first_doc()).buf.is_dirty());
     e.feed_text(" gs");
     settle(&mut e, |e| e.git_mutation.is_none());
     assert!(e.message.contains("staged"), "{}", e.message);
@@ -222,7 +222,7 @@ fn stage_and_unstage_name_their_edges() {
     e.feed_text("Gofn c() {}");
     e.feed_text("<esc>");
     e.feed_text(":w\r");
-    settle(&mut e, |e| !e.doc(e.first_doc()).buf.dirty);
+    settle(&mut e, |e| !e.doc(e.first_doc()).buf.is_dirty());
     pump_hunks(&mut e);
     e.feed_text("]c gs");
     settle(&mut e, |e| e.git_mutation.is_none());

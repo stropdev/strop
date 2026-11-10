@@ -314,7 +314,7 @@ fn save_change_retains_each_file_outcome_after_focus_moves() {
         std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
         "alpha there\n"
     );
-    assert!(editor.docs.get(second).unwrap().buf.dirty);
+    assert!(editor.docs.get(second).unwrap().buf.is_dirty());
     let results = text_of(&editor, report);
     assert!(
         results

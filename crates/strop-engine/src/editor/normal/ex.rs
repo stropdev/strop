@@ -133,7 +133,7 @@ impl Editor {
         }
         let (cmd, arg) = cmdline.split_once(' ').unwrap_or((cmdline, ""));
         match cmd {
-            "terminal" => {
+            "terminal" | "term" => {
                 self.launch_terminal(arg, false);
                 return;
             }
@@ -141,20 +141,8 @@ impl Editor {
                 self.launch_terminal(arg, true);
                 return;
             }
-            "terminal-stop" => {
-                self.stop_terminal();
-                return;
-            }
-            "terminal-paste" => {
-                self.terminal_paste_decision(true);
-                return;
-            }
-            "terminal-paste-cancel" => {
-                self.terminal_paste_decision(false);
-                return;
-            }
-            "terminal-refresh" => {
-                self.refresh_terminal();
+            "r" | "read" => {
+                self.read_command(arg);
                 return;
             }
             _ => {}
@@ -185,28 +173,6 @@ impl Editor {
             "w" | "w!" => {
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
                 // :w! forces through the mutation boundary's rule.
-                // Container saves require a separate verified document permit.
-                if matches!(
-                    self.cur().source,
-                    crate::editor::document::DocumentSource::Container { .. }
-                ) {
-                    let location = self.directory_context();
-                    let decision = self.namespace_capability_for(
-                        &location,
-                        crate::editor::WorkspaceCapability::Write,
-                        Some(self.current()),
-                    );
-                    if !decision.available() {
-                        self.message = format!(
-                            "{} — {}",
-                            decision
-                                .reason()
-                                .unwrap_or("container editing is unavailable"),
-                            decision.next_step().unwrap_or(":container-edit")
-                        );
-                        return;
-                    }
-                }
                 if self.buf().readonly && cmd != "w!" && self.remote_file().is_none() {
                     let name = self.buf().name.as_deref().unwrap_or("readonly buffer");
                     self.message = format!("{name}: readonly — :w! to force");
@@ -215,27 +181,6 @@ impl Editor {
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "w!", false);
             }
             "wq" | "wq!" => {
-                if matches!(
-                    self.cur().source,
-                    crate::editor::document::DocumentSource::Container { .. }
-                ) {
-                    let location = self.directory_context();
-                    let decision = self.namespace_capability_for(
-                        &location,
-                        crate::editor::WorkspaceCapability::Write,
-                        Some(self.current()),
-                    );
-                    if !decision.available() {
-                        self.message = format!(
-                            "{} — {}",
-                            decision
-                                .reason()
-                                .unwrap_or("container editing is unavailable"),
-                            decision.next_step().unwrap_or(":container-edit")
-                        );
-                        return;
-                    }
-                }
                 self.request_save((!arg.is_empty()).then(|| arg.into()), cmd == "wq!", true);
             }
             "set" => {
@@ -253,20 +198,13 @@ impl Editor {
                         }
                         if self.terminal_document(self.current()).is_some() {
                             self.message =
-                                "terminal projections are read-only; i enters child input".into();
+                                "terminal buffer is read-only — i enters TERMINAL mode".into();
                             return;
                         }
                         if self.directory().is_some_and(|source| {
                             source.draft.as_ref().is_none_or(|draft| !draft.editable())
                         }) {
                             self.message = "Directory listings are read-only; use :fs edit for filename drafts".into();
-                            return;
-                        }
-                        if matches!(
-                            self.cur().source,
-                            crate::editor::DocumentSource::Container { .. }
-                        ) {
-                            self.message = "container files are read-only by policy".into();
                             return;
                         }
                         if self.remote_file().is_some() && !self.remote_edit_authorized() {
@@ -300,6 +238,8 @@ impl Editor {
             "q!" => {
                 self.close_pane_or_buffer(true);
             }
+            "bd" | "bdelete" => self.delete_buffer(false),
+            "bd!" | "bdelete!" => self.delete_buffer(true),
             "qa" | "qall" => self.quit_all(false),
             "qa!" | "qall!" => self.quit_all(true),
             "trust" => self.request_trust(),
@@ -341,14 +281,8 @@ impl Editor {
             }
             "symbols" => self.lsp_document_symbols_pub(),
             "explain" => self.open_explain(),
+            "messages" => self.open_messages(),
             "recover" => self.run_recovery_ex(arg),
-            "containers" => self.request_containers(),
-            "container-worker" => self.request_container_worker(),
-            "container-edit" => {
-                if let Err(error) = self.enable_container_edit() {
-                    self.message = error;
-                }
-            }
             "format" => self.lsp_format(),
             "rename" => {
                 if arg.is_empty() {
@@ -360,7 +294,7 @@ impl Editor {
             "undo-change" => self.undo_last_change(),
             "save-change" => self.save_changed_files_pub(),
             "e" | "e!" => {
-                if self.buf().dirty && cmd == "e" {
+                if self.buf().is_dirty() && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();
                 } else if arg.is_empty() {
                     if !self.refresh_current_resource() {

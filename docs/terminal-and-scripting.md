@@ -1,55 +1,63 @@
-# Local terminals
+# Terminals
 
-`:terminal` opens the shell selected by `SHELL` (or `/bin/sh`) in a real
-PTY. `:terminal COMMAND` runs an explicit command. In a local directory it
-uses the host; in an SSH directory with an admitted worker it runs on that
-remote host and retains the endpoint in the modeline, pane title and buffer
-list. Directory **Terminal here** (`Space a` / `:fs terminal`) uses the same
-admission decision without changing the editor's cwd. SSH without an admitted
-worker refuses. An attached container runs through its incarnation-pinned
-admitted worker; **`:container-worker`** enables tools/Search/terminal and the
-separate **`:container-edit`** verifies file authority. The separately labelled
-**Open local terminal** / `:terminal-local` is a deliberate local choice, never
-a fallback against a remote-looking path. The displayed launch directory is
-not an unverified live shell cwd and does not follow `cd`.
+Strop's terminal is Neovim's: a real PTY in a real buffer, one escape chord,
+and a NORMAL mode that is just NORMAL mode.
 
-- **Terminal input:** Esc, Ctrl-C, Ctrl-R, Ctrl-W, Alt and function keys go
-  to the child. **F2** enters editor Normal mode directly, without an
-  OS-sensitive chord; **Ctrl-\ Ctrl-N** remains an alternative (legacy
-  terminals may spell the prefix as Ctrl-4). The modeline names both paths
-  and expands a pending chord. Legacy Esc/Alt ambiguity remains an
-  outer-terminal limitation. After entering Normal, **Space w** owns pane
-  commands.
-- **Normal inspection:** ordinary motions, search, selection and yank use a
-  pinned, read-only logical text snapshot. Output continues without moving
-  that snapshot and leaves a durable attention cue; **Space a → Refresh**
-  admits the new snapshot explicitly. **i**, **I**, **a** or **A** follows live
-  input again. Other inspecting panes keep their snapshot. An exited session
-  stays readable and never restarts implicitly; **Space a → New terminal** is
-  the explicit next session.
-- **Paste:** bracketed paste follows the child's negotiated mode.
-  Otherwise, multiline/control input is held for explicit consent: enter
-  Normal mode, then **Space a → Review held paste / Send / Discard**. The
-  decision is bound to the live session and ticket, shows only a bounded safe
-  representation and appends no extra Enter. `:terminal-paste` and
-  `:terminal-paste-cancel` remain Ex shortcuts.
-- **Lifetime:** **Space a → Stop** stops the owned session and retains
-  output. Closing a split does not kill its process; hidden sessions remain
-  in `Space b`. `:qa` opens a Focus/Stop/Return review for live sessions;
-  `:qa!` stops and drains them. Deliberately detached processes outside the
-  owned terminal session can outlive it.
-- **Isolation:** child screen/clipboard/window commands cannot control the
-  outer terminal. Clipboard reads/writes are denied; explicit user
-  selection/yank is separate authority. `:w!` and `:set noro` cannot turn a
-  terminal into a writable file binding — yank into an ordinary buffer to
-  export text.
+| Keys | Effect |
+| --- | --- |
+| `Space t` | new shell in a horizontal split below, in TERMINAL mode |
+| `Space T` | new shell in the current pane (= `:terminal`) |
+| `:terminal [CMD]`, `:term` | new shell, or run `CMD` and keep its output |
+| `Ctrl-\ Ctrl-N` | TERMINAL → NORMAL (the only escape chord) |
+| `i` `I` `a` `A` | NORMAL → TERMINAL at the child's cursor |
+| `:q` | hide a running terminal; `Space b` returns to it |
+| `:bd!` | stop the child and delete the buffer |
+| `:qa` | refuses while terminals run (one notice); `:qa!` stops them and quits |
+| `:r !CMD` | insert a command's output below the cursor (vim) |
+
+**TERMINAL mode** sends every key to the child — Esc, Ctrl-C, Ctrl-W, Alt
+and function keys included. The mode chip reads `TERMINAL`; the modeline
+shows the one way out. Legacy terminals deliver `Ctrl-\` as the byte
+`0x1c` (what vim calls `Ctrl-4`); it is the same chord. Pastes go through
+as every terminal sends them: bracketed when the child enabled bracketed
+paste, raw bytes otherwise.
+
+**NORMAL mode** is a live, read-only buffer of the screen and its
+scrollback: ordinary motions, search, selection and yank work on it, and
+output keeps landing while you read. The view follows output while the
+cursor is on the last line — `k`, `Ctrl-U` or a search stop following,
+`G` resumes it, exactly as in Neovim. Positions map by stream byte, so a
+cursor or mark stays on the same text when scrollback drops rows.
+
+Buffers are named `term://{directory}//{N}:{program}` (`N` numbers sessions
+from 1 per editor) in `Space b`, pane titles and the modeline. Switching
+away and back (`Ctrl-^`, `Space b`, pane focus) restores the cursor and
+viewport and lands in NORMAL mode. An exited session stays readable with
+its exit status; `:terminal` starts a new one.
+
+The shell is `$SHELL` (or `/bin/sh`) in the current directory, running in
+the editor process. In an SSH directory with an admitted worker the
+session runs on that host as the remote user's login shell (`$SHELL -l`)
+and keeps the endpoint in its name; SSH without an admitted worker
+refuses. **Open local terminal** / `:terminal-local` is a deliberate
+local choice, never a fallback against a remote-looking path. For a
+container, run `docker exec -it <container> sh` in a terminal. The
+displayed launch directory is the one selected at launch and does not
+follow `cd`.
+
+Isolation: child screen/clipboard/window commands cannot control the
+outer terminal; clipboard reads and writes are denied (your own yank is
+separate authority). `:w!` and `:set noro` cannot turn a terminal into a
+writable file — yank into an ordinary buffer to export text. Closing a
+split does not kill its process. Deliberately detached processes outside
+the owned session can outlive it.
 
 Terminal buffers use bounded history, input and immutable snapshots. One
-focused input view controls PTY geometry; mirrors never independently
+TERMINAL-mode view controls PTY geometry; mirrors never independently
 resize it. Linux supervision requires pidfds. Source builds require
 **Zig 0.16.0** explicitly installed for the pinned static emulator;
-prebuilt users need neither Zig nor a Ghostty installation. See the
-[terminal contract](../plans/0055-embedded-terminal-tui-and-gui.md).
+prebuilt users need neither Zig nor a Ghostty installation. See
+[plan 0090 §4](../plans/0090-one-editor.md).
 
 # Headless scripts and traces
 
@@ -119,7 +127,9 @@ contain documents, pastes, service results and rendered cells. **Inspect
 before sharing.** Existing files are never overwritten. Use the recording
 version of strop for full replay: it requires a complete capture and does
 not repeat native side effects. The input-only script is different: it can
-run commands again and does not reproduce external service results.
+run commands again and does not reproduce external service results. From
+a metadata-only capture it carries the keys without the document text;
+run it against the original file (`strop headless replay.keys FILE`).
 
 Terminal content is excluded even by ordinary `--log-content`. Entering a
 private terminal boundary records an opaque marker and leaves the remaining

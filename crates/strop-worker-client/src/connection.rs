@@ -293,7 +293,7 @@ impl Conn {
     /// successful spawn alone never satisfies this. `expected_target` is
     /// the target triple the worker must report: this build's own for
     /// local transports, the admitted endpoint's for deployed workers
-    /// (WK08 — a container/SSH worker is bound to *its* target, which
+    /// (WK08 — an SSH worker is bound to *its* target, which
     /// the deploy flow verified, never to the client's platform).
     pub(crate) fn connect(
         transport: Transport,

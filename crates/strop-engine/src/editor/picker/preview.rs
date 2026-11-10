@@ -360,12 +360,9 @@ impl PreviewProbe<'_> {
             Payload::WorkspaceRoot(_)
             | Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
-            | Payload::ContainerDiscover
             | Payload::Jump { .. }
             | Payload::SearchOption(_)
-            | Payload::CodeAction(_)
-            | Payload::Container(_)
-            | Payload::FilesystemAction(_)
+            | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
             | Payload::ThemeChoice(_) => None,
@@ -421,11 +418,8 @@ impl Editor {
             Payload::WorkspaceRoot(_)
             | Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
-            | Payload::ContainerDiscover
             | Payload::SearchOption(_)
-            | Payload::CodeAction(_)
-            | Payload::Container(_)
-            | Payload::FilesystemAction(_)
+            | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
             | Payload::ThemeChoice(_) => {
@@ -531,17 +525,7 @@ impl Editor {
     /// request for this picker instance (cancelling any stale one) and
     /// launches the bounded read; the next tick picks the result up.
     fn preview_ready(&mut self, path: &strop_workspace::ResourceLocation) -> bool {
-        let container_worker = match &path.filesystem {
-            strop_workspace::Filesystem::Container(id) => self
-                .containers
-                .attached
-                .get(id.as_str())
-                .and_then(|identity| self.containers.workers.get(identity)),
-            _ => None,
-        };
-        self.preview_ready_with(path, move |location, client, token| {
-            read_resource_preview(location, client, container_worker.as_deref(), token)
-        })
+        self.preview_ready_with(path, read_resource_preview)
     }
 
     fn preview_ready_with(
@@ -682,7 +666,6 @@ impl Editor {
 fn read_resource_preview(
     location: &strop_workspace::ResourceLocation,
     client: &strop_remote::RemoteClient,
-    container_worker: Option<&crate::editor::containers::BoundWorker>,
     token: &worker::CancelToken,
 ) -> Outcome<PreparedPreview> {
     match crate::files::FileTarget::from_location(location) {
@@ -705,36 +688,6 @@ fn read_resource_preview(
                 Ok(_) => Outcome::failed(FailureKind::Unavailable, "preview too large"),
                 Err(_) if token.is_cancelled() => Outcome::Cancelled(CancelReason::Superseded),
                 Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
-            }
-        }
-        Ok(crate::files::FileTarget::Container { .. }) => {
-            const LIMIT: u64 = 512 * 1024;
-            let Some(worker) = container_worker else {
-                return Outcome::failed(
-                    FailureKind::Unavailable,
-                    "container preview needs its admitted worker",
-                );
-            };
-            let payload = match worker.read(token, location, LIMIT + 1) {
-                Ok(payload) => payload,
-                Err(error) if error.is_cancellation() || token.is_cancelled() => {
-                    return Outcome::Cancelled(CancelReason::Superseded)
-                }
-                Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-            };
-            let mut bytes = Vec::new();
-            if let Err(error) = payload.take(LIMIT + 1).read_to_end(&mut bytes) {
-                if token.is_cancelled() {
-                    return Outcome::Cancelled(CancelReason::Superseded);
-                }
-                return Outcome::failed(FailureKind::Io, error.to_string());
-            }
-            if bytes.len() as u64 > LIMIT {
-                return Outcome::failed(FailureKind::Unavailable, "preview too large");
-            }
-            match String::from_utf8(bytes) {
-                Ok(text) => Outcome::Success(PreparedPreview::from(text)),
-                Err(_) => Outcome::failed(FailureKind::InvalidInput, "preview is not UTF-8 text"),
             }
         }
         Err(error) => Outcome::failed(FailureKind::Protocol, error.to_string()),

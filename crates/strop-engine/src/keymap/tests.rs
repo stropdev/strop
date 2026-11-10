@@ -32,21 +32,25 @@ fn coverage_shape() {
     }
 }
 
-/// 0065 S2 / 0003 §5.7: every escape that dispatches out of (or into)
-/// terminal-input renders live in the `?` terminal section — the exit
-/// from terminal input can never be undiscoverable.
+/// 0090 §4 / 0003 §5.7: the terminal section opens with how to open a
+/// terminal and names the one escape chord and the re-entry keys, all
+/// live in `?` — the way in and out can never be undiscoverable.
 #[test]
-fn terminal_escapes_render_live_in_help() {
+fn terminal_section_opens_with_space_t_and_names_the_one_escape() {
     let terminal: Vec<&Binding> = BINDINGS
         .iter()
         .filter(|b| b.sections.contains(&"terminal"))
         .collect();
-    for keys in ["ctrl-\\ ctrl-n", "ctrl-4 ctrl-n", ":terminal-refresh"] {
+    assert_eq!(terminal.first().map(|b| b.keys), Some("space t"));
+    for keys in ["space t", "space T", "ctrl-\\ ctrl-n", "i I a A"] {
         assert!(
             terminal.iter().any(|b| b.live && b.keys == keys),
-            "terminal escape {keys:?} has no live row in the terminal section"
+            "terminal row {keys:?} has no live row in the terminal section"
         );
     }
+    assert!(terminal
+        .iter()
+        .all(|b| !b.keys.contains("ctrl-4") && !b.keys.contains("f2")));
 }
 
 /// The notation expands: leaders glue, alternatives fan out, a
@@ -203,7 +207,6 @@ const DISPATCHED: &[&str] = &[
     ":collection",
     ":symbols",
     ":trust",
-    ":container-worker",
     ":set",
     ":select-next",
     ":select-all",

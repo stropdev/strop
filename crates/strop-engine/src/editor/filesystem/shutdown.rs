@@ -17,12 +17,7 @@ impl Editor {
     pub(crate) fn filesystem_shutdown_error(&self) -> Option<String> {
         let stores = self.io.store_attempts().count();
         let remote_stores = self.remote_unconfirmed_save_attempts().count();
-        let container_stores = self.container_unconfirmed_save_attempts().count();
-        if self.filesystem.unconfirmed() == 0
-            && stores == 0
-            && remote_stores == 0
-            && container_stores == 0
-        {
+        if self.filesystem.unconfirmed() == 0 && stores == 0 && remote_stores == 0 {
             return None;
         }
         let mut text = String::from(
@@ -68,15 +63,6 @@ impl Editor {
                 document.generation(),
                 revision.get(),
                 file
-            ));
-        }
-        for (document, revision, location) in self.container_unconfirmed_save_attempts() {
-            text.push_str(&format!(
-                "\n  container document save: document {}:{}, revision {} — {}",
-                document.index(),
-                document.generation(),
-                revision.get(),
-                location.label()
             ));
         }
         for record in self.feedback.unresolved() {

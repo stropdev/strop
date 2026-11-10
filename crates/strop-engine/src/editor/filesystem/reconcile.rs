@@ -23,9 +23,6 @@ impl Editor {
                         location.label()
                     ));
                 }
-                if matches!(location.filesystem, Filesystem::Container(_)) {
-                    return Err("container filesystem operations are read-only by policy".into());
-                }
                 for key in self.io.open.values() {
                     if key
                         .path
@@ -238,7 +235,7 @@ impl Editor {
                     entry.buf.detach_file_binding();
                     entry.buf.name = Some(format!("detached {} — original removed", old.label()));
                     entry.buf.clear_readonly();
-                    entry.buf.dirty = true;
+                    entry.buf.mark_dirty();
                     entry.syntax_hint = Some(old.path.clone());
                     entry.source = DocumentSource::Scratch;
                 }

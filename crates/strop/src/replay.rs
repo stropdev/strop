@@ -17,6 +17,8 @@ const EXTRACT_SCHEMAS: [u32; 3] = [1, 2, 3];
 pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
     let source = io::BufReader::new(std::fs::File::open(path)?);
     let mut initial = false;
+    // metadata-only: the original file's path is still to be named
+    let mut unnamed = false;
     let mut complete = false;
     let mut ended = false;
     writeln!(
@@ -63,17 +65,26 @@ pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
                 initial = true;
             }
             Some("document") if !initial => {
-                let text = fields["text"].as_str().ok_or_else(|| {
-                    io::Error::other("reproduction needs a trace recorded with --log-content")
-                })?;
-                writeln!(out, "buffer {}", serde_json::to_string(text)?)?;
+                match fields["text"].as_str() {
+                    Some(text) => writeln!(out, "buffer {}", serde_json::to_string(text)?)?,
+                    None => metadata_only(out, document_path(fields))?,
+                }
                 initial = true;
+            }
+            Some("document") if unnamed => {
+                if let Some(path) = document_path(fields) {
+                    writeln!(out, "# Original file: {}", path.display())?;
+                    unnamed = false;
+                }
             }
             Some("input") if fields["source"] == "external" => {
                 if !initial {
-                    return Err(io::Error::other(
-                        "input precedes the initial document snapshot",
-                    ));
+                    // A metadata-only capture (no --log-content) records
+                    // keys but never document text, and its diagnostic
+                    // snapshot follows the first key (B11).
+                    metadata_only(out, None)?;
+                    initial = true;
+                    unnamed = true;
                 }
                 if fields["action"] == "quit_intent" {
                     writeln!(out, "quit-intent")?;
@@ -128,6 +139,31 @@ pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
         )?;
     }
     writeln!(out, "frame\nstate")
+}
+
+/// The path a `document` record names, when it names one.
+fn document_path(fields: &Value) -> Option<std::path::PathBuf> {
+    strop_core::path_serde::deserialize(fields.get("path")?.clone()).ok()
+}
+
+/// No document text was captured: the script carries the keys and says
+/// how to run them against the original file instead of a `buffer`.
+fn metadata_only(out: &mut dyn Write, path: Option<std::path::PathBuf>) -> io::Result<()> {
+    writeln!(
+        out,
+        "# Metadata-only trace (no --log-content): the initial document was not captured."
+    )?;
+    match path {
+        Some(path) => writeln!(
+            out,
+            "# Run against the original file: strop headless THIS-SCRIPT {}",
+            path.display()
+        ),
+        None => writeln!(
+            out,
+            "# Run against the original file: strop headless THIS-SCRIPT FILE"
+        ),
+    }
 }
 
 /// Full forensic replay (`--replay TRACE`): reconstruct the seeded editor

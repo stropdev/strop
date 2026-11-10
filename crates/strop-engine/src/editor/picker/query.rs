@@ -527,7 +527,7 @@ impl Editor {
             .docs
             .iter()
             .filter_map(|(_, document)| {
-                if !document.buf.dirty {
+                if !document.buf.is_dirty() {
                     return None;
                 }
                 let location = document.file_target(&self.cwd)?.resource_location()?;
@@ -561,12 +561,6 @@ impl Editor {
                     }
                 })
             }
-            strop_workspace::Filesystem::Container(id) => self
-                .containers
-                .attached
-                .get(id.as_str())
-                .and_then(|identity| self.containers.workers.get(identity))
-                .map(|worker| strop_picker::SearchWorker::Container(worker.worker().clone())),
             _ => None,
         };
         let worker = match self.source_worker() {
