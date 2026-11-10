@@ -4,7 +4,7 @@ use super::{
 use crate::{
     client::Client,
     launch::Launch,
-    model::{Effect, Geometry, Phase, SessionId, Update},
+    model::{Geometry, Phase, SessionId, Update},
     Error,
 };
 use std::{
@@ -95,8 +95,6 @@ impl Start {
             pending: None,
             inflight: VecDeque::new(),
             acknowledged: 0,
-            held_paste: None,
-            confirmation: 0,
         };
         match actor.drive() {
             Ok(update) => update,
@@ -118,18 +116,12 @@ impl Start {
         }
     }
 }
-struct HeldPaste {
-    ticket: u64,
-    value: strop_core::frontend_input::Input,
-}
 struct Actor {
     client: Client,
     start: Start,
     pending: Option<Request>,
     inflight: VecDeque<(u64, Permit)>,
     acknowledged: u64,
-    held_paste: Option<HeldPaste>,
-    confirmation: u64,
 }
 impl Drop for Actor {
     fn drop(&mut self) {
@@ -225,92 +217,26 @@ impl Actor {
                     break;
                 };
                 let admitted = match &request.intent {
-                    Intent::Input { value, confirmed } => {
-                        self.client.input(value, *confirmed).map(Some)
-                    }
-                    Intent::Resize(geometry) => self.client.resize(*geometry).map(Some),
-                    Intent::Focus(focused) => self.client.focus(*focused).map(Some),
-                    Intent::PasteDecision { ticket, accept } => {
-                        match self
-                            .held_paste
-                            .as_ref()
-                            .filter(|held| held.ticket == *ticket)
-                        {
-                            Some(held) if *accept => self.client.input(&held.value, true).map(Some),
-                            Some(_) => Ok(None),
-                            None => Err(Error::Unavailable(
-                                "paste confirmation is stale or was cleared".into(),
-                            )),
-                        }
-                    }
+                    Intent::Input(value) => self.client.input(value),
+                    Intent::Resize(geometry) => self.client.resize(*geometry),
+                    Intent::Focus(focused) => self.client.focus(*focused),
                 };
                 match admitted {
                     Ok(sequence) => {
                         if let Some(request) = self.pending.take() {
-                            let clears = matches!(
-                                request.intent,
-                                Intent::PasteDecision { .. }
-                                    | Intent::Input {
-                                        value: strop_core::frontend_input::Input::Paste(_),
-                                        ..
-                                    }
-                            );
-                            let cleared = if clears {
-                                self.held_paste.take().map(|held| held.ticket)
-                            } else {
-                                None
-                            };
-                            let mut update = self.status(self.client.phase().clone(), None);
-                            if let Some(ticket) = cleared {
-                                update
-                                    .effects
-                                    .push(Effect::PasteConfirmationCleared { ticket });
-                            }
-                            if let Some(sequence) = sequence {
-                                if sequence <= self.acknowledged {
-                                    self.start
-                                        .mailbox
-                                        .publish_with(update, || drop(request.permit));
-                                } else {
-                                    self.inflight.push_back((sequence, request.permit));
-                                    if cleared.is_some() {
-                                        self.start.mailbox.publish(update);
-                                    }
-                                }
-                            } else {
-                                update.warning = Some("held terminal paste discarded".into());
+                            if sequence <= self.acknowledged {
+                                let update = self.status(self.client.phase().clone(), None);
                                 self.start
                                     .mailbox
                                     .publish_with(update, || drop(request.permit));
+                            } else {
+                                self.inflight.push_back((sequence, request.permit));
                             }
                         }
                     }
                     Err(Error::InputFull) => {
                         filled_turn = false;
                         break;
-                    }
-                    Err(Error::PasteNeedsConfirmation) => {
-                        self.confirmation = self
-                            .confirmation
-                            .checked_add(1)
-                            .ok_or(Error::Capacity("paste confirmation IDs exhausted"))?;
-                        let Some(request) = self.pending.take() else {
-                            return Err(Error::State("missing paste admission"));
-                        };
-                        let Intent::Input { value, .. } = request.intent else {
-                            return Err(Error::State("confirmed paste was rejected"));
-                        };
-                        self.held_paste = Some(HeldPaste {
-                            ticket: self.confirmation,
-                            value,
-                        });
-                        let mut update = self.status(self.client.phase().clone(), Some("paste held: Ctrl-\\ Ctrl-N, then :terminal-paste to confirm or :terminal-paste-cancel to discard".into()));
-                        update.effects.push(Effect::PasteConfirmationRequested {
-                            ticket: self.confirmation,
-                        });
-                        self.start
-                            .mailbox
-                            .publish_with(update, || drop(request.permit));
                     }
                     Err(error @ (Error::Native { .. } | Error::State(_) | Error::Protocol(_))) => {
                         return Err(error)

@@ -1,7 +1,8 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-use strop_core::frontend_input::Key;
+use crate::editor::Mode;
+use strop_core::frontend_input::{Input, Key, KeyCode, KeyEvent, Modifiers};
 use strop_core::Buffer;
 
 fn drain_until(editor: &mut Editor, condition: impl Fn(&Editor) -> bool, what: &str) {
@@ -22,226 +23,176 @@ fn drain_until(editor: &mut Editor, condition: impl Fn(&Editor) -> bool, what: &
 
 fn live_text(editor: &Editor, document: DocumentId) -> String {
     editor
-        .terminal_frame(document, true)
+        .terminal_frame(document)
         .map(|frame| frame.projection.to_string())
         .unwrap_or_default()
 }
 
-fn choose_open_action(editor: &mut Editor, label: &str) {
-    let (picker, index) = {
-        let glue = editor.picker.as_ref().expect("context action picker");
-        let index = glue
-            .picker
-            .items
-            .iter()
-            .position(|item| item.text.contains(label))
-            .unwrap_or_else(|| panic!("missing {label:?} action: {:?}", glue.picker.items));
-        (glue.id, index)
-    };
-    editor.accept_filesystem_action(picker, index);
+fn ctrl(code: KeyCode) -> Input {
+    Input::Key(KeyEvent {
+        code,
+        modifiers: Modifiers {
+            control: true,
+            ..Default::default()
+        },
+        ..KeyEvent::press(code)
+    })
 }
 
-fn inspect(editor: &mut Editor) {
-    editor.feed_terminal(strop_core::frontend_input::Input::Key(
-        strop_core::frontend_input::KeyEvent::press(strop_core::frontend_input::KeyCode::Function(
-            2,
-        )),
-    ));
+fn to_normal(editor: &mut Editor) {
+    editor.feed_terminal(ctrl(KeyCode::Char('\\')));
+    editor.feed_terminal(ctrl(KeyCode::Char('n')));
     assert!(!editor.terminal_input_active());
 }
 
-#[test]
-fn real_pty_delayed_output_preserves_selection_yank_until_refresh_or_return() {
-    use strop_core::frontend_input::Input;
-    let directory = tempfile::tempdir().unwrap();
-    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
-    // A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
-    // bracketed paste, which changes whether a multiline paste is held.
+fn line(editor: &Editor) -> usize {
+    editor.buf().line_of(editor.head())
+}
+
+/// A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
+/// bracketed paste and prints prompts of its own.
+fn running_sh(editor: &mut Editor) -> DocumentId {
     editor.feed_text(":terminal exec /bin/sh\r");
     let document = editor.current();
     drain_until(
-        &mut editor,
+        editor,
         |editor| matches!(editor.terminal_phase(document), Some(Phase::Running)),
         "shell startup",
     );
+    document
+}
+
+/// 0090 §4 on a real PTY: NORMAL is live — delayed output lands in the
+/// buffer without any refresh — and following is the cursor being on
+/// the last line: `G` follows a scrolling stream, `k` stops.
+#[test]
+fn real_pty_normal_view_is_live_and_follows_from_the_last_line() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    editor.view_rows = 12;
+    let document = running_sh(&mut editor);
     editor.feed_terminal(Input::Text(
         "(sleep 0.15; printf 'DELAYED-%s\\n' DONE) &\n".into(),
     ));
-    inspect(&mut editor);
-    editor.feed_text("0v$y");
-    let yanked = editor.register(None).text.clone();
-    let pinned = editor.buf().text().to_string();
-    editor.feed_text("l");
+    to_normal(&mut editor);
+    editor.feed_text("gg");
+    assert_eq!(line(&editor), 0);
     drain_until(
         &mut editor,
-        |editor| live_text(editor, document).contains("DELAYED-DONE"),
-        "delayed output under a pinned selection",
+        |editor| editor.buf().text().to_string().contains("DELAYED-DONE"),
+        "delayed output landing in the live buffer",
     );
-    assert_eq!(editor.buf().text().to_string(), pinned);
-    assert_eq!(editor.register(None).text, yanked);
-    assert!(editor.terminal_has_new_output(document));
-    assert!(editor
-        .feedback()
-        .iter()
-        .any(|record| { record.summary().contains("new output") && record.unresolved() }));
-
-    editor.feed_text(" a");
-    choose_open_action(&mut editor, "Refresh pinned terminal output");
-    assert!(editor.buf().text().to_string().contains("DELAYED-DONE"));
-    assert!(!editor.terminal_has_new_output(document));
-    assert_eq!(editor.register(None).text, yanked);
+    assert_eq!(line(&editor), 0, "a cursor off the last line stays put");
+    // G: the view follows a stream that scrolls into history. The chord
+    // lands mid-stream, as a user's would, so NORMAL starts on the last
+    // (bottom) row the child is writing to.
+    editor.feed_text("G");
+    let last = editor.buf().last_content_line();
+    assert_eq!(line(&editor), last);
     editor.feed(Key::Char('i'));
-    assert!(editor.terminal_input_active());
+    editor.feed_terminal(Input::Text(
+        "for n in $(seq 1 60); do echo $n; sleep 0.01; done; printf 'SEQ-%s\\n' DONE\n".into(),
+    ));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("\n20 "),
+        "the stream reaching the bottom row",
+    );
+    to_normal(&mut editor);
+    assert_eq!(line(&editor), editor.buf().last_content_line());
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("SEQ-DONE"),
+        "the sequence completing",
+    );
+    assert!(
+        editor.buf().last_content_line() > last,
+        "the stream grew the buffer"
+    );
+    assert_eq!(line(&editor), editor.buf().last_content_line());
+    // k: stop following; output from a background job grows the buffer
+    // below a cursor that keeps its stream position.
+    editor.feed(Key::Char('i'));
+    editor.feed_terminal(Input::Text(
+        "(sleep 0.3; seq 61 90; printf 'SEQ2-%s\\n' DONE) &\n".into(),
+    ));
+    to_normal(&mut editor);
+    editor.feed_text("k");
+    let kept = line(&editor);
+    let grown = editor.buf().last_content_line();
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("SEQ2-DONE"),
+        "the second sequence completing",
+    );
+    assert!(editor.buf().last_content_line() > grown);
+    assert_eq!(line(&editor), kept);
+    assert!(kept < editor.buf().last_content_line());
+}
+
+/// 0090 §4: pastes go to the child as every terminal sends them — raw
+/// bytes while the child has not negotiated bracketed paste, bracketed
+/// once it has. No held paste, no consent ticket.
+#[test]
+fn real_pty_pastes_are_raw_or_bracketed_by_the_child_mode() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    let document = running_sh(&mut editor);
+    editor.feed_terminal(Input::Paste("printf 'PASTED-%s\\n' RAW\n".into()));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("PASTED-RAW"),
+        "a raw multiline paste executing",
+    );
+    editor.feed_terminal(Input::Text(
+        "stty -echo; printf '\\033[?2004h'; printf 'BRACKET-%s\\n' READY; cat -v\n".into(),
+    ));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("BRACKET-READY"),
+        "bracketed paste negotiated",
+    );
+    // The canonical tty hands `cat` whole lines: the newline after the
+    // paste releases the bracketed line in one piece.
+    editor.feed_terminal(Input::Paste("alpha".into()));
+    editor.feed_terminal(Input::Text("\n".into()));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, document).contains("^[[200~alpha^[[201~"),
+        "the bracketed paste reaching the child",
+    );
     assert_eq!(editor.terminals.entries.len(), 1);
 }
 
+/// 0090 §4 (0089 B7/T7): a hidden running session makes `:qa` one
+/// notice; `:qa!` stops it and quits.
 #[test]
-fn real_pty_paste_review_decisions_are_redacted_and_ticket_scoped() {
-    use strop_core::frontend_input::Input;
-    let directory = tempfile::tempdir().unwrap();
-    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
-    // A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
-    // bracketed paste, which changes whether a multiline paste is held.
-    editor.feed_text(":terminal exec /bin/sh\r");
-    let document = editor.current();
-    drain_until(
-        &mut editor,
-        |editor| matches!(editor.terminal_phase(document), Some(Phase::Running)),
-        "shell startup",
-    );
-    let accepted = "printf 'ACCEPTED-%s\\n' PASTE\n";
-    editor.feed_terminal(Input::Paste(accepted.into()));
-    drain_until(
-        &mut editor,
-        |editor| editor.terminal_paste_held(document),
-        "held paste",
-    );
-    let session = editor.terminal_document(document).unwrap().session;
-    let accepted_ticket = editor.terminals.entries[&session]
-        .paste
-        .as_ref()
-        .unwrap()
-        .ticket;
-    inspect(&mut editor);
-    editor.feed_text("l");
-    assert!(editor.terminal_paste_held(document));
-    assert!(editor
-        .feedback()
-        .iter()
-        .all(|record| !record.detail().contains("ACCEPTED")));
-    editor.feed_text(" a");
-    let rows = &editor.picker.as_ref().unwrap().picker.items;
-    assert!(rows
-        .iter()
-        .any(|item| item.text.contains("Review held paste")));
-    assert!(rows
-        .iter()
-        .any(|item| item.text.contains("Send held paste")));
-    assert!(rows
-        .iter()
-        .any(|item| item.text.contains("Discard held paste")));
-    assert!(!rows.iter().any(|item| item.text.contains("ACCEPTED")));
-    choose_open_action(&mut editor, "Review held paste");
-    assert!(editor.message.contains("content redacted"));
-    assert!(!editor.message.contains("ACCEPTED"));
-    editor.context_actions();
-    choose_open_action(&mut editor, "Send held paste");
-    drain_until(
-        &mut editor,
-        |editor| live_text(editor, document).contains("ACCEPTED-PASTE"),
-        "accepted paste without an added Enter",
-    );
-    drain_until(
-        &mut editor,
-        |editor| !editor.terminal_paste_held(document),
-        "accepted paste ticket clearing",
-    );
-
-    editor.feed_terminal(Input::Paste("printf 'DISCARDED-%s\\n' PASTE\n".into()));
-    drain_until(
-        &mut editor,
-        |editor| editor.terminal_paste_held(document),
-        "second held paste",
-    );
-    let discarded_ticket = editor.terminals.entries[&session]
-        .paste
-        .as_ref()
-        .unwrap()
-        .ticket;
-    inspect(&mut editor);
-    editor.context_actions();
-    choose_open_action(&mut editor, "Discard held paste");
-    drain_until(
-        &mut editor,
-        |editor| !editor.terminal_paste_held(document),
-        "discarded paste ticket clearing",
-    );
-    editor.feed(Key::Char('i'));
-    editor.feed_terminal(Input::Text("printf 'AFTER-%s\\n' DISCARD\n".into()));
-    drain_until(
-        &mut editor,
-        |editor| live_text(editor, document).contains("AFTER-DISCARD"),
-        "input after discard",
-    );
-    assert!(!live_text(&editor, document).contains("DISCARDED-PASTE"));
-
-    editor.terminal_paste_decision_for(session, accepted_ticket, Some(true));
-    assert!(editor.message.contains("no held paste") || editor.message.contains("stale"));
-    editor.feed_terminal(Input::Text("exit 0\n".into()));
-    drain_until(
-        &mut editor,
-        |editor| matches!(editor.terminal_phase(document), Some(Phase::Exited { .. })),
-        "session exit",
-    );
-    let before = live_text(&editor, document);
-    editor.terminal_paste_decision_for(session, discarded_ticket, Some(true));
-    assert!(editor.message.contains("stale"));
-    assert_eq!(live_text(&editor, document), before);
-    assert!(!editor.terminal_input_active());
-}
-
-#[test]
-fn real_pty_hidden_session_quit_review_focus_stop_and_return_do_not_implicitly_kill() {
+fn real_pty_hidden_session_blocks_qa_with_one_notice_until_qa_bang() {
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
     let origin = editor.current();
-    // A fixed POSIX shell: a readline shell (bash ≥ 5.1, fish) enables
-    // bracketed paste, which changes whether a multiline paste is held.
-    editor.feed_text(":terminal exec /bin/sh\r");
-    let terminal = editor.current();
-    drain_until(
-        &mut editor,
-        |editor| matches!(editor.terminal_phase(terminal), Some(Phase::Running)),
-        "shell startup",
-    );
+    let terminal = running_sh(&mut editor);
     assert!(editor.close_buffer(false));
     assert_eq!(editor.current(), origin);
     assert!(editor.terminal_phase(terminal).unwrap().live());
 
     editor.feed_text(":qa\r");
-    assert!(editor.picker.is_some());
-    choose_open_action(&mut editor, "Return without stopping");
+    assert!(editor.picker.is_none());
     assert!(!editor.should_quit());
+    assert_eq!(editor.message, "1 terminal running — :qa! stops them");
     assert!(editor.terminal_phase(terminal).unwrap().live());
 
-    editor.feed_text(":qa\r");
-    choose_open_action(&mut editor, "Focus terminal session");
-    assert_eq!(editor.current(), terminal);
-    assert!(editor.terminal_phase(terminal).unwrap().live());
-    assert!(editor.close_buffer(false));
-
-    editor.feed_text(":qa\r");
-    choose_open_action(&mut editor, "Stop terminal session");
+    editor.feed_text(":qa!\r");
+    assert!(editor.should_quit());
     drain_until(
         &mut editor,
         |editor| matches!(editor.terminal_phase(terminal), Some(Phase::Exited { .. })),
-        "explicit stop",
+        "the stopped shell",
     );
-    assert!(!editor.should_quit());
 }
 
 #[test]
-fn real_pty_sessions_number_from_one_per_editor() {
+fn real_pty_sessions_number_from_one_per_editor_in_term_names() {
     // 0088 U12: unrelated worker requests (opens, git, discovery) must not
     // leak into the user-facing number — the first terminal is #1.
     let directory = tempfile::tempdir().unwrap();
@@ -250,27 +201,20 @@ fn real_pty_sessions_number_from_one_per_editor() {
         editor.worker_ids.allocate().unwrap();
     }
     for number in 1..=2 {
-        editor.feed_text(":terminal exec /bin/sh\r");
-        let terminal = editor.current();
-        drain_until(
-            &mut editor,
-            |editor| matches!(editor.terminal_phase(terminal), Some(Phase::Running)),
-            "shell startup",
-        );
-        let expected = format!("terminal #{number}");
-        assert_eq!(editor.buf().name.as_deref(), Some(expected.as_str()));
-        let label = editor.doc(terminal).label(directory.path());
+        let terminal = running_sh(&mut editor);
+        let name = editor.buf().name.clone().unwrap();
+        assert!(name.starts_with("term://"), "{name}");
         assert!(
-            label.starts_with(&format!("{expected} · launch ")),
-            "{label}"
+            name.ends_with(&format!("//{number}:exec /bin/sh")),
+            "{name}"
         );
+        assert_eq!(editor.doc(terminal).label(directory.path()), name);
         assert!(editor.close_buffer(false));
     }
 }
 
 #[test]
 fn real_pty_nested_application_keys_stay_child_owned() {
-    use strop_core::frontend_input::Input;
     let directory = tempfile::tempdir().unwrap();
     let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
     editor.feed_text(":terminal printf 'READY\\n'; stty raw -echo; cat -v\r");
@@ -292,10 +236,51 @@ fn real_pty_nested_application_keys_stay_child_owned() {
         },
         "nested application key output",
     );
-    inspect(&mut editor);
-    let output = live_text(&editor, document);
+    to_normal(&mut editor);
+    let output = editor.buf().text().to_string();
     for expected in ["^[", "^C", "^W", "^[[5~", "^B", "^F"] {
         assert!(output.contains(expected), "missing {expected:?}: {output}");
     }
     assert_eq!(editor.terminals.entries.len(), 1);
+}
+
+/// 0090 §4: `Space t` opens a new session in a horizontal split below,
+/// in TERMINAL mode; re-entry through the alternate buffer lands in
+/// NORMAL with the view restored.
+#[test]
+fn real_pty_space_t_splits_below_in_terminal_mode_and_re_entry_is_normal() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), directory.path().to_owned());
+    let origin = editor.current();
+    editor.feed_text(" t");
+    assert_eq!(editor.panes.len(), 2);
+    assert_eq!(editor.active_pane, 1);
+    assert_eq!(editor.layout, crate::editor::LayoutDir::Column);
+    assert_eq!(editor.panes[0].doc, origin);
+    let terminal = editor.current();
+    assert!(editor.terminal_document(terminal).is_some());
+    assert!(editor.terminal_input_active());
+    assert!(crate::editor::state_json(&editor).contains("\"mode\":\"TERMINAL\""));
+    drain_until(
+        &mut editor,
+        |editor| matches!(editor.terminal_phase(terminal), Some(Phase::Running)),
+        "the split shell",
+    );
+    editor.feed_terminal(Input::Text("printf 'SPLIT-%s\\n' OK\n".into()));
+    drain_until(
+        &mut editor,
+        |editor| live_text(editor, terminal).contains("SPLIT-OK"),
+        "output in the split",
+    );
+    to_normal(&mut editor);
+    editor.feed_text("gg");
+    editor.feed(Key::CtrlCaret);
+    assert_eq!(editor.current(), origin);
+    editor.feed(Key::CtrlCaret);
+    assert_eq!(editor.current(), terminal);
+    assert!(!editor.terminal_input_active());
+    assert_eq!(editor.mode, Mode::Normal);
+    assert_eq!(line(&editor), 0);
+    editor.feed(Key::Char('A'));
+    assert!(editor.terminal_input_active());
 }

@@ -30,8 +30,6 @@ pub enum Error {
     Protocol(String),
     #[error("terminal input queue is full; input was not admitted")]
     InputFull,
-    #[error("terminal paste contains control or multiline input; confirm before sending")]
-    PasteNeedsConfirmation,
     #[error("terminal session is no longer running")]
     Closed,
 }

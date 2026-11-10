@@ -188,18 +188,6 @@ impl Editor {
         }
     }
 
-    pub(crate) fn open_terminal_quit_review(&mut self) {
-        let choices = self
-            .terminal_quit_actions()
-            .into_iter()
-            .map(ContextChoice::Terminal)
-            .collect();
-        self.open_context_actions(
-            choices,
-            "live terminals: Focus, Stop, or Return; quit does not kill implicitly",
-        );
-    }
-
     fn open_context_actions(&mut self, choices: Vec<ContextChoice>, message: &str) {
         let items = choices
             .iter()

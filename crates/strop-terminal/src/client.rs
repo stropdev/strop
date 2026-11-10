@@ -202,15 +202,11 @@ impl Client {
         Ok(())
     }
 
-    pub fn input(
-        &mut self,
-        input: &strop_core::frontend_input::Input,
-        confirmed: bool,
-    ) -> Result<u64, Error> {
+    pub fn input(&mut self, input: &strop_core::frontend_input::Input) -> Result<u64, Error> {
         if self.phase != Phase::Running {
             return Err(Error::Closed);
         }
-        let emission = self.vt.input(input, confirmed)?;
+        let emission = self.vt.input(input)?;
         let sequence = self.feed(&emission.reply)?;
         self.effects(emission.effects);
         Ok(sequence)

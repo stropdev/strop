@@ -50,9 +50,19 @@ impl Launch {
     /// A shell launch for a non-local namespace (0058 WK12): never the
     /// editor's environment — a local capture forwarded to a remote host
     /// would leak it. The remote gets the terminal identity variables and
-    /// nothing else; its own profile supplies the rest.
+    /// nothing else; its own profile supplies the rest. The editor cannot
+    /// know the remote user's shell, so `/bin/sh` resolves it there and
+    /// execs it as a login shell (0090 §4, B19) — the user lands in their
+    /// own shell with their own profile, never a bare `sh`.
     pub fn shell_remote(directory: PathBuf, command: Option<OsString>) -> Self {
-        let arguments = command.map_or_else(Vec::new, |command| vec!["-c".into(), command]);
+        let mut arguments: Vec<OsString> = vec![
+            "-c".into(),
+            "exec \"${SHELL:-/bin/sh}\" -l \"$@\"".into(),
+            "strop-terminal".into(),
+        ];
+        if let Some(command) = command {
+            arguments.extend(["-c".into(), command]);
+        }
         let environment = vec![
             ("TERM".into(), "xterm-256color".into()),
             ("TERM_PROGRAM".into(), "strop".into()),

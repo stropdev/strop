@@ -154,12 +154,19 @@ fn render_title_border(
         .unwrap_or(editor.cwd());
     let name = document.label(root);
     let w = usize::from(rect.width);
+    // A terminal buffer is read-only by nature, not by flag: `[RO]` would
+    // say nothing (0090 §4).
+    let readonly = document.buf.readonly
+        && !matches!(
+            document.source,
+            strop_engine::editor::DocumentSource::Terminal(_)
+        );
     // `╭ N ` + name + flags + ` ─╮`: the flags and corners are reserved
     // before the name clips, so focus, dirty and read-only survive narrow.
     let flags = format!(
         "{}{}",
         if document.buf.dirty { " ●" } else { "" },
-        if document.buf.readonly { " [RO]" } else { "" }
+        if readonly { " [RO]" } else { "" }
     );
     let number = format!("{} ", index + 1);
     let fixed = 2 + super::clip::width(&number) + super::clip::width(&flags);
@@ -193,7 +200,7 @@ fn render_title_border(
     if document.buf.dirty {
         spans.push(Span::styled(" ●", Style::default().fg(t.warning)));
     }
-    if document.buf.readonly {
+    if readonly {
         spans.push(Span::styled(" [RO]", Style::default().fg(t.warning)));
     }
     if closes {

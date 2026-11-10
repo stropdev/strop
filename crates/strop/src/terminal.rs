@@ -161,7 +161,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             let terminal_cursor = (editor.input_owner() == editor::InputOwner::Terminal)
                 .then(|| {
                     editor
-                        .terminal_frame(editor.current(), true)
+                        .terminal_frame(editor.current())
                         .map(|frame| frame.cursor)
                 })
                 .flatten();

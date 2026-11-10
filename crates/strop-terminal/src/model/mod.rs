@@ -219,8 +219,6 @@ pub enum Effect {
     Bell,
     ClipboardWriteDenied,
     HostControlDenied,
-    PasteConfirmationRequested { ticket: u64 },
-    PasteConfirmationCleared { ticket: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

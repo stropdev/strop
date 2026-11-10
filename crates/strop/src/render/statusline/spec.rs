@@ -62,39 +62,23 @@ pub(super) fn spec(editor: &Editor) -> String {
         .unwrap_or_default()
 }
 
-/// Terminal panes: the keys that move you between the child and the
-/// editor, as whole chords (rule 10), plus attention badges for pinned
-/// output and a held paste.
+/// Terminal panes: the one escape chord while the child owns the keys
+/// (rule 10: whole chords), and the phase once the session has ended.
+/// NORMAL on a live terminal is plain NORMAL — no hints (0090 §4).
 pub(super) fn terminal_hints(editor: &Editor) -> (Vec<(String, &'static str)>, Vec<&'static str>) {
     let Some(phase) = editor.terminal_phase(editor.current()) else {
         return (Vec::new(), Vec::new());
     };
-    let input = editor.terminal_input_active();
-    let live = phase.live();
     let mut hints = Vec::new();
     let mut attention = Vec::new();
     if editor.terminal_prefix_hint().is_some() {
         // the escape chord pends: name its completion and the fallthrough
-        hints.push(("ctrl-n".to_owned(), "inspect"));
+        hints.push(("ctrl-n".to_owned(), "NORMAL"));
         hints.push(("any other key".to_owned(), "sends to child"));
-        return (hints, attention);
-    }
-    if input {
-        hints.push(("F2".to_owned(), "inspect"));
-        hints.push(("ctrl-\\ ctrl-n".to_owned(), "inspect"));
-    } else if live {
-        hints.push(("i".to_owned(), "input"));
-        if editor.terminal_has_new_output(editor.current()) {
-            attention.push("out+");
-            hints.push(("space a".to_owned(), "refresh"));
-        }
-    } else {
+    } else if editor.terminal_input_active() {
+        hints.push(("ctrl-\\ ctrl-n".to_owned(), "NORMAL"));
+    } else if !phase.live() {
         attention.push(phase_label(phase));
-        hints.push(("space a".to_owned(), "new terminal"));
-    }
-    if editor.terminal_paste_held(editor.current()) {
-        attention.push("paste+");
-        hints.push(("space a".to_owned(), "review paste"));
     }
     (hints, attention)
 }

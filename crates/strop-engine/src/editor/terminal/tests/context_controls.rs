@@ -7,7 +7,8 @@ fn terminal_context_controls_and_denial_stay_owner_scoped() {
     let session = editor.terminal_document(document).unwrap().session;
     editor.feed_text(" a");
     let rows = &editor.picker.as_ref().unwrap().picker.items;
-    assert!(rows.iter().any(|item| item.text.contains("Refresh pinned")));
+    assert!(!rows.iter().any(|item| item.text.contains("Refresh")));
+    assert!(!rows.iter().any(|item| item.text.contains("paste")));
     assert!(rows
         .iter()
         .any(|item| item.text.contains("Select terminal session")));

@@ -78,9 +78,8 @@ impl Budget {
     }
 }
 enum Intent {
-    Input { value: Input, confirmed: bool },
+    Input(Input),
     Resize(Geometry),
-    PasteDecision { ticket: u64, accept: bool },
     Focus(bool),
 }
 struct Request {
@@ -188,7 +187,7 @@ impl Service {
         })
     }
 
-    pub fn input(&self, value: Input, confirmed: bool) -> Result<(), Error> {
+    pub fn input(&self, value: Input) -> Result<(), Error> {
         let bytes = match &value {
             Input::Key(_) => 0,
             Input::Text(text) | Input::Paste(text) => text.capacity(),
@@ -196,16 +195,13 @@ impl Service {
         if bytes > MAX_INPUT_BYTES {
             return Err(Error::Capacity("terminal input"));
         }
-        self.send(Intent::Input { value, confirmed }, bytes)
+        self.send(Intent::Input(value), bytes)
     }
     pub fn resize(&self, geometry: Geometry) -> Result<(), Error> {
         if !geometry.valid() {
             return Err(Error::Capacity("terminal geometry"));
         }
         self.send(Intent::Resize(geometry), 0)
-    }
-    pub fn decide_paste(&self, ticket: u64, accept: bool) -> Result<(), Error> {
-        self.send(Intent::PasteDecision { ticket, accept }, 0)
     }
     pub fn focus(&self, focused: bool) -> Result<(), Error> {
         self.send(Intent::Focus(focused), 0)

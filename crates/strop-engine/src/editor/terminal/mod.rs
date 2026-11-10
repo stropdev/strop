@@ -1,6 +1,10 @@
-//! Editor ownership of terminal sessions. PTY handles live on the namespace's
-//! admitted worker (0058 WK12); this state holds bounded service handles and
-//! immutable publications, and emulation/presentation stay engine-owned.
+//! Editor ownership of terminal sessions (0090 §4, Neovim's model). A
+//! terminal is a live buffer: every published frame lands in the
+//! document, NORMAL views follow output while their cursor sits on the
+//! last line, and TERMINAL mode hands every key to the child. The PTY
+//! runs in-process for local sessions and on the namespace's admitted
+//! worker for remote ones; this state holds bounded service handles and
+//! the installed frame, and emulation/presentation stay engine-owned.
 pub(crate) mod actions;
 mod input;
 mod lifecycle;
@@ -28,28 +32,33 @@ pub struct TerminalDocument {
     pub session: SessionId,
     /// Immutable admitted launch identity. Shell titles and reported cwd never mutate it.
     pub launch: strop_workspace::ResourceLocation,
-    /// The buffer and all Normal inspection views use this same generation.
+    /// The published frame whose projection is the buffer's text — the
+    /// one generation every view of the document reads.
     pub frame: Option<Arc<Frame>>,
 }
-#[derive(Debug, Clone)]
-pub(super) struct HeldPaste {
-    pub ticket: u64,
+
+/// The view a terminal buffer left behind when the user switched away
+/// (0090 §4: re-entry restores cursor and viewport, never 1:1).
+/// Positions are stream bytes — `origin + byte` — so a frame whose
+/// scrollback moved on still maps them to the same content.
+#[derive(Debug, Clone, Copy)]
+struct SavedView {
+    head: u64,
+    top: u64,
+    /// The cursor was on the last line (or the view was in TERMINAL
+    /// mode): re-entry keeps following output.
+    following: bool,
 }
-impl HeldPaste {
-    pub fn review(&self) -> String {
-        "held paste (content redacted) · multiline/control input · ticket scoped".into()
-    }
-}
+
 struct Entry {
     document: DocumentId,
     phase: Phase,
-    live: Option<Arc<Frame>>,
     service: Option<Service>,
     launch: strop_workspace::ResourceLocation,
     title: Option<String>,
     geometry: Geometry,
-    paste: Option<HeldPaste>,
     keyboard: u8,
+    view: Option<SavedView>,
 }
 struct Prefix {
     session: SessionId,
@@ -66,7 +75,7 @@ pub(crate) struct State {
     pub capture: bool,
     pub keyboard: u8,
     /// The last issued session number. Sessions number from 1 per editor
-    /// (0088 U12): the number is what `terminal #N` shows, and it never
+    /// (0088 U12): the number is what `term://…//N:` shows, and it never
     /// repeats, so a stale record can never bind to a later launch.
     last_session: u64,
 }
@@ -95,12 +104,41 @@ impl State {
     pub fn live(&self) -> bool {
         self.entries.values().any(|entry| entry.phase.live())
     }
+    /// Live sessions, for the `:qa` notice.
+    pub fn live_count(&self) -> usize {
+        self.entries
+            .values()
+            .filter(|entry| entry.phase.live())
+            .count()
+    }
     /// The next per-editor session number; `None` once the space is spent.
     fn next_session(&mut self) -> Option<SessionId> {
         self.last_session = self.last_session.checked_add(1)?;
         Some(SessionId::new(self.last_session))
     }
 }
+
+/// Neovim's buffer name for a terminal: `term://{cwd}//{N}:{program}`,
+/// where `N` is the per-editor session number (there is no pid for a
+/// remote child) and `program` is the launched command or shell.
+pub(crate) fn terminal_name(
+    session: SessionId,
+    launch: &strop_workspace::ResourceLocation,
+    program: &str,
+) -> String {
+    let directory = match launch.filesystem {
+        strop_workspace::Filesystem::Local => {
+            strop_workspace::directory::display_path(&launch.path)
+        }
+        _ => launch.label(),
+    };
+    format!(
+        "term://{directory}//{}:{}",
+        session.get(),
+        strop_core::layout::printable_text(program)
+    )
+}
+
 impl Editor {
     pub fn terminal_document(&self, document: DocumentId) -> Option<&TerminalDocument> {
         match &self.doc(document).source {
@@ -122,13 +160,10 @@ impl Editor {
                     .is_some_and(|entry| entry.phase.live())
             })
     }
-    pub fn terminal_frame(&self, document: DocumentId, live: bool) -> Option<&Arc<Frame>> {
-        let terminal = self.terminal_document(document)?;
-        if live {
-            self.terminals.entries.get(&terminal.session)?.live.as_ref()
-        } else {
-            terminal.frame.as_ref()
-        }
+    /// The installed frame: the latest publication for a live session,
+    /// the final one for an exited session.
+    pub fn terminal_frame(&self, document: DocumentId) -> Option<&Arc<Frame>> {
+        self.terminal_document(document)?.frame.as_ref()
     }
     pub fn terminal_phase(&self, document: DocumentId) -> Option<&Phase> {
         let terminal = self.terminal_document(document)?;
@@ -241,8 +276,8 @@ fn fixture_frame(
 
 #[cfg(any(test, feature = "test-support"))]
 impl Editor {
-    /// A synthetic terminal with one styled frame and no worker or PTY —
-    /// the deterministic shape journeys and surface goldens drive (0065).
+    /// A synthetic terminal with one styled frame and no PTY — the
+    /// deterministic shape journeys and surface goldens drive (0065).
     /// Rows are (text, style) pairs mapped like the VT projection: wide
     /// clusters get a continuation cell and every row is space-padded to
     /// the geometry, as `read_row` produces.
@@ -268,12 +303,13 @@ impl Editor {
         let session = self.terminals.next_session().unwrap();
         let frame = fixture_frame(session, self.presentation.theme, rows, 1, 0);
         let geometry = frame.geometry;
-        let mut document =
-            super::Document::output(strop_core::Buffer::from_snapshot(frame.projection.clone()));
+        let mut buffer = strop_core::Buffer::from_snapshot(frame.projection.clone());
+        buffer.name = Some(terminal_name(session, &launch, "sh"));
+        let mut document = super::Document::output(buffer);
         document.source = super::DocumentSource::Terminal(Box::new(TerminalDocument {
             session,
             launch: launch.clone(),
-            frame: Some(frame.clone()),
+            frame: Some(frame),
         }));
         let id = self.docs.try_insert(document).unwrap();
         self.terminals.entries.insert(
@@ -281,13 +317,12 @@ impl Editor {
             Entry {
                 document: id,
                 phase,
-                live: Some(frame),
                 service: None,
                 launch,
                 title: None,
                 geometry,
-                paste: None,
                 keyboard: 0,
+                view: None,
             },
         );
         self.switch_to(id);
@@ -303,16 +338,18 @@ impl Editor {
             return;
         };
         let session = source.session;
-        let Some((revision, origin, phase)) =
-            self.terminals.entries.get(&session).and_then(|entry| {
-                entry.live.as_ref().map(|live| {
-                    (
-                        live.revision.saturating_add(1),
-                        live.origin,
-                        entry.phase.clone(),
-                    )
-                })
-            })
+        let Some((revision, origin)) = source
+            .frame
+            .as_ref()
+            .map(|frame| (frame.revision.saturating_add(1), frame.origin))
+        else {
+            return;
+        };
+        let Some(phase) = self
+            .terminals
+            .entries
+            .get(&session)
+            .map(|entry| entry.phase.clone())
         else {
             return;
         };
@@ -332,20 +369,22 @@ impl Editor {
         });
     }
 
-    pub fn terminal_fixture_hold_paste(&mut self, document: DocumentId, ticket: u64) {
-        let Some((session, phase)) = self.terminal_document(document).and_then(|source| {
-            self.terminals
-                .entries
-                .get(&source.session)
-                .map(|entry| (source.session, entry.phase.clone()))
-        }) else {
+    /// End a fixture session with an exit code, through the real update path.
+    pub fn terminal_fixture_exit(&mut self, document: DocumentId, code: i32) {
+        let Some(session) = self
+            .terminal_document(document)
+            .map(|source| source.session)
+        else {
             return;
         };
         self.apply_terminal_update(strop_terminal::model::Update {
             session,
-            phase,
+            phase: Phase::Exited {
+                code: Some(code),
+                signal: None,
+            },
             frame: None,
-            effects: vec![strop_terminal::model::Effect::PasteConfirmationRequested { ticket }],
+            effects: Vec::new(),
             acknowledged_input: 0,
             warning: None,
         });

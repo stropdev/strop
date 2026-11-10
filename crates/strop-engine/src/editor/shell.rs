@@ -143,6 +143,70 @@ impl Editor {
         self.launch_shell(intent, input);
     }
 
+    /// `:r !cmd` (vim): run the command and insert its output below the
+    /// cursor line — one undo unit, cursor on the first new line.
+    /// `:r FILE` is not offered: open the file and yank instead.
+    pub(crate) fn read_command(&mut self, arg: &str) {
+        let Some(cmd) = arg.trim().strip_prefix('!') else {
+            self.message = ":r !cmd inserts a command's output; :r FILE is not supported".into();
+            return;
+        };
+        if self.remote_endpoint().is_some() {
+            self.message = "remote shell commands are not supported; no local fallback".into();
+            return;
+        }
+        let cmd = cmd.trim().to_string();
+        if cmd.is_empty() {
+            self.message = ":r ! needs a command".into();
+            return;
+        }
+        if self.buf().readonly {
+            self.refuse_readonly();
+            return;
+        }
+        let document = self.current();
+        let buf = self.buf();
+        let at = buf.line_end(buf.line_of(self.head()));
+        let revision = buf.revision();
+        let request = match self.worker_ids.allocate() {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = error.message;
+                return;
+            }
+        };
+        let intent = ShellIntent {
+            ticket: Ticket {
+                request,
+                key: ShellKey::Read {
+                    document,
+                    revision,
+                    at,
+                },
+            },
+            command: cmd.clone(),
+            cwd: self.cwd.clone(),
+            original: None,
+        };
+        let class = crate::editor::privacy::classify(
+            &self.effect_policy(),
+            crate::editor::privacy::EffectFamily::Process,
+            crate::editor::privacy::EffectTarget::Local,
+        );
+        strop_trace::record_with(strop_trace::EventKind::JobStarted, || match class.capture {
+            strop_trace::ContentPolicy::Full => serde_json::json!({
+                "service":"read","request":request.get(),"command":cmd,
+                "at_byte":at,"revision":revision.get(),
+            }),
+            strop_trace::ContentPolicy::Metadata => serde_json::json!({
+                "service":"read","request":request.get(),"command_bytes":cmd.len(),
+                "at_byte":at,"revision":revision.get(),
+            }),
+        });
+        self.message = format!(":r !{cmd} …");
+        self.launch_shell(intent, None);
+    }
+
     /// Register the intent, then launch the worker against its exact
     /// ticket — registration before launch, one terminal result per
     /// request, panic and thread-start failures included.
@@ -155,6 +219,7 @@ impl Editor {
         let operation = match ticket.key {
             ShellKey::Display { .. } => "shell.display",
             ShellKey::Pipe { .. } => "shell.pipe",
+            ShellKey::Read { .. } => "shell.read",
         };
         match self.tape.request(operation, &self.shell_requests[&request]) {
             Ok(false) => return,
@@ -386,6 +451,63 @@ impl Editor {
                     self.clamp_cursor();
                     self.flash(strop_core::Range::charwise(self.head(), self.head()));
                     self.message = "piped".into();
+                }
+            }
+            ShellKey::Read {
+                document,
+                revision,
+                at,
+            } => {
+                let Some(doc) = self.docs.get(document) else {
+                    trace::services::rejected("shell", "read document closed");
+                    return;
+                };
+                if doc.buf.revision() != revision {
+                    if self.current() == document {
+                        self.message = ":r: text changed under the job — skipped".into();
+                    }
+                    trace::services::rejected("shell", "read revision changed");
+                    return;
+                }
+                let output = match result.outcome {
+                    Outcome::Success(output) => output.stdout,
+                    Outcome::Failed { failure, partial } => {
+                        if self.current() == document {
+                            let detail = partial
+                                .as_ref()
+                                .map(|partial| partial.stderr.trim())
+                                .filter(|stderr| !stderr.is_empty())
+                                .unwrap_or(&failure.message);
+                            self.message = format!(":r failed: {detail}");
+                        }
+                        trace::services::rejected("shell", "read command failed");
+                        return;
+                    }
+                    Outcome::Cancelled(_) => return,
+                };
+                // New lines after the cursor line: the insertion sits
+                // before that line's own newline, so the text keeps it.
+                let mut text = String::with_capacity(output.len() + 1);
+                text.push('\n');
+                text.push_str(output.trim_end_matches('\n'));
+                let changes = super::transact::ChangeSet {
+                    edits: vec![strop_core::Replacement::new(
+                        strop_core::Range::charwise(at, at),
+                        text,
+                    )],
+                    undo_open: false,
+                };
+                if let Err(error) = self.apply(document, revision, changes) {
+                    if self.current() == document {
+                        self.message = format!(":r: {error}");
+                    }
+                    trace::services::rejected("shell", "read insertion rejected");
+                    return;
+                }
+                if document == self.current() {
+                    self.set_head(self.buf().clamp_boundary(at + 1));
+                    self.clamp_cursor();
+                    self.message = format!("read {} lines", output.lines().count());
                 }
             }
         }

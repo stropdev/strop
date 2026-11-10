@@ -87,7 +87,6 @@ pub enum FeedbackOwner {
         session: SessionId,
         incarnation: u64,
         phase: TerminalFeedbackPhase,
-        ticket: Option<u64>,
     },
 }
 
@@ -109,11 +108,9 @@ impl FeedbackOwner {
                 session,
                 incarnation,
                 phase,
-                ticket,
             } => format!(
-                "terminal #{} (incarnation {incarnation}, {phase:?}{})",
-                session.get(),
-                ticket.map_or_else(String::new, |ticket| format!(", paste ticket {ticket}"))
+                "terminal #{} (incarnation {incarnation}, {phase:?})",
+                session.get()
             ),
         }
     }
@@ -126,8 +123,6 @@ pub(crate) enum FeedbackKind {
     Connection,
     WorkerConnection,
     WorkerAdmission,
-    TerminalOutput,
-    TerminalPaste,
     TerminalProcess,
     TerminalHostControl,
 }

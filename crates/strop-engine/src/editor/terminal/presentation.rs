@@ -2,23 +2,15 @@ use super::*;
 use strop_terminal::model::{Palette, Style};
 
 impl Editor {
-    /// Inspection pins text and explicit cell styles, not theme defaults.
-    /// Indexed/default colors resolve through the latest native effective
-    /// palette, including application OSC overrides, without cloning rows.
+    /// Cell styles of the installed frame: explicit colors resolve through
+    /// that frame's effective palette, OSC overrides included.
     pub fn terminal_style_at(
         &self,
         document: DocumentId,
         byte: usize,
     ) -> Option<(Style, &Palette)> {
-        let source = self.terminal_document(document)?;
-        let frame = source.frame.as_ref()?;
-        let palette = self
-            .terminals
-            .entries
-            .get(&source.session)
-            .and_then(|entry| entry.live.as_ref())
-            .map_or(&frame.palette, |live| &live.palette);
-        Some((frame.cell_at_byte(byte)?.style, palette))
+        let frame = self.terminal_frame(document)?;
+        Some((frame.cell_at_byte(byte)?.style, &frame.palette))
     }
     pub fn terminal_title(&self, document: DocumentId) -> Option<&str> {
         let session = self.terminal_document(document)?.session;
@@ -32,44 +24,7 @@ impl Editor {
             .prefix
             .as_ref()
             .filter(|prefix| prefix.session == session)?;
-        Some("ctrl-\\ ctrl-n inspect · any other key sends to child")
-    }
-    pub fn terminal_has_new_output(&self, document: DocumentId) -> bool {
-        let Some(source) = self.terminal_document(document) else {
-            return false;
-        };
-        let Some(shown) = &source.frame else {
-            return false;
-        };
-        self.terminals
-            .entries
-            .get(&source.session)
-            .and_then(|entry| entry.live.as_ref())
-            .is_some_and(|live| live.revision > shown.revision)
-    }
-    pub fn terminal_paste_held(&self, document: DocumentId) -> bool {
-        let Some(source) = self.terminal_document(document) else {
-            return false;
-        };
-        self.terminals
-            .entries
-            .get(&source.session)
-            .is_some_and(|entry| entry.paste.is_some())
-    }
-    pub fn terminal_attention(&self, document: DocumentId) -> Option<String> {
-        let mut attention = Vec::new();
-        if self.terminal_paste_held(document) {
-            attention.push("paste held");
-        }
-        if self
-            .panes
-            .iter()
-            .any(|pane| pane.doc == document && !pane.terminal_input)
-            && self.terminal_has_new_output(document)
-        {
-            attention.push("new output");
-        }
-        (!attention.is_empty()).then(|| attention.join(" + "))
+        Some("ctrl-\\ ctrl-n → NORMAL · any other key sends to child")
     }
     pub fn terminal_status(&self, document: DocumentId) -> Option<serde_json::Value> {
         let source = self.terminal_document(document)?;
@@ -87,11 +42,11 @@ impl Editor {
             "launch":&entry.launch,
             "launch_location":entry.launch.label(),
             "launch_directory":strop_workspace::directory::display_path(&entry.launch.path),
-            "paste_held":entry.paste.is_some(), "capture":self.terminals.capture,
+            "capture":self.terminals.capture,
             "keyboard_flags":entry.keyboard,
-            "geometry":entry.live.as_ref().map(|frame| frame.geometry),
-            "cursor":entry.live.as_ref().map(|frame| frame.cursor),
-            "snapshot":source.frame.as_ref().map(|frame| frame.revision),
+            "geometry":source.frame.as_ref().map(|frame| frame.geometry),
+            "cursor":source.frame.as_ref().map(|frame| frame.cursor),
+            "revision":source.frame.as_ref().map(|frame| frame.revision),
         }))
     }
 }

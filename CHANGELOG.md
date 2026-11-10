@@ -2,10 +2,29 @@
 
 ## Unreleased
 
+### Changed
+
+- **The terminal follows Neovim's model** (plans/0090 §4): `Space t` opens a shell in a split below and `Space T` in the current pane (`:terminal [cmd]`, `:term`); TERMINAL mode sends every key to the child, Esc and Ctrl-W included, and `Ctrl-\ Ctrl-N` is the one way back to NORMAL; `i a I A` return to TERMINAL at the child's cursor.
+- **NORMAL on a terminal is a live buffer**: output lands as it arrives and the view follows it while the cursor is on the last line — `k`, `Ctrl-U` or a search stop following, `G` resumes — instead of a pinned snapshot that needed an explicit refresh.
+- **`TERMINAL` is its own mode chip**; NORMAL on a terminal buffer is plain `NORMAL`, with no `[RO]` and no hint row. Terminal buffers are named `term://{cwd}//{N}:{program}` in `Space b`, pane titles and the modeline.
+- **`:q` hides a running terminal, `:bd!` stops it**; `:qa` with running sessions is one notice (`N terminals running — :qa! stops them`) instead of a picker, and `:qa!` stops them and quits.
+- **Remote terminals start the user's login shell** (`$SHELL -l` on the host) instead of `/bin/sh`.
+
+### Added
+
+- **`:r !cmd`** inserts a command's output below the cursor, as in vim; **`:bd` / `:bd!`** delete a buffer.
+
 ### Removed
+
+- **Pinned terminal snapshots and `:terminal-refresh`**, **Space a → Refresh**, the **held-paste review** (`:terminal-paste`, `:terminal-paste-cancel`, Space a → Review held paste): pastes are bracketed when the child asked for bracketed paste and raw otherwise, like every terminal. **F2** and **Ctrl-4 Ctrl-N** as separate escapes (the 0x1c byte legacy terminals send for `Ctrl-\` still works), and **`:terminal-stop`** (use `:bd!`).
 
 - **Containers and dev containers**: `:containers`, `:container-worker`, `:container-edit`, **Space o → Containers…**, the dev container offer and its review/lifecycle actions, `container:` resource URIs and the `strop-containers` crate. To work inside a container, open `:terminal` and run `docker exec -it <container> sh`.
 - **Legacy flag spellings `--dump-compat`, `--replay-script` and `--export-metadata`**: use `strop compat`, `strop replay --script TRACE` and `strop export TRACE`.
+
+### Fixed
+
+- **Re-entering a terminal buffer** (`Ctrl-^`, `Space b`, pane focus) restores its cursor and viewport and lands in NORMAL mode, instead of resetting to 1:1 at the top of scrollback and treating the next keys as motions.
+- **Leaving TERMINAL mode no longer posts a message** that covered the prompt line with the echo row.
 
 ## 0.54.0 — 2026-11-10
 

@@ -31,6 +31,13 @@ pub enum ShellKey {
         start: usize,
         end: usize,
     },
+    /// `:r !cmd`: insert the command's output as new lines after the
+    /// line that held the cursor at a revision; `at` is that line's end.
+    Read {
+        document: DocumentId,
+        revision: BufferRevision,
+        at: usize,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

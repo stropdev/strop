@@ -35,7 +35,7 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
         let paper = Palette::for_theme(ThemeId::Paper);
         wait_for(&mut editor, |editor| {
             [first, second].iter().all(|document| {
-                editor.terminal_frame(*document, true).is_some_and(|frame| {
+                editor.terminal_frame(*document).is_some_and(|frame| {
                     frame.projection.to_string().starts_with("ITD")
                         && frame.palette.colors[3] == paper.colors[3]
                         && frame.palette.background
@@ -51,22 +51,21 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
         editor.switch_to(first);
         editor.view_mut().terminal_input = false;
         editor.set_head(1);
-        let shown = editor.terminal_frame(first, false).unwrap().clone();
         let before: Vec<_> = [first, second]
             .iter()
-            .map(|document| editor.terminal_frame(*document, true).unwrap().clone())
+            .map(|document| editor.terminal_frame(*document).unwrap().clone())
             .collect();
         editor.set_terminal_themes(ThemeId::PaperDark).unwrap();
         let paper_dark = Palette::for_theme(ThemeId::PaperDark);
         wait_for(&mut editor, |editor| {
             [first, second].iter().all(|document| {
                 editor
-                    .terminal_frame(*document, true)
+                    .terminal_frame(*document)
                     .is_some_and(|frame| frame.palette.colors[3] == paper_dark.colors[3])
             })
         });
         for (document, old) in [first, second].iter().zip(before) {
-            let frame = editor.terminal_frame(*document, true).unwrap();
+            let frame = editor.terminal_frame(*document).unwrap();
             assert!(frame.revision > old.revision);
             assert_eq!(frame.projection, old.projection);
             assert_eq!(frame.cursor, old.cursor);
@@ -74,10 +73,8 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
             assert_eq!(frame.palette.background, old.palette.background);
             assert_eq!(frame.palette.colors[1], old.palette.colors[1]);
         }
-        assert!(Arc::ptr_eq(
-            &shown,
-            editor.terminal_frame(first, false).unwrap()
-        ));
+        // The live buffer took the republished frame; the cursor kept its
+        // content position (same text, same stream origin).
         assert_eq!(editor.head(), 1);
         let (style, palette) = editor.terminal_style_at(first, 1).unwrap();
         assert_eq!(
@@ -121,25 +118,21 @@ fn idle_sessions_retheme_during_startup_and_frozen_inspection() {
         wait_for(&mut editor, |editor| {
             [first, second].iter().all(|document| {
                 editor
-                    .terminal_frame(*document, true)
+                    .terminal_frame(*document)
                     .is_some_and(|frame| frame.palette.colors[3] == dark.colors[3])
             })
         });
 
-        // Only the explicit child command produces subsequent output. Resets
-        // resolve to Dark in both live and pinned views, with text still pinned.
+        // Only the explicit child command produces subsequent output: a
+        // reset drops the OSC overrides, so the NORMAL view's cell styles
+        // resolve through the theme defaults again.
         editor.feed_terminal(Input::Text("reset\n".into()));
         wait_for(&mut editor, |editor| {
             editor
-                .terminal_frame(first, true)
+                .terminal_frame(first)
                 .is_some_and(|frame| *frame.palette == dark)
         });
-        assert_eq!(editor.terminal_style_at(first, 1).unwrap().0, style);
         assert_eq!(*editor.terminal_style_at(first, 1).unwrap().1, dark);
-        assert!(Arc::ptr_eq(
-            &shown,
-            editor.terminal_frame(first, false).unwrap()
-        ));
     }
 }
 
@@ -198,7 +191,7 @@ fn appearance_publication_does_not_consume_the_child_input_sequence() {
             }
         }
     }
-    service.input(Input::Text("one\n".into()), false).unwrap();
+    service.input(Input::Text("one\n".into())).unwrap();
     let mut received = false;
     let mut acknowledged = false;
     while !received || !acknowledged {
@@ -237,7 +230,7 @@ fn appearance_publication_does_not_consume_the_child_input_sequence() {
             break;
         }
     }
-    service.input(Input::Text("two\n".into()), false).unwrap();
+    service.input(Input::Text("two\n".into())).unwrap();
     let mut received = false;
     let mut acknowledged = false;
     while !received || !acknowledged {

@@ -38,26 +38,12 @@ impl Editor {
                         // with vim's `!` job flag and their live phase, so
                         // "what is open?" has one truthful answer.
                         let (badge, name) = match self.terminal_document(i) {
-                            Some(terminal) => {
+                            Some(_) => {
                                 let phase = self
                                     .terminal_phase(i)
                                     .map(terminal_phase_label)
                                     .unwrap_or_else(|| "unknown".into());
-                                let launch = self
-                                    .terminal_launch_location(i)
-                                    .map_or_else(|| "unknown".into(), |location| location.label());
-                                let attention = self
-                                    .terminal_attention(i)
-                                    .map_or_else(String::new, |attention| {
-                                        format!(" · {attention}")
-                                    });
-                                (
-                                    Some("!"),
-                                    format!(
-                                        "terminal #{} · launch {launch} · {phase}{attention}",
-                                        terminal.session.get()
-                                    ),
-                                )
+                                (Some("!"), format!("{} · {phase}", self.doc(i).label(&cwd)))
                             }
                             None => (None, self.doc(i).label(&cwd)),
                         };
