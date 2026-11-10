@@ -339,3 +339,8 @@ Shipped (the worker deleted in the change that moved the editor, per §5):
   save-as, file management and its refusals, search, `Space g l`, terminal with Ctrl-C and
   typeahead, failure refusals)
   through the real binary. `ssh-bench` is an exec-only latency bench (opt-in).
+
+**Known flake (open).** `picker::preview::watchdog::stalled_preview_recovers_after_physical_reader_returns`
+runs a 20 ms stall timeout and failed twice under full-suite load (0.54 and
+0.56 integration); 240 runs at 48-way parallelism did not reproduce it. It is
+recorded here rather than patched blind; the fix lands with a reproduction.
