@@ -99,7 +99,7 @@ fn cancelling_a_staged_will_rename_applies_nothing() {
     let document = editor.open_fixture(&original).unwrap();
     command(&mut editor, ":fs rename renamed.txt<cr>");
     let stamp = staged_rename(&root, &mut editor, document);
-    command(&mut editor, ":cancel-change<cr>");
+    command(&mut editor, ":fs cancel<cr>");
     assert!(editor.filesystem.will_rename.is_none());
     assert!(editor.filesystem.pending.is_none());
     assert!(original.exists());

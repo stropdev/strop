@@ -26,7 +26,8 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-e ctrl-y` — scroll the window one line down / up
 - `✓ ctrl-^` — alternate buffer
-- `✓ gr` — references (LSP)
+- `✓ grr` — references (LSP)
+- `✓ grn` — rename (LSP), prompting with the current name
 - `✓ gI` — implementation (LSP)
 - `✓ gy` — type definition (LSP)
 - `✓ gD` — declaration (LSP)

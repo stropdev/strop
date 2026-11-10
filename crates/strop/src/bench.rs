@@ -491,19 +491,8 @@ fn bench_replace_project() -> io::Result<()> {
             drive.key(Key::Enter)?;
             drive.settle(SETTLE)
         })?;
-        apply.try_time(|| {
-            for character in ":apply-change".chars() {
-                drive.key(Key::Char(character))?;
-            }
-            drive.key(Key::Enter)
-        })?;
-        save.try_time(|| {
-            for character in ":save-change".chars() {
-                drive.key(Key::Char(character))?;
-            }
-            drive.key(Key::Enter)?;
-            drive.settle(SETTLE)
-        })?;
+        apply.try_time(|| drive.key(Key::Enter))?;
+        save.try_time(|| drive.settle(SETTLE))?;
         for f in 0..FILES {
             let text = std::fs::read_to_string(fixture.dir.join(format!("mod_{f:03}.txt")))?;
             if text.matches("fixed_done").count() != HITS || text.contains("needle_todo") {

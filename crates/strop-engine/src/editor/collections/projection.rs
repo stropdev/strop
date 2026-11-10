@@ -6,8 +6,7 @@ use strop_core::id::{Arena, DocumentId, DocumentKind};
 /// CARD PER FILE — top border with path and badges, excerpt bodies with
 /// a "⋮ N source lines omitted" gap between disjoint spans, and a bottom
 /// border. Row roles are recorded in `collection.rows` for the renderer.
-/// The read-only view keeps each excerpt's `view_line` invariant: the row
-/// before the body is its header.
+/// Each excerpt's `view_line` is the chrome row before its body.
 pub(super) fn render(
     docs: &Arena<DocumentKind, Document>,
     cwd: &std::path::Path,
@@ -78,9 +77,11 @@ pub(super) fn render(
             let excerpt = &mut collection.excerpts[i];
             excerpt.view_line = line - 1; // the chrome row before the body
             excerpt.view_start = text.len();
-            excerpt.view_lines = body.lines().count().max(1);
+            // An emptied excerpt shows no rows; an unterminated last line
+            // gets the terminator its source lacks.
+            excerpt.view_lines = body.lines().count();
             text.push_str(&body);
-            if !body.ends_with('\n') {
+            if !body.is_empty() && !body.ends_with('\n') {
                 text.push('\n');
             }
             excerpt.view_end = text.len();
@@ -132,11 +133,7 @@ impl Editor {
                 self.clamp_cursor();
             }
         }
-        let revision = self.docs.get(id).unwrap().buf.revision();
-        self.collections.get_mut(&id).unwrap().revision = revision;
-        // The view is a presentation: its dirty bit is never the story
-        // (0049 §5 — the sources own unsaved state).
-        self.docs.get_mut(id).unwrap().buf.mark_clean();
+        self.collection_settle(id);
     }
 }
 
@@ -248,9 +245,7 @@ impl Editor {
         }
         Some(None) // title row
     }
-}
 
-impl Editor {
     pub fn collection_unsaved(&self, document: DocumentId) -> bool {
         self.collections.get(&document).is_some_and(|collection| {
             collection.excerpts.iter().any(|excerpt| {
@@ -260,9 +255,7 @@ impl Editor {
             })
         })
     }
-}
 
-impl Editor {
     /// Map a real buffer byte to its authoritative source; chrome has no source byte.
     pub fn source_position(
         &self,

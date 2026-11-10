@@ -164,7 +164,7 @@ pub(crate) fn split_command(text: &str) -> Option<(&'static ExCommand, bool, &st
     };
     let (command, length) = if first.is_ascii_alphabetic() {
         let letters = word(|_| false);
-        // strop's own commands carry hyphens (`apply-change`); `:m-2` is
+        // strop's own commands carry hyphens (`select-next`); `:m-2` is
         // `:m` with an address, so the longer word must name one exactly.
         let hyphenated = word(|c| c == '-');
         match table::exact_name(&text[..hyphenated]) {

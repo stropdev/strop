@@ -87,17 +87,22 @@ fn two_file_editor() -> (Editor, tempfile::TempDir, DocumentId, DocumentId) {
     (e, dir, first, second)
 }
 
+fn disk(dir: &tempfile::TempDir, name: &str) -> String {
+    std::fs::read_to_string(dir.path().join(name)).unwrap()
+}
+
 #[test]
 fn multi_target_plan_opens_a_diff_review_without_mutating() {
     let (e, _dir, first, _second) = two_file_editor();
-    assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+    assert_eq!(e.buf().name.as_deref(), Some("review: rename"));
     let review = e.current();
     assert_ne!(review, first, "the review buffer takes focus");
     assert!(e.buf().readonly, "the review is a real read-only buffer");
     let text = e.buf().text().to_string();
-    assert!(text.contains("strop change proposal 1: rename"), "{text}");
-    assert!(text.contains(APPLY_COMMAND), "{text}");
-    assert!(text.contains(CANCEL_COMMAND), "{text}");
+    assert!(
+        text.starts_with("rename: 2 file(s) to change, 1 refused\nEnter applies and writes"),
+        "{text}"
+    );
     // Per-file unified diffs against the pinned bases.
     assert!(text.contains("--- a/"), "{text}");
     assert!(text.contains("+++ b/"), "{text}");
@@ -111,89 +116,125 @@ fn multi_target_plan_opens_a_diff_review_without_mutating() {
     assert!(text.contains("not open on the server"), "{text}");
     // Nothing has mutated yet.
     assert_eq!(text_of(&e, first), "alpha here\n");
-    assert!(e.message.contains("proposal 1"), "{}", e.message);
+    assert!(
+        e.message.contains("Enter applies and writes"),
+        "{}",
+        e.message
+    );
 }
 
 #[test]
-fn apply_mutates_exactly_the_planned_sources_and_leaves_a_receipt() {
-    let (mut e, _dir, first, second) = two_file_editor();
+fn enter_applies_and_writes_and_u_reverts_buffers_and_files() {
+    let (mut e, dir, first, second) = two_file_editor();
     let review = e.current();
-    e.review_apply_pub();
+    e.feed(strop_core::frontend_input::Key::Enter);
     assert_eq!(text_of(&e, first), "omega here\n");
     assert_eq!(text_of(&e, second), "omega there\n");
-    // The review buffer stays around as the receipt.
-    let receipt = text_of(&e, review);
-    assert!(receipt.contains("applied: "), "{receipt}");
-    assert!(receipt.contains("a.txt"), "{receipt}");
-    assert!(receipt.contains("b.txt"), "{receipt}");
-    assert!(receipt.contains("refused: "), "{receipt}");
-    assert!(receipt.contains("ghost.txt"), "{receipt}");
-    assert!(receipt.contains("not open on the server"), "{receipt}");
-    // The recorded receipt anchors grouped undo across both buffers.
-    e.feed_text(":undo-change\r");
+    e.wait_io().unwrap();
+    assert_eq!(disk(&dir, "a.txt"), "omega here\n");
+    assert_eq!(disk(&dir, "b.txt"), "omega there\n");
+    assert!(!e.docs.get(first).unwrap().buf.is_dirty());
+    assert!(!e.docs.get(second).unwrap().buf.is_dirty());
+    assert_eq!(e.message, "rename: wrote 2 file(s)");
+    // The same buffer keeps the diff under a heading that says what happened.
+    let after = text_of(&e, review);
+    assert!(
+        after.starts_with("rename: changed and wrote 2 file(s), 1 refused\nu reverts"),
+        "{after}"
+    );
+    assert!(after.contains("-alpha here"), "{after}");
+    assert!(after.contains("ghost.txt"), "{after}");
+
+    e.feed_text("u");
     assert_eq!(text_of(&e, first), "alpha here\n");
     assert_eq!(text_of(&e, second), "alpha there\n");
+    e.wait_io().unwrap();
+    assert_eq!(disk(&dir, "a.txt"), "alpha here\n");
+    assert_eq!(disk(&dir, "b.txt"), "alpha there\n");
+    assert!(!e.docs.get(first).unwrap().buf.is_dirty());
+    assert!(!e.docs.get(second).unwrap().buf.is_dirty());
+    let after = text_of(&e, review);
+    assert!(
+        after.starts_with("rename: reverted and wrote 2 file(s), 1 refused\nEnter applies again"),
+        "{after}"
+    );
+
+    // The reverted text is the reviewed text: Enter applies it again.
+    e.feed(strop_core::frontend_input::Key::Enter);
+    e.wait_io().unwrap();
+    assert_eq!(disk(&dir, "a.txt"), "omega here\n");
+    assert_eq!(disk(&dir, "b.txt"), "omega there\n");
 }
 
 #[test]
-fn cancel_mutates_nothing_and_leaves_a_cancelled_receipt() {
-    let (mut e, _dir, first, second) = two_file_editor();
+fn u_names_the_files_it_could_not_revert() {
+    let (mut e, dir, first, second) = two_file_editor();
     let review = e.current();
-    e.review_cancel_pub();
-    assert_eq!(text_of(&e, first), "alpha here\n");
+    e.review_apply_pub();
+    e.wait_io().unwrap();
+    e.switch_to(first);
+    e.feed_text("0rx"); // a.txt moves past what the apply left
+    e.switch_to(review);
+    e.feed_text("u");
+    e.wait_io().unwrap();
+    assert_eq!(text_of(&e, first), "xmega here\n", "the user's edit stands");
     assert_eq!(text_of(&e, second), "alpha there\n");
-    let receipt = text_of(&e, review);
-    assert!(receipt.contains("— CANCELLED"), "{receipt}");
-    assert!(receipt.contains("nothing applied"), "{receipt}");
-    assert!(receipt.contains("ghost.txt"), "{receipt}");
-    assert!(e.message.contains("cancelled"), "{}", e.message);
-    // No receipt was recorded: there is nothing to undo.
-    e.feed_text(":undo-change\r");
-    assert_eq!(e.message, "no change to undo");
-    // A second cancel is a named no-op, not a panic or a stale apply.
-    e.review_cancel_pub();
-    assert_eq!(e.message, "no change proposal awaiting review");
+    assert_eq!(disk(&dir, "b.txt"), "alpha there\n");
+    let after = text_of(&e, review);
+    assert!(after.contains("a.txt (edited since)"), "{after}");
 }
 
 #[test]
-fn a_source_edited_since_the_proposal_is_refused_by_name() {
+fn closing_an_unapplied_review_cancels_it() {
+    let (mut e, dir, first, second) = two_file_editor();
+    let review = e.current();
+    e.feed_text("q");
+    assert!(e.docs.get(review).is_none(), "q closes the review");
+    assert_eq!(text_of(&e, first), "alpha here\n");
+    assert_eq!(text_of(&e, second), "alpha there\n");
+    assert_eq!(disk(&dir, "a.txt"), "alpha here\n");
+    assert!(e.message.contains("cancelled"), "{}", e.message);
+    e.review_apply_pub();
+    assert_eq!(e.message, "no review to apply");
+}
+
+#[test]
+fn a_source_edited_since_the_review_is_refused_by_name() {
     let (mut e, _dir, first, second) = two_file_editor();
     let review = e.current();
     e.switch_to(first);
-    e.feed_text("0rx"); // revision moves past the proposal's base
+    e.feed_text("0rx"); // revision moves past the review's base
+    e.switch_to(review);
     e.review_apply_pub();
-    // The user's edit stands; the proposal never recomputes onto it.
+    // The user's edit stands; the review never recomputes onto it.
     assert_eq!(text_of(&e, first), "xlpha here\n");
     assert_eq!(text_of(&e, second), "omega there\n");
-    assert_eq!(
-        e.message,
-        "rename: 1 buffer(s) applied, 2 target(s) refused"
+    let after = text_of(&e, review);
+    assert!(
+        after.starts_with("rename: changed 1 file(s), 2 refused"),
+        "{after}"
     );
-    let receipt = text_of(&e, review);
-    assert!(receipt.contains("a.txt"), "{receipt}");
-    assert!(receipt.contains("edited since the proposal"), "{receipt}");
-    assert!(receipt.contains("re-run the rename"), "{receipt}");
 }
 
 #[test]
-fn a_source_closed_since_the_proposal_is_refused_by_name() {
+fn a_source_closed_since_the_review_is_refused_by_name() {
     let (mut e, _dir, first, second) = two_file_editor();
     let review = e.current();
     e.switch_to(second);
-    e.close_buffer(true); // close b.txt after the proposal
+    e.close_buffer(true); // close b.txt after the review
     assert_eq!(text_of(&e, first), "alpha here\n");
+    e.switch_to(review);
     e.review_apply_pub();
     assert_eq!(text_of(&e, first), "omega here\n");
-    let receipt = text_of(&e, review);
-    assert!(receipt.contains("closed since the proposal"), "{receipt}");
-    assert_eq!(
-        e.message,
-        "rename: 1 buffer(s) applied, 2 target(s) refused"
+    let after = text_of(&e, review);
+    assert!(
+        after.starts_with("rename: changed 1 file(s), 2 refused"),
+        "{after}"
     );
 }
 
 #[test]
-fn a_single_clean_document_applies_directly_with_the_existing_receipt() {
+fn a_single_clean_document_applies_directly() {
     let dir = tempfile::tempdir().unwrap();
     let (mut e, document) = file_editor(&dir, "a.txt", "alpha here\n");
     bind(&mut e, document);
@@ -209,10 +250,13 @@ fn a_single_clean_document_applies_directly_with_the_existing_receipt() {
     assert_eq!(e.current(), document, "focus stays on the edited file");
     assert_eq!(text_of(&e, document), "omega here\n");
     assert_eq!(e.message, "rename: applied to 1 buffer(s)");
+    // One buffer: its own `u` is the undo.
+    e.feed_text("u");
+    assert_eq!(text_of(&e, document), "alpha here\n");
 }
 
 #[test]
-fn a_newer_proposal_supersedes_the_older_buffer_visibly() {
+fn a_newer_review_supersedes_the_older_buffer_visibly() {
     let (mut e, dir, first, _second) = two_file_editor();
     let stale = e.current();
     let plan = e.build_change_plan(
@@ -232,8 +276,15 @@ fn a_newer_proposal_supersedes_the_older_buffer_visibly() {
     e.present_change_plan(plan);
     assert_ne!(e.current(), stale);
     let retired = text_of(&e, stale);
-    assert!(retired.contains("SUPERSEDED"), "{retired}");
-    assert!(e.buf().text().to_string().contains("change proposal 2"));
+    assert!(
+        retired.contains("superseded by a newer review"),
+        "{retired}"
+    );
+    assert!(e
+        .buf()
+        .text()
+        .to_string()
+        .starts_with("code action: 2 file(s)"));
     e.review_apply_pub();
     assert_eq!(text_of(&e, first), "sigma here\n");
 }
@@ -286,7 +337,8 @@ fn nearby_edits_share_one_hunk_with_context_on_both_sides() {
 #[test]
 fn editing_a_review_cannot_apply_the_hidden_original_plan() {
     let (mut editor, _dir, first, second) = two_file_editor();
-    editor.feed_text(":set noro<cr>ggIchanged review<esc>:apply-change<cr>");
+    editor.feed_text(":set noro<cr>ggIchanged review<esc>");
+    editor.review_apply_pub();
     assert_eq!(text_of(&editor, first), "alpha here\n");
     assert_eq!(text_of(&editor, second), "alpha there\n");
     assert!(
@@ -297,35 +349,23 @@ fn editing_a_review_cannot_apply_the_hidden_original_plan() {
 }
 
 #[test]
-fn save_change_retains_each_file_outcome_after_focus_moves() {
-    let (mut editor, dir, first, second) = two_file_editor();
+fn a_file_that_could_not_be_written_is_named_and_stays_dirty() {
+    let (mut editor, dir, _first, second) = two_file_editor();
+    let review = editor.current();
+    // b.txt becomes unwritable between the review and the apply.
+    std::fs::remove_file(dir.path().join("b.txt")).unwrap();
+    std::fs::create_dir(dir.path().join("b.txt")).unwrap();
     editor.review_apply_pub();
-    editor.doc_mut(second).buf.readonly = true;
-    editor.save_changed_files_pub();
-    let report = editor.current();
-    editor.switch_to(first);
     editor.wait_io().unwrap();
-    assert_eq!(editor.current(), first, "completion must not steal focus");
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
-        "omega here\n"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("b.txt")).unwrap(),
-        "alpha there\n"
-    );
+    assert_eq!(disk(&dir, "a.txt"), "omega here\n");
     assert!(editor.docs.get(second).unwrap().buf.is_dirty());
-    let results = text_of(&editor, report);
+    let after = text_of(&editor, review);
+    assert!(after.contains("could not write b.txt"), "{after}");
     assert!(
-        results
-            .lines()
-            .any(|line| line.contains("a.txt") && line.contains("written")),
-        "{results}"
-    );
-    assert!(
-        results
-            .lines()
-            .any(|line| line.contains("b.txt") && line.contains("read")),
-        "{results}"
+        editor
+            .message
+            .contains("wrote 1 file(s); could not write b.txt"),
+        "{}",
+        editor.message
     );
 }

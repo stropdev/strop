@@ -376,7 +376,13 @@ pub(crate) fn change_lines(
             .map(|(_, s)| *s)
             .unwrap_or(landings[0].1),
     );
-    let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
+    // extras are the secondary landings: a primary stacked on itself
+    // survives the session as a second cursor nobody planted
+    let mut starts: Vec<usize> = landings
+        .iter()
+        .filter(|(primary, _)| !*primary)
+        .map(|(_, s)| *s)
+        .collect();
     starts.sort_unstable();
     editor.sels_mut().set_extras(starts);
     editor.enter_insert_from(keys);

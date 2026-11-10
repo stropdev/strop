@@ -34,6 +34,7 @@ pub(super) fn render_results(
     t: &Tokens,
     area: Rect,
     picker: &strop_picker::Picker,
+    replacer: Option<&strop_picker::Replacer>,
     root: &Path,
     tab_for_path: &impl Fn(&strop_workspace::ResourceLocation) -> usize,
 ) {
@@ -128,9 +129,7 @@ pub(super) fn render_results(
             lines.extend(search_rows(
                 t,
                 item,
-                picker
-                    .replacement_visible
-                    .then_some(picker.replace_input.text()),
+                replacer,
                 picker.is_excluded(row.item),
                 area.width,
                 active,

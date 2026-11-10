@@ -13,7 +13,8 @@ pub(crate) fn ex_write(editor: &mut Editor, call: &ExCall<'_>) {
     let close = matches!(call.name, "wq" | "xit" | "exit");
     let only_modified = matches!(call.name, "xit" | "exit" | "update");
     if editor.collections.contains_key(&editor.current()) {
-        editor.message = "collection files are read-only; no collection save".into();
+        // a collection's file is its sources (0094 §3.1)
+        editor.collection_save(close);
         return;
     }
     if only_modified && !editor.buf().is_dirty() && call.arg.is_empty() {
@@ -126,10 +127,6 @@ pub(crate) fn ex_set(editor: &mut Editor, call: &ExCall<'_>) {
             editor.message = "readonly".into();
         }
         "noro" | "noreadonly" => {
-            if editor.collections.contains_key(&editor.current()) {
-                editor.message = "collection files are read-only by policy".into();
-                return;
-            }
             if editor.terminal_document(editor.current()).is_some() {
                 editor.message = "terminal buffer is read-only — i enters TERMINAL mode".into();
                 return;

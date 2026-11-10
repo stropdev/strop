@@ -1,16 +1,22 @@
-//! Read-only source-backed collections. Source edits refresh their projections;
-//! generated chrome and excerpt bodies are inspected here and edited in sources.
+//! Source-backed collections (0094): the editable multibuffer and the quickfix
+//! list. An edit inside an excerpt writes through to its source (`write.rs`);
+//! a source edit made anywhere else is projected into every view of it
+//! (`updates.rs`). Card borders, gap rows and the title are not text.
 
 mod context;
 mod journal;
 mod navigation;
 mod projection;
+mod quickfix;
 #[cfg(test)]
 mod tests;
 mod updates;
 mod view_positions;
+mod write;
 
 use projection::render;
+
+pub use write::ExcerptRefusal;
 
 use std::collections::HashMap;
 
@@ -67,6 +73,22 @@ pub(crate) struct Collection {
     /// The buffer revision at last sync — the cheap no-change check that
     /// keeps motions from materializing rope text on the input path.
     pub revision: BufferRevision,
+    /// The last view change the excerpt geometry accounts for. Past it the
+    /// journal holds edits `write.rs` has still to place in the sources.
+    pub mapped: BufferRevision,
+    /// A write did not reach its source, or left a body its source does not
+    /// spell: the view is rendered again when its lease settles.
+    pub rerender: bool,
+    /// A body may carry one line more than its source (`write.rs`).
+    pub recheck: bool,
+    /// The running command's first edit was refused: so is the rest of it.
+    pub voided: bool,
+    /// The running command has changed the view.
+    pub touched: bool,
+    /// `u` (true) or `Ctrl-R` (false) is moving the view's history.
+    pub history_move: Option<bool>,
+    /// The quickfix cursor: the hit `]q`/`[q` last landed on.
+    pub cursor: Option<usize>,
     /// Row roles parallel to the view text (0049 §6), rebuilt at render.
     pub rows: Vec<CollectionRow>,
 }
@@ -129,8 +151,8 @@ impl Editor {
         sources
     }
 
-    /// `ctrl-o` in a result picker: open the listed hits as a read-only
-    /// collection. Unopened sources load in their captured filesystem namespace.
+    /// `ctrl-o` in a result picker: open the listed hits as a collection.
+    /// Unopened sources load in their captured filesystem namespace.
     pub(crate) fn open_collection_from_picker(&mut self) {
         let Some(glue) = &self.picker else {
             return;
@@ -364,9 +386,8 @@ impl Editor {
         let title_for_trace = title.clone();
         // The modeline names the collection, never [scratch] (0049 §6).
         let mut document = Document::output(Buffer::from_text(""));
-        // Output starts readonly already; name the projection as its owner
-        // without briefly granting write authority.
-        document.buf.readonly_reason = Some(strop_core::ReadonlyReason::Collection);
+        // Writable: `write.rs` admits each edit against the excerpts.
+        document.buf.clear_readonly();
         document.buf.name = Some(format!("collection: {title}"));
         let Ok(id) = self.docs.try_insert(document) else {
             self.message = "document identity space exhausted".into();
@@ -379,6 +400,13 @@ impl Editor {
             match_count,
             skipped,
             revision: BufferRevision::new(0),
+            mapped: BufferRevision::new(0),
+            rerender: false,
+            recheck: false,
+            voided: false,
+            touched: false,
+            history_move: None,
+            cursor: None,
         };
         let text = render(&self.docs, &self.cwd, &mut collection);
         self.collections.insert(id, collection);
@@ -388,7 +416,9 @@ impl Editor {
         };
         if let Some(collection) = self.collections.get_mut(&id) {
             collection.revision = revision;
+            collection.mapped = revision;
         }
+        self.changes.quickfix = Some(id);
         strop_trace::record_with(strop_trace::EventKind::JobFinished, || {
             serde_json::json!({
                 "service":"collection","result":"built","excerpts":excerpt_count,

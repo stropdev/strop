@@ -18,13 +18,13 @@ fn remote_files_are_created_copied_renamed_and_removed_through_review() {
         "operations.steps",
         &format!(
             "settle\n\
-             keys :fs create nested/new.txt<cr>\nsettle\nkeys :apply-change<cr>\nsettle\n\
+             keys :fs create nested/new.txt<cr>\nsettle\nkeys :fs apply<cr>\nsettle\n\
              keys :e {original}<cr>\nsettle\n\
-             keys :fs copy stored copy.txt<cr>\nsettle\nkeys :apply-change<cr>\nsettle\n\
+             keys :fs copy stored copy.txt<cr>\nsettle\nkeys :fs apply<cr>\nsettle\n\
              keys :e {original}<cr>\nsettle\n\
-             keys :fs rename renamed.txt<cr>\nsettle\nkeys :apply-change<cr>\nsettle\nkeys <c-^>\nsettle\nframe\n\
-             keys :e {doomed}<cr>\nsettle\nkeys :fs remove<cr>\nsettle\nframe\nkeys :apply-change<cr>\nsettle\n\
-             keys :e {scope}/<cr>\nsettle\nkeys /empty-dir<cr>:fs remove<cr>\nsettle\nstate\nkeys :apply-change<cr>\nsettle\nstate\n\
+             keys :fs rename renamed.txt<cr>\nsettle\nkeys :fs apply<cr>\nsettle\nkeys <c-^>\nsettle\nframe\n\
+             keys :e {doomed}<cr>\nsettle\nkeys :fs remove<cr>\nsettle\nframe\nkeys :fs apply<cr>\nsettle\n\
+             keys :e {scope}/<cr>\nsettle\nkeys /empty-dir<cr>:fs remove<cr>\nsettle\nstate\nkeys :fs apply<cr>\nsettle\nstate\n\
              keys :qa!<cr>\nsettle\n",
             original = uri("fixture", &original),
             doomed = uri("fixture", &doomed),
@@ -90,13 +90,13 @@ fn remote_operations_never_replace_an_existing_name() {
         "occupied.steps",
         &format!(
             "settle\n\
-             keys :fs create taken.txt<cr>\nsettle\nframe\nkeys :cancel-change<cr>\nsettle\n\
+             keys :fs create taken.txt<cr>\nsettle\nframe\nkeys :fs cancel<cr>\nsettle\n\
              keys :e {original}<cr>\nsettle\n\
-             keys :fs rename full.txt<cr>\nsettle\nframe\nkeys :cancel-change<cr>\nsettle\n\
+             keys :fs rename full.txt<cr>\nsettle\nframe\nkeys :fs cancel<cr>\nsettle\n\
              keys :e {original}<cr>\nsettle\n\
-             keys :fs copy stored taken.txt<cr>\nsettle\nframe\nkeys :cancel-change<cr>\nsettle\n\
-             keys :e {scope}/<cr>\nsettle\nkeys /full-dir<cr>:fs remove<cr>\nsettle\nkeys :apply-change<cr>\nsettle\nframe\n\
-             keys :e {scope}/<cr>\nsettle\nkeys /taken<cr>:fs trash<cr>\nsettle\nframe\nkeys /REFUSED Trash<cr>yy\nstate\nkeys :cancel-change<cr>\nsettle\n\
+             keys :fs copy stored taken.txt<cr>\nsettle\nframe\nkeys :fs cancel<cr>\nsettle\n\
+             keys :e {scope}/<cr>\nsettle\nkeys /full-dir<cr>:fs remove<cr>\nsettle\nkeys :fs apply<cr>\nsettle\nframe\n\
+             keys :e {scope}/<cr>\nsettle\nkeys /taken<cr>:fs trash<cr>\nsettle\nframe\nkeys /REFUSED Trash<cr>yy\nstate\nkeys :fs cancel<cr>\nsettle\n\
              keys :qa!<cr>\nsettle\n",
             original = uri("fixture", &original),
             scope = uri("fixture", &scope),

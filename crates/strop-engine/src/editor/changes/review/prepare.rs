@@ -380,11 +380,12 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
             .unwrap_or(path);
         sources.entry(identity).or_default().extend(hits);
     }
+    let replacer = strop_picker::Replacer::new(input.target.as_ref(), &input.replacement);
     let mut result = PreparedReview {
         targets: Vec::new(),
         refused: Vec::new(),
         summary: format!(
-            "{}: {} included matches, {excluded} excluded; Apply edits buffers, :save-change persists files",
+            "{}: {} matches included, {excluded} excluded",
             input.scope.root.label(),
             input.catalog.len().saturating_sub(excluded)
         ),
@@ -443,10 +444,12 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
             if index % 128 == 0 && cancel.is_cancelled() {
                 return Outcome::Cancelled(CancelReason::Superseded);
             }
-            if let Some(range) = checked_hit_range(buffer.text(), hit) {
-                edits.push(Replacement::new(range, input.replacement.as_ref()));
-            } else {
-                stale += 1;
+            let (start, end) = strop_picker::replace_span(&hit.text, hit.col, hit.match_len);
+            let placed =
+                checked_hit_range(buffer.text(), hit).zip(replacer.text(&hit.text[start..end]));
+            match placed {
+                Some((range, text)) => edits.push(Replacement::new(range, text)),
+                None => stale += 1,
             }
         }
         if stale > 0 {

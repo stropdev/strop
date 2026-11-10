@@ -1,5 +1,5 @@
 //! Project source journals into clean views. Ordinary source edits never replace
-//! an entire excerpt: their exact view edits also remap carets, marks and history.
+//! an entire excerpt: their exact view edits also remap carets and marks.
 use super::{Collection, CollectionRow, Editor};
 use std::collections::HashSet;
 use strop_core::id::DocumentId;
@@ -143,7 +143,7 @@ impl Editor {
                 if let Some(index) = edit.terminal_excerpt {
                     let excerpt = &self.collections[&id].excerpts[index];
                     let source = &self.doc(excerpt.source).buf;
-                    if excerpt.start == excerpt.end || source.text().byte(excerpt.end - 1) != b'\n'
+                    if excerpt.start != excerpt.end && source.text().byte(excerpt.end - 1) != b'\n'
                     {
                         edit.replacement.text.push('\n');
                     }
@@ -171,6 +171,7 @@ impl Editor {
             if let Some(collection) = self.collections.get_mut(&id) {
                 collection.map_view_changes(&changes);
                 collection.revision = document.buf.revision();
+                collection.mapped = collection.revision;
             }
             self.sync_document(id, true);
         }
@@ -181,11 +182,11 @@ impl Editor {
         id: DocumentId,
         error: strop_core::EditError,
     ) {
-        // A stale representation must never regain source write authority.
+        // A stale representation must never keep source write authority.
         if let Some(document) = self.docs.get_mut(id) {
-            // Replace the healthy inspection policy with the actual failure;
-            // `set_readonly` deliberately preserves the first policy owner.
-            document.buf.readonly_reason = Some(strop_core::ReadonlyReason::CollectionProjection);
+            document
+                .buf
+                .set_readonly(strop_core::ReadonlyReason::CollectionProjection);
             document.buf.name = Some("stale collection — projection failed".into());
         }
         self.collections.remove(&id);

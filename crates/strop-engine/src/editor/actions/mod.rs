@@ -1,9 +1,10 @@
 //! `Space a`: one list of what can be done here, titled "actions". Every
 //! row is a typed owner computed as data — retained feedback recoveries,
-//! terminal controls, filesystem/remote operations
-//! valid for this view and, as they arrive, the language server's code
-//! actions. No branch order decides which list you get (0089 §5): every
-//! owner contributes its valid rows to the same list.
+//! terminal controls, a review's apply/revert/cancel and, as they arrive,
+//! the language server's code actions. Filesystem operations are rows only
+//! in a Directory buffer (and under `:fs`): on a source file the list is
+//! what can be done to the code (0094 §3.4). No branch order decides which
+//! list you get (0089 §5): every owner contributes its valid rows.
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_picker::{Item, Kind, Payload, Picker};
@@ -16,10 +17,29 @@ use super::Editor;
 pub(crate) enum Entry {
     Feedback(super::feedback::actions::FeedbackChoice),
     Terminal(super::terminal::actions::TerminalAction),
+    Review(ReviewAction),
     /// An index into the filesystem table.
     Filesystem(usize),
     /// An index into the language server's pending action list.
     Code(usize),
+}
+
+/// What a review in view offers; the keys do the same (`Enter`, `u`, `q`).
+#[derive(Clone, Copy)]
+pub(crate) enum ReviewAction {
+    Apply,
+    Revert,
+    Cancel,
+}
+
+impl ReviewAction {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Apply => "Apply and write the files",
+            Self::Revert => "Revert the buffers and the files",
+            Self::Cancel => "Cancel this review",
+        }
+    }
 }
 
 impl Entry {
@@ -27,7 +47,7 @@ impl Entry {
     /// recovery, then the language server's fixes, then everything else.
     fn rank(&self) -> u8 {
         match self {
-            Self::Feedback(_) | Self::Terminal(_) => 0,
+            Self::Feedback(_) | Self::Terminal(_) | Self::Review(_) => 0,
             Self::Code(_) => 1,
             Self::Filesystem(_) => 2,
         }
@@ -57,8 +77,15 @@ pub(crate) struct ActionOwner {
 impl Editor {
     /// `Space a`.
     pub(crate) fn context_actions(&mut self) {
-        let mut entries = self.context_entries();
-        entries.extend(self.filesystem_entries().into_iter().map(Entry::Filesystem));
+        let mut entries: Vec<Entry> = self
+            .review_actions()
+            .into_iter()
+            .map(Entry::Review)
+            .collect();
+        entries.extend(self.context_entries());
+        if self.directory().is_some() {
+            entries.extend(self.filesystem_entries().into_iter().map(Entry::Filesystem));
+        }
         let code = self.lsp_serves(self.current());
         if entries.is_empty() && !code {
             // nothing else to offer: the language request names why
@@ -74,7 +101,7 @@ impl Editor {
                 self.directory_context().label()
             )
         } else {
-            "actions: owners and tickets are revalidated".into()
+            "actions".into()
         };
         self.open_actions(entries, code, &message);
         if code {
@@ -159,6 +186,7 @@ impl Editor {
         match entry {
             Entry::Feedback(choice) => choice.title.clone(),
             Entry::Terminal(action) => self.terminal_action_title(action),
+            Entry::Review(action) => action.title().into(),
             Entry::Filesystem(index) => ACTIONS[*index].title.into(),
             Entry::Code(index) => self
                 .changes
@@ -263,6 +291,12 @@ impl Editor {
         match owner.entries.swap_remove(index) {
             Entry::Feedback(choice) => self.invoke_feedback_action(choice.id, choice.action),
             Entry::Terminal(action) => self.invoke_terminal_action(action),
+            Entry::Review(_) if !fresh => {
+                self.message = "the view changed since actions were listed; reopen actions".into();
+            }
+            Entry::Review(ReviewAction::Apply) => self.review_apply_pub(),
+            Entry::Review(ReviewAction::Revert) => self.review_revert(),
+            Entry::Review(ReviewAction::Cancel) => self.review_cancel_pub(),
             Entry::Code(index) => self.accept_code_action(index),
             Entry::Filesystem(_) if !fresh => {
                 self.message = "the view changed since actions were listed; reopen actions".into();

@@ -68,6 +68,10 @@ pub(crate) struct SubstituteSpec {
     /// The replacement string, `~` expanded, specials unparsed.
     pub replacement: String,
     pub flags: Flags,
+    /// Byte spans a match must lie inside; empty means anywhere. A
+    /// collection substitutes inside its excerpts, never in a card border
+    /// that happens to spell the pattern (0094 §3.1).
+    pub within: Vec<(usize, usize)>,
 }
 
 /// What `:&`, `&`, `g&` and `~` repeat.
@@ -170,6 +174,16 @@ pub(crate) fn plan(buf: &Buffer, spec: &SubstituteSpec) -> Result<SubstitutionPl
         // reach in.
         if hit_start < start {
             return std::ops::ControlFlow::Continue(());
+        }
+        if !spec.within.is_empty() {
+            let after = spec.within.partition_point(|span| span.0 <= hit_start);
+            // strictly inside: the span's last byte is its line terminator
+            if !after
+                .checked_sub(1)
+                .is_some_and(|index| hit.end.get() < spec.within[index].1)
+            {
+                return std::ops::ControlFlow::Continue(());
+            }
         }
         if !spec.flags.global {
             let line = buf.line_of(hit_start);

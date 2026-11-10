@@ -108,6 +108,8 @@ pub struct PickerGlue {
     /// the default, in words; empty when nothing (0088 rule 4).
     pub status_row: String,
     pub(crate) query: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
+    /// The one term With replaces, compiled with the query (0094 §3.2).
+    replace_target: Option<regex::Regex>,
     file_scope: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
     /// Exact namespace/root captured when a Files surface opens.
     pub(crate) file_root: Option<strop_workspace::ResourceLocation>,
@@ -165,6 +167,7 @@ impl PickerGlue {
             file_scope: None,
             file_root: None,
             query: None,
+            replace_target: None,
             indent_target: None,
             search: None,
             preview_witness: None,
@@ -313,6 +316,18 @@ impl Editor {
 
     pub fn picker_open(&self) -> bool {
         self.picker.is_some()
+    }
+
+    /// What With puts in place of each hit, while the With field shows:
+    /// the same replacer the review is prepared with.
+    pub fn search_replacer(&self) -> Option<strop_picker::Replacer> {
+        let glue = self.picker.as_ref()?;
+        glue.picker.replacement_visible.then(|| {
+            strop_picker::Replacer::new(
+                glue.replace_target.as_ref(),
+                glue.picker.replace_input.text(),
+            )
+        })
     }
 
     /// Cancel/forget every preview this picker instance owns. Running

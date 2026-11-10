@@ -182,7 +182,7 @@ fn obsolete_review_completion_cannot_publish_after_search_reentry() {
     assert!(editor
         .docs
         .iter()
-        .all(|(_, doc)| doc.buf.name.as_deref() != Some("change proposal 1")));
+        .all(|(_, doc)| doc.buf.name.as_deref() != Some("review: replace")));
     editor.review_apply_pub();
     assert!(editor.docs.iter().all(|(_, doc)| !doc.buf.is_dirty()));
 }
@@ -204,7 +204,7 @@ fn late_review_does_not_steal_typing_and_stale_collect_refuses() {
     assert!(editor
         .docs
         .iter()
-        .any(|(_, doc)| doc.buf.name.as_deref() == Some("change proposal 1")));
+        .any(|(_, doc)| doc.buf.name.as_deref() == Some("review: replace")));
     editor.review_cancel_pub();
     editor.wait_picker();
     editor.close_picker();

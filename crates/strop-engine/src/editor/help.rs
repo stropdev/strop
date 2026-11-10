@@ -103,7 +103,11 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
             ("+ / -", "Expand/contract the current excerpt's context"),
             ("]e / [e", "Next/previous excerpt; ]f / [f move file cards"),
             ("g<space>", "Open the real source; Ctrl-O restores the collection view"),
-            ("read-only", "Search/yank/navigate freely; edits happen in the real source"),
+            ("edit", "Edits inside an excerpt change its source; borders and gaps are not text"),
+            (":w", "Write every changed file the collection shows"),
+            ("u", "Undo the collection's own edits, in its sources too"),
+            (":copen", "The newest collection is the quickfix list; ]q / [q visit its hits"),
+            (":cdo / :cfdo", "Run an ex command at every hit, or once per file: :cdo s/a/b/g"),
         ],
     ),
     (
@@ -117,12 +121,11 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
     (
         "Review",
         &[
-            ("enter in With", "Prepare the exact review, without changing or saving sources"),
-            ("space a", "Apply/Save/Cancel/Inspect actions valid for the focused review"),
-            (":apply-change", "Apply to source buffers; results remain dirty until saved"),
-            (":cancel-change", "Cancel and restore the query/draft/exclusions"),
-            (":save-change", "Save files from the most recent applied operation"),
-            (":undo-change", "Undo verified targets; conflicted receipt members remain recoverable"),
+            ("enter in With", "Prepare the review: the exact diff, nothing changed yet"),
+            ("enter", "In the review: apply every file and write it"),
+            ("u", "In the review: revert the buffers and the files; names what it could not"),
+            ("q", "Close the review; one that was never applied is cancelled"),
+            ("$1 \\1", "With a regex: term, captures expand in With"),
         ],
     ),
     (

@@ -101,7 +101,7 @@ pub(super) fn proposal(
         ReviewRow::Context,
     );
     view.line(
-        "Apply filesystem changes: :apply-change   Cancel: :cancel-change",
+        "Enter or :fs apply makes these changes · q or :fs cancel discards them",
         ReviewRow::Heading,
     );
     if batch

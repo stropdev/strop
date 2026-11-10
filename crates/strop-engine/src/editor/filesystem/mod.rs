@@ -117,6 +117,12 @@ impl FsState {
             || self.running.is_some()
             || self.verifying.is_some()
     }
+    /// `document` shows the review awaiting apply or cancel.
+    pub(crate) fn reviews(&self, document: DocumentId) -> bool {
+        self.pending
+            .as_ref()
+            .is_some_and(|proposal| proposal.report == document)
+    }
     pub(crate) fn mutation_pending(&self, request: WorkerId) -> bool {
         self.running == Some(request)
     }
@@ -538,7 +544,7 @@ impl Editor {
                             view_revision: self.doc(report).buf.revision(),
                         });
                         self.message =
-                            "review exact filesystem steps; :apply-change or :cancel-change".into();
+                            "review exact filesystem steps; :fs apply or :fs cancel".into();
                     }
                     Outcome::Failed { failure, .. } => self.message = failure.message,
                     Outcome::Cancelled(_) => {
