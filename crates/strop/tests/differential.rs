@@ -1,6 +1,7 @@
 //! Tier 1 differential harness (0001 §5.10, 0006): the same key sequence
 //! drives strop (headless) and pinned nvim (`-u NONE -i NONE -n`);
-//! final text, cursor, the unnamed register and 'modified' must agree.
+//! final text, cursor, the unnamed register, the lifecycle registers
+//! (`"0 "1 "2 "- "a "b`, plan 0091) and 'modified' must agree.
 //!
 //! Deviations are bugs by doctrine (0001 pillar 1). Genuinely intended
 //! deviations live in KNOWN_DIVERGENCES with a reason — the list is
@@ -379,6 +380,123 @@ const CASES: &[Case] = &[
         text: "abc\n",
         keys: "xuxu<c-r>",
     },
+    // registers (0091 §1): the yank register, the numbered shift, the
+    // small delete, named append, the black hole and the read-only views
+    Case {
+        name: "a yank fills 0 and a later delete leaves it",
+        text: "one two\nthree\nfour\n",
+        keys: "yiwjdd",
+    },
+    Case {
+        name: "line deletes shift the numbered registers",
+        text: "a\nb\nc\nd\n",
+        keys: "dddddd",
+    },
+    Case {
+        name: "a delete within a line is the small delete",
+        text: "one two three\nfour\n",
+        keys: "jddkwdw",
+    },
+    Case {
+        name: "x is a small delete",
+        text: "abc\n",
+        keys: "yiwlx",
+    },
+    Case {
+        name: "a named small delete skips the small-delete register",
+        text: "one two three\n",
+        keys: "dw\"adw",
+    },
+    Case {
+        name: "a named line delete still fills register 1",
+        text: "a\nb\nc\n",
+        keys: "dd\"add",
+    },
+    Case {
+        name: "a match-pair delete within a line fills 1 and the small delete",
+        text: "f(x) y\nz\n",
+        keys: "jddkd%",
+    },
+    Case {
+        name: "a search delete within a line fills 1 and the small delete",
+        text: "a b c\n",
+        keys: "wd/c<cr>",
+    },
+    Case {
+        name: "uppercase appends to the named register",
+        text: "one two\n",
+        keys: "\"ayiww\"Ayiw",
+    },
+    Case {
+        name: "a linewise append makes the register linewise",
+        text: "one\ntwo\n",
+        keys: "\"ayiwj\"Ayy\"ap",
+    },
+    Case {
+        name: "the black hole keeps every register",
+        text: "one\ntwo\nthree\n",
+        keys: "yiwj\"_ddp",
+    },
+    Case {
+        name: "put from the yank register after a delete",
+        text: "one\ntwo\n",
+        keys: "yiwjdd\"0P",
+    },
+    Case {
+        name: "deleting the last line lands on the new last line",
+        text: "one\ntwo\nthree\n",
+        keys: "Gdd",
+    },
+    Case {
+        name: "put from the delete history",
+        text: "a\nb\nc\n",
+        keys: "dddd\"2p",
+    },
+    Case {
+        name: "a change records what it replaced",
+        text: "one two\n",
+        keys: "cwX<esc>",
+    },
+    Case {
+        name: "a visual yank takes a named register",
+        text: "one two\n",
+        keys: "wviw\"by0\"bP",
+    },
+    Case {
+        name: "a visual line delete into a named register",
+        text: "a\nb\nc\n",
+        keys: "Vj\"ad",
+    },
+    Case {
+        name: "insert ctrl-r inserts the unnamed register",
+        text: "one two\n",
+        keys: "yiwA<c-r>\"<esc>",
+    },
+    Case {
+        name: "insert ctrl-r inserts a named register",
+        text: "one two\n",
+        keys: "w\"ayiwI<c-r>a<esc>",
+    },
+    Case {
+        name: "command-line ctrl-r pastes a yank into a search",
+        text: "two one\none two\n",
+        keys: "yiw/<c-r>\"<cr>",
+    },
+    Case {
+        name: "the last-inserted-text register",
+        text: "ab\n",
+        keys: "ixy<esc>\".p",
+    },
+    Case {
+        name: "the last-search register",
+        text: "ab cd\n",
+        keys: "/cd<cr>\"/P",
+    },
+    Case {
+        name: "the last-command register",
+        text: "a\nb\n",
+        keys: ":2<cr>\":p",
+    },
     // two Escapes in a row are two Escapes, never Alt-Esc (B4)
     Case {
         name: "double escape leaves insert and stays in normal",
@@ -426,6 +544,7 @@ struct State {
     line: usize,
     col: usize,
     register: String,
+    registers: std::collections::BTreeMap<String, String>,
     modified: bool,
 }
 
@@ -438,7 +557,7 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
         "call feedkeys(join(readfile('{}', 'b'), ''), 'xt')",
         keysf.display()
     );
-    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'POS:'.line('.').':'.col('.'), 'REG:'.json_encode(getreg('\"'))], '/dev/stdout')";
+    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'POS:'.line('.').':'.col('.'), 'REGS:'.json_encode({'0':getreg('0'),'1':getreg('1'),'2':getreg('2'),'-':getreg('-'),'a':getreg('a'),'b':getreg('b')}), 'REG:'.json_encode(getreg('\"'))], '/dev/stdout')";
     let out = Command::new("nvim")
         .args(["--headless", "-u", "NONE", "-i", "NONE", "-n"])
         .args(["+set noswapfile", "+set shiftwidth=4 expandtab"])
@@ -456,11 +575,13 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
             String::from_utf8_lossy(&out.stderr)
         );
     }
-    // dump layout: text lines…, then "MOD:0|1", "POS:L:C" and a
-    // JSON-encoded register.
+    // dump layout: text lines…, then "MOD:0|1", "POS:L:C", the
+    // JSON-encoded lifecycle registers and the unnamed register.
     let mut lines: Vec<&str> = stdout.lines().collect();
     let register = lines.pop().unwrap().strip_prefix("REG:").unwrap();
     let register: String = serde_json::from_str(register).unwrap();
+    let registers = lines.pop().unwrap().strip_prefix("REGS:").unwrap();
+    let registers = serde_json::from_str(registers).unwrap();
     let pos = lines.pop().unwrap_or("POS:1:1").trim_start_matches("POS:");
     let (line, col) = pos.split_once(':').unwrap();
     let modified = lines.pop().unwrap().strip_prefix("MOD:").unwrap() == "1";
@@ -469,6 +590,7 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
         line: line.parse().unwrap(),
         col: col.parse().unwrap(),
         register,
+        registers,
         modified,
     }
 }
@@ -506,6 +628,7 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> State {
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
         register: v["register"].as_str().unwrap().to_owned(),
+        registers: serde_json::from_value(v["registers"].clone()).unwrap(),
         modified: v["dirty"].as_bool().unwrap(),
     }
 }
@@ -563,21 +686,24 @@ fn differential_vs_nvim() {
             && nv.line == st.line
             && nv.col == st.col
             && nv.register == st.register
+            && nv.registers == st.registers
             && nv.modified == st.modified;
         if known.is_none() && !same {
             failures.push(format!(
-                "=== {} diverges\n  keys: {:?}\n  nvim:  text={:?} cursor={}:{} register={:?} modified={}\n  strop: text={:?} cursor={}:{} register={:?} modified={}",
+                "=== {} diverges\n  keys: {:?}\n  nvim:  text={:?} cursor={}:{} register={:?} registers={:?} modified={}\n  strop: text={:?} cursor={}:{} register={:?} registers={:?} modified={}",
                 case.name,
                 case.keys,
                 nv.text,
                 nv.line,
                 nv.col,
                 nv.register,
+                nv.registers,
                 nv.modified,
                 st.text,
                 st.line,
                 st.col,
                 st.register,
+                st.registers,
                 st.modified
             ));
         }

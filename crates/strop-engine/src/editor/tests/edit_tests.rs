@@ -112,7 +112,7 @@ fn visual_space_y_yanks_selection_to_system_register() {
 fn clipboard_paste_inserts_read_result() {
     let mut e = Editor::new(Buffer::from_text("ab\n"));
     let ticket = clipboard_ticket(&mut e);
-    e.clip_paste_pending = Some((false, ticket.clone()));
+    e.clip_paste_pending = Some((PUT, ticket.clone()));
     e.clip_tx
         .send(Completion {
             ticket,
@@ -127,7 +127,7 @@ fn clipboard_paste_inserts_read_result() {
 fn clipboard_paste_reports_missing_provider() {
     let mut e = Editor::new(Buffer::from_text("ab\n"));
     let ticket = clipboard_ticket(&mut e);
-    e.clip_paste_pending = Some((false, ticket.clone()));
+    e.clip_paste_pending = Some((PUT, ticket.clone()));
     e.clip_tx
         .send(Completion {
             ticket,
@@ -143,10 +143,10 @@ fn clipboard_paste_reports_missing_provider() {
 fn clipboard_stale_ticket_never_pastes_into_newer_request() {
     let mut e = Editor::new(Buffer::from_text("ab\n"));
     let stale = clipboard_ticket(&mut e);
-    e.clip_paste_pending = Some((false, stale.clone()));
+    e.clip_paste_pending = Some((PUT, stale.clone()));
     // a newer request superseded it before the stale result landed
     let fresh = clipboard_ticket(&mut e);
-    e.clip_paste_pending = Some((false, fresh));
+    e.clip_paste_pending = Some((PUT, fresh));
     e.clip_tx
         .send(Completion {
             ticket: stale,
@@ -430,3 +430,9 @@ fn ex_open_and_close_buffers() {
     e.feed_text(":q!<cr>");
     assert!(e.should_quit);
 }
+
+const PUT: crate::editor::registers::PasteDestination =
+    crate::editor::registers::PasteDestination::Put {
+        before: false,
+        count: 1,
+    };

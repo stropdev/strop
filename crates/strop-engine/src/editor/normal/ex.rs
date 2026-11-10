@@ -81,7 +81,7 @@ impl Editor {
                     true,
                     false,
                 );
-                self.set_register(None, register);
+                self.delete_register(None, register, false);
                 self.tx_begin();
                 self.filename_delete_hint(strop_core::Range::charwise(s, e), true);
                 self.buf_mut().delete(strop_core::Range::charwise(s, e));
@@ -105,7 +105,7 @@ impl Editor {
                     false,
                     false,
                 );
-                self.set_register(None, register);
+                self.yank_register(None, register);
                 self.message = format!("{} lines yanked", hi - lo + 1);
             }
             _ => self.message = format!("unsupported ranged command: {rest}"),

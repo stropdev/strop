@@ -67,12 +67,12 @@ pub(super) fn for_picker(
                     desc: "field",
                 });
                 hints.push(Hint {
-                    key: "ctrl-r",
+                    key: "ctrl-t",
                     desc: "replace",
                 });
             } else {
                 hints.push(Hint {
-                    key: "ctrl-r",
+                    key: "ctrl-t",
                     desc: "replace",
                 });
             }
@@ -127,6 +127,12 @@ pub(super) fn for_picker(
             Hint {
                 key: "↑↓",
                 desc: "move",
+            },
+            // the advertised paste is vim's: the unnamed register
+            // (0091 §1) — the terminal's own paste stays the clipboard
+            Hint {
+                key: "ctrl-r \"",
+                desc: "paste yank",
             },
             ESC_CLOSE,
         ],

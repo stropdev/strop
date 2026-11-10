@@ -69,7 +69,7 @@ fn review_clipboard_reply_preserves_destination() {
         request: e.worker_ids.allocate().unwrap(),
         key: ClipboardKey { document: first },
     };
-    e.clip_paste_pending = Some((false, ticket.clone()));
+    e.clip_paste_pending = Some((PUT, ticket.clone()));
     let second = e
         .docs
         .try_insert(Document::scratch(Buffer::from_text("second\n")))
@@ -219,3 +219,9 @@ fn review_operator_find_accepts_digit_as_target() {
         "a digit after f is a target character"
     );
 }
+
+const PUT: crate::editor::registers::PasteDestination =
+    crate::editor::registers::PasteDestination::Put {
+        before: false,
+        count: 1,
+    };

@@ -59,12 +59,16 @@ impl Editor {
                 self.last_insert = None;
             }
             Key::Char('d') | Key::Char('y') | Key::Char('c') | Key::Char('x')
-                if self.walker.is_ground() && self.mode == Mode::VisualBlock =>
+                if self.walker.operator_register().is_some() && self.mode == Mode::VisualBlock =>
             {
+                let register = self.take_visual_register();
+                if !self.register_writable(register) {
+                    return;
+                }
                 match key {
-                    Key::Char('y') => self.block_yank(),
-                    Key::Char('c') => self.block_change(),
-                    _ => self.block_delete(),
+                    Key::Char('y') => self.block_yank(register),
+                    Key::Char('c') => self.block_change(register),
+                    _ => self.block_delete(register),
                 }
             }
             Key::Char('I') if self.mode == Mode::VisualBlock && self.walker.is_ground() => {
@@ -74,17 +78,22 @@ impl Editor {
                 self.block_insert(true)
             }
             Key::Char('d') | Key::Char('y') | Key::Char('c') | Key::Char('x')
-                if self.walker.is_ground() =>
+                if self.walker.operator_register().is_some() =>
             {
                 let op = match key {
                     Key::Char('d') | Key::Char('x') => Op::Delete,
                     Key::Char('y') => Op::Yank,
                     _ => Op::Change,
                 };
+                // `"ay` / `"_d`: the selector typed before the operator
+                let named = self.take_visual_register();
+                if !self.register_writable(named) {
+                    return;
+                }
                 // occurrence selections (0049 §7.4): real stretched
                 // ranges cascade the operator over every occurrence
                 if self.mode == Mode::Visual && self.sels().count() > 1 {
-                    self.visual_operate_cascade(op);
+                    self.visual_operate_cascade(op, named);
                     return;
                 }
                 if self.buf().readonly && op != Op::Yank {
@@ -103,7 +112,7 @@ impl Editor {
                         .abs_diff(self.buf().line_of(self.head()))
                         + 1;
                     self.mode = Mode::Normal;
-                    self.change_lines(None, "V...", &[(self.head(), range, true)]);
+                    self.change_lines(named, "V...", &[(self.head(), range, true)]);
                     self.last_change = Some(grammar::Command {
                         op: Some(Op::Change),
                         register: None,
@@ -128,7 +137,7 @@ impl Editor {
                     };
                     register.file_provenance =
                         self.capture_filename_register([(range, linewise)], false, false);
-                    self.set_register(None, register);
+                    self.yank_register(named, register);
                     self.flash(range);
                 } else {
                     let text = self.buf().slice_string(range);
@@ -160,7 +169,7 @@ impl Editor {
                         super::Register::characterwise(text)
                     };
                     register.file_provenance = provenance;
-                    self.set_register(None, register);
+                    self.delete_register(named, register, false);
                     self.set_head(range.start.get());
                     self.flash(Range::charwise(self.head(), self.head()));
                 }
@@ -233,7 +242,7 @@ impl Editor {
     /// selections are real ranges, so each one is yanked/deleted/
     /// changed — the batch is ONE undo unit, the register one
     /// newline-joined characterwise text (the normal cascade's rule).
-    fn visual_operate_cascade(&mut self, op: Op) {
+    fn visual_operate_cascade(&mut self, op: Op, named: Option<char>) {
         if self.buf().readonly && op != Op::Yank {
             self.refuse_readonly();
             self.mode = Mode::Normal;
@@ -250,7 +259,7 @@ impl Editor {
             .map(|((start, end), _)| self.buf().slice_string(Range::charwise(*start, *end)))
             .collect();
         if op == Op::Yank {
-            self.set_register(None, super::Register::characterwise(texts.join("\n")));
+            self.yank_register(named, super::Register::characterwise(texts.join("\n")));
             // helix rule: yank keeps the selections (and Visual mode)
             let flash = spans
                 .iter()
@@ -263,7 +272,11 @@ impl Editor {
         for ((start, end), _) in spans.iter().rev() {
             self.buf_mut().delete(Range::charwise(*start, *end));
         }
-        self.set_register(None, super::Register::characterwise(texts.join("\n")));
+        self.delete_register(
+            named,
+            super::Register::characterwise(texts.join("\n")),
+            false,
+        );
         // landings: each range start minus what lower deletes removed
         // (deletes applied bottom-up above)
         let mut shift = 0usize;
@@ -375,7 +388,7 @@ impl Editor {
                     };
                     register.file_provenance =
                         self.capture_filename_register([(range, linewise)], false, false);
-                    self.set_register(Some('+'), register);
+                    self.yank_register(Some('+'), register);
                     self.flash(range);
                 }
                 self.mode = Mode::Normal;
@@ -434,6 +447,13 @@ impl Editor {
                 self.last_insert = None;
             }
         }
+    }
+
+    /// The `"x` selector typed before a visual operator, consumed.
+    fn take_visual_register(&mut self) -> Option<char> {
+        let register = self.walker.operator_register().flatten();
+        self.walker.clear();
+        register
     }
 
     pub fn visual_range(&self) -> Option<Range> {

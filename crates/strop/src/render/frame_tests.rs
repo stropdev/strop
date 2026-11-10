@@ -462,7 +462,7 @@ fn search_keeps_outer_geometry_and_recovers_active_field_after_tiny_resize() {
             .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
         let before = terminal.backend().buffer().clone();
-        editor.feed(Key::CtrlR);
+        editor.feed(Key::CtrlT);
         terminal
             .draw(|frame| crate::render::paint(&mut editor, frame))
             .unwrap();
@@ -476,9 +476,9 @@ fn search_keeps_outer_geometry_and_recovers_active_field_after_tiny_resize() {
             assert_eq!(before[(x, y)].symbol(), after[(x, y)].symbol());
         }
         assert_eq!(editor.picker().unwrap().picker.selected, 20);
-        editor.feed(Key::CtrlR);
+        editor.feed(Key::CtrlT);
     }
-    editor.feed(Key::CtrlR);
+    editor.feed(Key::CtrlT);
     editor.paste_bracketed("replacement");
     let top = editor.picker().unwrap().picker.scroll_top;
     let tiny = crate::headless::frame_string(&mut editor, 12, 4).unwrap();

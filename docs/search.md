@@ -90,10 +90,14 @@ the same investigation with the replacement field visible. Local
 enumeration and content matching run entirely in Rust using the
 `ignore`/`grep` crate family — `rg` is not required on your machine.
 
-- **Ctrl-R** toggles the With field without restarting the search or losing
+- **Ctrl-T** toggles the With field without restarting the search or losing
   either field's text, caret, mode, selection or workset. Enter in **Find**
   opens the selected source; Enter in **With** prepares Review. Tab switches
   fields when With is visible.
+- **Ctrl-R {register}** inserts a register into Find or With, exactly as in
+  insert mode and on the `:` / `/` lines: `Ctrl-R "` is the last yank or
+  delete, `Ctrl-R 0` the last yank, `Ctrl-R a` a named register, `Ctrl-R +`
+  the system clipboard.
 - **Ctrl-X** toggles one match; **Ctrl-D** masks/restores its file.
   Excluded hits stay visible. **Ctrl-O** collects exactly the included
   matches into a read-only source-backed collection.

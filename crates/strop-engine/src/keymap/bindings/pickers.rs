@@ -44,7 +44,15 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "ctrl-r",
-        desc: "Search: toggle replacement; document: redo",
+        desc: "input field: insert register {reg} (\" is the last yank/delete)",
+        sections: &["pickers"],
+        live: true,
+        id: "field-register",
+        handler: Handler::Contextual,
+    },
+    Binding {
+        keys: "ctrl-t",
+        desc: "Search: toggle replacement",
         sections: &["pickers"],
         live: true,
         id: "search-replacement",

@@ -182,7 +182,7 @@ impl Editor {
                     }
                     text.push_str(&source.uri().map_err(|error| error.to_string())?);
                 }
-                self.set_register(Some('+'), super::super::Register::characterwise(text));
+                self.yank_register(Some('+'), super::super::Register::characterwise(text));
                 self.message = "resource URI copied to clipboard register".into();
                 return Ok(());
             }
