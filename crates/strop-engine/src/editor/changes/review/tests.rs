@@ -2,6 +2,7 @@ use super::super::ChangeProducer;
 use super::*;
 use std::path::PathBuf;
 use strop_core::id::LineIndex;
+use strop_core::Buffer;
 use strop_lsp::{PositionEncoding, ServerColumn, ServerEdit, ServerId, ServerPosition};
 use strop_workspace::ResourceLocation;
 

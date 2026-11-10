@@ -8,8 +8,9 @@
 //! after, so the next edit of the same lease sees current geometry on both
 //! sides. A batch (`Editor::apply`, admitted as a whole first) and a history
 //! move (`u`, `Ctrl-R`) reach `sync_document` with a journal the view's
-//! geometry has not accounted for; those are composed into disjoint
-//! replacements and written per source in one batch.
+//! geometry has not accounted for. A batch is composed into disjoint
+//! replacements and written per source; a history move is repeated in the
+//! history of each source it touched, which holds the exact inverse.
 use super::{Collection, Editor};
 use strop_core::id::DocumentId;
 use strop_core::{ChangeOrigin, Range, Replacement};
