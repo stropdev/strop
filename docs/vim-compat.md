@@ -160,6 +160,9 @@ Generated from the command table (`strop compat`).
 - `✓ up down left right tab s-tab` — picker navigation / arrows = hjkl everywhere
 - `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
+- `✓ ctrl-u` — query field: clear back to the start
+- `✓ alt-c alt-w alt-r` — Search: match case / whole word / regex
+- `✓ alt-h alt-i` — Files, Search: hidden files / ignored files
 - `✓ ctrl-d` — Search: exclude/include file
 - `✓ ctrl-r` — Search: toggle replacement; document: redo
 - `✓ enter` — Search Find: open source; With: prepare review
@@ -190,6 +193,6 @@ Generated from the command table (`strop compat`).
 - `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
-- `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
+- `✓ :tab-size :indent-style` — source indentation controls
 - `✓ :fs :browse :filter` — filesystem actions, namespace-aware browsing and folder filtering
 - `✓ :apply-change :cancel-change :save-change` — review: apply text or filesystem changes, cancel, or save changed text
