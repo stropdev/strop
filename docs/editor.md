@@ -130,8 +130,10 @@ and starts one scoped reattach; repeat the request after it is ready.
 
 ## The project root
 
-The project is the directory strop was launched in, and it stays there:
-`:pwd` shows it. Files (`Space f`), Search (`Space /`) and new terminals are
+The project is the directory strop was launched in, and it stays there
+until you move it: `:pwd` shows it, `:cd DIR` changes it (`:cd -` goes
+back, `:cd` alone goes home). The session and draft-recovery files, buffer
+names and the file watcher follow the new root. Files (`Space f`), Search (`Space /`) and new terminals are
 scoped to it whichever file has focus. Following go-to-definition into the
 Rust standard library, a cargo registry crate or a system header does not
 re-root anything — that file opens read-only, and the project's language
@@ -139,6 +141,36 @@ server keeps serving it (a library file belongs to the project that depends
 on it; no second server is started in the library's directory). Browsing a
 directory deliberately (`:browse DIR`) scopes Files and Search to that
 directory while it has focus.
+
+## The command line
+
+`:` takes Vim's ranges and Vim's names. A range is line numbers, `.`, `$`,
+`%`, marks (`'a`, and `'<,'>` — which `:` typed from Visual mode fills in),
+`/pattern/` and `?pattern?`, each with `+N` / `-N` offsets, joined by `,` or
+`;`. A reversed range or one past the last line is refused with a message.
+Commands take their Vim abbreviations (`:s`, `:g`, `:norm`, `:d`, `:m`,
+`:t`, `:bn`, `:wqa` …) and `!` where Vim does.
+
+- **Lines**: `:d [x] [count]`, `:y [x] [count]`, `:m {address}`,
+  `:t {address}` (`:co`), `:j[!]`, `:pu[!] [x]`, `:>` / `:<` (`:>>` twice),
+  `:sort[!] [u][n][i]`, and `:{range}!cmd` to filter lines through a shell
+  command.
+- **Many lines at once**: `:g/pattern/cmd` runs a command on every matching
+  line (`:g!` and `:v` on the others); `:[range]norm keys` types Normal-mode
+  keys on each line. Each is one undo step.
+- **Substitute**: see [search.md](search.md#ex-substitution).
+- **Buffers**: `:b N` or `:b name` (a fragment that matches one buffer),
+  `:bn`, `:bp`, `:bd [N]`; `:ls`, `:reg [names]` and `:marks` open their
+  listing as a read-only buffer.
+- **Files**: `:w`, `:up` (only if modified), `:wa` (every modified file; it
+  says how many, and names the count of modified buffers that have no file
+  name), `:wq`, `:x`, `:wqa` / `:xa`, `:e`, `:enew`, `:new`, `:vnew`,
+  `:close`, `:only`.
+- `:@:` repeats the last command line.
+
+Not there: `|` between commands, `:g` without a command (print), the `c`
+flag of `:s` inside `:g` or `:norm`, `:set` beyond `ro`, `:r file`, and
+`:sort` by pattern or by hex / octal / float.
 
 ## Registers
 
