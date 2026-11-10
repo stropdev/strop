@@ -2,6 +2,7 @@
 //! request for request and records exactly what the client sent, so
 //! request shapes and pipelining are evidence, not source pins; malformed
 //! server frames exercise the production codec and scripts.
+use super::super::mutate::{mutate, Mutation};
 use super::super::save::{save, Expect, Stamp};
 use super::super::session::read_text;
 use super::*;
@@ -251,7 +252,7 @@ fn a_failed_close_cannot_complete_a_read() {
     let mut replies = whole(b"x", 1);
     replies[5] = status(6, 4);
     let mut session = scripted(replies, &[]);
-    assert_eq!(kind(session.read(1024)), RemoteFailureKind::Protocol);
+    assert_eq!(kind(session.read(1024)), RemoteFailureKind::Failure);
     session.finish();
 }
 
@@ -411,11 +412,134 @@ fn a_failed_write_is_typed_and_removes_the_temporary() {
     );
     assert_eq!(
         kind(session.save(b"x", Expect::Absent)),
-        RemoteFailureKind::Protocol
+        RemoteFailureKind::Failure
     );
     assert_eq!(
         session.kinds(),
         [LSTAT, OPEN, WRITE, CLOSE, SETSTAT, REMOVE]
     );
+    session.finish();
+}
+
+const MKDIR: u8 = PacketKind::Mkdir as u8;
+const RMDIR: u8 = PacketKind::Rmdir as u8;
+
+impl Scripted {
+    fn mutate(&mut self, mutation: Mutation) -> Result<Option<super::super::RemoteAttrs>, Fault> {
+        self.runtime.block_on(mutate(&mut self.session, &mutation))
+    }
+}
+
+#[test]
+fn a_created_file_is_exclusive_and_takes_its_mode_after_the_bytes() {
+    let mut session = scripted(
+        vec![
+            handle(1),
+            status(2, 0),
+            status(3, 0),
+            status(4, 0),
+            attrs(5, 3, 0o100_644, 9),
+        ],
+        &[],
+    );
+    let after = session
+        .mutate(Mutation::CreateFile {
+            path: "/w/new.txt".into(),
+            bytes: b"new".to_vec(),
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.size, Some(3));
+    assert_eq!(session.kinds(), [OPEN, WRITE, CLOSE, SETSTAT, LSTAT]);
+    // SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL, created private.
+    let open = session.request(1);
+    assert!(
+        open.windows(4).any(|w| w == 0x2a_u32.to_be_bytes()),
+        "{open:?}"
+    );
+    assert!(open.ends_with(&0o600_u32.to_be_bytes()));
+    assert!(session.request(4).ends_with(&0o644_u32.to_be_bytes()));
+    session.finish();
+}
+
+#[test]
+fn an_occupied_name_refuses_creation_and_nothing_is_written() {
+    let mut session = scripted(vec![status(1, 4)], &[]);
+    let refused = session.mutate(Mutation::CreateFile {
+        path: "/w/taken.txt".into(),
+        bytes: b"x".to_vec(),
+    });
+    assert_eq!(kind(refused), RemoteFailureKind::Failure);
+    assert_eq!(session.kinds(), [OPEN]);
+    session.finish();
+}
+
+#[test]
+fn directories_are_made_and_removed_with_their_own_requests() {
+    let mut session = scripted(
+        vec![status(1, 0), attrs(2, 4096, 0o040_755, 9), status(3, 0)],
+        &[],
+    );
+    let made = session
+        .mutate(Mutation::CreateDirectory {
+            path: "/w/dir".into(),
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(made.kind, crate::RemoteEntryKind::Directory);
+    assert!(session.request(1).ends_with(&0o755_u32.to_be_bytes()));
+    assert!(session
+        .mutate(Mutation::Remove {
+            path: "/w/dir".into(),
+            directory: true,
+        })
+        .unwrap()
+        .is_none());
+    assert_eq!(session.kinds(), [MKDIR, LSTAT, RMDIR]);
+    session.finish();
+}
+
+#[test]
+fn rename_never_uses_the_replacing_extension() {
+    let mut session = scripted(
+        vec![status(1, 0), attrs(2, 1, 0o100_644, 9)],
+        &[b"posix-rename@openssh.com"],
+    );
+    session
+        .mutate(Mutation::Rename {
+            from: "/w/a".into(),
+            to: "/w/b".into(),
+        })
+        .unwrap();
+    assert_eq!(session.kinds(), [RENAME, LSTAT]);
+    session.finish();
+}
+
+#[test]
+fn a_copy_reads_the_source_and_creates_the_copy_with_its_mode() {
+    let mut replies = whole(b"abc", 1);
+    replies[1] = attrs(2, 3, 0o100_750, 7);
+    replies[4] = attrs(5, 3, 0o100_750, 7);
+    replies.extend([
+        handle(7),
+        status(8, 0),
+        status(9, 0),
+        status(10, 0),
+        attrs(11, 3, 0o100_750, 9),
+    ]);
+    let mut session = scripted(replies, &[]);
+    session
+        .mutate(Mutation::Copy {
+            from: "/w/a".into(),
+            to: "/w/b".into(),
+            max: 1024,
+        })
+        .unwrap();
+    assert_eq!(
+        session.kinds(),
+        [OPEN, STAT, READ, READ, FSTAT, CLOSE, OPEN, WRITE, CLOSE, SETSTAT, LSTAT]
+    );
+    assert!(session.request(8).ends_with(b"abc"));
+    assert!(session.request(10).ends_with(&0o750_u32.to_be_bytes()));
     session.finish();
 }

@@ -86,7 +86,7 @@ tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
 - **The survival rule:** an artefact stays only if it is a machine-checked
   proof about shipped code, a test of behaviour a user can see, or a
   counterexample finder with a recorded catch. No evidence inventories,
-  digest receipts, freezes or re-pin commits. The three TLC models in
+  digest receipts, freezes or re-pin commits. The two TLC models in
   `specs/` are on probation until 0.55.
 - **Every lane blocks.** A gate that may fail without stopping a release is
   deleted, not tolerated.

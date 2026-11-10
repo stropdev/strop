@@ -325,9 +325,17 @@ Shipped (the worker deleted in the change that moved the editor, per §5):
   numbers) would have kept the window type through the document model, completion, Git,
   LSP and the statusline for a log-reading niche that `ssh host tail -f FILE | strop -`
   covers. Owner check stays open as a question on the 0.56 PR.
-- **Remote file operations refused.** `:fs` batches on an SSH host were worker-only; they
-  are a typed refusal pointing at the host's terminal.
+- **Remote file management over SFTP.** `RemoteKernel` (`editor/namespace/remote.rs`)
+  implements strop-fs's `StepKernel` over `RemoteClient::observe/mutate`, so the batch
+  orchestration (missing parents as steps, dependency order, cancellation, the
+  unconfirmed cascade, verify) is the local one. Steps: exclusive create, MKDIR, v3 RENAME
+  (refuses an existing name; never `posix-rename`), copy = whole read + exclusive create
+  with the mode, REMOVE/RMDIR. Each step re-observes its source (kind, size, mtime) and
+  destination just before running. Limits: no Trash (removal permanent, said in the
+  review), no recursive directory copy, no atomicity across steps, no lock. Touched remote
+  directory views reload after apply (a host is not watched).
 - **Lanes.** `ssh-pythonfree` now runs the exec journeys against a real listening sshd and
   the editor journeys (`remote_ssh`: open, edit, save, changed-on-disk refusal, `:w!`,
-  save-as, search, `Space g l`, terminal with Ctrl-C and typeahead, failure refusals)
+  save-as, file management and its refusals, search, `Space g l`, terminal with Ctrl-C and
+  typeahead, failure refusals)
   through the real binary. `ssh-bench` is an exec-only latency bench (opt-in).

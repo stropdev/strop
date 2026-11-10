@@ -21,4 +21,6 @@ pub use client::{
 };
 pub use hosts::{enumerate_hosts, CandidateOrigin, HostCandidate, HostEnumeration, HostSources};
 pub use pool::MAX_TEXT;
-pub use transport::{Expect, RemoteError, RemoteFailureKind, RemoteStage, Stamp};
+pub use transport::{
+    Expect, Mutation, RemoteAttrs, RemoteError, RemoteFailureKind, RemoteStage, Stamp,
+};

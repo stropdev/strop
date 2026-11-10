@@ -40,6 +40,8 @@ enum PacketKind {
     Opendir = 11,
     Readdir = 12,
     Remove = 13,
+    Mkdir = 14,
+    Rmdir = 15,
     Stat = 17,
     Rename = 18,
     Status = 101,
@@ -214,6 +216,7 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Sftp<W, R> {
                     1 => RemoteFailureKind::ShortRead,
                     2 => RemoteFailureKind::NotFound,
                     3 => RemoteFailureKind::Permission,
+                    4 => RemoteFailureKind::Failure,
                     20 => RemoteFailureKind::NotDirectory,
                     _ => RemoteFailureKind::Protocol,
                 };

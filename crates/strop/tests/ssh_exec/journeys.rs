@@ -215,3 +215,97 @@ fn listing_reports_kinds_and_sizes_and_the_client_owns_its_master() {
     drop(client);
     assert!(!host.is_connected());
 }
+
+#[test]
+fn file_management_creates_renames_copies_removes_and_never_replaces() {
+    use strop_remote::Mutation;
+    let Some(scope) = serial() else { return };
+    let fixture = &scope.fixture;
+    let client = RemoteClient::with_control_dir(fixture.control());
+    let (token, _owner) = token();
+    let host = endpoint("fixture");
+    let work = tempfile::tempdir_in(fixture.root()).unwrap();
+    let at = |name: &str| work.path().join(name);
+    let run = |mutation| client.mutate(&host, mutation, &token);
+
+    run(Mutation::CreateDirectory { path: at("dir") }).unwrap();
+    let created = run(Mutation::CreateFile {
+        path: at("dir/a.txt"),
+        bytes: b"alpha\n".to_vec(),
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(created.size, Some(6));
+    std::fs::set_permissions(at("dir/a.txt"), std::fs::Permissions::from_mode(0o640)).unwrap();
+    run(Mutation::Copy {
+        from: at("dir/a.txt"),
+        to: at("b.txt"),
+        max: 1 << 20,
+    })
+    .unwrap();
+    assert_eq!(std::fs::read(at("b.txt")).unwrap(), b"alpha\n");
+    assert_eq!(
+        std::fs::metadata(at("b.txt")).unwrap().permissions().mode() & 0o7777,
+        0o640
+    );
+    run(Mutation::Rename {
+        from: at("dir/a.txt"),
+        to: at("c.txt"),
+    })
+    .unwrap();
+    assert!(!at("dir/a.txt").exists());
+    assert_eq!(std::fs::read(at("c.txt")).unwrap(), b"alpha\n");
+
+    // Nothing replaces an existing name, and the session survives each
+    // refusal.
+    for refused in [
+        Mutation::CreateFile {
+            path: at("b.txt"),
+            bytes: b"x".to_vec(),
+        },
+        Mutation::CreateDirectory { path: at("dir") },
+        Mutation::Rename {
+            from: at("c.txt"),
+            to: at("b.txt"),
+        },
+        Mutation::Copy {
+            from: at("c.txt"),
+            to: at("b.txt"),
+            max: 1 << 20,
+        },
+    ] {
+        let Err(error) = run(refused.clone()) else {
+            panic!("{refused:?} replaced an existing name");
+        };
+        assert_eq!(error.kind(), RemoteFailureKind::Failure, "{error}");
+    }
+    assert_eq!(std::fs::read(at("b.txt")).unwrap(), b"alpha\n");
+    assert_eq!(std::fs::read(at("c.txt")).unwrap(), b"alpha\n");
+
+    // A non-empty directory is refused; files and empty directories go.
+    std::fs::write(at("dir/keep"), "keep").unwrap();
+    assert!(run(Mutation::Remove {
+        path: at("dir"),
+        directory: true,
+    })
+    .is_err());
+    assert!(at("dir/keep").exists());
+    run(Mutation::Remove {
+        path: at("dir/keep"),
+        directory: false,
+    })
+    .unwrap();
+    run(Mutation::Remove {
+        path: at("dir"),
+        directory: true,
+    })
+    .unwrap();
+    assert!(!at("dir").exists());
+    let observed = client
+        .observe(&file(&at("c.txt")), &token)
+        .unwrap()
+        .unwrap();
+    assert_eq!(observed.kind, RemoteEntryKind::File);
+    assert!(client.observe(&file(&at("dir")), &token).unwrap().is_none());
+    client.disconnect_all().unwrap();
+}

@@ -1,8 +1,6 @@
 //! Namespace dispatch: the local filesystem runs in process
-//! ([`LocalFs`]); SSH workspaces list and read over the endpoint's SFTP
-//! session. Checked filesystem operations (rename, delete, copy) are
-//! local only — an SSH host is edited file by file, and anything else
-//! runs in its terminal.
+//! ([`LocalFs`]); SSH workspaces list, read and run reviewed file
+//! operations over the endpoint's SFTP session ([`remote::RemoteKernel`]).
 
 use strop_core::worker::CancelToken;
 use strop_fs::batch::PreparedBatch;
@@ -13,14 +11,28 @@ use strop_workspace::operation::{
 use strop_workspace::{EntryKind, Filesystem, ResourceLocation};
 
 mod local;
+mod remote;
 pub(crate) use local::LocalFs;
+use remote::RemoteKernel;
+use strop_remote::RemoteClient;
 
 fn failure(kind: FsFailureKind, detail: impl Into<String>) -> FsFailure {
     FsFailure::new(kind, detail)
 }
 
-const REMOTE_OPERATIONS: &str =
-    "file operations on an SSH host are not supported; run them in its :terminal";
+/// The workspace kind of one remote entry kind.
+pub(crate) fn entry_kind(kind: strop_remote::RemoteEntryKind) -> EntryKind {
+    match kind {
+        strop_remote::RemoteEntryKind::File => EntryKind::File,
+        strop_remote::RemoteEntryKind::Directory => EntryKind::Directory,
+        strop_remote::RemoteEntryKind::SymbolicLink => EntryKind::SymbolicLink,
+        strop_remote::RemoteEntryKind::Fifo => EntryKind::Fifo,
+        strop_remote::RemoteEntryKind::Socket => EntryKind::Socket,
+        strop_remote::RemoteEntryKind::BlockDevice => EntryKind::BlockDevice,
+        strop_remote::RemoteEntryKind::CharacterDevice => EntryKind::CharacterDevice,
+        strop_remote::RemoteEntryKind::Unknown => EntryKind::Unknown,
+    }
+}
 
 /// A listed directory plus the connection lease that produced it, when the
 /// listing rode an owned remote connection. The lease is client state; the
@@ -93,16 +105,7 @@ pub(crate) fn from_remote(
             entry.file.path().file_name().ok_or_else(|| {
                 failure(FsFailureKind::Protocol, "remote child has no native name")
             })?;
-        let kind = match entry.kind {
-            strop_remote::RemoteEntryKind::File => EntryKind::File,
-            strop_remote::RemoteEntryKind::Directory => EntryKind::Directory,
-            strop_remote::RemoteEntryKind::SymbolicLink => EntryKind::SymbolicLink,
-            strop_remote::RemoteEntryKind::Fifo => EntryKind::Fifo,
-            strop_remote::RemoteEntryKind::Socket => EntryKind::Socket,
-            strop_remote::RemoteEntryKind::BlockDevice => EntryKind::BlockDevice,
-            strop_remote::RemoteEntryKind::CharacterDevice => EntryKind::CharacterDevice,
-            strop_remote::RemoteEntryKind::Unknown => EntryKind::Unknown,
-        };
+        let kind = entry_kind(entry.kind);
         entries.push(strop_fs::ObservedEntry {
             name: name.to_owned(),
             kind,
@@ -134,10 +137,10 @@ fn batch_namespace(locations: impl Iterator<Item = Filesystem>) -> Result<Filesy
     Ok(first)
 }
 
-/// Prepare one reviewed batch. Only the local namespace has checked
-/// operations.
+/// Prepare one reviewed batch in its namespace.
 pub(crate) fn prepare(
     local: &LocalFs,
+    client: &RemoteClient,
     intents: &[OperationIntent],
     environment: &Environment,
     token: &CancelToken,
@@ -149,13 +152,19 @@ pub(crate) fn prepare(
     }))?;
     match namespace {
         Filesystem::Local => local.prepare(token, intents, environment),
-        Filesystem::Remote(_) => Err(failure(FsFailureKind::Unsupported, REMOTE_OPERATIONS)),
+        Filesystem::Remote(endpoint) => strop_fs::batch::prepare(
+            &RemoteKernel { client, endpoint },
+            intents,
+            environment,
+            token,
+        ),
     }
 }
 
 /// Execute one approved batch.
 pub(crate) fn execute(
     local: &LocalFs,
+    client: &RemoteClient,
     plan: &PreparedBatch,
     contents: &std::collections::HashMap<usize, ropey::Rope>,
     token: &CancelToken,
@@ -167,8 +176,8 @@ pub(crate) fn execute(
     }));
     match namespace {
         Ok(Filesystem::Local) => local.execute(token, plan, contents),
-        Ok(Filesystem::Remote(_)) => {
-            refuse_all(plan, failure(FsFailureKind::Unsupported, REMOTE_OPERATIONS))
+        Ok(Filesystem::Remote(endpoint)) => {
+            strop_fs::batch::execute(&RemoteKernel { client, endpoint }, plan, contents, token)
         }
         Err(error) => refuse_all(plan, error),
     }
@@ -189,6 +198,7 @@ fn refuse_all(plan: &PreparedBatch, error: FsFailure) -> Vec<StepReceipt> {
 /// Verify one uncertain step.
 pub(crate) fn verify(
     local: &LocalFs,
+    client: &RemoteClient,
     receipt: &StepReceipt,
     token: &CancelToken,
 ) -> Result<VerifiedOutcome, FsFailure> {
@@ -199,7 +209,14 @@ pub(crate) fn verify(
         .map(|location| &location.filesystem)
     {
         Some(Filesystem::Local) => local.verify(token, receipt),
-        Some(Filesystem::Remote(_)) => Err(failure(FsFailureKind::Unsupported, REMOTE_OPERATIONS)),
+        Some(Filesystem::Remote(endpoint)) => strop_fs::batch::verify(
+            &RemoteKernel {
+                client,
+                endpoint: endpoint.clone(),
+            },
+            receipt,
+            token,
+        ),
         None => Err(failure(
             FsFailureKind::InvalidPath,
             "operation has no resource",

@@ -10,7 +10,9 @@
 mod lifecycle;
 use crate::client::{ConnectionLease, RemoteDirectorySnapshot, RemoteEntry, RemoteSnapshot};
 use crate::exec::ExecHost;
-use crate::transport::{Expect, Fault, RemoteError, RemoteFailureKind, RemoteStage, Stamp};
+use crate::transport::{
+    Expect, Fault, Mutation, RemoteAttrs, RemoteError, RemoteFailureKind, RemoteStage, Stamp,
+};
 pub(crate) use lifecycle::{SessionState, StatusCell, StopSignal};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
@@ -24,7 +26,7 @@ use strop_core::worker::CancelToken;
 use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 #[cfg(unix)]
-use crate::transport::{process::Physical, save, session};
+use crate::transport::{mutate, process::Physical, save, session};
 
 /// Jobs one endpoint actor will hold before admission blocks a worker.
 pub(crate) const QUEUE_CAPACITY: usize = 32;
@@ -47,6 +49,13 @@ pub(crate) enum Request {
     ListConnected { directory: RemoteFile },
     /// Explicit user connection: establish and hold a session.
     Connect,
+    /// LSTAT one name.
+    Observe { file: RemoteFile },
+    /// One file-management operation; it never replaces a name.
+    Mutate {
+        endpoint: RemoteEndpoint,
+        mutation: Mutation,
+    },
     /// Save a whole file under `expect`.
     Save {
         file: RemoteFile,
@@ -63,7 +72,8 @@ impl Request {
                 location.to_string()
             }
             Self::ListConnected { directory } => directory.to_string(),
-            Self::Save { file, .. } => file.to_string(),
+            Self::Save { file, .. } | Self::Observe { file } => file.to_string(),
+            Self::Mutate { endpoint, .. } => endpoint.to_string(),
             Self::Connect => String::new(),
         }
     }
@@ -75,6 +85,7 @@ pub(crate) enum Reply {
     Entries(Vec<RemoteEntry>),
     Lease(ConnectionLease),
     Saved(Stamp),
+    Observed(Option<RemoteAttrs>),
 }
 
 /// One admitted job. It owns a lease from admission until it fails or
@@ -583,6 +594,7 @@ fn connection_survives(kind: RemoteFailureKind) -> bool {
             | RemoteFailureKind::TooManyEntries
             | RemoteFailureKind::Changed
             | RemoteFailureKind::Exists
+            | RemoteFailureKind::Failure
     )
 }
 
@@ -726,6 +738,28 @@ fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result
                 &stage,
             )?;
             Ok(Reply::Saved(stamp))
+        }
+        Request::Observe { file } => {
+            stage.set(RemoteStage::Inspect);
+            let attrs = block_on_guarded(
+                runtime,
+                mutate::observe(codec, file.path()),
+                cancel,
+                stop,
+                &stage,
+            )?;
+            Ok(Reply::Observed(attrs))
+        }
+        Request::Mutate { mutation, .. } => {
+            stage.set(RemoteStage::Transfer);
+            let attrs = block_on_guarded(
+                runtime,
+                mutate::mutate(codec, mutation),
+                cancel,
+                stop,
+                &stage,
+            )?;
+            Ok(Reply::Observed(attrs))
         }
         Request::Connect => Ok(Reply::Lease(lease)),
     }

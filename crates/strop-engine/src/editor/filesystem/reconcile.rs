@@ -213,6 +213,26 @@ impl Editor {
                             .buf
                             .relocate_file_binding(destination.path.clone(), stamp);
                     }
+                } else if let Filesystem::Remote(endpoint) = &destination.filesystem {
+                    // A rename keeps the bytes and the modification time,
+                    // so the stamp a save checks still describes the file.
+                    self.drop_remote_write(*document);
+                    let file = strop_workspace::RemoteFile::from_path(
+                        endpoint.clone(),
+                        destination.path.clone(),
+                    );
+                    match (file, self.docs.get_mut(*document)) {
+                        (Ok(file), Some(entry)) => {
+                            if let DocumentSource::Remote(source) = &mut entry.source {
+                                entry.buf.name = Some(file.to_string());
+                                source.file = file;
+                            }
+                        }
+                        (Err(error), _) => {
+                            self.message = format!("relocation refused: {error}");
+                        }
+                        _ => {}
+                    }
                 }
             } else {
                 self.drop_remote_write(*document);
@@ -281,6 +301,7 @@ impl Editor {
             .iter()
             .filter_map(|(id, entry)| entry.directory_metadata_ref().map(|_| id))
             .collect();
+        let mut remote_reloads = Vec::new();
         for id in directories {
             let Some(entry) = self.docs.get_mut(id) else {
                 continue;
@@ -310,8 +331,16 @@ impl Editor {
                             || directory.location.path.starts_with(&location.path))
                 }) {
                     directory.stale = Some("filesystem changed; refresh required".into());
+                    // A host is not watched: its listing reloads now.
+                    if directory.location.filesystem.is_remote() {
+                        remote_reloads.push(id);
+                    }
                 }
             }
+        }
+        for id in remote_reloads {
+            let _ =
+                self.start_directory_task(id, super::super::directory::DirectoryTask::Reload, None);
         }
         self.relocate_directory_history(source, if moving { destination } else { None }, removing);
         if (moving || removing) && operation.intent.source.as_ref() != source {

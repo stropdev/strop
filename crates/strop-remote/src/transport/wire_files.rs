@@ -375,6 +375,39 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> Sftp<W, R> {
         failure.map_or(Ok(()), Err)
     }
 
+    /// One directory with permission bits `mode`; an existing name is
+    /// refused by the server.
+    pub(crate) async fn mkdir(&mut self, path: &Path, mode: u32) -> Result<(), Fault> {
+        let stage = RemoteStage::Transfer;
+        let id = self.begin(PacketKind::Mkdir, stage)?;
+        self.string(path_bytes(path), stage)?;
+        self.attrs_permissions(mode);
+        self.reply(id, PacketKind::Status, stage).await?.end()
+    }
+
+    /// One empty directory.
+    pub(crate) async fn rmdir(&mut self, path: &Path) -> Result<(), Fault> {
+        let stage = RemoteStage::Transfer;
+        let id = self.begin(PacketKind::Rmdir, stage)?;
+        self.string(path_bytes(path), stage)?;
+        self.reply(id, PacketKind::Status, stage).await?.end()
+    }
+
+    /// Create `path` only if nothing is there (`O_EXCL`), private until
+    /// its mode is set.
+    pub(crate) async fn open_exclusive(&mut self, path: &Path) -> Result<FileHandle, Fault> {
+        let stage = RemoteStage::Open;
+        let id = self.begin(PacketKind::Open, stage)?;
+        self.string(path_bytes(path), stage)?;
+        // SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL
+        self.request
+            .extend_from_slice(&(0x02_u32 | 0x08 | 0x20).to_be_bytes());
+        self.attrs_permissions(0o600);
+        self.send(stage).await?;
+        self.receive(stage).await?;
+        self.decode_handle(id, stage)
+    }
+
     /// Consume one STATUS reply, keeping the first failure.
     async fn status(
         &mut self,

@@ -177,10 +177,11 @@ impl Editor {
         let text = self.doc(document).buf.snapshot();
         let environment = self.filesystem.environment.clone();
         let local = self.filesystem.local().clone();
+        let client = self.remote_client();
         self.start_filesystem_preparation(key, copies, move |token| {
             let work = || -> Result<PreparedFilesystem, String> {
                 let compiled = draft.compile(&text, &token)?;
-                let batch = crate::editor::namespace::prepare(&local, &compiled.intents, &environment, &token).map_err(|error| error.to_string())?;
+                let batch = crate::editor::namespace::prepare(&local, &client, &compiled.intents, &environment, &token).map_err(|error| error.to_string())?;
                 for step in &batch.steps {
                     let Some(source) = step.source.as_ref() else { continue };
                     if let Some(expected) = compiled.sources.iter().find(|expected| step.intent.source.as_ref() == Some(&expected.location)) {

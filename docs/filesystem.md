@@ -7,9 +7,8 @@ goes to its parent. `Space a` lists the actions valid here: in a directory
 the filesystem operations, in a file its operations plus any code actions
 the language server offers, all in one **actions** list.
 
-Filesystem mutations use **Review → Apply → Receipt** on the local
-filesystem. On an SSH host they are refused: files there are edited and
-saved one at a time, and anything else runs in the host's terminal.
+Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
+hosts (see [SSH hosts](#ssh-hosts) for what differs there):
 
 ```vim
 :fs create nested/new.txt
@@ -77,3 +76,26 @@ Changing indentation settings never rewrites existing bytes. The modeline
 names the effective input owner and source setting. Matching delimiters use
 the same cancellable source resolver as `%`, without moving the view. The
 indentation engine itself is described in [editor.md](editor.md#indentation).
+
+## SSH hosts
+
+In a directory or file on a connected SSH host the same commands run over
+the host's SFTP connection, with the same review, receipts and
+verification: create files and directories (missing parents become their
+own steps), rename/move, copy a regular file (stored bytes or the pinned
+buffer) and remove. The differences are honest limits of SFTP:
+
+- **No Trash.** `:fs trash` is refused on a host; `:fs remove` deletes
+  permanently, and the review says so.
+- **Nothing is replaced.** An occupied destination is refused in the
+  review, and checked again just before each step runs (files are created
+  exclusively, renames refuse an existing name). A source that changed on
+  the host since the review is refused.
+- **Directories are not copied recursively**; copy files one at a time or
+  use the host's terminal. Only an empty directory can be removed.
+- **No atomicity across steps** and no lock against other programs on the
+  host. A step whose reply was lost is reported unconfirmed; `:fs verify`
+  observes the host and never retries it.
+- Copies keep permission bits, not owner or times; new files and
+  directories get 0644/0755 under the host's umask.
+

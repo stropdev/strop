@@ -3,7 +3,7 @@
 //! request retains its own lease.
 use crate::exec::ExecHost;
 use crate::pool::{EndpointHandle, Job, Registry, Reply, Request, SessionState};
-use crate::{Expect, RemoteError, RemoteFailureKind, RemoteStage, Stamp};
+use crate::{Expect, Mutation, RemoteAttrs, RemoteError, RemoteFailureKind, RemoteStage, Stamp};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
@@ -270,6 +270,45 @@ impl RemoteClient {
             false,
         )? {
             Reply::Saved(stamp) => Ok(stamp),
+            _ => Err(wrong_reply()),
+        }
+    }
+    /// What is at `file` (not following a final symlink), `None` when
+    /// nothing is.
+    pub fn observe(
+        &self,
+        file: &RemoteFile,
+        token: &CancelToken,
+    ) -> Result<Option<RemoteAttrs>, RemoteError> {
+        match self.request(
+            file.endpoint(),
+            Request::Observe { file: file.clone() },
+            token,
+            false,
+        )? {
+            Reply::Observed(attrs) => Ok(attrs),
+            _ => Err(wrong_reply()),
+        }
+    }
+    /// One file-management operation on `endpoint`'s host; it never
+    /// replaces an existing name. The result is what the touched name
+    /// holds afterwards (`None` after a removal).
+    pub fn mutate(
+        &self,
+        endpoint: &RemoteEndpoint,
+        mutation: Mutation,
+        token: &CancelToken,
+    ) -> Result<Option<RemoteAttrs>, RemoteError> {
+        match self.request(
+            endpoint,
+            Request::Mutate {
+                endpoint: endpoint.clone(),
+                mutation,
+            },
+            token,
+            false,
+        )? {
+            Reply::Observed(attrs) => Ok(attrs),
             _ => Err(wrong_reply()),
         }
     }

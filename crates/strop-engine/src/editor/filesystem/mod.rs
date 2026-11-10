@@ -371,6 +371,7 @@ impl Editor {
         }
         let tx = self.io.tx.clone();
         let local = self.filesystem.local().clone();
+        let client = self.remote_client();
         let handle = worker::spawn_effect(
             "strop-fs-apply",
             move |outcome| {
@@ -381,6 +382,7 @@ impl Editor {
             move |token| {
                 Outcome::Success(crate::editor::namespace::execute(
                     &local,
+                    &client,
                     &proposal.batch,
                     &proposal.copies,
                     &token,

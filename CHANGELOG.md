@@ -6,6 +6,7 @@
 
 - **Remote work is plain SSH** (plans/0090 §5): one OpenSSH master per host, nothing installed there. Files list, open and save over SFTP on it; `rg`, `git`, language servers and terminals run on the host as commands on the same connection. The first connect to a new host takes under a second instead of uploading a 50 MB copy of strop.
 - **A connected host is editable**: logging in is the one consent. `:w` saves to a temporary name renamed over the file, keeping its mode; it is refused when the file changed on the host since it was read (`:e!` reloads, `:w!` overwrites), and `:w PATH` / `:w ssh://…` writes a copy that never replaces an existing file.
+- **File management on a host runs over SFTP**: `:fs create`, `mkdir`, `rename`/`move`, `copy` (regular files) and `remove` keep the Review → Apply → Receipt flow; nothing is ever replaced, there is no Trash on a host (removal is permanent and the review says so), directories are not copied recursively, and a changed source is refused at apply.
 - **Remote terminals are `ssh -tt` on a local PTY**: Ctrl-C and window size reach the remote shell, and keys typed before it answers are kept.
 - **Local files, the file watcher, language servers and Git run in the editor process**; there is no local helper process any more.
 - **Opening a 1 MB remote file is two round trips** and a save three; at 50 ms RTT an open costs about 105 ms.
@@ -14,7 +15,6 @@
 
 - **The remote worker**: `:remote worker`, `:remote edit`, `:remote verify`, the remote `:trust` step, the per-host `~/.cache/strop-worker` deployment, `--worker-stdio`, `STROP_WORKER_BINARY` and the release catalog's `worker` manifest.
 - **`--tail`, `--range`, `--follow` and `:tail`, `:range`, `:follow`, `:unfollow`**: pipe instead — `ssh host tail -f /var/log/app.log | strop -`.
-- **File operations on SSH hosts** (`:fs create/rename/copy/remove` in a remote directory): edit files one at a time, and run anything else in the host's terminal.
 
 ### Fixed
 

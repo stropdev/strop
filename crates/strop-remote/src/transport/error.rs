@@ -106,6 +106,10 @@ pub enum RemoteFailureKind {
     Changed,
     /// A save-as found a file already at the destination.
     Exists,
+    /// The server refused the request without a finer status
+    /// (`SSH_FX_FAILURE`: a non-empty directory, a full disk, a name that
+    /// already exists); the session stays sound.
+    Failure,
     /// Process supervision is unavailable on this platform.
     #[cfg(not(unix))]
     Unsupported,
@@ -139,6 +143,7 @@ impl RemoteFailureKind {
             Self::Deadline => "deadline exceeded",
             Self::Changed => "changed on disk",
             Self::Exists => "file exists",
+            Self::Failure => "refused by the server",
             #[cfg(not(unix))]
             Self::Unsupported => "unsupported platform",
         }

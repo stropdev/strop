@@ -71,8 +71,16 @@ Limits, stated plainly: there is no cross-process lock (as in vim, a
 writer racing the final check wins); SFTP modification times are whole
 seconds, so a same-size rewrite within the second of the read goes
 unnoticed; ownership is not carried over when another user's file is
-replaced. File operations — create, rename, copy, delete — are not
-offered on a host; run them in its terminal.
+replaced.
+
+## File management
+
+`:fs create`, `:fs mkdir`, `:fs rename`/`move`, `:fs copy` and
+`:fs remove` (and filename drafts in a remote directory) run on the host
+through the same Review → Apply → Receipt flow as locally — see
+[filesystem.md](filesystem.md#ssh-hosts). There is no Trash on a host
+(removal is permanent), nothing is ever replaced, directories are not
+copied recursively, and nothing is atomic across steps.
 
 ## Search, Git, language servers, terminal
 
