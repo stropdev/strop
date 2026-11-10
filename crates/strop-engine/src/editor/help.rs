@@ -300,4 +300,15 @@ mod tests {
         let text = e.buf().text().line(line).to_string();
         assert!(text.starts_with("─ Git ─"), "{text:?}");
     }
+
+    #[test]
+    fn closing_help_on_a_fresh_launch_returns_to_the_scratch() {
+        let mut e = Editor::new(Buffer::from_text(""));
+        e.feed_text(" ?");
+        assert_eq!(e.buf().name.as_deref(), Some("help"));
+        e.feed_text("q");
+        assert!(!e.should_quit, "q on help must not quit the editor");
+        assert_eq!(e.buf().name, None);
+        assert_eq!(e.buf().path, None);
+    }
 }

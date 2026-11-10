@@ -22,6 +22,8 @@
 - **`:e relative/path` from a directory buffer** resolved against the directory instead of the working directory and silently created a stray file; opening a missing file now says `[new file]`.
 - **Leader commands that decline now say why** (symbols or hover without a language server, an empty undo tree).
 - **No "Dev container discovery completed" notice** when no dev container exists.
+- **`q` on the help screen of a fresh `strop` quit the editor**; it now returns to the empty buffer.
+- **The welcome card no longer paints over the command card** and its completions.
 - **Terminal sessions number from 1** in each editor instead of from a process-wide counter.
 - **The file finder and search list files in name order**, the same on every filesystem, instead of the directory's raw order.
 

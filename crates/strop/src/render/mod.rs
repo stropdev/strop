@@ -43,6 +43,8 @@ mod terminal;
 mod terminal_tests;
 #[cfg(test)]
 mod theme_tests;
+#[cfg(test)]
+mod welcome_tests;
 mod which_key;
 
 pub(crate) use style::Tokens;
@@ -103,6 +105,9 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
     // horizontal origin) is decided per pane inside render_panes —
     // the full-area numbers were wrong in splits (0031 R6)
     let pane_area = buffer::render_panes(editor, &t, frame, area);
+    // The welcome card is part of the pane layer: every card, the echo
+    // row and the statusline paint over it, never the reverse.
+    render_welcome(editor, &t, frame);
     echo::render(editor, &t, frame, area, pane_area);
     statusline::render(editor, &t, frame, area);
     cmd_card::render_cmd_card(editor, &t, frame);
@@ -111,7 +116,6 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
     } else {
         None
     };
-    render_welcome(editor, &t, frame);
     picker::render_picker(editor, &t, frame);
     blame_card::render_blame_card(editor, &t, frame);
     hover_card::render_hover_card(editor, &t, frame);

@@ -420,7 +420,8 @@ impl Editor {
             return None;
         };
         self.push_jump();
-        self.drop_stale_scratch(id);
+        // A temporary surface returns to where it came from: the pristine
+        // scratch stays, or closing help on a fresh launch quits.
         self.switch_to(id);
         self.set_head(0);
         Some(id)
