@@ -30,7 +30,7 @@ routine local gate is:
 4. The changed feature's real UI/CLI smoke.
 5. `.github/scripts/release-local.sh package <x.y.z>`, which builds through
    Compose into `dist/v<x.y.z>/`, then runs checksum, static-link, version,
-   headless-parse, worker-stdio and completion qualification against the
+   headless-parse, completion and find-budget (0093 §7) qualification against the
    extracted shipping binary.
 6. The package-generated freeze `--check` validates the exact commit against the
    completion report produced from that same shipping binary (not the previous
