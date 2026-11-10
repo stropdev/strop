@@ -1,10 +1,10 @@
   ╭ search ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 5 hits · 2 files ╮  
   │ ❯ Find modeline▏                                                                                                                     │  
   │                                                                                                                                      │  
-  │  docs/remote.md                                                             2  │ docs/remote.md:3                                    │  
+  │  docs/remote.md ─────────────────────────────────────────────────────────── 2  │ docs/remote.md:3                                    │  
   │ ▌    3  The modeline identifies the endpoint.                                  │  1 │ # Remote                                       │  
   │      5  The modeline names the fixed root.                                     │  2 │                                                │  
-  │  src/render/statusline.rs                                                   3  │▌ 3 │ The modeline identifies the endpoint.          │  
+  │  src/render/statusline.rs ───────────────────────────────────────────────── 3  │▌ 3 │ The modeline identifies the endpoint.          │  
   │      1  //! The modeline: one quiet row at the bottom edge.                    │  4 │                                                │  
   │      8  pub struct Modeline {                                                  │  5 │ The modeline names the fixed root.             │  
   │     14  impl Modeline {                                                        │                                                     │  
@@ -42,10 +42,10 @@
   0: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 8:#262a30/#fdfbf6+b 127:#656d7b/#fdfbf6 2:reset/#f6f2e9
   1: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 7:#8a510f/#fdfbf6 8:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 117:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
   2: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 134:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
-  3: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 14:#262a30/#fdfbf6 61:reset/#fdfbf6 1:#4b525c/#fdfbf6 2:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 18:#4b525c/#fdfbf6 35:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
+  3: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 9:#262a30/#fdfbf6+b 61:#aeb3ba/#fdfbf6 1:#4b525c/#fdfbf6 2:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 5:#4b525c/#fdfbf6 9:#262a30/#fdfbf6+b 3:#4b525c/#fdfbf6 35:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
   4: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#8a510f/#e5dfd0 7:#4b525c/#e5dfd0 4:#262a30/#e5dfd0 8:#8a510f/#e5dfd0+b 25:#262a30/#e5dfd0 33:reset/#e5dfd0 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 8:#262a30/#fdfbf6 39:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
   5: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6 4:#262a30/#fdfbf6 8:#8a510f/#fdfbf6+b 22:#262a30/#fdfbf6 37:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 47:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
-  6: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 24:#262a30/#fdfbf6 51:reset/#fdfbf6 1:#4b525c/#fdfbf6 2:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:#8a510f/#e5dfd0 2:#262a30/#e5dfd0+b 3:#aeb3ba/#e5dfd0 4:#262a30/#e5dfd0 8:#8a510f/#e5dfd0+b 25:#262a30/#e5dfd0 10:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
+  6: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6+b 51:#aeb3ba/#fdfbf6 1:#4b525c/#fdfbf6 2:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:#8a510f/#e5dfd0 2:#262a30/#e5dfd0+b 3:#aeb3ba/#e5dfd0 4:#262a30/#e5dfd0 8:#8a510f/#e5dfd0+b 25:#262a30/#e5dfd0 10:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
   7: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6 8:#262a30/#fdfbf6 8:#8a510f/#fdfbf6+b 35:#262a30/#fdfbf6 20:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 47:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
   8: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6 11:#262a30/#fdfbf6 8:#8a510f/#fdfbf6+b 2:#262a30/#fdfbf6 50:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 2:#656d7b/#fdfbf6 3:#aeb3ba/#fdfbf6 34:#262a30/#fdfbf6 13:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9
   9: 2:reset/#f6f2e9 1:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6 5:#262a30/#fdfbf6 8:#8a510f/#fdfbf6+b 2:#262a30/#fdfbf6 56:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 53:reset/#fdfbf6 1:#656d7b/#fdfbf6 2:reset/#f6f2e9

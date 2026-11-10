@@ -164,7 +164,7 @@ fn graph_spans(t: &Tokens, prefix: &str) -> Vec<Span<'static>> {
         .collect()
 }
 
-/// Path left — directory context muted, filename emphasized — then
+/// Path left — directory secondary, filename text (the row idiom) — then
 /// `+N -M` past at least one space. The stats are virtual EOL content
 /// (the buffer row holds only the path), so the caret and the path
 /// stay byte-aligned no matter how wide the stats run. Path labels and
@@ -182,13 +182,9 @@ fn file_row_spans(t: &Tokens, file: &ChangedFile, width: usize) -> Vec<Span<'sta
         display.to_string()
     };
     let path_cells = clip::width(&display);
-    let mut spans = match display.rfind('/') {
-        Some(at) => vec![
-            Span::styled(display[..=at].to_string(), Style::default().fg(t.muted)),
-            Span::styled(display[at + 1..].to_string(), Style::default().fg(t.text)),
-        ],
-        None => vec![Span::styled(display, Style::default().fg(t.text))],
-    };
+    // the row idiom (0088 §2 "File names"): directory secondary, name text
+    let mut spans =
+        crate::render::file_name::spans(&display, crate::render::file_name::Role::Row, t).to_vec();
     let pad = width
         .saturating_sub(path_cells + added.len() + deleted.len())
         .max(1);
@@ -269,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn file_row_mutes_directory_and_emphasizes_filename() {
+    fn file_row_keeps_the_directory_secondary_and_the_filename_text() {
         let file = ChangedFile {
             path: "src/render/diff.rs".into(),
             added: 12,
@@ -287,7 +283,7 @@ mod tests {
                 .unwrap()
                 .style
                 .fg,
-            Some(t.muted)
+            Some(t.secondary)
         );
         assert_eq!(
             spans

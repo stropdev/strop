@@ -25,6 +25,7 @@ mod echo;
 #[cfg(test)]
 mod echo_tests;
 mod field;
+pub(crate) mod file_name;
 pub(crate) mod frame_capture;
 #[cfg(test)]
 mod frame_tests;

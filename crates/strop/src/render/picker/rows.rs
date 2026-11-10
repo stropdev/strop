@@ -15,9 +15,12 @@ use ratatui::Frame;
 
 use super::super::card::{band, row_marker};
 use super::super::clip;
+use super::super::file_name::{self, Label, Role};
 use super::super::style::Tokens;
 
 mod search;
+#[cfg(test)]
+mod tests;
 
 pub(in crate::render::picker) use search::file_count;
 use search::{file_header, search_rows};
@@ -141,6 +144,7 @@ pub(super) fn render_results(
             strop_picker::Kind::Files => {
                 file_row(t, &item.text, match_cols, name_column, area.width, active)
             }
+            strop_picker::Kind::Buffers => buffer_row(t, item, match_cols, area.width, active),
             strop_picker::Kind::Diagnostics => diagnostic_row(t, item, root, area.width, active),
             strop_picker::Kind::Theme => match &item.payload {
                 strop_picker::Payload::ThemeChoice(id) => {
@@ -248,16 +252,6 @@ fn emphasis(t: &Tokens, value: &str, cols: &[u32], base: Style) -> Vec<Span<'sta
 
 fn plain(text: impl Into<String>, style: Style) -> Span<'static> {
     Span::styled(text.into(), style)
-}
-
-/// Workspace-relative display for a local path; remote locations keep their authority label.
-fn relative_label(location: &strop_workspace::ResourceLocation, root: &Path) -> String {
-    if location.local_path().is_some() {
-        let relative = location.path.strip_prefix(root).unwrap_or(&location.path);
-        strop_workspace::directory::display_path(relative)
-    } else {
-        location.label()
-    }
 }
 
 // ---- symbols --------------------------------------------------------------
@@ -392,17 +386,7 @@ fn file_row(
         None => ("", value),
     };
     let name_off = dir.chars().count() + usize::from(!dir.is_empty());
-    // matches inside the basename shift into the name's own coordinates;
-    // matches in the directory emphasize the context field (0050 §6)
-    let name_cols: Vec<u32> = match_cols
-        .iter()
-        .filter_map(|c| c.checked_sub(name_off as u32))
-        .collect();
-    let dir_cols: Vec<u32> = match_cols
-        .iter()
-        .copied()
-        .filter(|c| (*c as usize) < dir.chars().count())
-        .collect();
+    let (dir_cols, name_cols) = split_match_cols(match_cols, dir.chars().count(), name_off);
     let budget = (width as usize).saturating_sub(2);
     let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
     let name_w = clip::width(name);
@@ -412,7 +396,7 @@ fn file_row(
         t,
         &shown_name,
         &name_cols,
-        Style::default().fg(t.text),
+        file_name::name_style(Role::Row, t),
     ));
     let room = budget.saturating_sub(column);
     if !dir.is_empty() && room >= 4 {
@@ -430,12 +414,77 @@ fn file_row(
         } else {
             &dir_cols
         };
-        spans.extend(emphasis(
-            t,
-            &shown_dir,
-            cols,
-            Style::default().fg(t.secondary),
+        spans.extend(emphasis(t, &shown_dir, cols, file_name::dir_style(t)));
+    }
+    finish(t, spans, width, active)
+}
+
+/// Query matches fall on the directory or on the name: matches inside
+/// the basename shift into the name's own coordinates, matches in the
+/// directory emphasize the context field (0050 §6).
+fn split_match_cols(match_cols: &[u32], dir_chars: usize, name_off: usize) -> (Vec<u32>, Vec<u32>) {
+    let dir_cols = match_cols
+        .iter()
+        .copied()
+        .filter(|c| (*c as usize) < dir_chars)
+        .collect();
+    let name_cols = match_cols
+        .iter()
+        .filter_map(|c| c.checked_sub(name_off as u32))
+        .collect();
+    (dir_cols, name_cols)
+}
+
+// ---- buffers --------------------------------------------------------------
+
+/// ` crates/strop/src/render/card.rs` — the open file in the row idiom
+/// (directory secondary, name text; a remote file behind its `ssh:host`
+/// authority), the rest of the label (a terminal's ` · phase`) in
+/// muted. A terminal's `term://` name is one identity, never split.
+fn buffer_row(
+    t: &Tokens,
+    item: &strop_picker::Item,
+    match_cols: &[u32],
+    width: u16,
+    active: bool,
+) -> Line<'static> {
+    let text = clip::clip_end(&item.text, width.saturating_sub(2) as usize);
+    let (path, rest) = text.split_once(" · ").unwrap_or((&text, ""));
+    let label = if item.badge.is_some() {
+        Label::local(path)
+    } else {
+        Label::parse(path)
+    };
+    let (dir, name) = if item.badge.is_some() {
+        ("", path)
+    } else {
+        file_name::split(&label.path)
+    };
+    // query matches are char columns of the item text; a parsed remote
+    // label is re-spelt (`ssh:host /path`), so its matches no longer map
+    let match_cols: &[u32] = if label.authority.is_some() {
+        &[]
+    } else {
+        match_cols
+    };
+    let dir_chars = dir.chars().count();
+    let (dir_cols, name_cols) = split_match_cols(match_cols, dir_chars, dir_chars);
+    let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
+    if let Some(authority) = &label.authority {
+        spans.push(plain(
+            format!("{authority} "),
+            file_name::authority_style(t),
         ));
+    }
+    spans.extend(emphasis(t, dir, &dir_cols, file_name::dir_style(t)));
+    spans.extend(emphasis(
+        t,
+        name,
+        &name_cols,
+        file_name::name_style(Role::Row, t),
+    ));
+    if !rest.is_empty() {
+        spans.push(plain(format!(" · {rest}"), Style::default().fg(t.muted)));
     }
     finish(t, spans, width, active)
 }
@@ -507,14 +556,21 @@ fn diagnostic_row(
             line,
             line_text,
             ..
-        } => (relative_label(location, root), *line, line_text.to_string()),
+        } => (
+            Label::from_location(location, root),
+            *line,
+            line_text.to_string(),
+        ),
         strop_picker::Payload::Remote {
             endpoint,
             path,
             line,
             ..
         } => (
-            format!("{endpoint}{}", path.display()),
+            Label::from_location(
+                &strop_workspace::ResourceLocation::remote(endpoint.clone(), path.clone()),
+                root,
+            ),
             *line,
             item.text.clone(),
         ),
@@ -531,22 +587,23 @@ fn diagnostic_row(
         Some('I') => ("ℹ", t.info),
         _ => ("·", t.hint),
     };
-    let location = format!("{location}:{line}");
+    let line = format!(":{line}");
     // marker + ` ● ` = 4 cells before the message
     let budget = usize::from(width).saturating_sub(4);
-    let loc_w = clip::width(&location);
+    let loc_w = location.width() + clip::width(&line);
     let message_budget = budget.saturating_sub(loc_w + 2);
     let message = message.replace('\n', " · ");
     let message = clip::clip_end(&message, message_budget.max(4));
     let used = 4 + clip::width(&message);
     let pad = usize::from(width).saturating_sub(used + loc_w).max(1);
-    let spans = vec![
+    let mut spans = vec![
         row_marker(active, t),
         plain(format!(" {glyph} "), Style::default().fg(color)),
         plain(message.into_owned(), Style::default().fg(t.text)),
         plain(" ".repeat(pad), Style::default()),
-        plain(location, Style::default().fg(t.secondary)),
     ];
+    spans.extend(location.spans(Role::Row, t));
+    spans.push(plain(line, Style::default().fg(t.secondary)));
     finish(t, spans, width, active)
 }
 

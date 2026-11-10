@@ -15,7 +15,7 @@ use strop_core::worker::{self, CancelReason, FailureKind, Load, Outcome, Ticket}
 use strop_picker::Payload;
 
 use super::super::Editor;
-use super::{PreviewKey, PreviewResult, PreviewSource};
+use super::{PreviewKey, PreviewResult, PreviewSource, PreviewTitle};
 
 mod watchdog;
 pub(crate) use watchdog::{physical_complete, publish, PreviewWatchdog, PREVIEW_STALLED};
@@ -65,7 +65,7 @@ impl Editor {
     /// Readonly paint query: identical resolution, but an uncached preview
     /// reports loading instead of registering/launching the bounded read.
     /// Preparation calls [`Self::picker_preview`] first.
-    pub fn picker_preview_cached(&self) -> Option<(String, Option<usize>, PreviewSource)> {
+    pub fn picker_preview_cached(&self) -> Option<(PreviewTitle, Option<usize>, PreviewSource)> {
         let mut probe = PreviewProbe { editor: self };
         probe.resolve()
     }
@@ -270,21 +270,21 @@ struct PreviewProbe<'a> {
     editor: &'a Editor,
 }
 impl PreviewProbe<'_> {
-    fn resolve(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
+    fn resolve(&mut self) -> Option<(PreviewTitle, Option<usize>, PreviewSource)> {
         let item = self.editor.picker.as_ref()?.picker.current()?;
         if let Payload::Buffer(document) = &item.payload {
             let doc = self.editor.docs.get(*document)?;
-            let title = buffer_preview_title(doc, &self.editor.cwd);
+            let title = document_title(doc, &self.editor.cwd);
             return Some((title, None, PreviewSource::Buffer(*document)));
         }
         if let Payload::Jump { document, offset } = &item.payload {
             let doc = self.editor.docs.get(*document)?;
             let line = doc.buf.line_of((*offset).min(doc.buf.len_bytes()));
-            let title = format!("{}:{}", doc.label(&self.editor.cwd), line + 1);
+            let title = document_title(doc, &self.editor.cwd);
             return Some((title, Some(line + 1), PreviewSource::Buffer(*document)));
         }
         let (full, focus_line) = self.item_source(item)?;
-        let title = self.title(&full, focus_line);
+        let title = PreviewTitle::of(&full);
         let target = match crate::files::FileTarget::from_location(&full) {
             Ok(target) => target,
             Err(error) => {
@@ -329,29 +329,6 @@ impl PreviewProbe<'_> {
                 Some(Load::Ready(owner)) if *owner == key
             )
     }
-    fn title(&self, full: &strop_workspace::ResourceLocation, focus_line: Option<usize>) -> String {
-        let path = &full.path;
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
-        let parent = path
-            .parent()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-        let title = match focus_line {
-            Some(line) => format!("{name}:{line}  {parent}"),
-            None => format!("{name}  {parent}"),
-        }
-        .trim_end()
-        .to_string();
-        if full.local_path().is_none() {
-            format!("{} · {title}", full.filesystem.label())
-        } else {
-            title
-        }
-    }
-
     fn item_source(
         &self,
         item: &strop_picker::Item,
@@ -384,34 +361,22 @@ impl PreviewProbe<'_> {
         }
     }
 }
-fn preview_title(path: &std::path::Path, focus_line: Option<usize>) -> String {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string());
-    let parent = path
-        .parent()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
-    match focus_line {
-        Some(line) => format!("{name}:{line}  {parent}"),
-        None => format!("{name}  {parent}"),
+/// A document's header: its file (remote authority split out) or its
+/// label when it has none — a scratch buffer, a terminal.
+fn document_title(doc: &crate::editor::Document, cwd: &Path) -> PreviewTitle {
+    if let Some(remote) = doc.remote_metadata() {
+        return PreviewTitle::remote(remote.file.endpoint(), remote.file.path());
     }
-    .trim_end()
-    .to_string()
-}
-
-fn buffer_preview_title(doc: &crate::editor::Document, cwd: &Path) -> String {
-    doc.buf
-        .path
-        .as_deref()
-        .filter(|_| matches!(&doc.source, crate::editor::DocumentSource::File))
-        .map(|path| preview_title(path, None))
-        .unwrap_or_else(|| doc.label(cwd))
+    match doc.buf.path.as_deref() {
+        Some(path) if matches!(&doc.source, crate::editor::DocumentSource::File) => {
+            PreviewTitle::local(strop_workspace::directory::display_path(path))
+        }
+        _ => PreviewTitle::local(doc.label(cwd)),
+    }
 }
 
 impl Editor {
-    pub fn picker_preview(&mut self) -> Option<(String, Option<usize>, PreviewSource)> {
+    pub fn picker_preview(&mut self) -> Option<(PreviewTitle, Option<usize>, PreviewSource)> {
         let picker = self.picker.as_ref()?.id;
         let item = self.picker.as_ref()?.picker.current()?;
         let (full, focus_line) = match &item.payload {
@@ -430,7 +395,7 @@ impl Editor {
                 let document = *document;
                 self.cancel_other_previews(picker, None);
                 let doc = self.docs.get(document)?;
-                let title = buffer_preview_title(doc, &self.cwd);
+                let title = document_title(doc, &self.cwd);
                 return Some((title, None, PreviewSource::Buffer(document)));
             }
             Payload::Jump { document, offset } => {
@@ -438,7 +403,7 @@ impl Editor {
                 self.cancel_other_previews(picker, None);
                 let doc = self.docs.get(document)?;
                 let line = doc.buf.line_of(offset.min(doc.buf.len_bytes()));
-                let title = format!("{}:{}", doc.label(&self.cwd), line + 1);
+                let title = document_title(doc, &self.cwd);
                 return Some((title, Some(line + 1), PreviewSource::Buffer(document)));
             }
             Payload::File(path) => (
@@ -456,15 +421,9 @@ impl Editor {
                 Some(*line),
             ),
         };
-        let path = &full.path;
-        // 0050: the header identifies filename + line first; the parent
-        // directory follows only while it fits the card.
-        let title = preview_title(path, focus_line);
-        let title = if full.local_path().is_none() {
-            format!("{} · {title}", full.filesystem.label())
-        } else {
-            title
-        };
+        // 0050: the header identifies the file; the renderer makes the
+        // path workspace-relative and keeps the authority its own segment.
+        let title = PreviewTitle::of(&full);
         self.cancel_other_previews(picker, Some(&full));
         let target = match crate::files::FileTarget::from_location(&full) {
             Ok(target) => target,

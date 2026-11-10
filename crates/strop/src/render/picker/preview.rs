@@ -10,6 +10,7 @@ use ratatui::Frame;
 
 use crate::editor::{Editor, PreviewSource};
 
+use super::super::file_name::{self, Role};
 use super::super::style::Tokens;
 
 pub(super) fn render_preview(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
@@ -98,52 +99,40 @@ pub(super) fn render_preview(editor: &Editor, t: &Tokens, frame: &mut Frame, are
         }
     };
 
-    let title = relative_title(editor, &title);
-    // the filename ends the path: clip from the start so it survives
+    // the authority stays whole and the path clips from its start, so
+    // the name survives (0088 §2 "File names")
+    let label = file_name::Label {
+        authority: title.authority,
+        path: relative_path(editor, &title.path),
+    };
+    let line = focus_line
+        .map(|line| format!(":{line}"))
+        .unwrap_or_default();
+    let budget = usize::from(area.width.saturating_sub(2)).saturating_sub(line.len());
+    let mut header = vec![Span::raw(" ")];
+    header.extend(label.clipped(budget.max(4)).spans(Role::Heading, t));
+    header.push(Span::styled(
+        format!("{line} "),
+        Style::default().fg(t.secondary),
+    ));
     let block = Block::default()
         .borders(Borders::LEFT)
         .border_style(Style::default().fg(t.faint))
         .style(Style::default().bg(t.surface))
-        .title(Span::styled(
-            format!(
-                " {} ",
-                super::super::clip::clip_start(&title, area.width.saturating_sub(2) as usize)
-            ),
-            Style::default().fg(t.secondary),
-        ));
+        .title(Line::from(header));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 /// The header names the file relative to the workspace: an absolute
-/// title under the editor's root loses the root prefix, anything else
-/// (remote authority, outside paths) keeps its full form.
-fn relative_title(editor: &Editor, title: &str) -> String {
+/// path under the editor's root loses the root prefix, anything else
+/// (outside paths, document labels) keeps its full form.
+fn relative_path(editor: &Editor, path: &str) -> String {
     let root = editor.cwd().to_string_lossy();
     let root = root.trim_end_matches('/');
-    if let Some((name, context)) = title.split_once("  ") {
-        // `name  parent` headers: the parent under the root is noise
-        let context = context.trim();
-        if context == root
-            || context
-                .strip_prefix(root)
-                .is_some_and(|rest| rest.starts_with('/'))
-        {
-            let rest = context
-                .strip_prefix(root)
-                .unwrap_or("")
-                .trim_start_matches('/');
-            return if rest.is_empty() {
-                name.to_owned()
-            } else {
-                format!("{rest}/{name}")
-            };
-        }
-    }
-    title
-        .strip_prefix(root)
+    path.strip_prefix(root)
         .and_then(|rest| rest.strip_prefix('/'))
         .filter(|rest| !rest.is_empty())
-        .map_or_else(|| title.to_owned(), str::to_owned)
+        .map_or_else(|| path.to_owned(), str::to_owned)
 }
 
 use strop_engine::editor::prepare::{preview_source_lines, preview_window};
