@@ -469,3 +469,14 @@ fn equal_revision_and_reused_slot_cannot_accept_another_documents_prompt() {
         }
     }
 }
+
+/// `:search-options` opens the hidden/ignored policy selector (0051 R03).
+#[test]
+fn search_options_ex_command_opens_the_selector() {
+    let mut e = Editor::new(Buffer::from_text("x\n"));
+    e.feed_text(":search-options\r");
+    e.wait_picker();
+    let p = &e.picker.as_ref().expect("selector").picker;
+    assert_eq!(p.kind, strop_picker::Kind::SearchOptions);
+    assert!(p.items[0].text.contains("hidden (dotfiles)"));
+}
