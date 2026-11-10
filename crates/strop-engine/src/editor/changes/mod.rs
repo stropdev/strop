@@ -213,10 +213,12 @@ impl Editor {
 
     /// Apply a plan document by document through the revision-checked
     /// gateway. A document edited since the plan's base is refused by
-    /// name; earlier successes stand and are reported. The changed span of
-    /// the buffer in view flashes.
+    /// name; earlier successes stand and are reported. A rename flashes the
+    /// span it changed in the buffer in view (a format on every save would
+    /// only flicker).
     pub(crate) fn apply_change_plan(&mut self, plan: ChangePlan) {
         let producer = plan.producer.label();
+        let flashes = matches!(plan.producer, ChangeProducer::Rename);
         let mut refused = plan.refused.len();
         let mut applied = 0;
         for target in plan.documents {
@@ -235,7 +237,9 @@ impl Editor {
             match self.apply(target.document, target.base, changes) {
                 Ok(_) => {
                     applied += 1;
-                    if let Some((start, end)) = span.filter(|_| target.document == self.current()) {
+                    if let Some((start, end)) =
+                        span.filter(|_| flashes && target.document == self.current())
+                    {
                         let end = end.saturating_add_signed(delta).min(self.buf().len_bytes());
                         self.flash(strop_core::Range::charwise(start.min(end), end));
                     }
