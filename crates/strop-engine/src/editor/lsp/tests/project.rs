@@ -1,4 +1,4 @@
-//! Plan 0091 §2: the pinned project owns its library files and its
+//! Plan 0092 §2: the pinned project owns its library files and its
 //! crashed servers restart.
 use super::*;
 
@@ -32,7 +32,7 @@ fn served_by(e: &Editor, document: strop_core::id::DocumentId) -> Option<(Server
 
 #[test]
 fn a_library_file_opened_without_a_jump_belongs_to_the_projects_server() {
-    // 0091 §2.3: the stdlib file was reached by the file finder, `:e`, a
+    // 0092 §2.3: the stdlib file was reached by the file finder, `:e`, a
     // restored session — no navigation context — and still resolves to
     // the one server the project runs, never to "no server" (which sent
     // discovery off to root a second server in the library directory).

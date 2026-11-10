@@ -1,4 +1,4 @@
-//! Plan 0091 §1: every text input reads the editor's one register file.
+//! Plan 0092 §1: every text input reads the editor's one register file.
 use super::super::*;
 use crate::editor::registers::PasteDestination;
 use crate::editor::Register;

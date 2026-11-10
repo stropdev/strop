@@ -25,6 +25,10 @@ pub struct Pane {
     /// Vim jump history belongs to this window, not the document or editor.
     #[serde(default)]
     pub jumps: super::jumps::JumpList,
+    /// When this pane last had focus (the editor's focus epoch): `ctrl-w p`
+    /// returns to the most recent other one. View-local, never persisted.
+    #[serde(skip)]
+    pub focused: u64,
 }
 
 impl Pane {
@@ -109,6 +113,7 @@ impl Editor {
                 hscroll: DisplayColumn::new(0),
                 desired_column: None,
                 jumps: view.jumps.clone(),
+                focused: 0,
             }
         });
         self.layout = if vertical {
@@ -116,6 +121,7 @@ impl Editor {
         } else {
             LayoutDir::Column
         };
+        self.panes[self.active_pane].focused = self.focus_epoch;
         self.active_pane = self.panes.len() - 1;
         self.focus_epoch += 1;
         self.discover_git();
@@ -217,6 +223,7 @@ impl Editor {
         }
         if index != self.active_pane {
             self.cancel_pending();
+            self.panes[self.active_pane].focused = self.focus_epoch;
         }
         self.active_pane = index;
         self.focus_epoch += 1;
@@ -236,6 +243,48 @@ impl Editor {
     }
     pub(crate) fn pane_close_pub(&mut self) {
         self.close_pane_or_buffer(false);
+    }
+
+    /// `ctrl-w {key}`: vim's window commands on the flat pane layout.
+    /// Directions wrap like `Space w`; panes are always equal, so `=`
+    /// has nothing to do and says nothing.
+    pub(crate) fn window_command(&mut self, key: char) {
+        let panes = self.panes.len();
+        match key {
+            'h' | 'j' | 'k' | 'l' | 'w' => self.pane_move(key),
+            'W' if panes > 1 => self.focus_pane((self.active_pane + panes - 1) % panes),
+            'p' if panes > 1 => {
+                let previous = (0..panes)
+                    .filter(|index| *index != self.active_pane)
+                    .max_by_key(|index| self.panes[*index].focused);
+                if let Some(previous) = previous {
+                    self.focus_pane(previous);
+                }
+            }
+            'W' | 'p' => self.message = "no other pane".into(),
+            's' => self.split(false, None),
+            'v' => self.split(true, None),
+            'n' => {
+                let scratch = super::document::Document::scratch(strop_core::Buffer::from_text(""));
+                match self.docs.try_insert(scratch) {
+                    Ok(document) => self.split_document(false, document),
+                    Err(error) => self.message = error.to_string(),
+                }
+            }
+            // vim: `c` never closes the last window (E444); `q` is `:q`
+            'c' if panes == 1 => self.message = "cannot close the last window".into(),
+            'c' | 'q' => self.close_pane_or_buffer(false),
+            'o' if panes == 1 => self.message = "already only one window".into(),
+            'o' => {
+                self.cancel_pending();
+                let only = self.panes.swap_remove(self.active_pane);
+                self.panes = vec![only];
+                self.active_pane = 0;
+                self.focus_epoch += 1;
+                self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -283,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn space_w_splits_focuses_numbers_and_retires_ctrl_w() {
+    fn space_w_splits_focuses_and_numbers() {
         let mut e = Editor::new(Buffer::from_text("alpha\nbeta\n"));
         e.feed_text(" wv");
         assert_eq!(e.panes.len(), 2);
@@ -296,14 +345,109 @@ mod tests {
         e.feed_text(" w3");
         assert_eq!(e.active_pane(), 2);
 
-        e.feed(strop_core::frontend_input::Key::CtrlW);
-        e.feed_text("1");
-        assert_eq!(e.active_pane(), 2, "Ctrl-W no longer owns panes");
-
         e.feed_text(" w9");
         assert_eq!(e.active_pane(), 2);
         assert_eq!(e.message(), "no pane 9");
         e.feed_text(" wq");
         assert_eq!(e.panes.len(), 2);
+    }
+
+    /// 0091 §7 (0.56.1 acceptance): every `ctrl-w {key}` either
+    /// dispatches a window command or changes nothing and reports
+    /// "ctrl-w {key} is not bound". The second key never reaches Normal.
+    #[test]
+    fn every_ctrl_w_key_is_a_window_command_or_reports_unbound() {
+        use strop_core::frontend_input::Key;
+        const BOUND: &str = "hjklwWpsvcoqn=";
+        let fresh = || {
+            let mut e = Editor::new(Buffer::from_text("alpha\nbeta\ngamma\n"));
+            e.feed_text(":vs<cr>");
+            e.feed_text("j");
+            e
+        };
+        for key in (b'!'..=b'~').map(char::from) {
+            if key.is_ascii_digit() || key == '"' {
+                continue; // counts and the register selector stay the walker's
+            }
+            let mut e = fresh();
+            let before = (
+                e.panes.len(),
+                e.active_pane(),
+                e.head(),
+                e.buf().text().to_string(),
+                e.mode,
+            );
+            e.feed(Key::CtrlW);
+            e.feed(Key::Char(key));
+            assert!(e.walker.is_ground(), "ctrl-w {key} leaves nothing pending");
+            if BOUND.contains(key) {
+                assert!(
+                    !e.message().contains("not bound") && !e.message().contains("not an editor"),
+                    "ctrl-w {key}: {}",
+                    e.message()
+                );
+            } else {
+                assert_eq!(e.message(), format!("ctrl-w {key} is not bound"));
+                let after = (
+                    e.panes.len(),
+                    e.active_pane(),
+                    e.head(),
+                    e.buf().text().to_string(),
+                    e.mode,
+                );
+                assert_eq!(after, before, "ctrl-w {key} changed something");
+            }
+        }
+    }
+
+    #[test]
+    fn ctrl_w_commands_drive_the_pane_machinery() {
+        use strop_core::frontend_input::Key;
+        let window = |e: &mut Editor, key: Key| {
+            e.feed(Key::CtrlW);
+            e.feed(key);
+        };
+        let mut e = Editor::new(Buffer::from_text("alpha\nbeta\n"));
+        window(&mut e, Key::Char('v'));
+        assert_eq!((e.panes.len(), e.layout()), (2, LayoutDir::Row));
+        assert_eq!(e.active_pane(), 1);
+        window(&mut e, Key::Char('h'));
+        assert_eq!(e.active_pane(), 0);
+        // held Ctrl: ctrl-w ctrl-w, and ctrl-h as a legacy Backspace
+        window(&mut e, Key::CtrlW);
+        assert_eq!(e.active_pane(), 1);
+        window(&mut e, Key::Backspace);
+        assert_eq!(e.active_pane(), 0);
+        window(&mut e, Key::Char('\x0c'));
+        assert_eq!(e.active_pane(), 1, "a raw ctrl-l is l");
+        window(&mut e, Key::Char('v'));
+        assert_eq!(e.active_pane(), 2);
+        window(&mut e, Key::Char('h'));
+        window(&mut e, Key::Char('h'));
+        assert_eq!(e.active_pane(), 0);
+        window(&mut e, Key::Char('p'));
+        assert_eq!(e.active_pane(), 1, "p returns to the last used window");
+        window(&mut e, Key::Char('W'));
+        assert_eq!(e.active_pane(), 0);
+        window(&mut e, Key::Char('c'));
+        assert_eq!(e.panes.len(), 2);
+        window(&mut e, Key::Char('n'));
+        assert_eq!((e.panes.len(), e.layout()), (3, LayoutDir::Column));
+        assert_eq!(e.buf().text().to_string(), "", "n opens an empty buffer");
+        window(&mut e, Key::Char('o'));
+        assert_eq!((e.panes.len(), e.active_pane()), (1, 0));
+        window(&mut e, Key::Char('c'));
+        assert_eq!(e.panes.len(), 1);
+        assert_eq!(e.message(), "cannot close the last window");
+        // ctrl-c cancels the prefix; the next key is an ordinary one
+        e.feed(Key::CtrlW);
+        e.feed(Key::CtrlC);
+        assert!(e.walker.is_ground());
+        // the prefix is consumed in Visual mode too
+        e.feed_text(":e!<cr>");
+        let mut e = Editor::new(Buffer::from_text("alpha\nbeta\n"));
+        e.feed_text("v");
+        window(&mut e, Key::Char('x'));
+        assert_eq!(e.buf().text().to_string(), "alpha\nbeta\n");
     }
 }

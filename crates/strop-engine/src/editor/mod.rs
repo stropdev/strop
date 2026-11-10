@@ -537,6 +537,7 @@ impl Editor {
                 view_top: 0,
                 hscroll: strop_core::id::DisplayColumn::new(0),
                 desired_column: None,
+                focused: 0,
                 jumps,
             }],
             active_pane: 0,
@@ -753,7 +754,7 @@ pub fn state_json(editor: &Editor) -> String {
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).text,
-        // the lifecycle registers the differential harness diffs (0091)
+        // the lifecycle registers the differential harness diffs (0092)
         "registers": lifecycle_registers,
         "dirty": editor.buf().is_dirty(),
         "terminal":editor.terminal_status(editor.current()),

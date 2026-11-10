@@ -1,4 +1,4 @@
-# 0091 — One register file, a pinned project root, language servers that come back
+# 0092 — One register file, a pinned project root, language servers that come back
 
 - Status: **in force**
 - Date: 2026-11-10
@@ -8,6 +8,8 @@
   (external files and language-service context)
 
 Two owner reports, one cause each: state that should have one owner had two.
+The same branch also adopts four items from the 0.56 critique
+([0091](0091-editor-critique-0.56.md)) and fixes two flaky tests; see §3a, §3b.
 
 1. "I yank a word and cannot paste it in the file finder, grep, search or `:`.
    Only the system clipboard works. Register copy is buggy in general."
@@ -123,31 +125,52 @@ text (`Esc` is `\x1b`); a later write to `"a` drops the typed recording and
   does not re-pad rows to a common width.
 - `"#` (alternate file) and `"=` (expression) do not exist.
 
-### 1.4 Clipboard policy: Vim's default, not `unnamedplus`
+### 1.4 Clipboard policy: a yank is a copy (Zed's `on_yank`)
 
-`""` and `"+` stay separate. `y`/`d`/`p` never touch the system clipboard;
-`Space y`, `"+y`, `Space p`, `"+p` and `Ctrl-R +` do.
+Owner decision, 2026-11-10: "the editor works as you'd expect". The reported
+failure was literally *yank, then the terminal's paste does not carry it*.
 
-Why, given that the popular Neovim distributions all turn `unnamedplus` on:
+- **A plain yank also writes the system clipboard.** `y` with no register (or
+  `"0` by name) stages the same OSC52 payload `"+y` does and fills the `"+`
+  cell. It still fills `""` and `"0` exactly as before.
+- **Deletes and changes do not.** `dd`, `x`, `cw` and friends fill `"1`–`"9`
+  or `"-` and leave the clipboard alone. Neither does a yank into a named
+  register (`"ayw`): naming a register is saying where the text goes.
+- **`p` reads the unnamed register, not the clipboard.** `"+p`, `Space p` and
+  `Ctrl-R +` read the clipboard. The terminal's own paste always does.
 
-1. **It is what `nvim -u NONE` does**, and that is the oracle the differential
-   harness diffs against (0001 §5.10). A zero-config editor's defaults are
-   Vim's defaults.
-2. **The async invariant (doctrine 3).** `unnamedplus` makes every `p` a
-   clipboard *read* — a provider subprocess. strop's reads are jobs; `p` would
-   stop being synchronous and deterministic, and would fail outright where no
-   provider is installed (stock WSL has none of `wl-paste`/`xclip`/`xsel`).
-3. **Deletes would clobber the clipboard** (`dd`, `x`, `cw`) — the standing
-   complaint about `unnamedplus`, and the reason Zed grew `on_yank`.
-4. **Traces.** Every OSC52 write is a recorded `terminal.osc52` request
-   carrying the text. Mirroring each yank would put yanked content in every
-   trace and invalidate recorded tapes.
+Why this and not the two Neovim options:
 
-The owner's actual need — paste a yank into a picker — is met by the register
-keys working everywhere and being *named* on the picker: Files and the other
-list pickers show `ctrl-r "  paste yank` in their hint row, and `?` lists it.
-`on_yank` mirroring (Zed's middle option) is the smallest change if this
-decision is revisited: one `osc52` assignment in `write_register`.
+- *Vim's default* (`clipboard=`) keeps yanks inside the editor. It is what
+  `nvim -u NONE` does, and it is what failed the owner: kickstart, LazyVim,
+  AstroNvim and NvChad all turn it off, so it is not what a Neovim user
+  expects to happen either.
+- *`unnamedplus`* makes every `p` a clipboard **read** — a provider
+  subprocess. strop's reads are jobs (doctrine 3), so `p` would stop being
+  synchronous, and would fail where no provider is installed (stock WSL has
+  none of `wl-paste`/`xclip`/`xsel`). It also sends every `dd` and `x` to the
+  clipboard, the standing complaint about that option and the reason Zed has
+  `on_yank` at all.
+- *`on_yank`* needs only the write path, which is OSC52 and works in WSL, over
+  SSH and in tmux; `p` stays a synchronous read of strop's own store; a delete
+  never destroys what was copied in another application.
+
+Register contents are identical to Vim's default — the differential harness
+still diffs `"" "0 "1 "2 "- "a "b` against `nvim -u NONE` — so the deviation is
+exactly one side effect of `y`.
+
+Two limits, both deliberate:
+
+- **Size.** A plain yank over 1 MiB is not mirrored (`CLIPBOARD_MIRROR_MAX`);
+  the message says so and names `"+y`, which is never capped. OSC52 is base64
+  through the terminal, and `ggyG` on a large file must not stall it.
+- **Traces.** The OSC52 write is a `terminal.osc52` replay request carrying
+  the text. Requests are recorded only under the content opt-in
+  (`--log-content`; `Tape::captures`), where keys and document text already
+  are; a metadata trace records nothing new. No redaction was added. A full
+  trace recorded before this change that contains a plain yank no longer
+  replays (the request is new); none is checked in.
+
 
 ## 2. The project root and language servers
 
@@ -284,24 +307,104 @@ own recovery.
   session restored onto a stdlib file) still discovers its own server: there
   is no existing client to own it. nvim-lspconfig has the same rule.
 
-## 3. Found on the way, not fixed here
+## 3. Left for the keys track
 
-The new register cases in the differential harness turned up grammar
-divergences that are not register bugs. One was a one-line fix and ships:
-`dd` on the last line left the cursor on the phantom row past the final line
-break (`normal/execute.rs`; Neovim lands on the new last line). Three are
-resolver changes that touch every operator and want their own change:
+Found by the new register cases in the differential harness, or adjacent to
+this work. None is a register or root bug; each is stated so it can be picked
+up as written. Repros are `text` / `keys`, results are final text and the
+unnamed register, Neovim 0.9.5 `-u NONE`.
 
-- `dw` on a line's last word deletes through the line break and joins the
-  next line. Vim stops at the end of the word (`:help w`, "Another special
-  case").
-- An exclusive motion that ends in column 1 of a later line (`d}` from
-  mid-line) takes the line break. Vim moves the end back to the previous
-  line's end, or makes the motion linewise (`:help exclusive-linewise`).
-- `d}` in the last paragraph of a buffer deletes backwards to the line start
-  instead of forwards to the buffer end.
+1. **`dw` on the last word of a line joins the next line.**
+   `"alpha beta\ngamma\n"` / `wdw`. strop: `"alpha gamma\n"`, register
+   `"beta\n"` (and it lands in `"1`, not `"-`). Neovim: `"alpha \ngamma\n"`,
+   register `"beta"`. Rule: `:help w`, "Another special case" — with an
+   operator, when the last word moved over ends its line, the operated text
+   ends at the end of that word. Site: `strop-grammar/src/resolve/mod.rs`,
+   the `Motion::WordForward | Motion::BigWordForward` arm (the range is
+   `[cursor, word_forward(…))` with no end-of-line stop). `cw` has its own
+   arm and is unaffected; check `dW`, `yw` and counts (`d2w` across a line
+   break deletes through the first word of the next line in Vim).
+2. **An exclusive motion ending in column 1 takes the line break.**
+   `"a b\n\nc\n"` / `wd}`. strop: `"a \nc\n"`, register `"b\n"`. Neovim:
+   `"a \n\nc\n"`, register `"b"`, in both `"1` and `"-`. Rule: `:help
+   exclusive-linewise` — if the motion is exclusive and ends in column 1, the
+   end moves to the end of the previous line and the motion becomes
+   inclusive; if in addition the start is at or before the first non-blank,
+   it becomes linewise. Applies to every exclusive motion (`}` `{` `w` `b`
+   `/pat` `` ` ``), so it belongs in one place after motion resolution, with
+   the `w` rule (1) applied first.
+3. **`d}` in the last paragraph deletes backwards.**
+   `"a b c\n"` / `wd}`. strop: `"b c\n"`, register `"a "` (the range runs from
+   the line start to the cursor). Neovim: `"a \n"`, register `"b c"`. With no
+   blank line below, `}` goes to the end of the last line; strop's
+   `ParagraphForward` resolves to an offset before the cursor here. Site:
+   `strop-grammar/src/resolve/motions.rs`.
+4. **Visual `p` / `P` do not exist.** `yiwwviwp` reports "not an editor
+   command: p" (0091 B13). Vim replaces the selection with the register and
+   puts the replaced text in `""` (`P` leaves `""` alone). The register side
+   is ready: `delete_register` for the replaced text, `paste_from(name,
+   Put { .. })` for the put, and the visual walker already parses `"x`.
+5. **`:cd`.** The project root is pinned (§2.3) and nothing changes it. A
+   `:cd` must re-anchor everything keyed by `Editor::cwd`: relative buffer
+   paths (`self.cwd.join(path)` is how every local path is made absolute),
+   the session and recovery-checkpoint files, picker source caches, and the
+   LSP "outside the project" test in `lsp_project_server`. `:pwd` ships.
+6. **Fields do not write registers.** `yw` / `dw` in a picker or prompt field
+   resolve and store nothing (`field.rs`, `Some(Op::Yank) => {}`).
+7. **`"#` and `"=`** (alternate file, expression) do not exist; appending to
+   a blockwise register does not re-pad rows.
 
-Visual-mode `p`/`P` (replace the selection with a register) does not exist.
+One divergence the cases found was a one-line fix and ships here: `dd` on the
+last line left the cursor on the phantom row past the final line break
+(`normal/execute.rs`; Neovim lands on the new last line).
+
+## 3a. Adopted from the 0.56 critique (0091)
+
+- **B7, `Ctrl-W`.** The prefix had no rows, so the walker rejected it and the
+  next key ran in Normal (`Ctrl-W v` started Visual). `keymap/bindings/panes.rs`
+  now binds `h j k l w W p s v n c q o =` to `Editor::window_command`, on the
+  existing flat pane layout: directions wrap as `Space w` does; `p` returns
+  to the pane that last had focus (`Pane::focused`, a view-local stamp); `n`
+  splits below onto an empty buffer; `c` refuses on the last window, `q` is
+  `:q`; `o` drops the other panes (buffers stay open); `=` is bound and does
+  nothing because panes are always equal. `Ctrl-W Ctrl-{key}` is the same
+  command however the terminal reports the second key — its own code, a raw
+  control character, or Backspace/Enter for Ctrl-H/Ctrl-J (`window_key` in
+  `input.rs`); `Ctrl-W Ctrl-C` cancels. Any other key yields
+  `Action::Unbound` — "ctrl-w x is not bound" — and is consumed: the walker
+  never hands a `ctrl-w` path to the grammar. `Space w` is unchanged.
+- **B10, the welcome card.** Its last line is now `space f finds a file ·
+  space / searches the project`. The card also takes the width its lines need
+  when the terminal has it: at 80 columns the 60 % rule had been clipping
+  `:w save` and the last line.
+- **README.** The header is "A modal text editor with Vim's keys"; the coined
+  lineage line, the logo alt text describing a frame the binary cannot draw,
+  and "the preview cannot lie" are gone. The table of what is shown before a
+  change stays, in plain words.
+- **0001 §2.1** carries a "superseded" note pointing at 0091 §3.1.
+
+The tagline itself still appears on the welcome card, in `--version`,
+`install.sh` and the crate description. 0091 §3.3 recommends retiring it as
+the headline once the keys release lands; that is a positioning decision for
+that release, not made here.
+
+## 3b. Two flaky tests
+
+- **`full_trace_roundtrips_literal_keys_and_closes_cleanly`** compared the
+  whole `state` object of a live run with its replay. `completion.publication`
+  in that object is the completion mailbox's memory accounting (bytes charged,
+  high-water mark, deliveries destroyed), which depends on when the worker
+  thread ran. `tests/tracing.rs` `replayed_state` now leaves that one object
+  out of both comparisons that had it; everything a user can observe is still
+  compared.
+- **`kitty_shifted_punctuation_opens_ex_commands`** failed on main CI at
+  `assert!(tui.wait_exit().success())` with nothing to read: strop's stderr
+  is the PTY. `Tui::expect_clean_exit` drains the PTY after the child exits
+  and, on a non-zero status, prints the status, the screen left behind (the
+  main screen, where the error is), the last terminal bytes and the trace
+  tail. Every `wait_exit().success()` site uses it. The cause is not known;
+  the next failure will name it.
+
 
 ## 4. Tests
 
@@ -342,3 +445,15 @@ State (`strop-engine`):
 
 Golden frames: the Files and Search hint rows (`ctrl-r "  paste yank`,
 `ctrl-t  replace`).
+
+Added with §1.4, §3a and §3b:
+
+- `registers/store.rs` and `tests/register_tests.rs` — a plain yank is
+  published and fills `"+`; deletes, `x` and named yanks are not; the 1 MiB
+  limit keeps the yank and says so.
+- `editor/panes.rs` — for every printable key after `Ctrl-W`: a bound key
+  dispatches, any other reports "ctrl-w {key} is not bound" and leaves panes,
+  focus, cursor, text and mode exactly as they were (0091 §7's acceptance
+  test); and the commands drive the pane machinery, including held-Ctrl forms
+  and `Ctrl-C`.
+- Golden: `welcome-{hone,vellum}-{140x40,80x24}`.

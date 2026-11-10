@@ -360,6 +360,7 @@ impl Editor {
         match action {
             Action::Pending => {}
             Action::Invalid(keys) => self.message = format!("not an editor command: {keys}"),
+            Action::Unbound(keys) => self.message = format!("{keys} is not bound"),
             Action::QueryError(error) => self.message = error.to_string(),
             Action::EnterText { sigil, state } => self.begin_text_line(sigil, state),
             Action::Grammar(command) if command.op.is_none() => {

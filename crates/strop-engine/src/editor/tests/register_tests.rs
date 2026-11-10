@@ -144,3 +144,27 @@ fn black_hole_reads_empty_and_keeps_the_unnamed_register() {
     assert_eq!(e.buf().text().to_string(), "one\n");
     assert_eq!(e.register(None).text, "one");
 }
+
+#[test]
+fn a_plain_yank_reaches_the_system_clipboard_and_a_delete_does_not() {
+    // 0092 §1.4: yank, then the terminal's paste carries it
+    let mut e = editor("one two\nthree\n");
+    e.feed_text("yiw");
+    assert_eq!(e.osc52.take().as_deref(), Some("one"));
+    assert_eq!(e.register(Some('+')).text, "one");
+    e.feed_text("jdd");
+    assert_eq!(e.osc52, None, "a delete never overwrites the clipboard");
+    e.feed_text("x");
+    assert_eq!(e.osc52, None);
+    e.feed_text("\"ayiw");
+    assert_eq!(e.osc52, None, "a named yank stays in its register");
+    assert_eq!(e.register(Some('+')).text, "one");
+    e.feed_text("Vy");
+    assert_eq!(e.osc52.take().as_deref(), Some("ne two\n"));
+    // too large to push through the terminal: kept, and said
+    let mut e = editor(&"x".repeat((1 << 20) + 1));
+    e.feed_text("yy");
+    assert_eq!(e.osc52, None);
+    assert!(e.message.contains("too large"), "{}", e.message);
+    assert_eq!(e.register(None).text.len(), (1 << 20) + 1);
+}

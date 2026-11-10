@@ -184,7 +184,7 @@ impl super::Editor {
     }
 
     /// Default scope for Files/Search/terminals: the focused resource's
-    /// selected longest covering project. The project is pinned (plan 0091
+    /// selected longest covering project. The project is pinned (plan 0092
     /// §2): a local FILE outside every selected root — a library source
     /// reached by go-to-definition, a loose file — keeps the launch project
     /// as its scope; visiting it never re-roots the editor. Only a
@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(registry.iter().count(), 2);
     }
 
-    /// Plan 0091 §2, the reported drift: launch in the project, follow
+    /// Plan 0092 §2, the reported drift: launch in the project, follow
     /// go-to-definition into the Rust stdlib, open Files — the scope must
     /// still be the project, not the library's directory.
     #[test]

@@ -106,7 +106,7 @@ fn a_second_project_never_switches_an_existing_binding() {
 
 #[test]
 fn manual_external_open_names_the_context_route() {
-    // 0049 §4.6 as amended by 0091 §2.3: with two project servers for
+    // 0049 §4.6 as amended by 0092 §2.3: with two project servers for
     // the language there is no single context — the message says so
     // and names the way in, no install red herring, no arbitrary pick.
     let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
@@ -677,7 +677,7 @@ while True:
         hint: "unrelated failure".into(),
     });
 
-    // 0091 §2.4: the crash is visible AND the server restarts — once,
+    // 0092 §2.4: the crash is visible AND the server restarts — once,
     // without the user switching buffers or repeating a request. The
     // unrelated, never-served workspace above restarts nothing.
     assert_eq!(e.current(), external_document);

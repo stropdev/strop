@@ -143,7 +143,7 @@ impl Editor {
 
     /// A local document outside the pinned project — a library source, a
     /// loose file — belongs to the project's server for its language
-    /// (plan 0091 §2.3; rust-analyzer, clangd and gopls serve library
+    /// (plan 0092 §2.3; rust-analyzer, clangd and gopls serve library
     /// files from the workspace that depends on them). Only when that
     /// owner is unambiguous: with two project servers for the language
     /// there is no single context, and 0049 §4.2 forbids picking one.
