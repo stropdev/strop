@@ -21,22 +21,27 @@
 //! - `RemoteCommand=none` and `ForkAfterAuthentication=no` neutralize
 //!   the same-named user options.
 //!
+//! The exec path ([`crate::exec`], plan 0090 §5) keeps every option above
+//! except the control ones: [`multiplexed_argv`] names a private control
+//! socket, a master that forks after authenticating (`-M -N -f`,
+//! `ControlPersist`), and clients that open channels on it (`-T`, or
+//! `-tt` for a terminal) and never promote themselves to a master.
+//!
 //! Pure construction: nothing here spawns. [`base_command`] carries no
 //! destination at all; the destination (and whether it names the `sftp`
 //! subsystem or a supervised remote command) is the caller's one
 //! remaining decision.
 
 use std::ffi::OsString;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use strop_workspace::RemoteEndpoint;
 
-/// The option argv — program excluded — shared by every transport.
-///
-/// Exposed separately from [`base_command`] so policy tests assert the
-/// exact argv vector instead of pinning `Command` debug formatting.
-pub(crate) fn base_argv(endpoint: &RemoteEndpoint) -> Vec<OsString> {
-    let mut argv: Vec<OsString> = [
-        "-T",
+/// The safety options every invocation carries, dedicated or
+/// multiplexed: no prompt, no unknown host key, no forwarding, no user
+/// `RemoteCommand`, plus the endpoint's own user and port.
+fn policy_argv(endpoint: &RemoteEndpoint, argv: &mut Vec<OsString>) {
+    for option in [
         "-a",
         "-x",
         "-o",
@@ -46,19 +51,10 @@ pub(crate) fn base_argv(endpoint: &RemoteEndpoint) -> Vec<OsString> {
         "-o",
         "ClearAllForwardings=yes",
         "-o",
-        "ControlMaster=no",
-        "-o",
-        "ControlPath=none",
-        "-o",
         "RemoteCommand=none",
-        "-o",
-        "ForkAfterAuthentication=no",
-        "-o",
-        "ControlPersist=no",
-    ]
-    .iter()
-    .map(OsString::from)
-    .collect();
+    ] {
+        argv.push(option.into());
+    }
     if let Some(user) = endpoint.user() {
         argv.push("-l".into());
         argv.push(user.into());
@@ -67,6 +63,85 @@ pub(crate) fn base_argv(endpoint: &RemoteEndpoint) -> Vec<OsString> {
         argv.push("-p".into());
         argv.push(port.get().to_string().into());
     }
+}
+
+/// The option argv — program excluded — shared by every dedicated
+/// (unmultiplexed) transport.
+///
+/// Exposed separately from [`base_command`] so policy tests assert the
+/// exact argv vector instead of pinning `Command` debug formatting.
+pub(crate) fn base_argv(endpoint: &RemoteEndpoint) -> Vec<OsString> {
+    let mut argv: Vec<OsString> = vec!["-T".into()];
+    policy_argv(endpoint, &mut argv);
+    for option in [
+        "ControlMaster=no",
+        "ControlPath=none",
+        "ForkAfterAuthentication=no",
+        "ControlPersist=no",
+    ] {
+        argv.push("-o".into());
+        argv.push(option.into());
+    }
+    argv
+}
+
+/// One invocation's role on a per-endpoint multiplexed connection
+/// (plan 0090 §5): the master that authenticates once, or a client that
+/// opens one channel on it.
+pub(crate) enum Mux<'a> {
+    /// `ssh -M -N -f`: authenticate, then fork into the background and
+    /// serve channels on `socket` until idle for `persist`. ssh's own
+    /// diagnostics go to `log`, never to an inherited pipe.
+    Master {
+        socket: &'a Path,
+        persist: &'a str,
+        log: &'a Path,
+    },
+    /// One channel on an existing master. `tty` forces a remote PTY
+    /// (`-tt`) for terminals; otherwise none (`-T`).
+    Client {
+        socket: &'a Path,
+        log: &'a Path,
+        tty: bool,
+    },
+}
+
+/// The option argv for a multiplexed invocation: the same safety policy
+/// as [`base_argv`], with the control socket instead of `ControlPath=none`.
+///
+/// Clients pass `ControlMaster=no`: when the master is gone they fall
+/// back to a direct (still noninteractive) connection rather than
+/// promoting themselves to a backgrounded master that would inherit the
+/// caller's pipes.
+pub(crate) fn multiplexed_argv(endpoint: &RemoteEndpoint, mux: &Mux<'_>) -> Vec<OsString> {
+    let mut argv = Vec::new();
+    let (socket, log) = match mux {
+        Mux::Master {
+            socket,
+            persist,
+            log,
+        } => {
+            argv.extend(
+                ["-T", "-M", "-N", "-f", "-o", "ControlMaster=yes", "-o"].map(OsString::from),
+            );
+            argv.push(format!("ControlPersist={persist}").into());
+            (socket, log)
+        }
+        Mux::Client { socket, log, tty } => {
+            argv.push(if *tty { "-tt" } else { "-T" }.into());
+            argv.extend(["-o", "ControlMaster=no"].map(OsString::from));
+            (socket, log)
+        }
+    };
+    policy_argv(endpoint, &mut argv);
+    let mut control = OsString::from("ControlPath=");
+    control.push(socket.as_os_str());
+    argv.extend([
+        OsString::from("-o"),
+        control,
+        "-E".into(),
+        log.as_os_str().into(),
+    ]);
     argv
 }
 

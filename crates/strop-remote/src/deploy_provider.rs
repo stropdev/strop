@@ -469,6 +469,7 @@ mod tests {
             size: Some(7),
             permissions: Some(0o100500),
             uid: Some(1000),
+            mtime: None,
         })
         .expect("file decodes");
         assert_eq!(stat.kind, RemoteKind::File);
@@ -486,6 +487,7 @@ mod tests {
                 size: None,
                 permissions: Some(mode),
                 uid: Some(0),
+                mtime: None,
             })
             .expect("kind decodes");
             assert_eq!(stat.kind, kind);
@@ -496,6 +498,7 @@ mod tests {
             size: None,
             permissions: Some(0o100644),
             uid: None,
+            mtime: None,
         })
         .is_err());
     }

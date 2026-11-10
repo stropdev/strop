@@ -5,7 +5,8 @@
 #   docker compose run --build --rm ssh-pythonfree  # real sshd, no Python on the host
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
 #   docker compose run --build --rm bench           # perf scenarios (measurement, not a gate)
-# Every service above except bench is a blocking gate.
+#   docker compose run --build --rm ssh-bench       # worker vs ssh exec (0090 §5, measurement)
+# Every service above except bench and ssh-bench is a blocking gate.
 
 services:
   test:
@@ -26,6 +27,20 @@ services:
       dockerfile: Dockerfile
       target: ssh-pythonfree
     command: 'echo "gate passed: real SSH native worker without Python"'
+
+  # Plan 0090 §5 go/no-go numbers: -e DELAY_MS=10 adds netem delay each
+  # way on loopback. Measurement, not a gate.
+  ssh-bench:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ssh-bench
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - DELAY_MS
+      - STROP_SSH_EXEC_BENCH_N
+      - STROP_SSH_EXEC_BENCH_CONNECTS
 
   model:
     build:

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use strop_workspace::addr::uri::path_bytes;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+#[path = "wire_files.rs"]
+mod files;
 #[cfg(test)]
 #[path = "wire_tests.rs"]
 mod tests;
@@ -71,10 +73,10 @@ impl Advertised {
 
 /// One directory entry as the server spelled it: the native filename and
 /// size and POSIX mode attributes when carried.
-pub(super) struct RawEntry {
-    pub(super) name: PathBuf,
-    pub(super) permissions: Option<u32>,
-    pub(super) size: Option<u64>,
+pub(crate) struct RawEntry {
+    pub(crate) name: PathBuf,
+    pub(crate) permissions: Option<u32>,
+    pub(crate) size: Option<u64>,
 }
 
 /// One READDIR page: entries, or the clean end-of-directory status.
@@ -139,6 +141,12 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
         Ok(())
     }
     async fn exchange(&mut self, stage: ReadStage) -> Result<(), Fault> {
+        self.send(stage).await?;
+        self.receive(stage).await
+    }
+    /// Write the framed request without awaiting its reply (pipelining
+    /// sends several before [`Self::receive`]-ing them in order).
+    async fn send(&mut self, stage: ReadStage) -> Result<(), Fault> {
         if self.request.len() > MAX_PACKET {
             return Err(protocol(stage, "SFTP request exceeds packet limit"));
         }
@@ -150,7 +158,10 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
             .write_all(&self.request)
             .await
             .map_err(|e| io_fault(stage, e))?;
-        self.input.flush().await.map_err(|e| io_fault(stage, e))?;
+        self.input.flush().await.map_err(|e| io_fault(stage, e))
+    }
+    /// Read one framed response into the response buffer.
+    async fn receive(&mut self, stage: ReadStage) -> Result<(), Fault> {
         let length = self
             .output
             .read_u32()
@@ -176,6 +187,17 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> ReadOnlySftp<W, R> {
         stage: ReadStage,
     ) -> Result<Decoder<'_>, Fault> {
         self.exchange(stage).await?;
+        self.decode(id, expected, stage)
+    }
+    /// Validate the received response as the reply to `id`: an error
+    /// status becomes a classified fault, anything but `expected` a
+    /// protocol fault.
+    fn decode(
+        &self,
+        id: RequestId,
+        expected: PacketKind,
+        stage: ReadStage,
+    ) -> Result<Decoder<'_>, Fault> {
         let mut reply = Decoder::new(&self.response, stage);
         let kind = reply.take(1)?[0];
         if reply.number()? != id.0 {
@@ -402,6 +424,8 @@ pub(crate) struct DeployAttrs {
     pub(crate) size: Option<u64>,
     pub(crate) permissions: Option<u32>,
     pub(crate) uid: Option<u32>,
+    /// Whole seconds: SFTP v3 carries no finer modification time.
+    pub(crate) mtime: Option<u32>,
 }
 
 /// The bounded write-capable session deployment drives (0058 WK07):
@@ -601,45 +625,12 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> DeploySftp<W, R> {
     /// content-addressed names, and a lossy rendering could not round
     /// trip back to the same file.
     pub(crate) async fn list_names(&mut self, path: &Path) -> Result<Vec<String>, Fault> {
-        let handle = self.client.opendir(path).await?;
-        let outcome = async {
-            let mut names = Vec::new();
-            loop {
-                match self.client.readdir(&handle).await? {
-                    Page::Entries(entries) => {
-                        names.extend(
-                            entries
-                                .into_iter()
-                                // "." and ".." are enumeration artifacts,
-                                // never entries.
-                                .filter(|entry| {
-                                    entry.name.as_os_str() != "." && entry.name.as_os_str() != ".."
-                                })
-                                .filter_map(|entry| entry.name.to_str().map(str::to_owned)),
-                        );
-                        if names.len() > MAX_ENTRIES {
-                            return Err(Fault::new(
-                                ReadStage::Transfer,
-                                ReadFailureKind::TooManyEntries,
-                                "directory exceeds the bounded listing cap",
-                            ));
-                        }
-                    }
-                    Page::End => return Ok(names),
-                }
-            }
-        }
-        .await;
-        match outcome {
-            Ok(names) => {
-                self.client.close(handle).await?;
-                Ok(names)
-            }
-            Err(primary) => match self.client.close(handle).await {
-                Ok(()) => Err(primary),
-                Err(cleanup) => Err(primary.with_cleanup(cleanup)),
-            },
-        }
+        Ok(self
+            .list_entries(path)
+            .await?
+            .into_iter()
+            .filter_map(|entry| entry.name.to_str().map(str::to_owned))
+            .collect())
     }
 }
 
@@ -667,9 +658,12 @@ fn parse_deploy_attrs(reply: &mut Decoder<'_>) -> Result<DeployAttrs, Fault> {
     } else {
         None
     };
-    if flags & 8 != 0 {
-        reply.take(8)?;
-    } // atime/mtime
+    let mtime = if flags & 8 != 0 {
+        reply.number()?; // atime
+        Some(reply.number()?)
+    } else {
+        None
+    };
     if flags & 0x8000_0000 != 0 {
         let count = reply.number()?;
         for _ in 0..count {
@@ -681,6 +675,7 @@ fn parse_deploy_attrs(reply: &mut Decoder<'_>) -> Result<DeployAttrs, Fault> {
         size,
         permissions,
         uid,
+        mtime,
     })
 }
 

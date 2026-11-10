@@ -1754,6 +1754,7 @@ name = "strop-remote"
 version = "0.55.0"
 dependencies = [
  "parking_lot",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
  "strop-core",

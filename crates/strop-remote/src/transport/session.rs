@@ -348,7 +348,7 @@ where
 
 /// Map a permissions word to the entry kind; without permissions the kind
 /// is honestly `Unknown` — never guessed from the human longname.
-fn kind_of(permissions: Option<u32>) -> RemoteEntryKind {
+pub(crate) fn kind_of(permissions: Option<u32>) -> RemoteEntryKind {
     match permissions {
         Some(mode) => match mode & 0xf000 {
             0x4000 => RemoteEntryKind::Directory,
