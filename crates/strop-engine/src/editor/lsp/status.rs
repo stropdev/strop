@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use strop_core::id::DocumentId;
 use strop_lsp::ServerId;
 use strop_workspace::Filesystem;
 
@@ -51,6 +52,35 @@ pub(crate) struct LspFailure {
     pub root: PathBuf,
     pub target: Filesystem,
     pub reason: String,
+}
+
+/// How many times one workspace scope's crashed server is restarted
+/// without being asked. A count, not a time window: the decision must
+/// replay identically from a trace, and wall-clock time does not.
+pub(crate) const RESTART_BUDGET: u8 = 3;
+
+/// One workspace scope's automatic-restart ledger.
+pub(crate) struct Restart {
+    pub language: String,
+    pub root: PathBuf,
+    pub target: Filesystem,
+    /// Restarts spent; an explicit request (`gd`, `K`, …) resets it.
+    pub attempts: u8,
+    /// Documents the dead server served — project files and the
+    /// library files routed to it — reopened on the replacement.
+    pub documents: Vec<DocumentId>,
+}
+
+/// What a crashed server's restart needs, captured before teardown
+/// erases its bindings.
+pub(crate) struct RestartPlan {
+    language: String,
+    root: PathBuf,
+    target: Filesystem,
+    /// A served document inside the root: its discovery finds the same
+    /// workspace again.
+    representative: DocumentId,
+    documents: Vec<DocumentId>,
 }
 
 impl LspFailure {
@@ -142,6 +172,127 @@ impl Editor {
         self.lsp_state
             .failures
             .retain(|failure| failure.server != server);
+    }
+
+    /// A server that had finished its handshake and then died is a
+    /// crash, and crashes restart. One that never became ready would
+    /// fail the same way again: its refusal stands until the user acts.
+    /// Remote servers ride their connection's own recovery.
+    pub(super) fn lsp_restart_plan(&self, server: ServerId) -> Option<RestartPlan> {
+        let owner = self.lsp_servers.iter().find(|owner| owner.id == server)?;
+        if !owner.ready || owner.target != Filesystem::Local {
+            return None;
+        }
+        let served = |id: &DocumentId| {
+            self.lsp_state
+                .bindings
+                .get(id)
+                .is_some_and(|binding| binding.server == server)
+        };
+        let inside = |id: &DocumentId| {
+            self.lsp_state.bindings.get(id).is_some_and(|binding| {
+                binding.server == server && binding.path.starts_with(&owner.root)
+            })
+        };
+        let mut documents: Vec<DocumentId> = self
+            .lsp_state
+            .bindings
+            .keys()
+            .copied()
+            .filter(served)
+            .chain(
+                self.lsp_state
+                    .jump_contexts
+                    .iter()
+                    .filter(|(_, context)| context.server == server)
+                    .map(|(id, _)| *id),
+            )
+            .collect();
+        documents.sort();
+        documents.dedup();
+        let current = (!self.docs.is_empty()).then(|| self.current());
+        let representative = current
+            .filter(inside)
+            .or_else(|| documents.iter().copied().find(inside))?;
+        Some(RestartPlan {
+            language: owner.language.clone(),
+            root: owner.root.clone(),
+            target: owner.target.clone(),
+            representative,
+            documents,
+        })
+    }
+
+    /// Spend one restart from the scope's budget and rediscover the
+    /// workspace; returns the status line. The failure stays recorded
+    /// (and `LSP!` lit) until the replacement reports Ready.
+    pub(super) fn lsp_restart(&mut self, plan: RestartPlan, name: &str) -> String {
+        let RestartPlan {
+            language,
+            root,
+            target,
+            representative,
+            documents,
+        } = plan;
+        let index = self
+            .lsp_state
+            .restarts
+            .iter()
+            .position(|restart| {
+                restart.language == language && restart.root == root && restart.target == target
+            })
+            .unwrap_or_else(|| {
+                self.lsp_state.restarts.push(Restart {
+                    language,
+                    root,
+                    target,
+                    attempts: 0,
+                    documents: Vec::new(),
+                });
+                self.lsp_state.restarts.len() - 1
+            });
+        let restart = &mut self.lsp_state.restarts[index];
+        if restart.attempts >= RESTART_BUDGET {
+            restart.documents.clear();
+            return format!(
+                "lsp: {name} failed again after {RESTART_BUDGET} restarts — not restarted; \
+                 repeat a request to retry — :explain for details"
+            );
+        }
+        restart.attempts += 1;
+        restart.documents = documents;
+        let attempt = restart.attempts;
+        self.lsp_attach_document(representative);
+        format!(
+            "lsp: {name} failed — restarting ({attempt}/{RESTART_BUDGET}) — :explain for details"
+        )
+    }
+
+    /// The replacement for a crashed server is placed: every document
+    /// the dead one served opens on it, library files included.
+    pub(super) fn lsp_reopen_restarted(
+        &mut self,
+        language: &str,
+        root: &Path,
+        target: &Filesystem,
+    ) {
+        let Some(restart) = self.lsp_state.restarts.iter_mut().find(|restart| {
+            restart.language == language && restart.root == root && restart.target == *target
+        }) else {
+            return;
+        };
+        for document in std::mem::take(&mut restart.documents) {
+            if self.docs.get(document).is_some() {
+                self.lsp_did_open_document(document);
+            }
+        }
+    }
+
+    /// The user asked again: the scope's budget is theirs to refill.
+    pub(super) fn lsp_refill_restarts(&mut self, language: &str, target: &Filesystem) {
+        self.lsp_state
+            .restarts
+            .retain(|restart| !(restart.language == language && restart.target == *target));
     }
 
     pub(super) fn clear_lsp_failure_scope(
