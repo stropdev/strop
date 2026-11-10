@@ -127,7 +127,9 @@ impl Editor {
     /// `u`: undo one revision. Readonly buffers never record and refuse
     /// through the normal mutation boundary.
     pub(crate) fn undo(&mut self) {
+        self.collection_history_move(self.current(), Some(true));
         let result = self.buf_mut().undo();
+        self.collection_history_move(self.current(), None);
         match result {
             Ok(Some(moved)) => {
                 self.set_head(moved.start.get());
@@ -159,7 +161,9 @@ impl Editor {
     /// `ctrl-r`: redo along the last-visited branch. Readonly buffers
     /// refuse through the normal mutation boundary.
     pub(crate) fn redo(&mut self) {
+        self.collection_history_move(self.current(), Some(false));
         let result = self.buf_mut().redo();
+        self.collection_history_move(self.current(), None);
         match result {
             Ok(Some(moved)) => {
                 self.set_head(moved.end.get());

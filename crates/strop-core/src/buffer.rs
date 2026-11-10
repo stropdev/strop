@@ -36,8 +36,6 @@ pub enum ReadonlyReason {
     DirectoryListing,
     /// A directory operation is applying or reloading.
     DirectoryOperation,
-    /// A healthy source-backed collection inspection view.
-    Collection,
     /// A stale collection whose projection failed.
     CollectionProjection,
     /// The recovery checkpoint surface.

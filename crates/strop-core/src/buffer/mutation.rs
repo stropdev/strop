@@ -369,6 +369,12 @@ impl SystemEdit<'_> {
         Ok(())
     }
 
+    /// Recorded offsets describe text a system edit has since moved: the
+    /// history starts over rather than replaying into the wrong bytes.
+    pub fn forget_history(&mut self) {
+        self.buffer.adopt_history(Default::default());
+    }
+
     /// A generated surface is a new system snapshot, never an undoable user edit.
     pub fn replace_all(&mut self, text: &str) -> Result<(), EditError> {
         self.buffer

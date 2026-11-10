@@ -123,11 +123,11 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
-        keys: ":apply-change :cancel-change :save-change",
-        desc: "review: apply text or filesystem changes, cancel, or save changed text",
+        keys: ":copen :cnext :cprev :cc :cdo :cfdo",
+        desc: "quickfix: show the list, visit hits, run a command at each hit or file",
         sections: &["ex"],
         live: true,
-        id: "change-review-actions",
+        id: "quickfix",
         handler: Handler::Contextual,
     },
 ];

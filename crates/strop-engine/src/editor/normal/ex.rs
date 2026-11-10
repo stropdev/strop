@@ -168,7 +168,7 @@ impl Editor {
         match cmd {
             _ if cmdline.starts_with('!') => self.shell_run(&cmdline[1..]),
             "w" | "w!" | "wq" | "wq!" if self.collections.contains_key(&self.current()) => {
-                self.message = "collection files are read-only; no collection save".into();
+                self.collection_save(cmd.starts_with("wq"));
             }
             "w" | "w!" => {
                 // vim: readonly buffers refuse plain :w (surfaces, :view);
@@ -192,10 +192,6 @@ impl Editor {
                         self.message = "readonly".into();
                     }
                     "noro" | "noreadonly" => {
-                        if self.collections.contains_key(&self.current()) {
-                            self.message = "collection files are read-only by policy".into();
-                            return;
-                        }
                         if self.terminal_document(self.current()).is_some() {
                             self.message =
                                 "terminal buffer is read-only — i enters TERMINAL mode".into();
@@ -262,12 +258,16 @@ impl Editor {
             "tab-size" => self.tab_size_command(arg),
             "theme" => self.theme_command(arg),
             "indent-style" => self.indent_style_command(arg),
-            "apply-change" => self.review_apply_pub(),
+            "copen" | "cw" | "cwindow" => self.quickfix_open(),
+            "cnext" | "cn" => self.quickfix_step(1),
+            "cprev" | "cp" | "cprevious" | "cN" => self.quickfix_step(-1),
+            "cc" => self.quickfix_goto(arg),
+            "cdo" => self.quickfix_do(arg, false),
+            "cfdo" => self.quickfix_do(arg, true),
             "select-next" => self.occurrence_next_pub(),
             "select-all" => self.occurrence_all_pub(),
             "select-skip" => self.occurrence_skip_pub(),
             "select-pop" => self.occurrence_pop_pub(),
-            "cancel-change" => self.review_cancel_pub(),
             "collection" if arg == "source" => self.collection_open_source(),
             "collection" if arg == "expand" => self.collection_context_step(true),
             "collection" if arg == "contract" => self.collection_context_step(false),
@@ -286,8 +286,6 @@ impl Editor {
                     self.lsp_rename(arg);
                 }
             }
-            "undo-change" => self.undo_last_change(),
-            "save-change" => self.save_changed_files_pub(),
             "e" | "e!" => {
                 if self.buf().is_dirty() && cmd == "e" {
                     self.message = "unsaved changes — :e! to force".into();

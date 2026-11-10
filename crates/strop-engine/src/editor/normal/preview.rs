@@ -76,7 +76,8 @@ impl Editor {
                     self.buf(),
                     origin.pane.sels.primary().head,
                 ) {
-                    Ok(Some(spec)) => {
+                    Ok(Some(mut spec)) => {
+                        spec.within = self.collection_body_spans(self.current());
                         self.prepare_ex_substitute(spec, origin.pane.sels.heads());
                     }
                     Ok(None) | Err(_) => self.resolution.cancel_preview(),

@@ -1,14 +1,13 @@
-//! Shared change plans (0043): every multi-edit producer — LSP format,
-//! rename, code actions — funnels through one plan with revision-checked
-//! application per document and an explicit receipt. No producer mutates
-//! buffers directly; the receipt anchors grouped undo (`:undo-change`).
+//! Shared change plans (0043, 0094): every multi-edit producer — LSP format,
+//! rename, code actions, project replace — funnels through one plan with
+//! revision-checked application per document. No producer mutates buffers
+//! directly. A plan for one buffer applies at once; a plan for several is
+//! reviewed (`review.rs`), applied and written with one key, and reverted
+//! with `u`.
 //!
-//! v1 scope: targets are documents open on the requesting server (the
-//! LSP binding table is the inverse map). A target the editor has not
-//! open is a named refusal in the receipt, never a silent drop and never
-//! an implicit local-path guess.
-
-use std::collections::VecDeque;
+//! Targets are documents open on the requesting server (the LSP binding
+//! table is the inverse map). A target the editor has not open is a named
+//! refusal, never a silent drop and never an implicit local-path guess.
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_lsp::{PositionEncoding, ServerEdit};
@@ -49,18 +48,6 @@ pub(crate) struct PlannedDocument {
     pub edits: Vec<strop_core::Replacement>,
 }
 
-/// What actually happened — per-document outcomes, before/after revisions,
-/// and named refusals. This, not a success flag, is the apply result.
-#[derive(Debug)]
-pub(crate) struct ChangeReceipt {
-    pub producer: String,
-    /// (document, revision before, revision after) per applied target.
-    pub applied: Vec<(DocumentId, BufferRevision, BufferRevision)>,
-    pub applied_positions: Vec<usize>,
-    /// (target, reason) for everything NOT applied.
-    pub refused: Vec<(ResourceLocation, String)>,
-}
-
 /// A validated plan ready to apply. Building resolves server positions to
 /// byte ranges; nothing here touches a buffer mutably.
 #[derive(Debug)]
@@ -72,39 +59,36 @@ pub(crate) struct ChangePlan {
 }
 
 pub(crate) struct ChangeState {
-    /// Newest-last; grouped undo pops from the back.
-    receipts: VecDeque<ChangeReceipt>,
     /// Code actions offered by the open picker (0043); acceptance applies
     /// the chosen action's edits as a change plan.
     pub(crate) pending_actions: Vec<strop_lsp::ProtoAction>,
     /// The requesting server's negotiated encoding for pending actions.
     pub(crate) pending_encoding: strop_lsp::PositionEncoding,
+    /// Groups of files being written together (`write.rs`).
+    pub(crate) writes: Vec<write::BatchWrite>,
+    pub(crate) write_seq: u64,
+    /// The quickfix list: the newest collection (0094 §3.1).
+    pub(crate) quickfix: Option<DocumentId>,
+    /// `:cdo`/`:cfdo` is running: each command finishes before the next.
+    pub(crate) batch_ex: bool,
 }
 
 impl Default for ChangeState {
     /// The spec default encoding until a server negotiates otherwise.
     fn default() -> Self {
         Self {
-            receipts: VecDeque::new(),
             pending_actions: Vec::new(),
             pending_encoding: strop_lsp::PositionEncoding::Utf16,
-        }
-    }
-}
-
-impl ChangeState {
-    const RETAINED: usize = 16;
-
-    pub(crate) fn record(&mut self, receipt: ChangeReceipt) {
-        debug_assert_eq!(receipt.applied.len(), receipt.applied_positions.len());
-        self.receipts.push_back(receipt);
-        while self.receipts.len() > Self::RETAINED {
-            self.receipts.pop_front();
+            writes: Vec::new(),
+            write_seq: 0,
+            quickfix: None,
+            batch_ex: false,
         }
     }
 }
 
 pub(crate) mod review;
+pub(crate) mod write;
 
 #[cfg(test)]
 mod tests;
@@ -229,84 +213,41 @@ impl Editor {
 
     /// Apply a plan document by document through the revision-checked
     /// gateway. A document edited since the plan's base is refused by
-    /// name; earlier successes stand and are reported. Each apply is one
-    /// bounded unit through the gateway — never an unbounded loop.
+    /// name; earlier successes stand and are reported. The changed span of
+    /// the buffer in view flashes.
     pub(crate) fn apply_change_plan(&mut self, plan: ChangePlan) {
-        let producer = plan.producer.label().to_string();
-        let mut receipt = ChangeReceipt {
-            producer: producer.clone(),
-            applied: Vec::new(),
-            applied_positions: Vec::new(),
-            refused: plan.refused,
-        };
+        let producer = plan.producer.label();
+        let mut refused = plan.refused.len();
+        let mut applied = 0;
         for target in plan.documents {
+            let span = target
+                .edits
+                .first()
+                .zip(target.edits.last())
+                .map(|(first, last)| (first.range.start.get(), last.range.end.get()));
+            let delta = target.edits.iter().fold(0isize, |delta, edit| {
+                delta + edit.text.len() as isize - edit.range.len() as isize
+            });
             let changes = super::transact::ChangeSet {
                 edits: target.edits,
                 undo_open: false,
             };
             match self.apply(target.document, target.base, changes) {
-                Ok(committed) => {
-                    receipt
-                        .applied
-                        .push((target.document, target.base, committed.revision));
-                    if let Some(position) = self
-                        .docs
-                        .get(target.document)
-                        .and_then(|doc| doc.buf.history().committed_position())
-                    {
-                        receipt.applied_positions.push(position);
+                Ok(_) => {
+                    applied += 1;
+                    if let Some((start, end)) = span.filter(|_| target.document == self.current()) {
+                        let end = end.saturating_add_signed(delta).min(self.buf().len_bytes());
+                        self.flash(strop_core::Range::charwise(start.min(end), end));
                     }
                 }
-                Err(error) => receipt
-                    .refused
-                    .push((target.location, format!("changed since plan: {error}"))),
+                Err(_) => refused += 1,
             }
         }
-        self.message = match (receipt.applied.len(), receipt.refused.len()) {
-            (applied, 0) => format!("{producer}: applied to {applied} buffer(s)"),
-            (applied, refused) => {
+        self.message = match refused {
+            0 => format!("{producer}: applied to {applied} buffer(s)"),
+            refused => {
                 format!("{producer}: {applied} buffer(s) applied, {refused} target(s) refused")
             }
         };
-        self.changes.record(receipt);
-    }
-
-    /// `:undo-change` — grouped undo of the most recent receipt. Each
-    /// buffer must still sit at the receipt's after-revision: intervening
-    /// edits refuse that buffer by name, never a blind history walk.
-    pub(crate) fn undo_last_change(&mut self) {
-        let Some(mut receipt) = self.changes.receipts.pop_back() else {
-            self.message = "no change to undo".into();
-            return;
-        };
-        let mut undone = 0;
-        let mut remaining = Vec::new();
-        let mut positions = Vec::new();
-        for (member, &(document, before, after)) in receipt.applied.iter().enumerate() {
-            let expected = receipt.applied_positions[member];
-            let ready = self.docs.get(document).is_some_and(|doc| {
-                !doc.buf.readonly && doc.buf.history().committed_position() == Some(expected)
-            });
-            if ready && matches!(self.doc_mut(document).buf.undo(), Ok(Some(_))) {
-                undone += 1;
-            } else {
-                remaining.push((document, before, after));
-                positions.push(expected);
-            }
-        }
-        let skipped = remaining.len();
-        self.message = if skipped == 0 {
-            format!("undid {} across {undone} buffer(s)", receipt.producer)
-        } else {
-            format!(
-                "undid {} in {undone} buffer(s); {skipped} skipped (edited, read-only or closed); receipt retained",
-                receipt.producer
-            )
-        };
-        if skipped > 0 {
-            receipt.applied = remaining;
-            receipt.applied_positions = positions;
-            self.changes.receipts.push_back(receipt);
-        }
     }
 }

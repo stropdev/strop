@@ -312,9 +312,16 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
             width: results.width.saturating_sub(1),
             ..results
         };
-        render_results(frame, t, text_area, p, editor.cwd(), &|path| {
-            editor.tab_width_for_location(path)
-        });
+        let replacer = editor.search_replacer();
+        render_results(
+            frame,
+            t,
+            text_area,
+            p,
+            replacer.as_ref(),
+            editor.cwd(),
+            &|path| editor.tab_width_for_location(path),
+        );
     }
     // thumb-only results scrollbar (rule 4): nothing when the list fits
     let row_count = p.rows.len();

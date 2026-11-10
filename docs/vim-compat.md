@@ -19,7 +19,8 @@ Generated from the command table (`strop compat`).
 - `✓ tab` — jump list forward (ctrl-i)
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-^` — alternate buffer
-- `✓ gr` — references (LSP)
+- `✓ grr` — references (LSP)
+- `✓ grn` — rename (LSP), prompting with the current name
 - `✓ gI` — implementation (LSP)
 - `✓ gy` — type definition (LSP)
 - `✓ gD` — declaration (LSP)

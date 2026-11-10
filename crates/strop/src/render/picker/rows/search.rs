@@ -76,7 +76,7 @@ fn match_cols_in_window((start, end): (usize, usize)) -> Vec<u32> {
 pub(super) fn search_rows(
     t: &Tokens,
     item: &strop_picker::Item,
-    replacement: Option<&str>,
+    replacer: Option<&strop_picker::Replacer>,
     excluded: bool,
     width: u16,
     active: bool,
@@ -97,7 +97,12 @@ pub(super) fn search_rows(
     let numbers = format!(" {line:>4}  ");
     let numbers_w = clip::width(&numbers);
     let code_budget = usize::from(width).saturating_sub(1 + numbers_w + 2);
-    let delta = replacement.filter(|_| !excluded);
+    // The hit's own replacement (captures expand per hit); a hit the term
+    // no longer matches shows no delta, as the review will refuse it.
+    let delta = replacer
+        .filter(|_| !excluded)
+        .and_then(|replacer| replacer.text(&line_text[s..e]));
+    let delta = delta.as_deref();
     let ink = if excluded {
         Style::default()
             .fg(t.muted)
@@ -120,7 +125,7 @@ pub(super) fn search_rows(
     let hit = finish(t, old, width, active);
     let Some(delta) = delta else {
         let mut lines = vec![hit];
-        if replacement.is_some() {
+        if replacer.is_some() {
             lines.push(finish(t, Vec::new(), width, active));
         }
         return lines;

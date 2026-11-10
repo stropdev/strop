@@ -103,7 +103,7 @@ fn which_key_children() {
     assert_eq!(git.len(), 9); // l h b y o u s S p
     assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-    assert_eq!(children_of("g", Mode::Normal).len(), 16); // + gb gB g␣
+    assert_eq!(children_of("g", Mode::Normal).len(), 17); // + gb gB g␣ grr grn
                                                           // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
     assert_eq!(v.len(), 1);

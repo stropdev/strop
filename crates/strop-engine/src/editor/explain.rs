@@ -378,9 +378,6 @@ impl Editor {
             Some(strop_core::ReadonlyReason::DirectoryOperation) => {
                 "directory operation in flight — editing resumes when it lands"
             }
-            Some(strop_core::ReadonlyReason::Collection) => {
-                "source-backed collection — read-only inspection; edit the source buffer instead"
-            }
             Some(strop_core::ReadonlyReason::CollectionProjection) => {
                 "collection projection failed — this stale view refuses edits"
             }

@@ -496,7 +496,7 @@ impl Editor {
         self.revoke_git_requests_for(closed);
         self.blame_gutters.remove(&closed);
         self.collections.remove(&closed);
-        self.review.forget(closed);
+        let review = self.review.forget(closed);
         self.filesystem_forget_view(closed);
         let return_to = self
             .docs
@@ -542,6 +542,9 @@ impl Editor {
             self.collection_render_view(collection);
         }
         self.lsp_retire_workspace_servers();
+        if let Some(review) = review.filter(|_| !self.should_quit) {
+            self.review_closed(review);
+        }
         true
     }
     /// `:bd` / `:bd!`: delete the document, not just a pane. A running

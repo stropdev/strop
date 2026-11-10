@@ -41,6 +41,10 @@ pub(crate) struct SubstituteSpec {
     pub query: CompiledQuery,
     pub replacement: String,
     pub global: bool,
+    /// Byte spans a match must lie inside; empty means anywhere. A
+    /// collection substitutes inside its excerpts, never in a card border
+    /// that happens to spell the pattern (0094 §3.1).
+    pub within: Vec<(usize, usize)>,
 }
 
 /// Everything apply needs, plus the immutable changed-text presentation. The
@@ -255,6 +259,22 @@ fn unescape_pattern(raw: &str, delimiter: char) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// `:s` matches case exactly unless the pattern says otherwise (`\c`, a
+/// leading `case:` directive): a substitution that also rewrites `Edge` when
+/// asked for `edge` changes text nobody named (0091 B2). The directive is
+/// the buffer-search grammar's own `\C`, appended.
+fn exact_case(pattern: &str) -> std::borrow::Cow<'_, str> {
+    let body = pattern
+        .strip_prefix("\\v")
+        .or_else(|| pattern.strip_prefix("\\m"))
+        .unwrap_or(pattern);
+    if pattern.contains("\\c") || pattern.contains("\\C") || body.starts_with("case:") {
+        std::borrow::Cow::Borrowed(pattern)
+    } else {
+        std::borrow::Cow::Owned(format!("{pattern}\\C"))
+    }
+}
+
 /// The replacement contract above is intentionally not Search's `$1` contract.
 fn unescape_replacement(raw: &str, delimiter: char) -> Result<String, SubstituteError> {
     let mut output = String::with_capacity(raw.len());
@@ -311,7 +331,7 @@ fn parse_command(range: (usize, usize), rest: &str) -> Result<SubstituteSpec, Su
         )));
     }
     let pattern = unescape_pattern(raw_pattern, delimiter);
-    let query = CompiledQuery::compile(&pattern, false)
+    let query = CompiledQuery::compile(&exact_case(&pattern), false)
         .map_err(|error| SubstituteError::Invalid(error.to_string()))?;
     let replacement = unescape_replacement(raw_replacement, delimiter)?;
     Ok(SubstituteSpec {
@@ -319,6 +339,7 @@ fn parse_command(range: (usize, usize), rest: &str) -> Result<SubstituteSpec, Su
         query,
         replacement,
         global: flags == "g",
+        within: Vec::new(),
     })
 }
 
@@ -360,6 +381,16 @@ pub(crate) fn plan(buf: &Buffer, spec: &SubstituteSpec) -> Result<SubstitutionPl
         // crossing either Ex boundary is not a partial substitution target.
         if hit_start < start || hit_end > end {
             return std::ops::ControlFlow::Continue(());
+        }
+        if !spec.within.is_empty() {
+            let after = spec.within.partition_point(|span| span.0 <= hit_start);
+            // strictly inside: the span's last byte is its line terminator
+            if !after
+                .checked_sub(1)
+                .is_some_and(|index| hit_end < spec.within[index].1)
+            {
+                return std::ops::ControlFlow::Continue(());
+            }
         }
         if !spec.global {
             let line = buf.line_of(hit_start);
@@ -421,7 +452,10 @@ impl Editor {
             ));
         }
         let spec = match parse(prompt.body(), self.buf(), origin.pane.sels.primary().head) {
-            Ok(Some(spec)) => spec,
+            Ok(Some(mut spec)) => {
+                spec.within = self.collection_body_spans(self.current());
+                spec
+            }
             Ok(None) => return None,
             Err(error) if error.is_incomplete() => {
                 return Some(SubstitutePreviewState::Incomplete(error.to_string()));
@@ -461,14 +495,21 @@ impl Editor {
     /// Execute the same parsed spec through the same plan used by the card.
     pub(crate) fn run_substitute(&mut self, range: (usize, usize), rest: &str) {
         let spec = match parse_command(range, rest) {
-            Ok(spec) => spec,
+            Ok(mut spec) => {
+                spec.within = self.collection_body_spans(self.current());
+                spec
+            }
             Err(error) => {
                 self.message = error.to_string();
                 return;
             }
         };
         let cursors = self.all_cursors();
-        if self.substitution_is_large() && !self.substitution_ready(&spec, &cursors) {
+        // `:cdo` finishes each command before it moves on (0094 §3.1).
+        if !self.changes.batch_ex
+            && self.substitution_is_large()
+            && !self.substitution_ready(&spec, &cursors)
+        {
             self.defer_substitute(spec, cursors, ResolutionPurpose::Execute);
             return;
         }
@@ -500,7 +541,11 @@ impl Editor {
 
     fn apply_substitution(&mut self, spec: SubstituteSpec, plan: SubstitutionPlan) {
         if plan.edits.is_empty() {
-            self.message = format!("pattern not found: {}", spec.query.source());
+            let source = spec.query.source();
+            self.message = format!(
+                "pattern not found: {}",
+                source.strip_suffix("\\C").unwrap_or(source)
+            );
             return;
         }
         let hits = plan.edits.len();

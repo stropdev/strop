@@ -32,6 +32,17 @@ impl Editor {
         let glue = self.picker.as_mut()?;
         let query = Arc::new(SearchQuery::parse(glue.picker.input.text()));
         glue.query = Some(query.clone());
+        glue.replace_target = (kind == Kind::Search)
+            .then(|| {
+                strop_picker::query::ContentPlan::compile(&query)
+                    .ok()
+                    .flatten()
+            })
+            .flatten()
+            .and_then(|plan| match plan.replacement_target() {
+                strop_picker::query::ReplacementTarget::Single(regex) => Some(regex),
+                _ => None,
+            });
         glue.query_highlights = query.highlights.clone();
         let hidden = query.hidden.unwrap_or(self.config.search_show_hidden);
         let ignored = query.ignored.unwrap_or(!self.config.search_respect_ignore);

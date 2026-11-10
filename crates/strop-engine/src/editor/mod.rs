@@ -239,7 +239,7 @@ pub struct Editor {
     /// Applied change plans and their receipts (0043); grouped undo reads it.
     pub(crate) changes: changes::ChangeState,
     pub(crate) review: changes::review::ReviewState,
-    /// Open read-only source-backed collections by their buffer document (0044/0081).
+    /// Open source-backed collections by their buffer document (0044/0094).
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
     /// A build waiting on background source loads (0044 v2).
     pub(crate) collection_build: Option<collections::CollectionBuild>,

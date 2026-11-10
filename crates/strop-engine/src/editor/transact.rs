@@ -17,6 +17,8 @@ pub enum ApplyError {
     NoDocument,
     #[error(transparent)]
     Edit(#[from] EditError),
+    #[error(transparent)]
+    Excerpt(#[from] super::collections::ExcerptRefusal),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,16 @@ impl super::Editor {
         changes: ChangeSet,
     ) -> Result<Committed, ApplyError> {
         let buffer = &self.docs.get(document).ok_or(ApplyError::NoDocument)?.buf;
+        // A collection admits the whole batch or none of it; the batch is
+        // placed in the sources when this document's lease settles.
+        for edit in &changes.edits {
+            self.collection_admit(
+                document,
+                edit.range.start.get(),
+                edit.range.end.get(),
+                &edit.text,
+            )?;
+        }
         let prepared = buffer.prepare_replacements(base, changes.edits)?;
         if prepared.is_empty() {
             return Ok(Committed { revision: base });
@@ -63,6 +75,7 @@ impl super::Editor {
     }
     pub(crate) fn tx_commit(&mut self) {
         self.buf_mut().commit_undo_group();
+        self.collection_commit_sources(self.current());
         strop_trace::record_with(strop_trace::EventKind::History, || {
             serde_json::json!({
                 "operation":"commit","buffer":self.buf().trace_id(),"document":self.current(),
@@ -88,6 +101,7 @@ impl super::Editor {
         position: impl Fn(usize, &[(usize, usize, usize)]) -> usize,
     ) {
         self.sync_filename_draft(id);
+        self.collection_write_pending(id);
         let journal: Vec<(usize, usize, usize)> = match self.docs.get(id) {
             Some(doc) if !doc.buf.changes().is_empty() => {
                 doc.buf.changes().iter().map(Change::extent).collect()
@@ -110,6 +124,19 @@ impl super::Editor {
             })
             .map(|(cid, _)| *cid)
             .collect();
+        // A view that did not make this edit can no longer undo into this
+        // source: its recorded steps are not the source's newest ones.
+        for view in &clean_views {
+            if self.collections[view]
+                .excerpts
+                .iter()
+                .any(|excerpt| excerpt.source == id)
+            {
+                if let Some(document) = self.docs.get_mut(*view) {
+                    document.buf.system_edit().forget_history();
+                }
+            }
+        }
         let collection_updates = self.prepare_collection_updates(id, &clean_views);
         let Some(document) = self.docs.get_mut(id) else {
             return;
@@ -169,6 +196,7 @@ impl super::Editor {
         }
         document.buf.clear_changes();
         self.publish_collection_updates(collection_updates);
+        self.collection_settle(id);
     }
 }
 

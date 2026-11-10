@@ -15,12 +15,12 @@
   15    tab                           jump list forward (ctrl-i)                
   16    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)     
   17    ctrl-^                        alternate buffer                          
-  18    gr                            references (LSP)                          
-  19    gI                            implementation (LSP)                      
-  20    gy                            type definition (LSP)                     
-  21    gD                            declaration (LSP)                         
-  22    ]d                            next diagnostic                           
-  23    [d                            previous diagnostic                       
+  18    grr                           references (LSP)                          
+  19    grn                           rename the symbol under the cursor (promp 
+  20    gI                            implementation (LSP)                      
+  21    gy                            type definition (LSP)                     
+  22    gD                            declaration (LSP)                         
+  23    ]d                            next diagnostic                           
  NORMAL   help [RO]                                                      1:1  0%
 
   0: 1:#858c9a/#15171c+b 4:#e8a848/#15171c 12:#e6e1d6/#15171c+b 28:#858c9a/#15171c 34:reset/#15171c 1:#858c9a/#15171c
@@ -41,9 +41,9 @@
  15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 39:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
  16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
  17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
- 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 22:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
- 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 23:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
- 20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 19:#e6e1d6/#15171c 24:reset/#15171c 1:reset/reset
- 21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 17:#e6e1d6/#15171c 26:reset/#15171c 1:reset/reset
- 22: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 21:#e6e1d6/#15171c 22:reset/#15171c 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
+ 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 22:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
+ 20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 23:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
+ 21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 19:#e6e1d6/#15171c 24:reset/#15171c 1:reset/reset
+ 22: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 17:#e6e1d6/#15171c 26:reset/#15171c 1:reset/reset
  23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 54:reset/#1c1f25 7:#858c9a/#1c1f25

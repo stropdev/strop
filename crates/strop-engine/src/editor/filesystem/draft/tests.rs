@@ -35,13 +35,13 @@ fn modal_names_review_cancel_and_apply_one_shared_filesystem_plan() {
     let draft_head = editor.head();
     command(&mut editor, ":w<cr>");
     assert!(editor.filesystem.pending.is_some(), "{}", editor.message);
-    command(&mut editor, ":cancel-change<cr>");
+    command(&mut editor, ":fs cancel<cr>");
     assert_eq!(editor.current(), document);
     assert!(editor.filename_draft(document).is_some_and(Draft::editable));
     assert_eq!(editor.buf().text().to_string(), draft_text);
     assert_eq!(editor.head(), draft_head);
     command(&mut editor, ":w<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert!(!root.path().join("a.txt").exists());
     assert!(!root.path().join("b.txt").exists());
     assert_eq!(
@@ -73,7 +73,7 @@ fn browsing_an_open_filename_draft_keeps_its_text_history_and_provenance() {
     editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert_eq!(editor.buf().text().to_string(), text);
     command(&mut editor, ":w<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert!(!root.path().join("a.txt").exists());
     assert_eq!(
         std::fs::read(root.path().join("renamed.txt")).unwrap(),
@@ -99,7 +99,7 @@ fn whole_entry_yank_paste_keeps_copy_provenance_without_text_inference() {
             .kind,
         OperationKind::Copy
     );
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(
         std::fs::read_to_string(root.path().join("copy.txt")).unwrap(),
         "source data\n"
@@ -125,7 +125,7 @@ fn delete_paste_and_history_restore_the_original_entry_identity() {
     let proposal = editor.filesystem.pending.as_ref().unwrap();
     assert_eq!(proposal.batch.steps.len(), 1);
     assert_eq!(proposal.batch.steps[0].intent.kind, OperationKind::Rename);
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(
         std::fs::read_to_string(root.path().join("moved.txt")).unwrap(),
         "A\n"
@@ -193,7 +193,7 @@ fn external_text_creates_a_name_not_a_copied_source() {
             .kind,
         OperationKind::CreateFile
     );
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(std::fs::read(root.path().join("new.txt")).unwrap(), b"");
     assert_eq!(
         std::fs::read_to_string(root.path().join("a.txt")).unwrap(),

@@ -1,10 +1,14 @@
-//! Collection behavior: readonly inspection, source refreshes and navigation.
+//! Collection behavior: building, source refreshes and navigation. Editing
+//! through a collection is in `write.rs`, the quickfix names in `quickfix.rs`.
 
 use crate::editor::Editor;
 use strop_core::Buffer;
 use strop_picker::{Item, Kind, Payload};
+mod convergence;
 mod live;
 mod ownership;
+mod quickfix;
+mod write;
 
 fn fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap().keep();
@@ -49,6 +53,26 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
     (e, a, b)
 }
 
+/// Type `text` and let any deferred resolution (indentation, a large
+/// substitution) land, as the event loop would.
+fn type_keys(e: &mut Editor, text: &str) {
+    e.feed_text(text);
+    while e.resolution.pending() {
+        if !e.resolution.blocked() && !e.resolution.queue.is_empty() {
+            e.resume_deferred_input();
+        } else {
+            let event = e
+                .resolution
+                .rx
+                .as_ref()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("resolution settles");
+            e.handle_resolution(event);
+        }
+    }
+}
+
 fn current_text(e: &Editor) -> String {
     e.buf().text().to_string()
 }
@@ -57,22 +81,11 @@ fn current_text(e: &Editor) -> String {
 fn collection_builds_from_picker_hits() {
     let (mut e, _, _) = fixture();
     e.feed(strop_core::frontend_input::Key::CtrlO);
-    assert!(e.buf().readonly);
+    assert!(!e.buf().readonly, "a collection is an editing surface");
     let text = current_text(&e);
     assert!(text.contains("alpha one"), "{text}");
     assert!(text.contains("beta two"), "{text}");
     assert!(text.contains("╭─ a.txt"), "card top: {text}");
-    assert_eq!(
-        e.buf().readonly_reason,
-        Some(strop_core::ReadonlyReason::Collection)
-    );
-    e.open_explain();
-    let explanation = current_text(&e);
-    assert!(
-        explanation.contains("source-backed collection — read-only inspection"),
-        "{explanation}"
-    );
-    assert!(!explanation.contains("projection failed"), "{explanation}");
 }
 
 /// 0056 AR14: a stale collection explains its readonly reason from the
@@ -103,8 +116,7 @@ fn collection_header_refuses_mutation() {
     let at = before.find("a.txt").unwrap();
     e.set_head(at);
     e.feed_text("x");
-    assert!(e.message.contains("read-only"), "{}", e.message);
-    assert!(e.message.contains("g<Space>"), "{}", e.message);
+    assert!(e.message.contains("not text"), "{}", e.message);
     assert_eq!(current_text(&e), before);
 }
 
@@ -230,7 +242,7 @@ fn unopened_sources_load_in_the_background_and_assemble() {
 }
 
 #[test]
-fn remote_sources_join_readonly_collections() {
+fn remote_sources_join_collections() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let a = root.join("a.txt");
@@ -247,7 +259,7 @@ fn remote_sources_join_readonly_collections() {
             return_to: None,
         },
     );
-    e.docs.try_insert(remote_doc).unwrap();
+    let remote = e.docs.try_insert(remote_doc).unwrap();
     e.open_picker(Kind::Search);
     e.picker_items_fixture(vec![
         Item {
@@ -279,13 +291,12 @@ fn remote_sources_join_readonly_collections() {
         text.contains("remote one"),
         "remote excerpt in view: {text}"
     );
-    assert!(e.buf().readonly);
     let before = e.doc(e.current()).buf.text().to_string();
     let at = before.find("remote one").unwrap() + 7;
     e.set_head(at);
     e.feed_text("x");
-    assert!(e.message.contains("read-only"), "{}", e.message);
-    assert_eq!(current_text(&e), before);
+    assert_eq!(e.doc(remote).buf.text().to_string(), "remote ne\n");
+    assert!(current_text(&e).contains("remote ne"));
 }
 
 /// 0049 §3's exact witness: a RELATIVE startup path must not skip hits.
@@ -333,65 +344,6 @@ fn relative_startup_path_collects_all_hits() {
     );
     assert!(text.contains("beta needle two"), "{text}");
     assert!(!e.message.contains("skipped"), "{}", e.message);
-}
-
-#[test]
-fn collection_mutations_refuse_without_touching_sources() {
-    let (mut e, a, _) = fixture();
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    let source = e
-        .docs
-        .iter()
-        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
-        .unwrap();
-    let view = current_text(&e);
-    let source_text = e.doc(source).buf.text().to_string();
-    e.set_head(e.buf().line_start(2));
-    for key in ["i", "x", "u"] {
-        e.feed_text(key);
-        assert!(e.message.contains("read-only"), "{key}: {}", e.message);
-        assert!(e.message.contains("g<Space>"), "{key}: {}", e.message);
-        assert_eq!(current_text(&e), view, "{key} changed the view");
-        assert_eq!(
-            e.doc(source).buf.text().to_string(),
-            source_text,
-            "{key} changed source"
-        );
-        assert_eq!(e.mode, crate::editor::Mode::Normal);
-    }
-    e.feed(strop_core::frontend_input::Key::CtrlR);
-    assert!(e.message.contains("read-only"));
-    assert_eq!(current_text(&e), view);
-    assert_eq!(e.doc(source).buf.text().to_string(), source_text);
-    e.feed_text(":set noro\r");
-    assert!(e.buf().readonly, ":set noro must not unlock a collection");
-    assert_eq!(current_text(&e), view);
-}
-
-#[test]
-fn collection_write_commands_never_save_dirty_sources() {
-    let (mut e, a, _) = fixture();
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    let collection = e.current();
-    let source = e
-        .docs
-        .iter()
-        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
-        .unwrap();
-    e.switch_to(source);
-    e.feed_text("0rX");
-    e.switch_to(collection);
-    for command in [":w\r", ":w!\r", ":wq\r", ":wq!\r"] {
-        e.feed_text(command);
-        assert_eq!(e.current(), collection, "{command} closed the view");
-        assert!(e.doc(source).buf.is_dirty(), "{command} saved the source");
-        assert!(a.exists(), "{command}: source file is missing");
-        assert_eq!(
-            std::fs::read_to_string(&a).unwrap(),
-            "alpha one\nalpha two\n"
-        );
-        assert!(e.message.contains("read-only"), "{command}: {}", e.message);
-    }
 }
 
 #[test]
@@ -599,10 +551,11 @@ fn one_card_per_file_with_gap_rows() {
     e.set_head(e.buf().line_start(gap_line));
     e.feed_text("x");
     assert!(
-        e.message.contains("read-only"),
+        e.message.contains("not text"),
         "gap row refuses: {}",
         e.message
     );
+    assert_eq!(current_text(&e), text);
     // and the bottom border closes the card
     assert!(text.contains('╰'), "card closes: {text}");
 }
@@ -632,7 +585,7 @@ fn file_card_navigation_steps_between_cards() {
 }
 
 #[test]
-fn excerpt_navigation_works_on_readonly_collections() {
+fn excerpt_navigation_steps_between_excerpts() {
     let (mut e, _, _) = two_file_fixture();
     e.feed(strop_core::frontend_input::Key::CtrlO);
     let collection = e.current();

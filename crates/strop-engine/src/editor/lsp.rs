@@ -173,6 +173,35 @@ impl Editor {
     pub(crate) fn lsp_format(&mut self) {
         self.lsp_change_request(strop_lsp::RequestKind::Format, None);
     }
+    /// `grn`: the rename prompt, filled with the name under the cursor so
+    /// the new name is an edit of the old one.
+    pub fn rename_prompt(&mut self) {
+        let line = self.buf().line_of(self.head());
+        let text = self.buf().line_text(line);
+        let column = self.head() - self.buf().line_start(line);
+        let word = |c: char| c.is_alphanumeric() || c == '_';
+        let start = text[..column.min(text.len())]
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| word(*c))
+            .last()
+            .map_or(column, |(index, _)| index);
+        let name: String = text
+            .get(start..)
+            .unwrap_or_default()
+            .chars()
+            .take_while(|c| word(*c))
+            .collect();
+        if name.is_empty() {
+            self.message = "rename: no name under the cursor".into();
+            return;
+        }
+        self.begin_text_line(':', Default::default());
+        self.feed_pending_event(super::pending::PendingEvent::Paste(format!(
+            "rename {name}"
+        )));
+    }
+
     /// `:rename <new>` — workspace rename through a change plan.
     pub(crate) fn lsp_rename(&mut self, new_name: &str) {
         self.lsp_change_request(strop_lsp::RequestKind::Rename, Some(new_name.to_string()));

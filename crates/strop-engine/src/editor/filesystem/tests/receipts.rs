@@ -33,7 +33,7 @@ fn permanent_removal_detaches_dirty_text_and_cannot_recreate_the_old_binding() {
     let document = editor.current();
     editor.feed_text("iunsaved <esc>");
     command(&mut editor, ":fs remove<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     editor.feed_text("q");
     assert_eq!(editor.current(), document);
     assert!(!path.exists());
@@ -78,7 +78,7 @@ fn mixed_copy_versions_use_the_reviewed_snapshot_for_each_destination() {
         )
         .unwrap();
     editor.wait_io().unwrap();
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(
         std::fs::read_to_string(root.path().join("stored.txt")).unwrap(),
         "stored\n"
@@ -107,17 +107,12 @@ fn copy_recovery_cannot_remove_contents_changed_after_publication() {
     std::fs::write(&source, "before\n").unwrap();
     editor.open_fixture(&source).unwrap();
     command(&mut editor, ":fs copy copy.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     let operation = editor
         .filesystem
         .history
         .back()
-        .unwrap_or_else(|| {
-            panic!(
-                "no history after :apply-change; message: {:?}",
-                editor.message
-            )
-        })
+        .unwrap_or_else(|| panic!("no history after :fs apply; message: {:?}", editor.message))
         .ticket
         .request;
     std::fs::write(&copy, "after!\n").unwrap();
@@ -143,12 +138,12 @@ fn native_trash_restore_cleans_metadata_and_preserves_the_detached_draft() {
     let document = editor.current();
     editor.feed_text("iunsaved <esc>");
     command(&mut editor, ":fs trash<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     let operation = editor.filesystem.history.back().unwrap().ticket.request;
     assert!(!source.exists());
     editor.recover_filesystem_step(operation, 0).unwrap();
     editor.wait_io().unwrap();
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(std::fs::read_to_string(source).unwrap(), "stored\n");
     assert_eq!(editor.doc(document).buf.text(), "unsaved stored\n");
     assert!(editor.doc(document).buf.path.is_none());
@@ -178,7 +173,7 @@ fn closing_an_unapplied_review_releases_only_its_preparation() {
     command(&mut editor, ":fs rename abandoned.txt<cr>");
     editor.feed_text("q");
     command(&mut editor, ":fs rename accepted.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert!(!root.path().join("abandoned.txt").exists());
     assert_eq!(
         std::fs::read_to_string(root.path().join("accepted.txt")).unwrap(),
@@ -260,7 +255,7 @@ fn committed_move_retires_alias_spelled_preview_state() {
         )
         .unwrap();
     editor.wait_io().unwrap();
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert!(!real.join("victim.txt").exists());
     assert_eq!(std::fs::read_to_string(&renamed).unwrap(), "cached\n");
     assert_eq!(
@@ -424,5 +419,5 @@ fn an_unconfirmed_outcome_blocks_conflicting_authority_until_verified() {
         )
         .unwrap();
     editor.wait_io().unwrap();
-    command(&mut editor, ":cancel-change<cr>");
+    command(&mut editor, ":fs cancel<cr>");
 }

@@ -367,7 +367,7 @@ impl Editor {
             self.message
                 .push_str(&format!(" — format warning: {warning}"));
         }
-        self.finish_change_save(document);
+        self.finish_batch_write(document);
     }
 }
 

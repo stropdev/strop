@@ -81,7 +81,7 @@ fn dirty_source_search_and_cancelled_replace_preserve_working_context() {
         editor.docs.get(source).unwrap().buf.text().to_string(),
         "unsaved disk old\n"
     );
-    editor.feed_text(":cancel-change<cr>");
+    editor.feed(Key::Esc);
     let picker = &editor.picker.as_ref().unwrap().picker;
     assert_eq!(picker.input.text(), "text:unsaved");
     assert_eq!(picker.replace_input.text(), "changed");

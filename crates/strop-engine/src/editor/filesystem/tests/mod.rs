@@ -83,12 +83,12 @@ fn reverse_move_recovery_refuses_a_changed_recorded_version() {
     std::fs::write(&original, "original\n").unwrap();
     editor.open_fixture(&original).unwrap();
     command(&mut editor, ":fs rename target.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     let operation = editor.filesystem.history.back().unwrap().ticket.request;
     std::fs::write(&target, "later contents must remain at this name\n").unwrap();
     editor.recover_filesystem_step(operation, 0).unwrap();
     editor.wait_io().unwrap();
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert!(!original.exists());
     assert_eq!(
         std::fs::read_to_string(target).unwrap(),
@@ -146,7 +146,7 @@ fn filesystem_destinations_use_source_parent_without_changing_ex_open_scope() {
     std::fs::write(root.path().join("root.txt"), "workspace\n").unwrap();
     let document = editor.open_fixture(&source).unwrap();
     command(&mut editor, ":fs copy stored sibling.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(
         std::fs::read(nested.join("sibling.txt")).unwrap_or_else(|error| {
             panic!(
@@ -171,7 +171,7 @@ fn directory_refresh_keeps_the_renamed_entry_selected_after_resorting() {
     std::fs::write(root.path().join("b.txt"), "other\n").unwrap();
     command(&mut editor, ":browse<cr>");
     command(&mut editor, ":fs rename z.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     command(
         &mut editor,
         &format!(":browse {}<cr>", root.path().display()),
@@ -193,14 +193,14 @@ fn directory_restoration_tracks_the_original_entry_across_name_reuse() {
     std::fs::write(root.path().join("b.txt"), "other\n").unwrap();
     command(&mut editor, ":browse<cr>");
     command(&mut editor, ":fs rename staging.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     for (from, to) in [("b.txt", "a.txt"), ("staging.txt", "b.txt")] {
         let uri = ResourceLocation::local(root.path().join(from))
             .uri()
             .unwrap();
         command(&mut editor, &format!(":e {uri}<cr>"));
         command(&mut editor, &format!(":fs rename {to}<cr>"));
-        command(&mut editor, ":apply-change<cr>");
+        command(&mut editor, ":fs apply<cr>");
     }
     command(
         &mut editor,
@@ -234,7 +234,7 @@ fn pending_format_then_save_cannot_be_retargeted_by_a_file_move() {
         },
     });
     command(&mut editor, ":fs rename renamed.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert_eq!(std::fs::read_to_string(&original).unwrap(), "source\n");
     assert!(!root.path().join("renamed.txt").exists());
 }
@@ -309,7 +309,7 @@ fn exclusive_creation_reviews_every_parent_then_opens_the_committed_file() {
             .len(),
         3
     );
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     let target = root.path().join("one/two/file.txt");
     assert_eq!(editor.buf().file_identity(), Some(target.as_path()));
     command(&mut editor, "icontent<esc>:w<cr>");
@@ -326,7 +326,7 @@ fn dirty_file_rename_preserves_document_undo_and_writes_the_new_name() {
     let document = editor.current();
     editor.feed_text("iunsaved <esc>");
     command(&mut editor, ":fs rename new.txt<cr>");
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     editor.feed_text("q");
     assert_eq!(editor.current(), document);
     assert!(editor.buf().is_dirty());
@@ -372,7 +372,7 @@ fn directory_move_keeps_dirty_descendants_and_their_document_ids() {
         )
         .unwrap();
     editor.wait_io().unwrap();
-    command(&mut editor, ":apply-change<cr>");
+    command(&mut editor, ":fs apply<cr>");
     assert!(!tree.exists());
     for (document, suffix, text) in [
         (first, "a.txt", "one A\n"),

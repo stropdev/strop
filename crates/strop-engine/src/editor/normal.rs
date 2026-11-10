@@ -68,13 +68,15 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("format", "format the buffer through the language server"),
     ("rename", "rename the symbol under the cursor: :rename NEW"),
     ("symbols", "open the document symbols picker"),
-    ("undo-change", "undo the last applied change plan"),
+    ("copen", "show the quickfix list: the newest collection"),
+    ("cnext", "next quickfix hit (:cn, ]q)"),
+    ("cprev", "previous quickfix hit (:cp, [q)"),
+    ("cc", "quickfix hit N"),
     (
-        "save-change",
-        "save files changed by the latest reviewed operation",
+        "cdo",
+        "run an ex command at every quickfix hit: :cdo s/a/b/g",
     ),
-    ("apply-change", "apply the prepared proposal"),
-    ("cancel-change", "cancel the prepared proposal"),
+    ("cfdo", "run an ex command once per quickfix file: :cfdo w"),
     (
         "select-next",
         "select the next occurrence of the word or selection",
@@ -111,9 +113,22 @@ impl Editor {
         // ground the machine (0013 §3) — it never walks the trie
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
+            if self.review.preparing.is_some() {
+                self.review_cancel_pub();
+            }
             self.collapse_cursors();
             self.walker.clear();
             return;
+        }
+        // A collection's context keys: `+`/`-` widen and narrow the excerpt
+        // under the caret (they are line motions everywhere else).
+        if self.walker.is_ground() && self.collections.contains_key(&self.current()) {
+            self.collection_command_boundary(self.current());
+            match key {
+                Key::Char('+') => return self.collection_context_step(true),
+                Key::Char('-') => return self.collection_context_step(false),
+                _ => {}
+            }
         }
         // every other key event walks the one machine (0016)
         self.feed_command(key);
@@ -147,8 +162,8 @@ impl Editor {
     pub(crate) fn refuse_readonly(&mut self) {
         self.message = if self.terminal_document(self.current()).is_some() {
             "terminal buffer is read-only — i enters TERMINAL mode".into()
-        } else if self.collections.contains_key(&self.current()) {
-            "collection is read-only — g<Space> opens the source".into()
+        } else if self.review.live(self.current()) {
+            "a review is read-only — Enter applies and writes, u reverts, q closes".into()
         } else {
             "readonly buffer".into()
         };
@@ -209,6 +224,8 @@ impl Editor {
                                 | "collection-file-prev"
                                 | "collection-excerpt-next"
                                 | "collection-excerpt-prev"
+                                | "quickfix-next"
+                                | "quickfix-prev"
                                 | "jumplist"
                                 | "jump-forward"
                                 | "goto-definition"

@@ -437,7 +437,7 @@ fn same_line_replacements_share_one_exact_styled_review() {
     assert_eq!(grid[(5, removed)].fg, crate::render::tokens().diff_del);
     assert_eq!(grid[(5, added)].fg, crate::render::tokens().diff_add);
     assert_ne!(grid[(5, removed)].bg, grid[(5, added)].bg);
-    editor.feed_text(":apply-change<cr>");
+    editor.feed(Key::Enter);
     assert_eq!(editor.doc(source).buf.text().to_string(), "bar bar\n");
 }
 

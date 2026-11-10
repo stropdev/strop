@@ -304,7 +304,13 @@ impl Editor {
                 .map(|(_, s)| *s)
                 .unwrap_or(self.head()),
         );
-        let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
+        // extras are the secondary landings: a primary stacked on itself
+        // survives the session as a second cursor nobody planted
+        let mut starts: Vec<usize> = landings
+            .iter()
+            .filter(|(primary, _)| !*primary)
+            .map(|(_, s)| *s)
+            .collect();
         starts.sort_unstable();
         self.sels_mut().set_extras(starts);
         self.enter_insert_from(keys);
