@@ -185,28 +185,26 @@ async fn save(
         .map_or(NEW_FILE_MODE, |mode| mode & 0o7777);
     let temporary = temporary_beside(&target);
     let staged = async {
-        let handle = session.open_write(&temporary).await?;
-        let written = session.write_whole(&handle, bytes).await;
-        let closed = session.close(handle).await;
-        written?;
-        closed?;
-        session.set_mode(&temporary, mode).await?;
-        if !session.overwrites_on_rename() && found.is_some() {
-            // SFTP v3 rename refuses an existing destination; without
-            // posix-rename the replacement cannot be atomic.
+        session.upload(&temporary, bytes, mode).await?;
+        if session.overwrites_on_rename() {
+            return session.publish(&temporary, &target).await;
+        }
+        // SFTP v3 rename refuses an existing destination; without
+        // posix-rename the replacement cannot be atomic.
+        if found.is_some() {
             session.remove(&target).await?;
         }
-        session.rename(&temporary, &target).await
+        session.rename(&temporary, &target).await?;
+        session.lstat(&target).await
     }
     .await;
-    if let Err(fault) = staged {
-        return Err(sftp(match session.remove(&temporary).await {
+    match staged {
+        Ok(attrs) => stamp(attrs.size, attrs.mtime),
+        Err(fault) => Err(sftp(match session.remove(&temporary).await {
             Ok(()) => fault,
             Err(cleanup) => fault.with_cleanup(cleanup),
-        }));
+        })),
     }
-    let attrs = session.lstat(&target).await.map_err(sftp)?;
-    stamp(attrs.size, attrs.mtime)
 }
 
 /// `.<name>.strop-<pid>-<n>~` in the same directory, so the rename never

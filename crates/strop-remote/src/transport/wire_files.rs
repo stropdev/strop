@@ -16,9 +16,9 @@ use std::path::{Path, PathBuf};
 use strop_workspace::addr::uri::path_bytes;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-/// Requests in flight per transfer: 512 KiB of reads or 1.5 MiB of
-/// writes, well inside OpenSSH's channel window.
-const WINDOW: usize = 16;
+/// Requests in flight per transfer: 1 MiB of reads or 1.5 MiB of
+/// writes, inside OpenSSH's 2 MiB session channel window.
+const WINDOW: usize = 32;
 const WRITE_WINDOW: usize = 8;
 
 impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> DeploySftp<W, R> {
@@ -151,34 +151,91 @@ impl<W: AsyncWrite + Unpin, R: AsyncRead + Unpin> DeploySftp<W, R> {
         Ok(id)
     }
 
-    /// Write all of `bytes` from offset zero with pipelined requests.
-    pub(crate) async fn write_whole(
+    /// Create `path` (private, truncated) holding exactly `bytes` with
+    /// permission bits `mode`: one round trip for the handle, then every
+    /// write, the close and the mode change pipelined behind it. The
+    /// first failure is reported after every reply is consumed, so the
+    /// session stays in step.
+    pub(crate) async fn upload(
         &mut self,
-        handle: &FileHandle,
+        path: &Path,
         bytes: &[u8],
+        mode: u32,
     ) -> Result<(), Fault> {
         let stage = ReadStage::Transfer;
+        let handle = self.open_write(path).await?;
         let mut pending: VecDeque<RequestId> = VecDeque::new();
-        let mut chunks = bytes.chunks(WRITE_CHUNK).enumerate();
-        loop {
-            while pending.len() < WRITE_WINDOW {
-                let Some((index, chunk)) = chunks.next() else {
-                    break;
-                };
-                let id = self.client.begin(PacketKind::Write, stage)?;
-                self.client.string(&handle.0, stage)?;
-                let offset = (index * WRITE_CHUNK) as u64;
-                self.client.request.extend_from_slice(&offset.to_be_bytes());
-                self.client.string(chunk, stage)?;
-                self.client.send(stage).await?;
-                pending.push_back(id);
+        let mut failure = None;
+        for (index, chunk) in bytes.chunks(WRITE_CHUNK).enumerate() {
+            if pending.len() == WRITE_WINDOW {
+                self.status(pending.pop_front(), &mut failure).await?;
             }
-            let Some(id) = pending.pop_front() else {
-                return Ok(());
-            };
-            self.client.receive(stage).await?;
-            self.client.decode(id, PacketKind::Status, stage)?.end()?;
+            let id = self.client.begin(PacketKind::Write, stage)?;
+            self.client.string(&handle.0, stage)?;
+            let offset = (index * WRITE_CHUNK) as u64;
+            self.client.request.extend_from_slice(&offset.to_be_bytes());
+            self.client.string(chunk, stage)?;
+            self.client.send(stage).await?;
+            pending.push_back(id);
         }
+        let id = self.client.begin(PacketKind::Close, stage)?;
+        self.client.string(&handle.0, stage)?;
+        self.client.send(stage).await?;
+        pending.push_back(id);
+        let id = self.client.begin(PacketKind::Setstat, stage)?;
+        self.client.string(path_bytes(path), stage)?;
+        self.client.attrs_permissions(mode);
+        self.client.send(stage).await?;
+        pending.push_back(id);
+        while !pending.is_empty() {
+            self.status(pending.pop_front(), &mut failure).await?;
+        }
+        failure.map_or(Ok(()), Err)
+    }
+
+    /// Consume one STATUS reply, keeping the first failure.
+    async fn status(
+        &mut self,
+        id: Option<RequestId>,
+        failure: &mut Option<Fault>,
+    ) -> Result<(), Fault> {
+        let Some(id) = id else { return Ok(()) };
+        let stage = ReadStage::Transfer;
+        self.client.receive(stage).await?;
+        if let Err(fault) = self
+            .client
+            .decode(id, PacketKind::Status, stage)
+            .and_then(|reply| reply.end())
+        {
+            failure.get_or_insert(fault);
+        }
+        Ok(())
+    }
+
+    /// `posix-rename@openssh.com` of `from` over `to`, with the
+    /// published file's attributes in the same round trip. Only for a
+    /// server that [`Self::overwrites_on_rename`].
+    pub(crate) async fn publish(&mut self, from: &Path, to: &Path) -> Result<DeployAttrs, Fault> {
+        let stage = ReadStage::Transfer;
+        debug_assert!(self.posix_rename, "publish needs posix-rename");
+        let renamed = self.client.begin(PacketKind::Extended, stage)?;
+        self.client.string(b"posix-rename@openssh.com", stage)?;
+        self.client.string(path_bytes(from), stage)?;
+        self.client.string(path_bytes(to), stage)?;
+        self.client.send(stage).await?;
+        let stat = self.client.begin(PacketKind::Lstat, stage)?;
+        self.client.string(path_bytes(to), stage)?;
+        self.client.send(stage).await?;
+        self.client.receive(stage).await?;
+        let renamed = self
+            .client
+            .decode(renamed, PacketKind::Status, stage)
+            .and_then(|reply| reply.end());
+        self.client.receive(stage).await?;
+        let mut reply = self.client.decode(stat, PacketKind::Attrs, stage)?;
+        let attrs = parse_deploy_attrs(&mut reply)?;
+        reply.end()?;
+        renamed.map(|()| attrs)
     }
 
     /// Every entry of one directory except `.` and `..`, bounded by

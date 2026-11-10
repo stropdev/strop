@@ -40,6 +40,7 @@ services:
     environment:
       - DELAY_MS
       - STROP_SSH_EXEC_BENCH_N
+      - STROP_SSH_EXEC_BENCH_CONNECTS
 
   model:
     build:

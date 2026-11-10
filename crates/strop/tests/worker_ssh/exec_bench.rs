@@ -214,11 +214,50 @@ fn pump(mut reader: impl std::io::Read + Send + 'static) -> mpsc::Receiver<Vec<u
     receiver
 }
 
-/// Accumulate output until `seen` holds.
-fn wait_for(next: &mut dyn FnMut() -> Vec<u8>, seen: impl Fn(&[u8]) -> bool) {
+/// Accumulate output until `seen` holds; a stall names what arrived.
+fn wait_for(side: &str, next: &mut dyn FnMut() -> Option<Vec<u8>>, seen: impl Fn(&[u8]) -> bool) {
     let mut output = Vec::new();
     while !seen(&output) {
-        output.extend(next());
+        match next() {
+            Some(bytes) => output.extend(bytes),
+            None => panic!(
+                "{side} terminal output stalled after {:?}",
+                String::from_utf8_lossy(&output)
+            ),
+        }
+    }
+}
+
+/// One local PTY pair (controller, peer) at 80x24.
+fn local_pty() -> (std::fs::File, std::fs::File) {
+    use std::os::fd::FromRawFd as _;
+    let (mut controller, mut peer) = (-1, -1);
+    let size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: openpty writes two fresh descriptors into the out
+    // pointers; name and termios are optional (null) and the winsize is
+    // a live local. std has no PTY API.
+    let status = unsafe {
+        libc::openpty(
+            &mut controller,
+            &mut peer,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            &size,
+        )
+    };
+    assert_eq!(status, 0, "openpty: {}", std::io::Error::last_os_error());
+    // SAFETY: both descriptors were just returned by openpty and are
+    // owned by nothing else; each File takes sole ownership.
+    unsafe {
+        (
+            std::fs::File::from_raw_fd(controller),
+            std::fs::File::from_raw_fd(peer),
+        )
     }
 }
 
@@ -258,6 +297,13 @@ fn worker_versus_exec_latency_over_real_sshd() {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(30);
+    // Cold connects upload the whole artifact; under injected delay
+    // each takes tens of seconds, so their count is separate.
+    let connects: usize = std::env::var("STROP_SSH_EXEC_BENCH_CONNECTS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(samples);
+    let connect_runs = if connects == 0 { 0 } else { WARMUP + connects };
     let host = endpoint("fixture");
     let control = fixture.root().join("ctl");
     let (token, _owner) = token();
@@ -271,7 +317,7 @@ fn worker_versus_exec_latency_over_real_sshd() {
     let mut cold = Row::new("first connect, fresh host", Gate::Faster);
     let mut warm = Row::new("reconnect (worker already cached)", Gate::Info);
     let mut deployed = None;
-    for index in 0..(WARMUP + samples) {
+    for index in 0..connect_runs {
         if let Some((provider, object)) = deployed.take() {
             evict(&provider, &object);
         }
@@ -302,14 +348,31 @@ fn worker_versus_exec_latency_over_real_sshd() {
         let exec_ms = ms(started);
         drop(files);
         exec.disconnect().unwrap();
+        writeln!(
+            std::io::stderr().lock(),
+            "first connect {index}: worker {worker_ms} ms, exec {exec_ms} ms"
+        )
+        .unwrap();
         if index >= WARMUP {
             cold.worker.push(worker_ms);
             cold.exec.push(exec_ms);
         }
         deployed = Some((provider, ready.object));
     }
-    let (_provider, object) = deployed.unwrap();
-    for index in 0..(WARMUP + samples) {
+    let (_provider, object) = deployed.unwrap_or_else(|| {
+        let facts = discover(&host, &token);
+        let (provider, ready) = deploy_worker(
+            fixture,
+            &host,
+            &facts,
+            Consent::Granted {
+                action: "exec-bench".into(),
+            },
+            &token,
+        );
+        (provider, ready.object)
+    });
+    for index in 0..connect_runs {
         let started = Instant::now();
         let facts = discover(&host, &token);
         let (_provider, ready) = deploy_worker(fixture, &host, &facts, Consent::Absent, &token);
@@ -534,40 +597,52 @@ fn worker_versus_exec_latency_over_real_sshd() {
         rows: 24,
     });
     let mut session = worker.exec_pty(&token, pty_spec).unwrap();
-    let mut terminal = exec.terminal(&os(&["env", "PS1=$ ", "/bin/sh"]), Some(&ws));
-    let mut shell = terminal
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+    // The editor runs `ssh -tt` on a local PTY (that is how resizes and
+    // control characters reach the remote one); so does the benchmark.
+    let (local, peer) = local_pty();
+    let mut shell = exec
+        .terminal(&os(&["env", "PS1=$ ", "/bin/sh"]), Some(&ws))
+        .stdin(Stdio::from(peer.try_clone().unwrap()))
+        .stdout(Stdio::from(peer.try_clone().unwrap()))
+        .stderr(Stdio::from(peer))
         .spawn()
         .unwrap();
-    let mut shell_in = shell.stdin.take().unwrap();
-    let shell_out = pump(shell.stdout.take().unwrap());
+    let mut shell_in = local.try_clone().unwrap();
+    let shell_out = pump(local);
     let worker_out = |session: &strop_worker_client::PtySession| loop {
-        match session
-            .recv_output_timeout(STALL)
-            .expect("worker PTY output")
-        {
-            StreamEvent::Chunk(chunk) => return chunk.bytes,
+        match session.recv_output_timeout(STALL).ok()? {
+            StreamEvent::Chunk(chunk) => return Some(chunk.bytes),
             StreamEvent::Resized => {}
             StreamEvent::Failed(reason) => panic!("worker PTY failed: {reason}"),
         }
     };
-    let exec_out = || shell_out.recv_timeout(STALL).expect("ssh PTY output");
+    let exec_out = || shell_out.recv_timeout(STALL).ok();
+    // Typeahead sent before the shell configures its line editor can be
+    // flushed, so wait for the first prompt on both sides.
+    wait_for("worker prompt", &mut || worker_out(&session), |seen| {
+        contains(seen, b"$ ")
+    });
+    wait_for("exec prompt", &mut || exec_out(), |seen| {
+        contains(seen, b"$ ")
+    });
     session.feed(b"echo READY\n").unwrap();
-    wait_for(&mut || worker_out(&session), |seen| {
+    wait_for("worker READY", &mut || worker_out(&session), |seen| {
         contains(seen, b"\nREADY")
     });
     shell_in.write_all(b"echo READY\n").unwrap();
-    wait_for(&mut || exec_out(), |seen| contains(seen, b"\nREADY"));
+    wait_for("exec READY", &mut || exec_out(), |seen| {
+        contains(seen, b"\nREADY")
+    });
     for index in 0..(WARMUP + samples) {
         let started = Instant::now();
         session.feed(b"x").unwrap();
-        wait_for(&mut || worker_out(&session), |seen| seen.contains(&b'x'));
+        wait_for("worker echo", &mut || worker_out(&session), |seen| {
+            seen.contains(&b'x')
+        });
         let worker_ms = ms(started);
         let started = Instant::now();
         shell_in.write_all(b"x").unwrap();
-        wait_for(&mut || exec_out(), |seen| seen.contains(&b'x'));
+        wait_for("exec echo", &mut || exec_out(), |seen| seen.contains(&b'x'));
         let exec_ms = ms(started);
         if index >= WARMUP {
             echo.worker.push(worker_ms);
@@ -575,13 +650,17 @@ fn worker_versus_exec_latency_over_real_sshd() {
         }
         if index % 16 == 15 || index + 1 == WARMUP + samples {
             session.feed(b"\x03").unwrap();
-            wait_for(&mut || worker_out(&session), |seen| contains(seen, b"$ "));
+            wait_for("worker cancel", &mut || worker_out(&session), |seen| {
+                contains(seen, b"$ ")
+            });
             shell_in.write_all(b"\x03").unwrap();
-            wait_for(&mut || exec_out(), |seen| contains(seen, b"$ "));
+            wait_for("exec cancel", &mut || exec_out(), |seen| {
+                contains(seen, b"$ ")
+            });
         }
     }
-    session.feed(b"exit\n").unwrap();
-    shell_in.write_all(b"exit\n").unwrap();
+    session.feed(b"exit 0\n").unwrap();
+    shell_in.write_all(b"exit 0\n").unwrap();
     assert!(shell.wait().unwrap().success());
     loop {
         match session
@@ -603,16 +682,21 @@ fn worker_versus_exec_latency_over_real_sshd() {
     let mut table = String::from(
         "| Operation | worker p50 / p95 ms | exec p50 / p95 ms | Δ p50 / p95 ms | Gate | Verdict |\n|---|---|---|---|---|---|\n",
     );
-    for row in &rows {
+    for row in rows.iter().filter(|row| !row.exec.is_empty()) {
         table.push_str(&row.markdown());
         table.push('\n');
     }
-    let failed = rows.iter().filter(|row| row.verdict() == "FAIL").count();
+    let failed = rows
+        .iter()
+        .filter(|row| !row.exec.is_empty())
+        .filter(|row| row.verdict() == "FAIL")
+        .count();
     let report = serde_json::json!({
         "samples": samples,
+        "connects": connects,
         "warmup": WARMUP,
         "artifact_bytes": artifact_bytes,
-        "rows": rows.iter().map(|row| serde_json::json!({
+        "rows": rows.iter().filter(|row| !row.exec.is_empty()).map(|row| serde_json::json!({
             "operation": row.name,
             "verdict": row.verdict(),
             "worker_ms": row.worker,
