@@ -1,7 +1,7 @@
 //! Tier 1 differential harness (0001 §5.10, 0006): the same key sequence
 //! drives strop (headless) and pinned nvim (`-u NONE -i NONE -n`);
 //! final text, cursor, the unnamed register, the lifecycle registers
-//! (`"0 "1 "2 "- "a "b`, plan 0091) and 'modified' must agree.
+//! (`"0 "1 "2 "- "a "b`, plan 0092) and 'modified' must agree.
 //!
 //! Deviations are bugs by doctrine (0001 pillar 1). Genuinely intended
 //! deviations live in KNOWN_DIVERGENCES with a reason — the list is
@@ -380,7 +380,7 @@ const CASES: &[Case] = &[
         text: "abc\n",
         keys: "xuxu<c-r>",
     },
-    // registers (0091 §1): the yank register, the numbered shift, the
+    // registers (0092 §1): the yank register, the numbered shift, the
     // small delete, named append, the black hole and the read-only views
     Case {
         name: "a yank fills 0 and a later delete leaves it",

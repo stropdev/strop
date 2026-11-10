@@ -313,6 +313,12 @@ fn every_dispatched_sequence_has_a_row() {
 fn live_rows_dispatch_through_the_table() {
     for b in BINDINGS.iter().filter(|b| b.live) {
         for seq in expand(b.keys) {
+            if seq.len() > 1 && seq[0].starts_with("ctrl-") {
+                // a control PREFIX is a key event: feeding its second
+                // key alone would test a different command (ctrl-w
+                // rows are pinned in editor/panes.rs)
+                continue;
+            }
             let keys = seq
                 .iter()
                 .map(|t| match *t {

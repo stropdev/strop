@@ -23,7 +23,7 @@
 // can complete (`gb`, …). Register READS are whole: insert-mode
 // `Ctrl-R {reg}` and normal-mode `p`/`P`/`"{reg}p` reply
 // `ReadRegister`, which the owning editor resolves through its one
-// register read path (plan 0091 §1).
+// register read path (plan 0092 §1).
 
 use strop_grammar::{self as grammar, Command, Motion, Op, Parse, Target};
 use strop_picker::LineEdit;
@@ -85,6 +85,7 @@ impl FieldMachine {
             Action::Invalid(keys) => {
                 FieldReply::Refused(format!("not an input-field command: {keys}"))
             }
+            Action::Unbound(keys) => FieldReply::Refused(format!("{keys} is not bound")),
             Action::QueryError(error) => FieldReply::Refused(error.to_string()),
             Action::EnterText { .. } => {
                 FieldReply::Refused("an input field cannot open another prompt".into())

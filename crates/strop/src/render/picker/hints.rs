@@ -129,7 +129,7 @@ pub(super) fn for_picker(
                 desc: "move",
             },
             // the advertised paste is vim's: the unnamed register
-            // (0091 §1) — the terminal's own paste stays the clipboard
+            // (0092 §1) — the terminal's own paste stays the clipboard
             Hint {
                 key: "ctrl-r \"",
                 desc: "paste yank",

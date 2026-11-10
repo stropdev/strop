@@ -1,4 +1,4 @@
-//! The one register file (plan 0091 §1): every yank, delete and change
+//! The one register file (plan 0092 §1): every yank, delete and change
 //! writes here, every `p`, `Ctrl-R` and field paste reads here. The
 //! rules are Neovim's `op_yank`/`op_delete`/`shift_delete_registers`
 //! (`:help registers`), stated once so no caller re-derives them.
@@ -114,7 +114,7 @@ impl RegisterStore {
     }
 
     /// One yank/delete lands. Returns the text to publish to the system
-    /// clipboard when the write named `+`/`*`.
+    /// clipboard: a write that named `+`/`*`, or a plain yank.
     pub(crate) fn write(
         &mut self,
         name: Option<char>,
@@ -143,6 +143,13 @@ impl RegisterStore {
         }
         match origin {
             Origin::Yank => {
+                // A plain yank (no register, or "0 by name) is also a
+                // copy: it reaches the system clipboard (0092 §1.4).
+                // Named yanks, deletes and changes never do.
+                if matches!(target, None | Some(Cell::Digit(0))) {
+                    published = Some(register.text.clone());
+                    self.clipboard = Some(register.clone());
+                }
                 if target.is_none() {
                     self.digits[0] = Some(register.clone());
                     self.unnamed = Some(register);
@@ -313,6 +320,37 @@ mod tests {
             Err(RegisterError::Invalid('!'))
         );
         assert_eq!(text(&store, '"'), "keep");
+    }
+
+    #[test]
+    fn a_plain_yank_is_published_and_deletes_and_named_yanks_are_not() {
+        let mut store = RegisterStore::default();
+        assert_eq!(
+            store.write(None, Register::characterwise("word"), Origin::Yank),
+            Ok(Some("word".into()))
+        );
+        assert_eq!(text(&store, '+'), "word");
+        assert_eq!(
+            store.write(Some('0'), Register::characterwise("zero"), Origin::Yank),
+            Ok(Some("zero".into()))
+        );
+        assert_eq!(
+            store.write(Some('a'), Register::characterwise("named"), Origin::Yank),
+            Ok(None)
+        );
+        assert_eq!(
+            store.write(None, Register::linewise("line\n"), DELETE),
+            Ok(None)
+        );
+        assert_eq!(
+            store.write(None, Register::characterwise("x"), DELETE),
+            Ok(None)
+        );
+        assert_eq!(
+            text(&store, '+'),
+            "zero",
+            "the clipboard keeps the last yank"
+        );
     }
 
     #[test]

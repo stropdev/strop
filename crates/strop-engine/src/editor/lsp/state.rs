@@ -79,7 +79,7 @@ pub(crate) struct LspState {
     pub attach: AttachState,
     /// Terminal server failures, one current reason per resource scope.
     pub failures: Vec<super::status::LspFailure>,
-    /// Automatic restarts per workspace scope (plan 0091 §2.4).
+    /// Automatic restarts per workspace scope (plan 0092 §2.4).
     pub restarts: Vec<super::status::Restart>,
 }
 
@@ -371,7 +371,7 @@ impl Editor {
             // not make an installed server disappear. Retry the exact
             // language/target workspace containing this document — or,
             // for a library file outside the pinned project, the
-            // project's own failed server (0091 §2.3). Other failed
+            // project's own failed server (0092 §2.3). Other failed
             // roots stay isolated.
             let outside = doc.filesystem == strop_workspace::Filesystem::Local
                 && !doc.path.starts_with(&self.cwd);

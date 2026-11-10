@@ -132,6 +132,7 @@ impl Editor {
             super::input::Action::Invalid(keys) => {
                 self.message = format!("not an editor command: {keys}")
             }
+            super::input::Action::Unbound(keys) => self.message = format!("{keys} is not bound"),
             super::input::Action::QueryError(error) => self.message = error.to_string(),
             super::input::Action::EnterText { sigil, state } => self.begin_text_line(sigil, state),
             super::input::Action::Grammar(command) => self.dispatch_grammar(&command),

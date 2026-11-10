@@ -15,6 +15,29 @@ use strop_core::frontend_input::Key;
 mod frontend;
 use crate::keymap::{self, AbsorbKind, Binding, Handler};
 
+/// The key after `ctrl-w`, as vim reads it: `ctrl-w ctrl-{key}` is
+/// `ctrl-w {key}` (held Ctrl is the common way to type it), whether the
+/// terminal reports the control key as its own code, as a raw control
+/// character, or — for ctrl-h and ctrl-j on a legacy terminal — as
+/// Backspace and Enter. `None` is ctrl-c: cancel.
+fn window_key(key: Key) -> Option<Key> {
+    Some(Key::Char(match key {
+        Key::CtrlC => return None,
+        Key::CtrlW => 'w',
+        Key::CtrlP => 'p',
+        Key::CtrlV => 'v',
+        Key::CtrlO => 'o',
+        Key::CtrlN => 'n',
+        Key::CtrlL => 'l',
+        Key::Backspace | Key::Left => 'h',
+        Key::Enter | Key::Down => 'j',
+        Key::Up => 'k',
+        Key::Right => 'l',
+        Key::Char(c @ '\x01'..='\x1a') => (c as u8 + 0x60) as char,
+        other => return Some(other),
+    }))
+}
+
 /// Counts combine multiplicatively (vim: 2d3w = 6 words).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ParserState {
@@ -82,6 +105,9 @@ pub enum Action {
     /// Dead sequence: neither table nor grammar — the editor says so
     /// (the unknown-key marker is a contract, not silence).
     Invalid(String),
+    /// A prefix that owns its next key (`ctrl-w`) got one it does not
+    /// bind: the key is consumed, never replayed into Normal (0091 B7).
+    Unbound(String),
     /// Mid-sequence: prefix, count, operator, register, absorber.
     Pending,
 }
@@ -356,6 +382,18 @@ impl Walker {
     pub fn feed(&mut self, key: Key) -> Action {
         // Esc/Backspace abort any structural composition (including
         // clipboard yank) — Backspace never edits parser syntax
+        let key = if self.at_prefix(&["ctrl-w"]) {
+            match window_key(key) {
+                Some(key) => key,
+                // ctrl-c cancels the prefix, as in vim
+                None => {
+                    self.clear();
+                    return Action::Pending;
+                }
+            }
+        } else {
+            key
+        };
         if matches!(key, Key::Esc | Key::Backspace) {
             self.clear();
             return Action::Pending;
@@ -545,6 +583,12 @@ impl Walker {
             }
         } else if keymap::any_child(&self.path) {
             Action::Pending
+        } else if self.path.first().is_some_and(|token| token == "ctrl-w") {
+            // ctrl-w owns exactly one following key: an unbound one is
+            // reported and dropped, never handed to the grammar
+            let keys = self.path.join(" ");
+            self.clear();
+            Action::Unbound(keys)
         } else {
             // not in the table: maybe a bare grammar atom (motions that
             // need no row), else a dead key — say so (0016)

@@ -88,7 +88,11 @@ impl Register {
     }
 }
 
-/// What one register read yields — THE read path (plan 0091 §1):
+/// The largest plain yank mirrored to the system clipboard. OSC52 is
+/// base64 through the terminal; terminals cap or stall well below this.
+const CLIPBOARD_MIRROR_MAX: usize = 1 << 20;
+
+/// What one register read yields — THE read path (plan 0092 §1):
 /// `p`/`P`, insert `Ctrl-R`, and every prompt and picker field ask
 /// here, so a name means the same text on every surface.
 pub(crate) enum RegisterRead {
@@ -173,6 +177,16 @@ impl Editor {
 
     fn write_register(&mut self, name: Option<char>, register: Register, origin: Origin) {
         match self.registers.write(name, register, origin) {
+            // A plain yank is a copy (0092 §1.4), but only an explicit
+            // `"+y` may push megabytes through the terminal.
+            Ok(Some(clipboard))
+                if !matches!(name, Some('+' | '*')) && clipboard.len() > CLIPBOARD_MIRROR_MAX =>
+            {
+                self.message = format!(
+                    "yanked {} bytes — too large to copy to the system clipboard (\"+y forces it)",
+                    clipboard.len()
+                );
+            }
             // `+`/`*` are the system clipboard: the write stages an
             // OSC52 payload for the terminal adapter to emit
             Ok(Some(clipboard)) => self.osc52 = Some(clipboard),
@@ -197,7 +211,7 @@ impl Editor {
         self.paste_from(name, PasteDestination::Put { before, count });
     }
 
-    /// THE register read (plan 0091 §1): resolve `name`, then deliver.
+    /// THE register read (plan 0092 §1): resolve `name`, then deliver.
     /// `+`/`*` resolve on a provider job and deliver on its result.
     pub(crate) fn paste_from(&mut self, name: Option<char>, destination: PasteDestination) {
         match self.read_register(name) {

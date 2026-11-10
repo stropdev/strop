@@ -150,21 +150,24 @@ named (`"A` appends), `"_` discards, `". ": "/ "%` are the last insert, last
 in every picker field — Files, Search's Find and With, symbols, buffers.
 `Ctrl-R "` is the last yank or delete.
 
-The system clipboard is `"+` (and `"*`), kept separate from the unnamed
-register as in stock Vim: `Space y` / `"+y` copy to it, `Space p` / `"+p` /
-`Ctrl-R +` read it, and the terminal's own paste (Ctrl-Shift-V, or Ctrl-V in
-Windows Terminal) always pastes it. A plain `y` or `dd` never overwrites what
-you copied in another application.
+A plain yank is also a copy: `y` (with no register) puts the text on the
+system clipboard as well, so the terminal's own paste (Ctrl-Shift-V, or Ctrl-V
+in Windows Terminal) and other applications get what you yanked. Deletes and
+changes (`dd`, `x`, `cw`) and yanks into a named register do not touch the
+clipboard, so they never overwrite something you copied elsewhere. `"+` (and
+`"*`) is the clipboard by name: `"+y` / `Space y` copy to it, `"+p` /
+`Space p` / `Ctrl-R +` read it. `p` on its own reads the unnamed register, not
+the clipboard. A yank over 1 MB stays in strop and says so; `"+y` sends it
+anyway.
 
-Failed or unconfirmed saves, connection/admission failures and terminal
-decisions use the same owner-scoped retained feedback. They
-survive motions, search and unrelated success messages. **Space a** exposes
-only currently valid recovery actions; **`:explain`** retains the complete
-owner, detail and evidence. A compact textual severity marker remains in the
-modeline even at ultra-narrow widths; there are no floating notification cards
-to dismiss or fade. Dismissing a notice changes only presentation—it never
-cancels work, clears a save barrier or marks an unconfirmed outcome as
-successful.
+## Windows
+
+`Ctrl-W` is Vim's window prefix: `h j k l` move, `w` / `W` next and previous,
+`p` the last used window, `s` / `v` split below and right, `n` a new empty
+buffer, `c` close, `q` quit the window, `o` keep only this one, `=` equal
+sizes. Holding Ctrl for the second key works too (`Ctrl-W Ctrl-V`). A key
+`Ctrl-W` does not bind is reported — `ctrl-w x is not bound` — and does
+nothing else. `Space w` remains, with `1`–`9` to focus a pane by number.
 
 ## Code completion
 
