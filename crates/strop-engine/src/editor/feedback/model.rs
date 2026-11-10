@@ -99,10 +99,7 @@ impl FeedbackOwner {
                 document.index(),
                 document.generation()
             ),
-            Self::Remote {
-                endpoint,
-                incarnation,
-            } => format!("{endpoint} (workspace incarnation {incarnation})"),
+            Self::Remote { endpoint, .. } => endpoint.to_string(),
             Self::RemoteControls => "remote connections".into(),
             Self::Terminal {
                 session,
@@ -119,24 +116,17 @@ impl FeedbackOwner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum FeedbackKind {
     Save,
-    RemoteEditAdmission,
     Connection,
-    WorkerConnection,
-    WorkerAdmission,
     TerminalProcess,
     TerminalHostControl,
 }
 
 /// A reference to evidence already owned by the save machinery. Receipts and
-/// prepared contents stay in `StoreAttempt`/remote `Attempt`; feedback never
+/// prepared contents stay in `StoreAttempt`; feedback never
 /// clones them into a second evidence store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedbackReference {
     LocalStore {
-        document: DocumentId,
-        revision: BufferRevision,
-    },
-    RemoteStore {
         document: DocumentId,
         revision: BufferRevision,
     },
@@ -147,12 +137,6 @@ impl FeedbackReference {
         match self {
             Self::LocalStore { document, revision } => format!(
                 "local StoreAttempt for document {}:{}, revision {} (receipt retained by save machinery)",
-                document.index(),
-                document.generation(),
-                revision.get()
-            ),
-            Self::RemoteStore { document, revision } => format!(
-                "remote save Attempt for document {}:{}, revision {} (receipt retained by save machinery)",
                 document.index(),
                 document.generation(),
                 revision.get()
@@ -178,7 +162,6 @@ pub(crate) enum TypedAction {
     VerifySave {
         document: DocumentId,
         revision: BufferRevision,
-        remote: bool,
     },
     RetryRemote {
         operation: RemoteControl,
@@ -192,16 +175,7 @@ impl TypedAction {
         match self {
             Self::Dismiss => "Dismiss notice (operation remains unchanged)",
             Self::RetrySave(_) => "Retry the failed save from the same buffer revision",
-            Self::VerifySave { remote: false, .. } => {
-                "Verify the unconfirmed save without rewriting"
-            }
-            Self::VerifySave { remote: true, .. } => {
-                "Verify the unconfirmed remote save without rewriting"
-            }
-            Self::RetryRemote {
-                operation: RemoteControl::AdmitWorker(_),
-                ..
-            } => "Retry verified remote worker admission",
+            Self::VerifySave { .. } => "Verify the unconfirmed save without rewriting",
             Self::RetryRemote { .. } => "Retry the remote connection",
             Self::Terminal(action) => action.label(),
         }

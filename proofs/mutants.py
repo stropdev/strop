@@ -65,16 +65,6 @@ MUTANTS = (
            "        let edit = edits[k];\n        mapped = map_position",
            "        let edit = edits[edits.len() - 1 - k];\n        mapped = map_position",
            ("Strop.Kernel.map_through_edits_loop_spec",)),
-    # the header bound counts the 4-byte terminator
-    Mutant("frame-header-off-by-one", "frame.rs",
-           "    header_end < MAX_HEADER_BYTES - 3",
-           "    header_end < MAX_HEADER_BYTES - 2",
-           ("Strop.Kernel.header_admitted_spec",)),
-    # readiness never trusts an unadmitted body length
-    Mutant("frame-ready-body-unbounded", "frame.rs",
-           "    if !header_admitted(header_end) || !body_admitted(length) {",
-           "    if !header_admitted(header_end) {",
-           ("Strop.Kernel.frame_ready_spec",)),
     # a generation retires at u32::MAX, not one early
     Mutant("generation-early-retire", "generation.rs",
            "    if current == u32::MAX {",

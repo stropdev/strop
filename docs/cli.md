@@ -34,9 +34,6 @@ the common case stays `strop file.rs`.
 | `+LINE` | initial line for FILE (or use `FILE:LINE`) |
 | `--theme NAME` | session-start palette (see [Themes](editor.md#themes)) |
 | `--remote URL` | shorthand for `strop remote URL` |
-| `--follow` | follow a growing remote file |
-| `--tail BYTES` | remote view: the last BYTES |
-| `--range A:B` | remote view: one byte range |
 | `--script PATH` | headless driver script (same as `headless`) |
 | `--log[=PATH]` | record a session trace (`STROP_LOG` works too) |
 | `--log-content` | include file text in the trace (sensitive) |
@@ -51,12 +48,11 @@ ssh://[user@]host[:port]/absolute/path[:LINE]
 
 `strop --remote "ssh://tnawara@123.space:4343/etc/app.conf:120"` and
 `strop remote ssh://tnawara@123.space:4343/etc/app.conf:120` are the same
-command. Remote files open read-only by default; `:remote edit` inside the
-editor grants write authority. The full remote contract lives in
-[remote.md](remote.md).
+command. A connected host is editable; `-R` opens read-only. To read a
+growing log, pipe it in: `ssh devbox tail -f /var/log/app.log | strop -`.
+The full remote contract lives in [remote.md](remote.md).
 
 ## Exit codes
 
 `0` on success, nonzero with a one-line `strop: …` explanation on stderr
-otherwise. Worker mode (`--worker-stdio`) is internal: stdout is protocol
-frames from the first byte and it takes no other arguments.
+otherwise.

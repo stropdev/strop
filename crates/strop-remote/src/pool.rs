@@ -9,9 +9,12 @@
 
 mod lifecycle;
 use crate::client::{ConnectionLease, RemoteDirectorySnapshot, RemoteEntry, RemoteSnapshot};
-use crate::selection::ReadSelection;
-use crate::transport::{Fault, ReadFailureKind, ReadStage, RemoteReadError};
+use crate::exec::ExecHost;
+use crate::transport::{
+    Expect, Fault, Mutation, RemoteAttrs, RemoteError, RemoteFailureKind, RemoteStage, Stamp,
+};
 pub(crate) use lifecycle::{SessionState, StatusCell, StopSignal};
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -23,25 +26,22 @@ use strop_core::worker::CancelToken;
 use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
 #[cfg(unix)]
-use crate::transport::{process::Physical, session};
+use crate::transport::{mutate, process::Physical, save, session};
 
 /// Jobs one endpoint actor will hold before admission blocks a worker.
 pub(crate) const QUEUE_CAPACITY: usize = 32;
+/// The largest text file an open reads into a buffer.
+pub const MAX_TEXT: u64 = 256 * 1024 * 1024;
 /// How often an idle actor re-checks its stop signal.
 const IDLE_POLL: Duration = Duration::from_millis(100);
 
 /// What one admitted job asks the actor to do.
 pub(crate) enum Request {
-    Read {
-        location: RemoteLocation,
-        selection: ReadSelection,
-    },
+    /// A whole text file of at most `max` bytes.
+    Read { location: RemoteLocation, max: u64 },
     /// Explicit open: routes by the target's attributes and returns the
     /// typed file or directory resource.
-    Open {
-        location: RemoteLocation,
-        selection: ReadSelection,
-    },
+    Open { location: RemoteLocation },
     /// Explicit browsing action: may resolve a home query and connect.
     List { location: RemoteLocation },
     /// Completion path: must find a live authenticated session; it never
@@ -49,6 +49,19 @@ pub(crate) enum Request {
     ListConnected { directory: RemoteFile },
     /// Explicit user connection: establish and hold a session.
     Connect,
+    /// LSTAT one name.
+    Observe { file: RemoteFile },
+    /// One file-management operation; it never replaces a name.
+    Mutate {
+        endpoint: RemoteEndpoint,
+        mutation: Mutation,
+    },
+    /// Save a whole file under `expect`.
+    Save {
+        file: RemoteFile,
+        bytes: Vec<u8>,
+        expect: Expect,
+    },
 }
 
 impl Request {
@@ -59,6 +72,8 @@ impl Request {
                 location.to_string()
             }
             Self::ListConnected { directory } => directory.to_string(),
+            Self::Save { file, .. } | Self::Observe { file } => file.to_string(),
+            Self::Mutate { endpoint, .. } => endpoint.to_string(),
             Self::Connect => String::new(),
         }
     }
@@ -69,6 +84,8 @@ pub(crate) enum Reply {
     Directory(RemoteDirectorySnapshot),
     Entries(Vec<RemoteEntry>),
     Lease(ConnectionLease),
+    Saved(Stamp),
+    Observed(Option<RemoteAttrs>),
 }
 
 /// One admitted job. It owns a lease from admission until it fails or
@@ -78,7 +95,7 @@ pub(crate) struct Job {
     pub(crate) lease: ConnectionLease,
     pub(crate) request: Request,
     pub(crate) cancel: CancelToken,
-    pub(crate) reply: std::sync::mpsc::Sender<Result<Reply, RemoteReadError>>,
+    pub(crate) reply: std::sync::mpsc::Sender<Result<Reply, RemoteError>>,
 }
 
 /// The manager-facing handle: everything a worker needs to talk to one
@@ -89,6 +106,8 @@ pub(crate) struct EndpointHandle {
     jobs: SyncSender<Job>,
     stop: Arc<StopSignal>,
     status: Arc<StatusCell>,
+    /// The authenticated master, once the actor has one.
+    host: Arc<Mutex<Option<ExecHost>>>,
 }
 
 impl EndpointHandle {
@@ -108,7 +127,11 @@ impl EndpointHandle {
         self.status.get()
     }
 
-    pub(crate) fn wait_stopped(&self) -> Result<(), RemoteReadError> {
+    pub(crate) fn host(&self) -> Option<ExecHost> {
+        self.host.lock().clone()
+    }
+
+    pub(crate) fn wait_stopped(&self) -> Result<(), RemoteError> {
         self.stop.wait()
     }
 
@@ -138,12 +161,34 @@ impl Drop for EndpointHandle {
 
 /// Weak-retention registry of endpoint actors. Looked up and inserted on
 /// workers; never on input or render.
-#[derive(Default)]
 pub(crate) struct Registry {
     slots: RwLock<HashMap<RemoteEndpoint, Weak<EndpointHandle>>>,
+    /// The private directory holding every master's control socket.
+    control: std::path::PathBuf,
+    /// Every master this registry authenticated: they are stopped when
+    /// the registry goes, so a clean exit leaves no background `ssh`.
+    masters: Arc<Mutex<Vec<ExecHost>>>,
+}
+
+impl Drop for Registry {
+    fn drop(&mut self) {
+        for host in self.masters.lock().drain(..) {
+            if host.is_connected() {
+                let _ = host.disconnect();
+            }
+        }
+    }
 }
 
 impl Registry {
+    pub(crate) fn new(control: std::path::PathBuf) -> Self {
+        Self {
+            slots: RwLock::default(),
+            control,
+            masters: Arc::default(),
+        }
+    }
+
     fn upgrade(&self, endpoint: &RemoteEndpoint) -> Option<Arc<EndpointHandle>> {
         self.slots
             .read()
@@ -166,13 +211,13 @@ impl Registry {
     pub(crate) fn acquire(
         &self,
         endpoint: &RemoteEndpoint,
-    ) -> Result<Arc<EndpointHandle>, RemoteReadError> {
+    ) -> Result<Arc<EndpointHandle>, RemoteError> {
         #[cfg(not(unix))]
         {
             let _ = endpoint;
-            return Err(RemoteReadError::bare(
-                ReadStage::Session,
-                ReadFailureKind::Unsupported,
+            return Err(RemoteError::bare(
+                RemoteStage::Session,
+                RemoteFailureKind::Unsupported,
                 "remote sessions require Unix process supervision",
             ));
         }
@@ -189,10 +234,14 @@ impl Registry {
             {
                 return Ok(handle);
             }
-            let handle = spawn_actor(endpoint.clone()).map_err(|error| {
-                RemoteReadError::bare(
-                    ReadStage::Session,
-                    ReadFailureKind::Io,
+            let handle = spawn_actor(
+                endpoint.clone(),
+                connector(endpoint, &self.control, Arc::clone(&self.masters)),
+            )
+            .map_err(|error| {
+                RemoteError::bare(
+                    RemoteStage::Session,
+                    RemoteFailureKind::Io,
                     format!("starting the session actor: {error}"),
                 )
             })?;
@@ -245,39 +294,80 @@ impl Registry {
     }
 }
 
+/// How an actor reaches its endpoint: authenticate (or reuse) the
+/// master, then the SFTP channel command on it. Tests substitute a local
+/// `sftp-server` with no master.
+pub(crate) type Connector = Box<
+    dyn Fn(&CancelToken) -> Result<(Option<ExecHost>, std::process::Command), RemoteError> + Send,
+>;
+
+/// The production connector: the endpoint's master in `control`.
+#[cfg(unix)]
+fn connector(
+    endpoint: &RemoteEndpoint,
+    control: &std::path::Path,
+    masters: Arc<Mutex<Vec<ExecHost>>>,
+) -> Connector {
+    let endpoint = endpoint.clone();
+    let control = control.to_path_buf();
+    Box::new(move |token| {
+        let host = ExecHost::connect(&endpoint, &control, token).map_err(|error| {
+            let kind = match &error {
+                crate::exec::ExecError::Cancelled { .. } => RemoteFailureKind::Cancelled,
+                crate::exec::ExecError::Spawn(_) => RemoteFailureKind::Spawn,
+                _ => RemoteFailureKind::Connect,
+            };
+            let mut failure = RemoteError::bare(RemoteStage::Connect, kind, error.to_string())
+                .remote(&endpoint.to_string());
+            if kind == RemoteFailureKind::Connect {
+                failure.refine_connect();
+            }
+            failure
+        })?;
+        let command = host.sftp_command();
+        let mut known = masters.lock();
+        if !known.contains(&host) {
+            known.push(host.clone());
+        }
+        Ok((Some(host), command))
+    })
+}
+
 /// Everything the actor thread owns. It never holds a strong handle to
 /// itself, or it would keep its own session alive forever.
 struct Actor {
     receiver: Receiver<Job>,
     stop: Arc<StopSignal>,
     status: Arc<StatusCell>,
-    /// Builds one fresh SSH command per physical connection from the
-    /// single crate SSH policy.
-    spawner: Box<dyn Fn() -> std::process::Command + Send>,
+    host: Arc<Mutex<Option<ExecHost>>>,
+    connector: Connector,
 }
 
 /// Spawn the dedicated actor thread for one endpoint incarnation. The
 /// thread is detached: its lifetime is governed by the stop signal and the
 /// job channel, never by a joiner.
 #[cfg(unix)]
-fn spawn_actor(endpoint: RemoteEndpoint) -> Result<Arc<EndpointHandle>, String> {
+fn spawn_actor(
+    endpoint: RemoteEndpoint,
+    connector: Connector,
+) -> Result<Arc<EndpointHandle>, String> {
     let (jobs, receiver) = std::sync::mpsc::sync_channel(QUEUE_CAPACITY);
     let stop = Arc::new(StopSignal::new());
     let status = Arc::new(StatusCell::default());
-    let policy_endpoint = endpoint.clone();
-    let spawner: Box<dyn Fn() -> std::process::Command + Send> =
-        Box::new(move || crate::ssh::sftp_subsystem(&policy_endpoint));
+    let host = Arc::new(Mutex::new(None));
     let handle = Arc::new(EndpointHandle {
         endpoint,
         jobs,
         stop: stop.clone(),
         status: status.clone(),
+        host: host.clone(),
     });
     let actor = Actor {
         receiver,
         stop,
         status,
-        spawner,
+        host,
+        connector,
     };
     std::thread::Builder::new()
         .name("strop-remote-session".to_owned())
@@ -300,7 +390,8 @@ fn actor_loop(actor: Actor) {
         receiver,
         stop,
         status,
-        spawner,
+        host,
+        connector,
     } = actor;
     let _exit = lifecycle::ActorExit(stop.clone());
     let mut next_epoch: u64 = 0;
@@ -320,7 +411,8 @@ fn actor_loop(actor: Actor) {
                 dispatch(
                     &stop,
                     &status,
-                    &*spawner,
+                    &host,
+                    &connector,
                     &mut next_epoch,
                     &mut physical,
                     job,
@@ -336,25 +428,25 @@ fn actor_loop(actor: Actor) {
 }
 
 #[cfg(unix)]
-fn cancelled_before_dispatch() -> RemoteReadError {
-    RemoteReadError::bare(
-        ReadStage::Session,
-        ReadFailureKind::Cancelled,
+fn cancelled_before_dispatch() -> RemoteError {
+    RemoteError::bare(
+        RemoteStage::Session,
+        RemoteFailureKind::Cancelled,
         "the job was cancelled before the session picked it up",
     )
 }
 
 #[cfg(unix)]
-fn not_connected() -> RemoteReadError {
-    RemoteReadError::bare(
-        ReadStage::Session,
-        ReadFailureKind::NotConnected,
+fn not_connected() -> RemoteError {
+    RemoteError::bare(
+        RemoteStage::Session,
+        RemoteFailureKind::NotConnected,
         "no authenticated session exists for this endpoint, and this \
          operation never starts one",
     )
 }
 
-fn refuse(job: Job, error: RemoteReadError) {
+fn refuse(job: Job, error: RemoteError) {
     // A gone receiver simply drops the job (and its lease).
     let _ = job.reply.send(Err(error));
 }
@@ -367,7 +459,8 @@ fn refuse(job: Job, error: RemoteReadError) {
 fn dispatch(
     stop: &Arc<StopSignal>,
     status: &Arc<StatusCell>,
-    spawner: &dyn Fn() -> std::process::Command,
+    host: &Mutex<Option<ExecHost>>,
+    connector: &Connector,
     next_epoch: &mut u64,
     physical: &mut Option<Physical>,
     job: Job,
@@ -383,9 +476,9 @@ fn dispatch(
         let Some(epoch) = next_epoch.checked_add(1) else {
             refuse(
                 job,
-                RemoteReadError::bare(
-                    ReadStage::Session,
-                    ReadFailureKind::Protocol,
+                RemoteError::bare(
+                    RemoteStage::Session,
+                    RemoteFailureKind::Protocol,
                     "connection epoch exhausted",
                 ),
             );
@@ -393,7 +486,15 @@ fn dispatch(
         };
         *next_epoch = epoch;
         status.set(SessionState::Connecting);
-        let mut command = spawner();
+        let (master, mut command) = match connector(&job.cancel) {
+            Ok(connected) => connected,
+            Err(error) => {
+                status.set(SessionState::Disconnected);
+                refuse(job, error);
+                return;
+            }
+        };
+        *host.lock() = master;
         match Physical::connect(&mut command, &job.cancel, stop, *next_epoch, &remote) {
             Ok(connection) => {
                 physical.replace(connection);
@@ -413,9 +514,9 @@ fn dispatch(
     let Some(connection) = physical.as_mut() else {
         refuse(
             job,
-            RemoteReadError::bare(
-                ReadStage::Session,
-                ReadFailureKind::Protocol,
+            RemoteError::bare(
+                RemoteStage::Session,
+                RemoteFailureKind::Protocol,
                 "connected actor has no physical session",
             ),
         );
@@ -435,15 +536,15 @@ fn dispatch(
             // clean success leaves the connection sound.
             if job.cancel.is_cancelled() || stop.signalled() {
                 let fault = if stop.signalled() && !job.cancel.is_cancelled() {
-                    Fault::stopped(ReadStage::Teardown)
+                    Fault::stopped(RemoteStage::Teardown)
                 } else {
-                    Fault::cancelled(ReadStage::Teardown)
+                    Fault::cancelled(RemoteStage::Teardown)
                 };
                 let fault = if let Some(connection) = physical.take() {
                     match connection.retire() {
                         Ok(()) => fault,
                         Err(error) => fault.with_cleanup(Fault::new(
-                            ReadStage::Teardown,
+                            RemoteStage::Teardown,
                             error.kind(),
                             error.to_string(),
                         )),
@@ -452,7 +553,7 @@ fn dispatch(
                     fault
                 };
                 status.set(SessionState::Disconnected);
-                refuse(job, RemoteReadError::fault(&remote, fault));
+                refuse(job, RemoteError::fault(&remote, fault));
             } else {
                 let _ = job.reply.send(Ok(reply));
             }
@@ -464,7 +565,7 @@ fn dispatch(
                 if let Some(connection) = physical.take() {
                     if let Err(error) = connection.retire() {
                         fault = fault.with_cleanup(Fault::new(
-                            ReadStage::Teardown,
+                            RemoteStage::Teardown,
                             error.kind(),
                             error.to_string(),
                         ));
@@ -472,28 +573,28 @@ fn dispatch(
                 }
                 status.set(SessionState::Disconnected);
             }
-            refuse(
-                job,
-                RemoteReadError::fault(&remote, fault).stderr(diagnostics),
-            );
+            refuse(job, RemoteError::fault(&remote, fault).stderr(diagnostics));
         }
     }
 }
 
 /// Clean SFTP refusals that leave the framing sound: the connection stays.
 #[cfg(unix)]
-fn connection_survives(kind: ReadFailureKind) -> bool {
+fn connection_survives(kind: RemoteFailureKind) -> bool {
     matches!(
         kind,
-        ReadFailureKind::NotFound
-            | ReadFailureKind::Permission
-            | ReadFailureKind::NotRegularFile
-            | ReadFailureKind::NotDirectory
-            | ReadFailureKind::UnknownLength
-            | ReadFailureKind::TooLarge
-            | ReadFailureKind::InvalidUtf8
-            | ReadFailureKind::HomeUnsupported
-            | ReadFailureKind::TooManyEntries
+        RemoteFailureKind::NotFound
+            | RemoteFailureKind::Permission
+            | RemoteFailureKind::NotRegularFile
+            | RemoteFailureKind::NotDirectory
+            | RemoteFailureKind::UnknownLength
+            | RemoteFailureKind::TooLarge
+            | RemoteFailureKind::InvalidUtf8
+            | RemoteFailureKind::HomeUnsupported
+            | RemoteFailureKind::TooManyEntries
+            | RemoteFailureKind::Changed
+            | RemoteFailureKind::Exists
+            | RemoteFailureKind::Failure
     )
 }
 
@@ -502,52 +603,47 @@ fn connection_survives(kind: ReadFailureKind) -> bool {
 fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result<Reply, Fault> {
     use crate::client::RemoteEntryKind;
 
-    let stage = Cell::new(ReadStage::Connect);
-    let Physical {
-        runtime,
-        codec,
-        advertised,
-        ..
-    } = physical;
+    let stage = Cell::new(RemoteStage::Connect);
+    let Physical { runtime, codec, .. } = physical;
     let cancel = &job.cancel;
     let lease = job.lease.clone();
+    let snapshot = |file, text: String, stamp| {
+        Reply::Snapshot(Box::new(RemoteSnapshot {
+            file,
+            buffer: strop_core::Buffer::from_text(&text),
+            stamp,
+            connection: lease.clone(),
+        }))
+    };
+    let directory = |directory, entries| {
+        Reply::Directory(RemoteDirectorySnapshot {
+            directory,
+            entries,
+            connection: lease.clone(),
+        })
+    };
     match &job.request {
-        Request::Read {
-            location,
-            selection,
-        } => {
+        Request::Read { location, max } => {
             let file = block_on_guarded(
                 runtime,
-                session::resolve_location(codec, location, advertised),
+                session::resolve_location(codec, location),
                 cancel,
                 stop,
                 &stage,
             )?;
-            let (text, window) = block_on_guarded(
+            let (text, stamp) = block_on_guarded(
                 runtime,
-                session::read_selection(codec, &file, selection, &stage),
+                session::read_text(codec, &file, *max, &stage),
                 cancel,
                 stop,
                 &stage,
             )?;
-            let mut buffer = strop_core::Buffer::from_text(&text);
-            // A remote snapshot is never writable; provenance beyond this
-            // flag is the caller's document identity.
-            buffer.readonly = true;
-            Ok(Reply::Snapshot(Box::new(RemoteSnapshot {
-                file,
-                buffer,
-                window,
-                connection: lease,
-            })))
+            Ok(snapshot(file, text, stamp))
         }
-        Request::Open {
-            location,
-            selection,
-        } => {
+        Request::Open { location } => {
             let file = block_on_guarded(
                 runtime,
-                session::resolve_location(codec, location, advertised),
+                session::resolve_location(codec, location),
                 cancel,
                 stop,
                 &stage,
@@ -568,70 +664,55 @@ fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result
                         stop,
                         &stage,
                     )?;
-                    Ok(Reply::Directory(RemoteDirectorySnapshot {
-                        directory: file,
-                        entries,
-                        connection: lease,
-                    }))
+                    Ok(directory(file, entries))
                 }
                 RemoteEntryKind::File => {
-                    let (text, window) = block_on_guarded(
+                    let (text, stamp) = block_on_guarded(
                         runtime,
-                        session::read_selection(codec, &file, selection, &stage),
+                        session::read_text(codec, &file, MAX_TEXT, &stage),
                         cancel,
                         stop,
                         &stage,
                     )?;
-                    let mut buffer = strop_core::Buffer::from_text(&text);
-                    buffer.readonly = true;
-                    Ok(Reply::Snapshot(Box::new(RemoteSnapshot {
-                        file,
-                        buffer,
-                        window,
-                        connection: lease,
-                    })))
+                    Ok(snapshot(file, text, stamp))
                 }
                 _ => Err(Fault::new(
-                    ReadStage::Inspect,
-                    ReadFailureKind::NotRegularFile,
+                    RemoteStage::Inspect,
+                    RemoteFailureKind::NotRegularFile,
                     "the target is neither a regular file nor a directory",
                 )),
             }
         }
         Request::List { location } => {
-            let directory = block_on_guarded(
+            let resolved = block_on_guarded(
                 runtime,
-                session::resolve_location(codec, location, advertised),
+                session::resolve_location(codec, location),
                 cancel,
                 stop,
                 &stage,
             )?;
             let kind = block_on_guarded(
                 runtime,
-                session::path_kind(codec, &directory, &stage),
+                session::path_kind(codec, &resolved, &stage),
                 cancel,
                 stop,
                 &stage,
             )?;
             if kind != RemoteEntryKind::Directory {
                 return Err(Fault::new(
-                    ReadStage::Open,
-                    ReadFailureKind::NotDirectory,
+                    RemoteStage::Open,
+                    RemoteFailureKind::NotDirectory,
                     "listing requires a directory",
                 ));
             }
             let entries = block_on_guarded(
                 runtime,
-                session::list_entries(codec, &directory, &stage),
+                session::list_entries(codec, &resolved, &stage),
                 cancel,
                 stop,
                 &stage,
             )?;
-            Ok(Reply::Directory(RemoteDirectorySnapshot {
-                directory,
-                entries,
-                connection: lease,
-            }))
+            Ok(directory(resolved, entries))
         }
         Request::ListConnected { directory } => {
             let entries = block_on_guarded(
@@ -642,6 +723,43 @@ fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result
                 &stage,
             )?;
             Ok(Reply::Entries(entries))
+        }
+        Request::Save {
+            file,
+            bytes,
+            expect,
+        } => {
+            stage.set(RemoteStage::Transfer);
+            let stamp = block_on_guarded(
+                runtime,
+                save::save(codec, file.path(), bytes, *expect),
+                cancel,
+                stop,
+                &stage,
+            )?;
+            Ok(Reply::Saved(stamp))
+        }
+        Request::Observe { file } => {
+            stage.set(RemoteStage::Inspect);
+            let attrs = block_on_guarded(
+                runtime,
+                mutate::observe(codec, file.path()),
+                cancel,
+                stop,
+                &stage,
+            )?;
+            Ok(Reply::Observed(attrs))
+        }
+        Request::Mutate { mutation, .. } => {
+            stage.set(RemoteStage::Transfer);
+            let attrs = block_on_guarded(
+                runtime,
+                mutate::mutate(codec, mutation),
+                cancel,
+                stop,
+                &stage,
+            )?;
+            Ok(Reply::Observed(attrs))
         }
         Request::Connect => Ok(Reply::Lease(lease)),
     }
@@ -654,7 +772,7 @@ fn block_on_guarded<T, F>(
     work: F,
     cancel: &CancelToken,
     stop: &Arc<StopSignal>,
-    stage: &Cell<ReadStage>,
+    stage: &Cell<RemoteStage>,
 ) -> Result<T, Fault>
 where
     F: Future<Output = Result<T, Fault>>,

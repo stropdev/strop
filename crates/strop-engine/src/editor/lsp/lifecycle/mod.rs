@@ -28,17 +28,6 @@ impl Editor {
         if !self.lsp_state.attach.enabled {
             return;
         }
-        if self
-            .docs
-            .get(document)
-            .and_then(|document| document.remote_metadata())
-            .is_some_and(|source| !source.window.is_complete() || self.remote_following(document))
-        {
-            // Typed refusal, never silence: a partial/follow window is
-            // not a document a server can be told about.
-            self.message = "lsp unavailable — partial remote window".into();
-            return;
-        }
         let Some(doc) = self.lsp_document_location(document) else {
             return;
         };
@@ -172,8 +161,6 @@ impl Editor {
                             && source.file.path().starts_with(&a.root)
                             && self.lsp_doc_language(id, source.file.path()).as_deref()
                                 == Some(a.language.as_str())
-                            && source.window.is_complete()
-                            && !self.remote_following(id)
                     })
                 }),
             })
@@ -219,31 +206,6 @@ impl Editor {
             }
         }
         trace::services::rejected("lsp", reason);
-    }
-}
-
-impl Editor {
-    pub(crate) fn remote_trust_target(&self) -> Result<strop_workspace::RemoteFile, String> {
-        let doc = self
-            .lsp_document_location(self.current())
-            .ok_or("trust requires a file buffer")?;
-        let Filesystem::Remote(endpoint) = doc.filesystem else {
-            return Err("not a remote workspace".into());
-        };
-        let language = lsp_language(&doc.path).ok_or("no language server for this file")?;
-        let key = AttachKey {
-            target: Filesystem::Remote(endpoint.clone()),
-            language: language.to_owned(),
-            path: doc.path,
-        };
-        let root = self
-            .lsp_state
-            .attach
-            .trust_roots
-            .get(&key)
-            .ok_or("no pending remote project trust request")?;
-        strop_workspace::RemoteFile::from_path(endpoint, root.clone())
-            .map_err(|error| error.to_string())
     }
 }
 

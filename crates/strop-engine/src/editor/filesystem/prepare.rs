@@ -54,16 +54,11 @@ impl Editor {
             draft: None,
         };
         let environment = self.filesystem.environment.clone();
-        let worker = self.filesystem.worker().clone();
-        let remote = self.remote.workers.clone();
+        let local = self.filesystem.local().clone();
+        let client = self.remote_client();
         self.start_filesystem_preparation(key, copies, move |token| {
-            match crate::editor::namespace::prepare(
-                &worker,
-                &remote,
-                &intents,
-                &environment,
-                &token,
-            ) {
+            match crate::editor::namespace::prepare(&local, &client, &intents, &environment, &token)
+            {
                 Ok(batch)
                     if recovery.as_ref().is_some_and(|guard| {
                         batch.refused.is_empty() && !guard.accepts(&batch)

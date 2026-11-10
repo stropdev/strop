@@ -207,13 +207,8 @@ impl Editor {
                             self.message = "Directory listings are read-only; use :fs edit for filename drafts".into();
                             return;
                         }
-                        if self.remote_file().is_some() && !self.remote_edit_authorized() {
-                            self.message =
-                                "remote file is read-only; use :remote edit first".into();
-                        } else {
-                            self.buf_mut().clear_readonly();
-                            self.message = "writable".into();
-                        }
+                        self.buf_mut().clear_readonly();
+                        self.message = "writable".into();
                     }
                     _ => self.message = format!("unknown option: {arg}"),
                 }

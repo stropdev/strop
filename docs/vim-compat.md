@@ -111,6 +111,8 @@ Generated from the command table (`strop compat`).
 - `✓ space e` — reveal source in its Directory buffer
 - `✓ space f` — file finder
 - `✓ space o` — open remote destination
+- `✓ space t` — terminal in a split below (TERMINAL mode)
+- `✓ space T` — terminal in this pane (= :terminal)
 - `✓ space b` — buffers (MRU)
 - `✓ space /` — Search workspace (resume investigation)
 - `✓ space R` — Search with replacement
@@ -120,7 +122,7 @@ Generated from the command table (`strop compat`).
 - `✓ space P` — paste clipboard before
 - `✓ space d` — diagnostics picker
 - `✓ space k` — hover docs
-- `✓ space a` — context actions (code / filesystem)
+- `✓ space a` — actions here (fixes, code, files)
 - `✓ space s` — document symbols picker
 - `✓ space S` — workspace symbols picker
 - `✓ space j` — jumplist picker
@@ -165,13 +167,13 @@ Generated from the command table (`strop compat`).
 
 ## Terminal
 
-- `✓ :terminal :terminal-local :terminal-stop` — launch a local PTY, explicitly choose local context, or stop and retain output
-- `✓ ctrl-\ ctrl-n` — terminal input → editor Normal inspection; Esc stays with the child
-- `✓ f2` — terminal input → editor Normal inspection (single-key, Windows-safe)
-- `✓ i I a A` — terminal Normal inspection → live child input (never relaunches an exited session)
-- `✓ :terminal-paste :terminal-paste-cancel` — confirm or discard the scoped held multiline/control paste
-- `✓ :terminal-refresh` — reinstall the latest output into the pinned inspection snapshot (never auto-refreshes a selection)
-- `✓ ctrl-4 ctrl-n` — legacy Ctrl-\ Ctrl-N spelling from the outer terminal decoder
+- `✓ space t` — terminal in a split below (TERMINAL mode)
+- `✓ space T` — terminal in this pane (= :terminal)
+- `✓ :terminal [cmd] :term` — new shell (or cmd) in this pane; space t opens one in a split below
+- `✓ ctrl-\ ctrl-n` — TERMINAL → NORMAL: a live buffer that follows output while the cursor is on the last line; k stops, G resumes
+- `✓ i I a A` — NORMAL → TERMINAL at the child's cursor; every key goes to the child, Esc and ctrl-w included
+- `✓ :q :bd!` — :q hides a running terminal (space b returns), :bd! stops it; :qa refuses while terminals run, :qa! stops them
+- `✓ :r !cmd` — insert a command's output below the cursor
 
 ## Ex commands
 

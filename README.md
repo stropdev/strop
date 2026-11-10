@@ -72,12 +72,13 @@ Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
   **[docs/search.md](docs/search.md)**
 - **Editor surfaces** — themes, completion, structural + label-colon
   indentation, syntax, sessions → **[docs/editor.md](docs/editor.md)**
-- **SSH and remote editing** — read-only snapshots, explicit
-  `:remote edit` write authority, remote LSP/Git/search; for containers,
-  `:terminal` then `docker exec -it <container> sh` →
+- **SSH and remote editing** — plain OpenSSH, nothing installed on the
+  host: a connected host is editable, saves refuse a file changed on the
+  host, and search, Git, language servers and terminals run there; for
+  containers, `:terminal` then `docker exec -it <container> sh` →
   **[docs/remote.md](docs/remote.md)**
-- **Filesystem workspace** — directory browsing and Review → Apply →
-  Receipt mutations, locally and over SSH →
+- **Filesystem workspace** — directory browsing, locally and over SSH, and
+  Review → Apply → Receipt mutations on the local filesystem →
   **[docs/filesystem.md](docs/filesystem.md)**
 - **Terminals, headless scripts, traces** — `Space t` opens a real PTY in
   a split below, Neovim's `Ctrl-\ Ctrl-N` and a live NORMAL mode; the
@@ -85,8 +86,7 @@ Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
   **[docs/terminal-and-scripting.md](docs/terminal-and-scripting.md)**
 
 Also in `docs/`: [vim-compat.md](docs/vim-compat.md) (the differential
-contract against nvim), [worker-protocol.md](docs/worker-protocol.md), and
-[nucleo-decision.md](docs/nucleo-decision.md).
+contract against nvim) and [nucleo-decision.md](docs/nucleo-decision.md).
 
 ## The house rules
 
@@ -121,8 +121,8 @@ Details, content-privacy knobs and the input-only script extraction:
 The vim grammar is checked against Neovim itself by a differential harness.
 At the centre sits a small, dependency-free kernel (`crates/strop-kernel`) that
 Charon/Aeneas translate to Lean 4. It is proved there: how cursors, marks and
-selections move through an edit, which edit batches are safe to apply, and the
-worker wire's frame bounds. Calibration mutants show each theorem actually
+selections move through an edit, which edit batches are safe to apply, and how
+slot generations retire. Calibration mutants show each theorem actually
 constrains the code. Everything further out is covered by tests that drive the
 real binary over real sshd. The design is
 [plans/0086](plans/0086-verified-foundation.md); the claim list is what

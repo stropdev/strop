@@ -10,30 +10,6 @@ impl Editor {
             self.message = "a remote connection command is still pending".into();
             return;
         }
-        if matches!(
-            operation,
-            RemoteControl::Disconnect(_) | RemoteControl::DisconnectAll
-        ) {
-            let documents: Vec<_> = self
-                .remote
-                .following
-                .keys()
-                .copied()
-                .filter(|&id| {
-                    let endpoint = self
-                        .doc(id)
-                        .remote_metadata()
-                        .map(|source| source.file.endpoint());
-                    match &operation {
-                        RemoteControl::Disconnect(target) => endpoint == Some(target),
-                        _ => true,
-                    }
-                })
-                .collect();
-            for id in documents {
-                self.stop_remote_follow(id);
-            }
-        }
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
@@ -52,11 +28,7 @@ impl Editor {
             key: key.clone(),
         };
         self.remote.controls.insert(request, key);
-        self.message = if matches!(&operation, RemoteControl::AdmitWorker(_)) {
-            "admitting verified remote worker".into()
-        } else {
-            "remote connection command pending".into()
-        };
+        self.message = "remote connection command pending".into();
         match self.tape.request("remote.control", &ticket) {
             Ok(false) => return,
             Ok(true) => {}
@@ -69,7 +41,6 @@ impl Editor {
             }
         }
         let client = self.remote_client();
-        let workers = self.remote.workers.clone();
         let tx = self.io.tx.clone();
         let handle = worker::spawn(
             "remote-control",
@@ -81,20 +52,6 @@ impl Editor {
             },
             move |token| {
                 let result = match operation {
-                    RemoteControl::AdmitWorker(endpoint) => {
-                        return match workers.admit(&endpoint, "remote worker enable", &token) {
-                            Ok(_) => Outcome::Success(ControlResult::WorkerReady(endpoint)),
-                            Err(error)
-                                if error.kind
-                                    == strop_workspace::operation::FsFailureKind::Cancelled =>
-                            {
-                                Outcome::Cancelled(worker::CancelReason::Dismissed)
-                            }
-                            Err(error) => {
-                                Outcome::failed(FailureKind::Unavailable, error.to_string())
-                            }
-                        };
-                    }
                     RemoteControl::Connect(endpoint) => {
                         client
                             .connect(&endpoint, &token)
@@ -112,10 +69,9 @@ impl Editor {
                     RemoteControl::Connections => {
                         let mut endpoints = client.connections();
                         endpoints.sort_by_key(ToString::to_string);
-                        let mut text =
-                            String::from("Authenticated SFTP connections (observed snapshot)\n\n");
+                        let mut text = String::from("SSH connections\n\n");
                         if endpoints.is_empty() {
-                            text.push_str("No authenticated connections.\n");
+                            text.push_str("No connections.\n");
                         }
                         for endpoint in endpoints {
                             text.push_str(&format!("{endpoint}\n"));
@@ -156,23 +112,7 @@ impl Editor {
                 }
                 self.note_remote_recovered(&key.operation);
                 if focused {
-                    self.message = "remote connection held".into();
-                }
-            }
-            Outcome::Success(ControlResult::WorkerReady(endpoint)) => {
-                self.note_remote_recovered(&key.operation);
-                self.note_remote_worker_recovered(&endpoint);
-                if focused {
-                    self.message = match self.remote.workers.get_ready(&endpoint) {
-                        Some(ready) => format!(
-                            "verified remote worker {} ready for {} ({}) at {}",
-                            env!("CARGO_PKG_VERSION"),
-                            endpoint,
-                            ready.target,
-                            strop_core::layout::printable_text(&ready.artifact.path)
-                        ),
-                        None => format!("remote worker for {endpoint} retired before readiness"),
-                    };
+                    self.message = "connected".into();
                 }
             }
             Outcome::Success(ControlResult::Disconnected) => {
@@ -202,7 +142,7 @@ impl Editor {
                     _ => {}
                 }
                 if focused {
-                    self.message = "remote connection closed".into();
+                    self.message = "disconnected".into();
                 }
             }
             Outcome::Success(ControlResult::Listing(text)) if focused => {

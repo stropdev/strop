@@ -1,23 +1,20 @@
-//! 0058 S7 acceptance: hint application over the REAL in-process worker
-//! (subscribe handshake, inotify watches, 25ms pump, codec — the WK04
-//! seam), plus deterministic synthetic-record drives for identity,
+//! 0058 S7 acceptance: hint application over the real watcher thread
+//! (inotify watches, 25ms pump), plus deterministic synthetic-record
+//! drives for identity,
 //! overflow and lifecycle edges. Notify.tla correspondence: dirty
 //! buffers are never clobbered, stale generations never act, overflow
 //! is a conservative rescan, close retires the subscription.
-use super::subscribe::RemoteScope;
 use super::*;
 use crate::editor::Editor;
 use std::time::{Duration, Instant};
 use strop_core::worker::Outcome;
 use strop_core::Buffer;
-use strop_worker_protocol::{Event, Session, Subscription};
-use strop_worker_protocol::{LeaseId, NotifyHint, NotifyKind};
-use strop_workspace::ResourceLocation;
+use strop_fs::notify::{Event, NotifyHint, NotifyKind, Subscription};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// An editor with the scope subscription established through the real
-/// in-process worker lease.
+/// An editor with the scope subscription established by the real
+/// watcher thread.
 fn subscribed_editor(dir: &std::path::Path) -> Editor {
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.to_path_buf());
     editor.start_notifications();
@@ -136,9 +133,15 @@ fn a_dead_generation_never_acts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("note.txt");
     std::fs::write(&path, "one\n").unwrap();
-    let mut editor = subscribed_editor(dir.path());
+    // A fixed identity and no watcher thread: the only event is the
+    // stale one pushed below.
+    let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
     editor.open_fixture(&path).unwrap();
-    let current = editor.notify.subscription.unwrap();
+    let current = Subscription {
+        id: 1,
+        generation: 1,
+    };
+    editor.notify.subscription = Some(current);
     let stale = Subscription {
         id: current.id,
         generation: current.generation + 1,
@@ -223,160 +226,6 @@ fn close_retires_the_subscription() {
     assert_eq!(editor.buf().text(), "one\n", "late events never apply");
 }
 
-/// A worker restart kills the subscription with its session: the lease
-/// observation invalidates the baseline, surfaces the loss, and
-/// reestablishes coverage with a fresh generation.
-#[test]
-fn worker_loss_reestablishes_with_a_fresh_generation() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut editor = subscribed_editor(dir.path());
-    let before = editor.notify.subscription.unwrap();
-    // Simulate the lease moving past the recorded session (the in-process
-    // connection is alive, so the recorded incarnation must diverge).
-    editor.notify.session = Some(Session {
-        incarnation: u64::MAX,
-        lease: LeaseId(u64::MAX),
-    });
-    editor.notify_observe_lease();
-    assert!(
-        editor.notify.subscription.is_none(),
-        "the dead session's subscription is dropped"
-    );
-    assert!(
-        editor.notify.subscribing || editor.notify.subscription.is_some(),
-        "coverage is reestablished"
-    );
-    let deadline = Instant::now() + TIMEOUT;
-    while editor.notify.subscription.is_none() {
-        assert!(Instant::now() < deadline, "the resubscribe settles");
-        editor.drain_notify();
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    let after = editor.notify.subscription.unwrap();
-    assert_ne!(
-        before, after,
-        "reinstallation enters with a bumped identity"
-    );
-}
-
-/// WK07: hints on an admitted remote scope apply conservatively — a
-/// dirty remote document gains external-change state and is never
-/// clobbered, and a clean one is left to its follow polling.
-#[test]
-fn remote_hints_mark_dirty_remote_documents_and_never_clobber() {
-    let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
-    let document = editor.current();
-    editor.doc_mut(document).buf.mark_dirty();
-    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap();
-    let root = ResourceLocation::remote(endpoint.clone(), "/repo".into());
-    let identity = Subscription {
-        id: 41,
-        generation: 7,
-    };
-    editor.notify.remote.insert(
-        root,
-        RemoteScope {
-            endpoint,
-            subscription: Some(identity),
-            session: None,
-            subscribing: false,
-            subscribe_handle: None,
-        },
-    );
-    editor.notify.queue.push_hints(
-        identity,
-        vec![NotifyHint {
-            path: b"app.log".to_vec(),
-            kind: NotifyKind::Modified,
-        }],
-    );
-    editor.drain_notify();
-    assert!(
-        editor.cur().external_change,
-        "the dirty remote document gains external-change state"
-    );
-    assert_eq!(editor.buf().text(), "remote bytes\n", "never clobbered");
-    assert!(editor.buf().is_dirty(), "edits are preserved");
-}
-
-/// WK07: events stamped by an unknown or superseded remote identity
-/// never act.
-#[test]
-fn a_dead_remote_generation_never_acts() {
-    let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
-    let document = editor.current();
-    editor.doc_mut(document).buf.mark_dirty();
-    editor.notify.queue.push_hints(
-        Subscription {
-            id: 999,
-            generation: 1,
-        },
-        vec![NotifyHint {
-            path: b"app.log".to_vec(),
-            kind: NotifyKind::Modified,
-        }],
-    );
-    editor.drain_notify();
-    assert!(!editor.cur().external_change, "no identity, no effect");
-}
-
-/// WK07: a remote scope adopts its identity only from the settle record
-/// — hints arriving under the settled identity then apply in order.
-#[test]
-fn remote_subscription_identity_comes_from_the_settle_record() {
-    let mut editor = crate::editor::test_support::remote::snapshot_editor("remote bytes\n");
-    let document = editor.current();
-    editor.doc_mut(document).buf.mark_dirty();
-    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture").unwrap();
-    let root = ResourceLocation::remote(endpoint.clone(), "/repo".into());
-    editor.notify.remote.insert(
-        root.clone(),
-        RemoteScope {
-            endpoint,
-            subscription: None,
-            session: None,
-            subscribing: true,
-            subscribe_handle: None,
-        },
-    );
-    // Before the settle: hints with any identity are inert.
-    editor.notify.queue.push_hints(
-        Subscription {
-            id: 1,
-            generation: 1,
-        },
-        vec![NotifyHint {
-            path: b"app.log".to_vec(),
-            kind: NotifyKind::Modified,
-        }],
-    );
-    editor.drain_notify();
-    assert!(!editor.cur().external_change);
-    // The settle lands on the same queue and adopts the identity.
-    let identity = Subscription {
-        id: 5,
-        generation: 1,
-    };
-    editor.notify.queue.push_record(Record::RemoteSettled {
-        root,
-        outcome: Outcome::Success(SubscribedScope {
-            subscription: identity,
-            coverage: strop_worker_protocol::NotifyCoverage::Native,
-            owned_trace: None,
-        }),
-    });
-    editor.drain_notify();
-    editor.notify.queue.push_hints(
-        identity,
-        vec![NotifyHint {
-            path: b"app.log".to_vec(),
-            kind: NotifyKind::Modified,
-        }],
-    );
-    editor.drain_notify();
-    assert!(editor.cur().external_change, "the settled identity acts");
-}
-
 #[test]
 fn trace_owned_hints_do_not_wake_the_editor_but_other_files_still_do() {
     let directory = tempfile::tempdir().unwrap();
@@ -440,7 +289,6 @@ fn a_full_notify_queue_cannot_drop_subscription_settlement() {
         .queue
         .push_record(Record::Settled(Outcome::Success(SubscribedScope {
             subscription: settled,
-            coverage: strop_worker_protocol::NotifyCoverage::Native,
             owned_trace: None,
         })));
 

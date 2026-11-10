@@ -12,7 +12,7 @@ mod presentation;
 mod sidebar;
 pub use file_list::PreparedFiles;
 pub(crate) use hunk_set::HunkSet;
-pub(crate) use jobs::{git_failure, repo_lease, repo_or_unavailable};
+pub(crate) use jobs::{git_failure, repo_host, repo_or_unavailable};
 pub use presentation::PreparedDiff;
 pub use sidebar::{Sidebar, SidebarRow};
 mod types;
@@ -174,10 +174,6 @@ impl Editor {
         // file coordinates would show the history of the WRONG lines
         // (0036: partial windows never masquerade as full-file Git
         // inputs).
-        if range.is_some() && self.remote_file().is_some() && !self.remote_window_complete() {
-            self.message = "partial remote snapshot — line history needs a full window".into();
-            return;
-        }
         let repo = context.repo.clone();
         let file = if file_scoped {
             self.current_buffer_rel(&repo)
@@ -226,7 +222,7 @@ impl Editor {
             file.clone().map(trace::services::NativePath),
             range,
         );
-        let workers = self.remote.workers.clone();
+        let client = self.remote_client();
         self.launch_git_job(
             "git-log",
             "git.log",
@@ -237,8 +233,10 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let lease = jobs::repo_lease(&workers, &repo);
-                let exec = match GitExec::for_target_routed(&repo, lease.as_ref()) {
+                let host = jobs::repo_host(&client, &repo, &cancel);
+                let exec = match host.and_then(|host| {
+                    GitExec::for_target(&repo, host.as_ref()).map_err(|error| error.to_string())
+                }) {
                     Ok(exec) => exec,
                     Err(error) => {
                         return Outcome::failed(FailureKind::Unavailable, error.to_string())
@@ -262,7 +260,6 @@ impl Editor {
     pub(crate) fn feed_readonly(&mut self, key: Key) {
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
-            self.stop_remote_follow(self.current());
             self.cancel_directory_filter(self.current());
             self.walker.clear();
             return;

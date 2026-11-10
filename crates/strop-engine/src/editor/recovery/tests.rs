@@ -304,7 +304,6 @@ fn remote_drafts_persist_only_with_explicit_session_consent() {
         .docs
         .try_insert(crate::editor::test_support::remote::document(
             "remote bytes\n",
-            strop_remote::ReadSelection::Full,
         ))
         .unwrap();
     editor.doc_mut(document).buf.mark_dirty();

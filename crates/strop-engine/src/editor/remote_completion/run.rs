@@ -14,8 +14,7 @@ pub(super) fn run_completion(
         sources,
         history,
         client,
-        worker,
-        remote,
+        local,
     } = job;
     if cancel.is_cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
@@ -26,8 +25,7 @@ pub(super) fn run_completion(
             &segment,
             directory::Sources {
                 client: &client,
-                worker: &worker,
-                remote: &remote,
+                local: &local,
             },
             &cancel,
         ),

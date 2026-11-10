@@ -1,27 +1,25 @@
 //! Remote provenance stays with its real buffer. Live leases never cross replay.
 use super::{Document, DocumentSource, JumpRecord};
 use strop_core::Buffer;
-use strop_remote::{ConnectionLease, ReadSelection, RemoteSnapshot, RemoteWindow};
+use strop_remote::{ConnectionLease, RemoteSnapshot, Stamp};
 use strop_workspace::RemoteFile;
 
 #[derive(Clone)]
 pub struct RemoteDocument {
     pub file: RemoteFile,
-    pub window: RemoteWindow,
-    pub selection: ReadSelection,
+    /// What the read or the last save observed; a `:w` is refused when
+    /// the file on the host no longer matches it.
+    pub stamp: Stamp,
     pub connection: Option<ConnectionLease>,
     pub return_to: Option<JumpRecord>,
-    pub(crate) write: Option<crate::editor::remote::save::WritePermit>,
 }
 impl std::fmt::Debug for RemoteDocument {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("RemoteDocument")
             .field("file", &self.file)
-            .field("window", &self.window)
-            .field("selection", &self.selection)
+            .field("stamp", &self.stamp)
             .field("connected", &self.connection.is_some())
-            .field("write_authorized", &self.write.is_some())
             .finish()
     }
 }
@@ -33,7 +31,6 @@ impl Document {
             "remote identity cannot become a local file"
         );
         buffer.name = Some(source.file.to_string());
-        buffer.set_readonly(strop_core::ReadonlyReason::RemoteAuthority);
         let detection = Some(super::detect_indent(buffer.text()));
         Self {
             buf: buffer,
@@ -45,16 +42,14 @@ impl Document {
             external_change: false,
         }
     }
-    pub(crate) fn remote_snapshot(snapshot: RemoteSnapshot, selection: ReadSelection) -> Self {
+    pub(crate) fn remote_snapshot(snapshot: RemoteSnapshot) -> Self {
         Self::remote(
             snapshot.buffer,
             RemoteDocument {
                 file: snapshot.file,
-                window: snapshot.window,
-                selection,
+                stamp: snapshot.stamp,
                 connection: Some(snapshot.connection),
                 return_to: None,
-                write: None,
             },
         )
     }

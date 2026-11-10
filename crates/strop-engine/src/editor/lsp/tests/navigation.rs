@@ -648,7 +648,11 @@ while True:
         .find(|failure| failure.root == root)
         .unwrap();
     assert_eq!(retained.name, "rust-analyzer");
-    assert!(retained.reason.contains("Exit(0)"), "{}", retained.reason);
+    assert!(
+        retained.reason.contains("exit status: 0"),
+        "{}",
+        retained.reason
+    );
 
     // An unrelated failed workspace must neither handle this request nor be
     // cleared by this workspace's replacement becoming ready.

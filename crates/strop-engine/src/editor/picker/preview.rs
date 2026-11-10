@@ -671,21 +671,13 @@ fn read_resource_preview(
     match crate::files::FileTarget::from_location(location) {
         Ok(crate::files::FileTarget::Local(path)) => read_preview(&path, token),
         Ok(crate::files::FileTarget::Remote(remote)) => {
-            let length = match strop_remote::ReadLimit::new(512 * 1024) {
-                Ok(length) => length,
-                Err(error) => return Outcome::failed(FailureKind::Protocol, error.to_string()),
-            };
-            let selection = strop_remote::ReadSelection::Range {
-                start: strop_remote::RemoteOffset::new(0),
-                length,
-            };
-            match client.read(&remote, selection, token) {
-                Ok(snapshot) if snapshot.window.is_complete() => {
-                    Outcome::Success(PreparedPreview {
-                        rope: snapshot.buffer.text().clone(),
-                    })
+            match client.read(&remote, 512 * 1024, token) {
+                Ok(snapshot) => Outcome::Success(PreparedPreview {
+                    rope: snapshot.buffer.text().clone(),
+                }),
+                Err(error) if error.kind() == strop_remote::RemoteFailureKind::TooLarge => {
+                    Outcome::failed(FailureKind::Unavailable, "preview too large")
                 }
-                Ok(_) => Outcome::failed(FailureKind::Unavailable, "preview too large"),
                 Err(_) if token.is_cancelled() => Outcome::Cancelled(CancelReason::Superseded),
                 Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
             }

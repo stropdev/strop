@@ -1,38 +1,37 @@
-//! Read-only Git queries in an admitted SSH worker namespace. Every
-//! machine-format parser consumes the worker's native bytes; absent
-//! Git capability is typed, never an empty repository or local retry.
-//! libgit2 remains local and no Python supervisor crosses this path.
+//! Read-only Git queries on an SSH host: `git` runs there as a channel
+//! on the endpoint's master. Every machine-format parser consumes git's
+//! native bytes; a missing `git` is typed, never an empty repository or
+//! a local retry. libgit2 remains local.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use strop_core::worker::CancelToken;
-use strop_remote::worker_transport::RemoteWorker;
+use strop_remote::exec::ExecHost;
 use strop_workspace::RemoteEndpoint;
 
 use crate::diff::FileDiff;
-use crate::exec::{run_worker_program, GitExec, GitExecError, GitRun};
+use crate::exec::{run_program, GitExec, GitExecError, GitRun};
 use crate::repo::{gutter_from_contents, hunks_from_buffers};
 use crate::ssh::parse_effective_hostname;
 use crate::target::RepoTarget;
 use crate::{GitContext, Hunk};
 
-/// A bound lease is the only SSH Git execution route. The endpoint
-/// check prevents a workspace alias from retargeting the worker's cwd.
+/// The endpoint's host is the only SSH Git execution route. The
+/// endpoint check prevents a workspace alias from retargeting the cwd.
 fn backend<'a>(
     endpoint: &RemoteEndpoint,
     workdir: &'a Path,
-    lease: Option<&RemoteWorker>,
+    host: &ExecHost,
 ) -> Result<GitExec<'a>, RemoteGitError> {
-    let lease = lease
-        .ok_or_else(|| RemoteGitError::Capability("SSH Git requires an admitted worker".into()))?;
-    if lease.endpoint() != endpoint {
+    if host.endpoint() != endpoint {
         return Err(RemoteGitError::Capability(format!(
-            "Git scope {endpoint} does not match the admitted worker"
+            "Git scope {endpoint} does not match the connection to {}",
+            host.endpoint()
         )));
     }
-    Ok(GitExec::Worker {
-        worker: lease.worker().clone(),
+    Ok(GitExec::Remote {
+        host: host.clone(),
         workdir,
     })
 }
@@ -49,10 +48,10 @@ use parsers::{
 /// for "failed".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteGitError {
-    /// The worker or its process/stream boundary refused or failed.
+    /// `git` or `ssh` could not run, or the run was cut short.
     Exec(String),
-    /// No worker was admitted or the supplied lease belongs to another
-    /// endpoint: never use a Python or local-path fallback.
+    /// The connection belongs to another endpoint: never a local-path
+    /// fallback.
     Capability(String),
     /// `git` itself exited nonzero: the operation name, exit code and
     /// git's stderr.
@@ -66,8 +65,7 @@ pub enum RemoteGitError {
     Parse(&'static str),
     /// Blob content that must be UTF-8 for the surface was not.
     Utf8(&'static str),
-    /// The remote `git` output bound truncated a stream this query
-    /// needs complete.
+    /// The output bound truncated a stream this query needs complete.
     Truncated { op: &'static str, dropped: u64 },
 }
 
@@ -82,7 +80,7 @@ impl std::fmt::Display for RemoteGitError {
             Self::Parse(what) => write!(f, "{what}: unparseable git output"),
             Self::Utf8(what) => write!(f, "{what} is not UTF-8"),
             Self::Truncated { op, dropped } => {
-                write!(f, "{op}: remote output truncated ({dropped} bytes dropped)")
+                write!(f, "{op}: output truncated ({dropped} bytes dropped)")
             }
         }
     }
@@ -154,16 +152,14 @@ fn remotes_from_run(config_run: &GitRun) -> Result<Vec<(String, String)>, Remote
 /// the honest "no repository here" — git's own not-a-repository fatal
 /// — while transport failures, missing tooling and corrupt
 /// repositories are typed errors. The returned workdir is a path on
-/// the endpoint, native bytes, never a local path. `lease` routes the
-/// run through the endpoint's admitted worker when the session holds
-/// one (0058 WK10).
+/// the endpoint, native bytes, never a local path.
 pub fn discover(
     endpoint: &RemoteEndpoint,
     from: &Path,
-    lease: Option<&RemoteWorker>,
+    host: &ExecHost,
     cancel: &CancelToken,
 ) -> Result<Option<PathBuf>, RemoteGitError> {
-    let exec = backend(endpoint, from, lease)?;
+    let exec = backend(endpoint, from, host)?;
     discover_with(&exec, cancel)
 }
 
@@ -199,16 +195,16 @@ pub(crate) fn discover_from_run(run: &GitRun) -> Result<Option<PathBuf>, RemoteG
 }
 
 /// The pure cached context of a remote repository (R6): HEAD sha,
-/// branch and remotes captured once on a worker. Unborn HEAD and
+/// branch and remotes captured once on a job. Unborn HEAD and
 /// detached HEAD are honest `None`/name states, distinguished by exit
 /// code — never by stderr text.
 pub fn context(
     endpoint: &RemoteEndpoint,
     workdir: &Path,
-    lease: Option<&RemoteWorker>,
+    host: &ExecHost,
     cancel: &CancelToken,
 ) -> Result<GitContext, RemoteGitError> {
-    let exec = backend(endpoint, workdir, lease)?;
+    let exec = backend(endpoint, workdir, host)?;
     let repo = RepoTarget::Remote {
         endpoint: endpoint.clone(),
         workdir: workdir.to_path_buf(),
@@ -319,10 +315,10 @@ pub fn gutter(
     head_sha: Option<&str>,
     rel: &Path,
     text: &str,
-    lease: Option<&RemoteWorker>,
+    host: &ExecHost,
     cancel: &CancelToken,
 ) -> Result<(Vec<Hunk>, Vec<Hunk>, bool), RemoteGitError> {
-    let contents = file_contents(endpoint, workdir, head_sha, rel, lease, cancel)?;
+    let contents = file_contents(endpoint, workdir, head_sha, rel, host, cancel)?;
     let head = contents
         .head
         .as_deref()
@@ -346,10 +342,10 @@ pub fn file_contents(
     workdir: &Path,
     head_sha: Option<&str>,
     rel: &Path,
-    lease: Option<&RemoteWorker>,
+    host: &ExecHost,
     cancel: &CancelToken,
 ) -> Result<FileContents, RemoteGitError> {
-    let exec = backend(endpoint, workdir, lease)?;
+    let exec = backend(endpoint, workdir, host)?;
     let head = match head_sha {
         Some(sha) => {
             let stdout = records(
@@ -419,10 +415,10 @@ pub fn commit_file_diff(
     workdir: &Path,
     sha: &str,
     rel: &Path,
-    lease: Option<&RemoteWorker>,
+    host: &ExecHost,
     cancel: &CancelToken,
 ) -> Result<FileDiff, RemoteGitError> {
-    let exec = backend(endpoint, workdir, lease)?;
+    let exec = backend(endpoint, workdir, host)?;
     let stdout = records(
         &exec,
         "rev-list --parents",
@@ -488,13 +484,13 @@ pub fn commit_file_diff(
 /// Resolve an SSH alias against OpenSSH's effective configuration *on
 /// the endpoint* (`ssh -G` run remotely): the alias belongs to the
 /// machine whose remote carries it, and evaluating it with the local
-/// user's config would answer for the wrong host. Owned worker work,
+/// user's config would answer for the wrong host. Owned job work,
 /// cancellable like every bounded remote run.
 pub fn effective_host(
     endpoint: &RemoteEndpoint,
     workdir: &Path,
     remote: &crate::permalink::AliasRemote,
-    lease: Option<&RemoteWorker>,
+    connection: &ExecHost,
     cancel: &CancelToken,
 ) -> Result<String, crate::ssh::EffectiveHostError> {
     use crate::ssh::EffectiveHostError;
@@ -510,17 +506,13 @@ pub fn effective_host(
         args.extend(["-p".into(), port.to_string().into()]);
     }
     args.push(host.into());
-    let lease = lease.ok_or_else(|| {
-        EffectiveHostError::Unavailable(
-            "SSH alias resolution requires an admitted worker on the endpoint".into(),
-        )
-    })?;
-    if lease.endpoint() != endpoint {
+    if connection.endpoint() != endpoint {
         return Err(EffectiveHostError::Unavailable(format!(
-            "SSH alias scope {endpoint} does not match the admitted worker"
+            "SSH alias scope {endpoint} does not match the connection to {}",
+            connection.endpoint()
         )));
     }
-    let run = run_worker_program(lease.worker(), b"ssh", workdir, &args, cancel)
+    let run = run_program(connection, "ssh", workdir, &args, cancel)
         .map_err(|error| EffectiveHostError::Spawn(error.to_string()))?;
     if !run.success {
         return Err(EffectiveHostError::Failed(

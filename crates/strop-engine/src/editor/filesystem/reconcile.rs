@@ -170,7 +170,6 @@ impl Editor {
             }
         }
         for (document, old, destination) in &affected {
-            self.stop_remote_follow(*document);
             self.cancel_directory_filter(*document);
             self.lsp_close_document(*document);
             self.revoke_git_requests_for(*document);
@@ -178,20 +177,6 @@ impl Editor {
             self.analysis
                 .forget(super::super::analysis::AnalysisTarget::Document(*document));
             if let Some(destination) = destination {
-                if let Filesystem::Remote(endpoint) = &destination.filesystem {
-                    if self.doc(*document).remote_metadata().is_some() {
-                        match strop_workspace::RemoteFile::from_path(
-                            endpoint.clone(),
-                            destination.path.clone(),
-                        ) {
-                            Ok(file) => self.relocate_remote_binding(*document, file),
-                            Err(error) => {
-                                self.message = format!("relocation binding refused: {error}");
-                                continue;
-                            }
-                        }
-                    }
-                }
                 let directory = self.doc(*document).directory_metadata_ref().is_some();
                 if directory {
                     let header = format!("{}\n", destination.label());
@@ -228,9 +213,29 @@ impl Editor {
                             .buf
                             .relocate_file_binding(destination.path.clone(), stamp);
                     }
+                } else if let Filesystem::Remote(endpoint) = &destination.filesystem {
+                    // A rename keeps the bytes and the modification time,
+                    // so the stamp a save checks still describes the file.
+                    self.drop_remote_write(*document);
+                    let file = strop_workspace::RemoteFile::from_path(
+                        endpoint.clone(),
+                        destination.path.clone(),
+                    );
+                    match (file, self.docs.get_mut(*document)) {
+                        (Ok(file), Some(entry)) => {
+                            if let DocumentSource::Remote(source) = &mut entry.source {
+                                entry.buf.name = Some(file.to_string());
+                                source.file = file;
+                            }
+                        }
+                        (Err(error), _) => {
+                            self.message = format!("relocation refused: {error}");
+                        }
+                        _ => {}
+                    }
                 }
             } else {
-                self.revoke_remote_write(*document);
+                self.drop_remote_write(*document);
                 if let Some(entry) = self.docs.get_mut(*document) {
                     entry.buf.detach_file_binding();
                     entry.buf.name = Some(format!("detached {} — original removed", old.label()));
@@ -296,6 +301,7 @@ impl Editor {
             .iter()
             .filter_map(|(id, entry)| entry.directory_metadata_ref().map(|_| id))
             .collect();
+        let mut remote_reloads = Vec::new();
         for id in directories {
             let Some(entry) = self.docs.get_mut(id) else {
                 continue;
@@ -325,8 +331,16 @@ impl Editor {
                             || directory.location.path.starts_with(&location.path))
                 }) {
                     directory.stale = Some("filesystem changed; refresh required".into());
+                    // A host is not watched: its listing reloads now.
+                    if directory.location.filesystem.is_remote() {
+                        remote_reloads.push(id);
+                    }
                 }
             }
+        }
+        for id in remote_reloads {
+            let _ =
+                self.start_directory_task(id, super::super::directory::DirectoryTask::Reload, None);
         }
         self.relocate_directory_history(source, if moving { destination } else { None }, removing);
         if (moving || removing) && operation.intent.source.as_ref() != source {

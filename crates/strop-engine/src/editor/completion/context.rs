@@ -85,26 +85,19 @@ pub(super) struct SourceBinding {
 }
 impl SourceBinding {
     pub fn matches(&self, editor: &Editor) -> bool {
-        editor.docs.get(self.document).is_some_and(|document| {
-            writable_source(editor, self.document, document) && self.identity.matches(document)
-        })
+        editor
+            .docs
+            .get(self.document)
+            .is_some_and(|document| writable_source(document) && self.identity.matches(document))
     }
 }
 
-fn writable_source(editor: &Editor, id: DocumentId, document: &Document) -> bool {
+fn writable_source(document: &Document) -> bool {
     !document.buf.readonly
-        && match &document.source {
-            DocumentSource::File | DocumentSource::Scratch => true,
-            DocumentSource::Remote(source) => {
-                source.window.is_complete()
-                    && !editor.remote_following(id)
-                    && source
-                        .write
-                        .as_ref()
-                        .is_some_and(|permit| permit.owns(&source.file))
-            }
-            _ => false,
-        }
+        && matches!(
+            document.source,
+            DocumentSource::File | DocumentSource::Scratch | DocumentSource::Remote(_)
+        )
 }
 
 /// A language-service incarnation includes placement, not only its process ID.
@@ -349,7 +342,7 @@ pub(super) fn capture(
         ) {
             return Err(ContextRefusal::UnsupportedSurface);
         }
-        if !writable_source(editor, source, document) {
+        if !writable_source(document) {
             return Err(ContextRefusal::ReadOnly);
         }
         let (start, end) = keyword_span(document.buf.text(), caret)?;

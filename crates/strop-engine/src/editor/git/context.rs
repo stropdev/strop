@@ -128,10 +128,9 @@ impl Editor {
             })
         });
         let args = ticket.clone();
-        // Discovery is read-only: it consumes only an already-admitted
-        // endpoint worker. A restricted/SFTP-only host refuses Git
-        // truthfully; no Python command is spawned.
-        let workers = self.remote.workers.clone();
+        // Discovery runs `git` on the host over the endpoint's
+        // connection; a host without git refuses Git truthfully.
+        let client = self.remote_client();
         self.launch_git_job(
             "git-discover-remote",
             "git.discover",
@@ -142,16 +141,19 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let lease = workers.get(&endpoint);
-                match strop_git::remote::discover(&endpoint, &from_dir, lease.as_ref(), &cancel) {
+                let host = match client.host(&endpoint, &cancel) {
+                    Ok(host) => host,
+                    Err(error) => {
+                        return Outcome::failed(
+                            strop_core::worker::FailureKind::Unavailable,
+                            error.to_string(),
+                        )
+                    }
+                };
+                match strop_git::remote::discover(&endpoint, &from_dir, &host, &cancel) {
                     Ok(None) => Outcome::Success(None),
                     Ok(Some(workdir)) => {
-                        match strop_git::remote::context(
-                            &endpoint,
-                            &workdir,
-                            lease.as_ref(),
-                            &cancel,
-                        ) {
+                        match strop_git::remote::context(&endpoint, &workdir, &host, &cancel) {
                             Ok(context) => Outcome::Success(Some(context)),
                             Err(error) => Outcome::Failed {
                                 failure: strop_core::worker::Failure::new(

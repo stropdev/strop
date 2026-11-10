@@ -8,14 +8,9 @@ fn remote_doc(e: &mut Editor, uri: &str, text: &str) -> strop_core::id::Document
             strop_core::Buffer::from_text(text),
             crate::editor::document::RemoteDocument {
                 file,
-                window: strop_remote::RemoteWindow::resolve(
-                    &strop_remote::ReadSelection::Full,
-                    strop_remote::RemoteSize::new(text.len() as u64),
-                ),
-                selection: strop_remote::ReadSelection::Full,
+                stamp: strop_remote::Stamp { size: 1, mtime: 1 },
                 connection: None,
                 return_to: None,
-                write: None,
             },
         ))
         .unwrap()
@@ -216,35 +211,4 @@ fn closing_the_last_remote_document_retires_its_server() {
         "the last owning remote workspace retires its server"
     );
     assert!(e.lsp_state.attach.attached.is_empty());
-}
-
-/// Partial windows cannot be admitted as complete language-server documents.
-#[test]
-fn partial_remote_window_refuses_attach_visibly() {
-    let mut e = editor("tail window\n");
-    let file = strop_workspace::RemoteFile::parse("ssh://builder.example/w/proj/a.rs").unwrap();
-    let id = e
-        .docs
-        .try_insert(Document::remote(
-            strop_core::Buffer::from_text("tail\n"),
-            crate::editor::document::RemoteDocument {
-                file,
-                selection: strop_remote::ReadSelection::Tail(
-                    strop_remote::ReadLimit::new(5).unwrap(),
-                ),
-                window: strop_remote::RemoteWindow::resolve(
-                    &strop_remote::ReadSelection::Tail(strop_remote::ReadLimit::new(5).unwrap()),
-                    strop_remote::RemoteSize::new(100),
-                ),
-                connection: None,
-                return_to: None,
-                write: None,
-            },
-        ))
-        .unwrap();
-    e.switch_to(id);
-    e.lsp_start_services();
-    assert!(e.lsp_state.attach.pending.is_empty());
-    assert!(e.lsp_state.bindings.is_empty());
-    assert!(!e.message.is_empty(), "capability refusal is visible");
 }

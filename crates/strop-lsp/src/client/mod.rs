@@ -12,6 +12,7 @@ mod api;
 mod completion;
 mod frame_limits;
 mod outbound;
+mod process;
 mod queue;
 mod spawn;
 mod sync;
@@ -20,7 +21,6 @@ mod tests;
 
 mod trace_io;
 mod wire;
-mod worker_io;
 
 pub use spawn::SpawnError;
 
@@ -105,8 +105,8 @@ impl Client {
         });
     }
 
-    /// Join once after shutdown. A timeout revokes the native mainloop; the
-    /// process owner completes asynchronous group cleanup without leaking clients.
+    /// Join once after shutdown. A timeout stops the mainloop; the client
+    /// thread then closes the server's stdin, waits its grace and kills it.
     pub fn wait(self, timeout: std::time::Duration) {
         let handle = self.thread.lock().ok().and_then(|mut t| t.take());
         let Some(handle) = handle else { return };

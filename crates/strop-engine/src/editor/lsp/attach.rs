@@ -197,14 +197,10 @@ pub(crate) enum DiscoverPlace {
         abs: PathBuf,
         cwd: PathBuf,
         git_workdir: Option<PathBuf>,
-        worker: strop_worker_client::Worker,
     },
     Remote {
         file: strop_workspace::RemoteFile,
         client: strop_remote::RemoteClient,
-        /// Endpoint-bound admitted worker, if the session holds one.
-        /// Read-only discovery never deploys on a restricted host.
-        worker: Option<strop_remote::worker_transport::RemoteWorker>,
     },
 }
 
@@ -234,20 +230,16 @@ pub(crate) fn discover(input: DiscoverInput, token: &CancelToken) -> Option<Atta
             abs,
             cwd,
             git_workdir,
-            worker,
         } => Some(discover_local(
             &input,
             abs,
             cwd,
             git_workdir.as_deref(),
-            worker,
             token,
         )),
-        DiscoverPlace::Remote {
-            file,
-            client,
-            worker,
-        } => super::remote::discover(&input, file, client, worker, token),
+        DiscoverPlace::Remote { file, client } => {
+            super::remote::discover(&input, file, client, token)
+        }
     }
 }
 
@@ -258,7 +250,6 @@ fn discover_local(
     abs: &Path,
     cwd: &Path,
     git_workdir: Option<&Path>,
-    worker: &strop_worker_client::Worker,
     token: &CancelToken,
 ) -> AttachRecord {
     let DiscoverInput {
@@ -327,7 +318,7 @@ fn discover_local(
         &spec,
         strop_lsp::Workspace::Local { root: root.clone() },
         tx,
-        Some(worker.clone()),
+        spec.local_command(&root),
     ) {
         Ok(client) => {
             let server = client.id();
@@ -445,7 +436,6 @@ mod tests {
         // NoServer refusal, target local, no layer diagnostics.
         let dir = std::path::Path::new("/w/definitely-not-here");
         let abs = dir.join("a.nosuchlang");
-        let worker = strop_worker_client::Worker::local();
         let record = std::thread::scope(|scope| {
             let (tokens, issued) = std::sync::mpsc::channel();
             let _handle = strop_core::worker::spawn_scoped(
@@ -464,14 +454,12 @@ mod tests {
                         abs: abs.clone(),
                         cwd: dir.to_path_buf(),
                         git_workdir: None,
-                        worker: worker.clone(),
                     },
                     ".nosuchlang",
                 ),
                 &abs,
                 dir,
                 None,
-                &worker,
                 &token,
             )
         });

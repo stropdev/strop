@@ -63,7 +63,7 @@ impl Editor {
         } else {
             "file"
         };
-        match self.publish_source_snapshot(document, replacement, false) {
+        match self.publish_source_snapshot(document, replacement) {
             Ok(()) => {
                 self.message = if self.filename_draft(document).is_some() {
                     "filename draft retained; source observations refreshed".into()

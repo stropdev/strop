@@ -1,7 +1,9 @@
-//! Worker-only requests to the per-endpoint SFTP actor. Cloning a client or
-//! lease never connects; every accepted request retains its own lease.
+//! Requests to the per-endpoint actor, made from jobs (never from input or
+//! render). Cloning a client or lease never connects; every accepted
+//! request retains its own lease.
+use crate::exec::ExecHost;
 use crate::pool::{EndpointHandle, Job, Registry, Reply, Request, SessionState};
-use crate::{ReadFailureKind, ReadSelection, ReadStage, RemoteReadError, RemoteWindow};
+use crate::{Expect, Mutation, RemoteAttrs, RemoteError, RemoteFailureKind, RemoteStage, Stamp};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
@@ -25,7 +27,8 @@ impl ConnectionLease {
 pub struct RemoteSnapshot {
     pub file: RemoteFile,
     pub buffer: strop_core::Buffer,
-    pub window: RemoteWindow,
+    /// What the read observed; a save compares against it.
+    pub stamp: Stamp,
     pub connection: ConnectionLease,
 }
 pub struct RemoteDirectorySnapshot {
@@ -43,7 +46,7 @@ pub struct RemoteEntry {
     pub kind: RemoteEntryKind,
     pub permissions: Option<RemotePermissions>,
     /// Server-reported bytes, never a recursively computed directory total.
-    pub size: Option<crate::RemoteSize>,
+    pub size: Option<u64>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum RemoteEntryKind {
@@ -128,26 +131,53 @@ impl std::fmt::Display for RemotePermissions {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct RemoteClient {
     registry: Arc<Registry>,
 }
+impl Default for RemoteClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl RemoteClient {
+    /// Control sockets live in `$XDG_RUNTIME_DIR/strop-ssh` when a socket
+    /// path there fits `sun_path`, else in a per-user directory under the
+    /// system temporary directory (`/tmp` when that is long too); the
+    /// directory is created private and refused when it is not.
     pub fn new() -> Self {
-        Self::default()
+        let user = format!("strop-ssh-{}", rustix::process::geteuid().as_raw());
+        let control = std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|dir| !dir.is_empty())
+            .map(|dir| std::path::PathBuf::from(dir).join("strop-ssh"))
+            .into_iter()
+            .chain([
+                std::env::temp_dir().join(&user),
+                std::path::Path::new("/tmp").join(&user),
+            ])
+            .find(|dir| crate::exec::fits_socket_path(dir))
+            .unwrap_or_else(|| std::path::Path::new("/tmp").join(user));
+        Self::with_control_dir(control)
     }
 
+    pub fn with_control_dir(control: std::path::PathBuf) -> Self {
+        Self {
+            registry: Arc::new(Registry::new(control)),
+        }
+    }
+
+    /// A whole text file of at most `max` bytes.
     pub fn read(
         &self,
         location: &RemoteLocation,
-        selection: ReadSelection,
+        max: u64,
         token: &CancelToken,
-    ) -> Result<RemoteSnapshot, RemoteReadError> {
+    ) -> Result<RemoteSnapshot, RemoteError> {
         match self.request(
             location.endpoint(),
             Request::Read {
                 location: location.clone(),
-                selection,
+                max,
             },
             token,
             false,
@@ -159,14 +189,12 @@ impl RemoteClient {
     pub fn open(
         &self,
         location: &RemoteLocation,
-        selection: ReadSelection,
         token: &CancelToken,
-    ) -> Result<RemoteResource, RemoteReadError> {
+    ) -> Result<RemoteResource, RemoteError> {
         match self.request(
             location.endpoint(),
             Request::Open {
                 location: location.clone(),
-                selection,
             },
             token,
             false,
@@ -180,7 +208,7 @@ impl RemoteClient {
         &self,
         location: &RemoteLocation,
         token: &CancelToken,
-    ) -> Result<RemoteDirectorySnapshot, RemoteReadError> {
+    ) -> Result<RemoteDirectorySnapshot, RemoteError> {
         match self.request(
             location.endpoint(),
             Request::List {
@@ -199,7 +227,7 @@ impl RemoteClient {
         &self,
         directory: &RemoteFile,
         token: &CancelToken,
-    ) -> Result<Vec<RemoteEntry>, RemoteReadError> {
+    ) -> Result<Vec<RemoteEntry>, RemoteError> {
         match self.request(
             directory.endpoint(),
             Request::ListConnected {
@@ -216,24 +244,111 @@ impl RemoteClient {
         &self,
         endpoint: &RemoteEndpoint,
         token: &CancelToken,
-    ) -> Result<ConnectionLease, RemoteReadError> {
+    ) -> Result<ConnectionLease, RemoteError> {
         match self.request(endpoint, Request::Connect, token, false)? {
             Reply::Lease(lease) => Ok(lease),
             _ => Err(wrong_reply()),
         }
     }
-    /// Worker-only: revoke admission, then wait for the actor's cleanup result.
-    pub fn disconnect(&self, endpoint: &RemoteEndpoint) -> Result<(), RemoteReadError> {
-        if let Some(handle) = self.registry.remove(endpoint) {
-            handle.wait_stopped()?;
+    /// Save `bytes` to `file` under `expect`; the new stamp is what the
+    /// next save compares against.
+    pub fn save(
+        &self,
+        file: &RemoteFile,
+        bytes: Vec<u8>,
+        expect: Expect,
+        token: &CancelToken,
+    ) -> Result<Stamp, RemoteError> {
+        match self.request(
+            file.endpoint(),
+            Request::Save {
+                file: file.clone(),
+                bytes,
+                expect,
+            },
+            token,
+            false,
+        )? {
+            Reply::Saved(stamp) => Ok(stamp),
+            _ => Err(wrong_reply()),
         }
-        Ok(())
     }
-    pub fn disconnect_all(&self) -> Result<(), RemoteReadError> {
+    /// What is at `file` (not following a final symlink), `None` when
+    /// nothing is.
+    pub fn observe(
+        &self,
+        file: &RemoteFile,
+        token: &CancelToken,
+    ) -> Result<Option<RemoteAttrs>, RemoteError> {
+        match self.request(
+            file.endpoint(),
+            Request::Observe { file: file.clone() },
+            token,
+            false,
+        )? {
+            Reply::Observed(attrs) => Ok(attrs),
+            _ => Err(wrong_reply()),
+        }
+    }
+    /// One file-management operation on `endpoint`'s host; it never
+    /// replaces an existing name. The result is what the touched name
+    /// holds afterwards (`None` after a removal).
+    pub fn mutate(
+        &self,
+        endpoint: &RemoteEndpoint,
+        mutation: Mutation,
+        token: &CancelToken,
+    ) -> Result<Option<RemoteAttrs>, RemoteError> {
+        match self.request(
+            endpoint,
+            Request::Mutate {
+                endpoint: endpoint.clone(),
+                mutation,
+            },
+            token,
+            false,
+        )? {
+            Reply::Observed(attrs) => Ok(attrs),
+            _ => Err(wrong_reply()),
+        }
+    }
+    /// The endpoint's authenticated master for exec, connecting first
+    /// when there is none: `rg`, `git`, language servers and terminals
+    /// run as channels on it.
+    pub fn host(
+        &self,
+        endpoint: &RemoteEndpoint,
+        token: &CancelToken,
+    ) -> Result<ExecHost, RemoteError> {
+        let lease = self.connect(endpoint, token)?;
+        lease.inner.host().ok_or_else(|| {
+            RemoteError::bare(
+                RemoteStage::Session,
+                RemoteFailureKind::NotConnected,
+                "the session has no ssh master to run commands on",
+            )
+            .remote(&endpoint.to_string())
+        })
+    }
+    /// The endpoint's master when its session is connected right now: a
+    /// registry lookup, no I/O, so it may run on the input path.
+    pub fn connected_host(&self, endpoint: &RemoteEndpoint) -> Option<ExecHost> {
+        self.registry
+            .connected_handle(endpoint)
+            .and_then(|handle| handle.host())
+    }
+    /// Stop the endpoint's session and its master, waiting for both.
+    pub fn disconnect(&self, endpoint: &RemoteEndpoint) -> Result<(), RemoteError> {
+        match self.registry.remove(endpoint) {
+            Some(handle) => retire(&handle),
+            None => Ok(()),
+        }
+    }
+    pub fn disconnect_all(&self) -> Result<(), RemoteError> {
         let handles = self.registry.clear();
         let mut failure = None;
         for handle in handles {
-            if let Err(error) = handle.wait_stopped() {
+            if let Err(error) = retire(&handle) {
                 failure.get_or_insert(error);
             }
         }
@@ -250,15 +365,15 @@ impl RemoteClient {
         request: Request,
         cancel: &CancelToken,
         connected_only: bool,
-    ) -> Result<Reply, RemoteReadError> {
+    ) -> Result<Reply, RemoteError> {
         if cancel.is_cancelled() {
             return Err(cancelled());
         }
         let inner = if connected_only {
             self.registry.connected_handle(endpoint).ok_or_else(|| {
-                RemoteReadError::bare(
-                    ReadStage::Session,
-                    ReadFailureKind::NotConnected,
+                RemoteError::bare(
+                    RemoteStage::Session,
+                    RemoteFailureKind::NotConnected,
                     "completion requires an existing authenticated connection",
                 )
             })?
@@ -275,9 +390,9 @@ impl RemoteClient {
             reply,
         };
         inner.jobs().try_send(job).map_err(|error| match error {
-            mpsc::TrySendError::Full(_) => RemoteReadError::bare(
-                ReadStage::Session,
-                ReadFailureKind::QueueFull,
+            mpsc::TrySendError::Full(_) => RemoteError::bare(
+                RemoteStage::Session,
+                RemoteFailureKind::QueueFull,
                 "remote session queue is full",
             ),
             mpsc::TrySendError::Disconnected(_) => stopped(),
@@ -297,24 +412,41 @@ impl RemoteClient {
         }
     }
 }
-fn cancelled() -> RemoteReadError {
-    RemoteReadError::bare(
-        ReadStage::Session,
-        ReadFailureKind::Cancelled,
+/// Wait for the actor's cleanup, then stop the master: channels still
+/// on it (a terminal, a language server) end with it.
+fn retire(handle: &EndpointHandle) -> Result<(), RemoteError> {
+    let stopped = handle.wait_stopped();
+    if let Some(host) = handle.host() {
+        if host.is_connected() {
+            host.disconnect().map_err(|error| {
+                RemoteError::bare(
+                    RemoteStage::Teardown,
+                    RemoteFailureKind::Io,
+                    error.to_string(),
+                )
+            })?;
+        }
+    }
+    stopped
+}
+fn cancelled() -> RemoteError {
+    RemoteError::bare(
+        RemoteStage::Session,
+        RemoteFailureKind::Cancelled,
         "remote request cancelled",
     )
 }
-fn stopped() -> RemoteReadError {
-    RemoteReadError::bare(
-        ReadStage::Session,
-        ReadFailureKind::Stopped,
+fn stopped() -> RemoteError {
+    RemoteError::bare(
+        RemoteStage::Session,
+        RemoteFailureKind::Stopped,
         "remote session stopped before delivering a result",
     )
 }
-fn wrong_reply() -> RemoteReadError {
-    RemoteReadError::bare(
-        ReadStage::Session,
-        ReadFailureKind::Protocol,
+fn wrong_reply() -> RemoteError {
+    RemoteError::bare(
+        RemoteStage::Session,
+        RemoteFailureKind::Protocol,
         "session reply does not match the accepted request",
     )
 }

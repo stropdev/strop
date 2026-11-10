@@ -145,9 +145,6 @@ impl Editor {
             }
             _ => self.permalink_rel_of(self.cur(), context)?,
         };
-        if self.remote_file().is_some() && !self.remote_window_complete() {
-            return Err("partial remote windows have no full-file line coordinates".into());
-        }
         let head_row = self.buf().line_of(self.head());
         let anchor_row = if matches!(
             self.mode,

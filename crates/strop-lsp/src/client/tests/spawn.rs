@@ -1,14 +1,16 @@
-//! Spawn-level protocol evidence against a real child process: the
-//! initialize payload's workspace fields, and the languages.toml config
-//! block answering a workspace/configuration pull (0.21.0 field report:
-//! pyright saw no workspaceFolders and the config block was inert).
+//! Spawn-level evidence against real child processes: the initialize
+//! payload's workspace fields, the languages.toml config block answering
+//! a workspace/configuration pull (0.21.0 field report: pyright saw no
+//! workspaceFolders and the config block was inert), and how a server
+//! that cannot run, exits or is asked to quit is reported.
 
 use super::*;
 use crate::registry;
 
 /// A minimal fake server: records initialize params, answers with empty
 /// capabilities, pulls workspace/configuration for section "python",
-/// records the answer, exits.
+/// records the answer, then exits — or, given `--stay`, waits for the
+/// client's shutdown/exit.
 const FAKE_SERVER: &str = r#"
 import sys, json, os
 def read_msg():
@@ -25,6 +27,7 @@ def send(payload):
     sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
     sys.stdout.buffer.flush()
 out = os.environ["FAKE_LSP_OUT"]
+stay = "--stay" in sys.argv
 while True:
     msg = read_msg()
     if msg.get("method") == "initialize":
@@ -36,8 +39,8 @@ while True:
     elif msg.get("id") == 99 and "result" in msg:
         with open(out + ".config", "w") as f:
             f.write(json.dumps(msg["result"]))
-        send({"jsonrpc": "2.0", "method": "exit"})
-        sys.exit(0)
+        if not stay:
+            sys.exit(0)
     elif msg.get("method") == "shutdown":
         send({"jsonrpc": "2.0", "id": msg["id"], "result": None})
     elif msg.get("method") == "exit":
@@ -67,9 +70,6 @@ fn initialize_carries_workspace_folders_and_config_answers_pulls() {
     )
     .unwrap();
     let config = serde_json::json!({"python": {"analysis": {"extraPaths": ["/opt/bb/lib"]}}});
-    // The child inherits this process's environment; point the fake
-    // server's output at the fixture before spawning.
-    std::env::set_var("FAKE_LSP_OUT", &out);
     let script_arg = script.to_string_lossy().into_owned();
     let spec = registry::ServerSpec {
         name: "fake",
@@ -80,31 +80,17 @@ fn initialize_carries_workspace_folders_and_config_answers_pulls() {
         project_executable: false,
     };
     let (tx, rx) = channel();
-    let client = Client::spawn(
-        &spec,
-        crate::target::Workspace::Local {
-            root: dir.path().to_path_buf(),
-        },
-        tx,
-        Some(loopback_worker()),
-    );
-    let client = client.expect("spawn");
+    let client = spawn_local(&spec, dir.path(), &out, tx);
     // Ready after initialize; the fake server then pulls configuration
-    // and exits — the client reports the exit (not a quit we asked for).
-    let mut ready = false;
-    let mut exited = false;
-    for event in rx.iter() {
-        match event {
-            LspEvent::Ready { .. } => ready = true,
-            LspEvent::Failed { .. } => {
-                exited = true;
-                break;
-            }
-            _ => {}
-        }
-    }
+    // and exits — the client reports the exit (not a quit we asked for)
+    // with the process's real status.
+    let (ready, failure) = ready_then_failure(&rx);
     assert!(ready, "the fake server completed initialize");
-    assert!(exited, "the fake server exited after its pull");
+    let hint = failure.expect("the fake server's exit is reported");
+    assert!(
+        hint.contains("fake exited unexpectedly (exit status: 0)"),
+        "the real exit status rides the hint: {hint}"
+    );
     drop(client);
     let params: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
@@ -139,162 +125,174 @@ fn initialize_carries_workspace_folders_and_config_answers_pulls() {
     assert!(init_frame.contains("\"payload\""));
 }
 
-// ---- worker-leased spawn (0058 WK10) ---------------------------------------
-
-/// The loopback lease: the real in-process serve loop over pipes — the
-/// same handlers the shipped worker serves, crossed through the codec.
-#[cfg(unix)]
-fn loopback_worker() -> strop_worker_client::Worker {
-    strop_worker_client::Worker::connect_with(|| {
-        let (client_read, worker_write) = std::io::pipe()?;
-        let (worker_read, client_write) = std::io::pipe()?;
-        std::thread::spawn(move || {
-            if let Err(error) = strop_worker::serve::run(worker_read, worker_write) {
-                eprintln!("test worker serve failed: {error}");
-            }
-        });
-        Ok(strop_worker_client::Transport {
-            reader: Box::new(client_read),
-            writer: Box::new(client_write),
-            child: None,
-            stderr: None,
-        })
-    })
-}
-
-/// Spawn through the real loopback worker lease in a remote-shaped
-/// workspace, without a legacy SSH/Python supervisor.
-#[cfg(unix)]
-fn spawn_through_worker(
+/// The fake server as a local process, its output pointed at `out`
+/// through the child's own environment (never this process's).
+fn spawn_local(
     spec: &registry::ServerSpec<'_>,
     root: &std::path::Path,
-    tx: Sender<LspEvent>,
-) -> Result<Client, super::super::SpawnError> {
-    let lease = loopback_worker();
-    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://box.example").unwrap();
+    out: &std::path::Path,
+    tx: std::sync::mpsc::Sender<LspEvent>,
+) -> Client {
+    let mut command = spec.local_command(root);
+    command.env("FAKE_LSP_OUT", out);
     Client::spawn(
         spec,
-        crate::target::Workspace::Remote {
-            endpoint,
+        crate::target::Workspace::Local {
             root: root.to_path_buf(),
         },
         tx,
-        Some(lease),
+        command,
     )
+    .expect("spawn")
 }
 
-/// Spawn/handshake/exit through the worker lease: the fake server runs
-/// as the worker's supervised exec, initialize crosses the bridged
-/// streams, and the post-handshake exit lands as a classified failure
-/// event — `(Exit(0))` from the worker's terminal status, never a
-/// guessed code.
+/// Whether `Ready` arrived, then the first `Failed` hint (bounded wait).
+fn ready_then_failure(rx: &Receiver<LspEvent>) -> (bool, Option<String>) {
+    let mut ready = false;
+    while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        match event {
+            LspEvent::Ready { .. } => ready = true,
+            LspEvent::Failed { hint, .. } => return (ready, Some(hint)),
+            _ => {}
+        }
+    }
+    (ready, None)
+}
+
+/// Every `Failed` hint of a client whose server leaves on its own:
+/// joined first, so nothing is still in flight.
+fn failures(client: Client, rx: &Receiver<LspEvent>) -> Vec<String> {
+    client.wait(std::time::Duration::from_secs(20));
+    rx.try_iter()
+        .filter_map(|event| match event {
+            LspEvent::Failed { hint, .. } => Some(hint),
+            _ => None,
+        })
+        .collect()
+}
+
+fn spec_for<'a>(command: &'a str, args: &'a [String]) -> registry::ServerSpec<'a> {
+    registry::ServerSpec {
+        name: "fake",
+        command,
+        args,
+        install_hint: Some("install the server"),
+        init_options: None,
+        project_executable: false,
+    }
+}
+
+fn remote(root: &std::path::Path) -> crate::target::Workspace {
+    crate::target::Workspace::Remote {
+        endpoint: strop_workspace::RemoteEndpoint::parse("ssh://box.example").unwrap(),
+        root: root.to_path_buf(),
+    }
+}
+
+/// A local program that does not exist is a `Failed` event naming the
+/// command, the workspace and the OS reason — raised on the client's
+/// thread, never a panic or silence.
+#[test]
+fn missing_local_program_fails_with_a_hint_naming_the_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let spec = spec_for("strop-no-such-server-binary", &[]);
+    let (tx, rx) = channel();
+    let workspace = crate::target::Workspace::Local {
+        root: dir.path().to_path_buf(),
+    };
+    let client = Client::spawn(&spec, workspace, tx, spec.local_command(dir.path()))
+        .expect("spawn returns; the failure is an event");
+    let hint = ready_then_failure(&rx)
+        .1
+        .expect("the launch failure is reported");
+    let expected = format!(
+        "cannot run `strop-no-such-server-binary` on {}: ",
+        dir.path().display()
+    );
+    assert!(hint.starts_with(&expected), "{hint}");
+    assert!(hint.ends_with("— install the server"), "{hint}");
+    drop(client);
+}
+
+/// The remote shape: `ssh` runs the server through the remote shell, so
+/// a missing program is exit 127 with the shell's complaint on stderr.
+/// That is still "cannot run", not a crash.
 #[cfg(unix)]
 #[test]
-fn worker_leased_spawn_handshakes_and_classifies_exit() {
-    let _fixture_lock = super::super::trace_io::TRACE_SESSION.lock();
+fn remote_command_not_found_is_a_cannot_run_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let spec = spec_for("strop-missing-remote", &[]);
+    let mut command = std::process::Command::new("sh");
+    command.args([
+        "-c",
+        "echo 'sh: 1: strop-missing-remote: not found' >&2; exit 127",
+    ]);
+    let (tx, rx) = channel();
+    let client = Client::spawn(&spec, remote(dir.path()), tx, command).expect("spawn");
+    let hints = failures(client, &rx);
+    let expected = format!(
+        "cannot run `strop-missing-remote` on ssh://box.example{}: \
+         sh: 1: strop-missing-remote: not found — install the server",
+        dir.path().display()
+    );
+    assert_eq!(hints, [expected], "one failure, the real one");
+}
+
+/// Exit 255 from the remote command is `ssh` failing, and says so.
+#[cfg(unix)]
+#[test]
+fn remote_ssh_failure_is_named_in_the_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    let spec = spec_for("fake-server", &[]);
+    let mut command = std::process::Command::new("sh");
+    command.args(["-c", "echo 'Connection refused' >&2; exit 255"]);
+    let (tx, rx) = channel();
+    let client = Client::spawn(&spec, remote(dir.path()), tx, command).expect("spawn");
+    let hints = failures(client, &rx);
+    assert!(
+        hints.iter().any(|hint| hint
+            .starts_with("fake exited unexpectedly (ssh failed, exit status: 255)")
+            && hint.contains("; stderr: Connection refused")),
+        "{hints:?}"
+    );
+}
+
+/// A quit the client asked for is not a failure: shutdown/exit reach the
+/// server, it leaves, and no `Failed` event follows.
+#[cfg(unix)]
+#[test]
+fn requested_quit_reports_no_failure() {
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("fake_server.py");
     std::fs::write(&script, FAKE_SERVER).unwrap();
     let out = dir.path().join("params.json");
-    std::env::set_var("FAKE_LSP_OUT", &out);
-    let script_arg = script.to_string_lossy().into_owned();
-    let config = serde_json::json!({"python": {"analysis": {"extraPaths": ["/worker"]}}});
-    let spec = registry::ServerSpec {
-        name: "fake",
-        command: "python3",
-        args: std::slice::from_ref(&script_arg),
-        install_hint: None,
-        init_options: Some(&config),
-        project_executable: false,
-    };
+    let args = [script.to_string_lossy().into_owned(), "--stay".to_string()];
+    let spec = spec_for("python3", &args);
     let (tx, rx) = channel();
-    let client = spawn_through_worker(&spec, dir.path(), tx).expect("spawn through the worker");
+    let client = spawn_local(&spec, dir.path(), &out, tx);
     let mut ready = false;
-    let mut exit_hint = None;
     while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
         match event {
-            LspEvent::Ready { .. } => ready = true,
-            LspEvent::Failed { hint, .. } => {
-                exit_hint = Some(hint);
+            LspEvent::Ready { .. } => {
+                ready = true;
                 break;
             }
+            LspEvent::Failed { hint, .. } => panic!("failed before quit: {hint}"),
             _ => {}
         }
     }
-    assert!(ready, "the fake server completed initialize over the lease");
-    let hint = exit_hint.expect("the server's exit is reported");
+    assert!(ready, "the fake server completed initialize");
+    client.shutdown();
+    client.wait(std::time::Duration::from_secs(20));
+    let failed: Vec<_> = rx
+        .try_iter()
+        .filter_map(|event| match event {
+            LspEvent::Failed { hint, .. } => Some(hint),
+            _ => None,
+        })
+        .collect();
     assert!(
-        hint.contains("(Exit(0))"),
-        "the worker's classified exit status rides the hint: {hint}"
+        failed.is_empty(),
+        "a requested quit is not a failure: {failed:?}"
     );
-    drop(client);
-    let params: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
-    assert_eq!(params["workspaceFolders"].as_array().unwrap().len(), 1);
-    let answer: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(format!("{}.config", out.display())).unwrap())
-            .unwrap();
-    assert_eq!(
-        answer,
-        serde_json::json!([{"analysis": {"extraPaths": ["/worker"]}}])
-    );
-}
-
-/// A command the worker cannot launch is a typed failure naming the
-/// command and the worker's launch classification — never silence.
-#[cfg(unix)]
-#[test]
-fn worker_leased_spawn_classifies_launch_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let spec = registry::ServerSpec {
-        name: "fake",
-        command: "strop-no-such-server-binary",
-        args: &[],
-        install_hint: Some("install the server"),
-        init_options: None,
-        project_executable: false,
-    };
-    let (tx, rx) = channel();
-    let client = spawn_through_worker(&spec, dir.path(), tx).expect("spawn returns");
-    let mut failure = None;
-    while let Ok(event) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
-        if let LspEvent::Failed { hint, .. } = event {
-            failure = Some(hint);
-            break;
-        }
-    }
-    let hint = failure.expect("the launch failure is reported");
-    assert!(
-        hint.contains("strop-no-such-server-binary"),
-        "the command is named: {hint}"
-    );
-    drop(client);
-}
-
-#[test]
-fn lsp_without_worker_refuses_before_launch_in_every_namespace() {
-    let endpoint = strop_workspace::RemoteEndpoint::parse("ssh://fixture.example").unwrap();
-    let spec = registry::ServerSpec {
-        name: "missing",
-        command: "strop-no-such-server-binary",
-        args: &[],
-        install_hint: None,
-        init_options: None,
-        project_executable: false,
-    };
-    let (tx, _rx) = channel();
-    for workspace in [
-        crate::target::Workspace::Local {
-            root: "/workspace".into(),
-        },
-        crate::target::Workspace::Remote {
-            endpoint,
-            root: "/workspace".into(),
-        },
-    ] {
-        assert!(matches!(
-            Client::spawn(&spec, workspace, tx.clone(), None),
-            Err(super::super::SpawnError::Unavailable(_))
-        ));
-    }
 }

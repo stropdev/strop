@@ -129,13 +129,15 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
         titles.contains("╭ 1 ssh://fixture/repo/app.log"),
         "{titles}"
     );
-    assert!(titles.contains("[RO]"), "{titles}");
+    assert!(
+        !titles.contains("[RO]"),
+        "a connected host is editable: {titles}"
+    );
     assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
 
     let grid = draw(&mut editor, 48, 16);
     let titles = row_symbols(&grid, 0, 0, 48).join("");
     assert!(titles.contains("ssh://"), "{titles}");
-    assert!(titles.contains("[RO]"), "{titles}");
 
     editor.focus_pane(0);
     let grid = draw(&mut editor, 100, 6);

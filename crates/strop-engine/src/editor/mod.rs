@@ -72,7 +72,6 @@ pub mod transact;
 mod undo;
 pub mod view;
 mod visual;
-mod worker_catalog;
 mod workspaces;
 
 pub use collections::{CollectionRow, CollectionRowInfo};
@@ -84,7 +83,6 @@ pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
 pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
-pub use namespace::{CapabilityDecision, NamespaceCapabilities, WorkspaceCapability};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{
     checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, Previews,
@@ -101,7 +99,7 @@ pub use normal::{
 };
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
-pub use remote::{RemoteEvent, RemoteView};
+pub use remote::RemoteEvent;
 pub use remote_completion::{RemoteCompletionKey, RemoteCompletionResult};
 pub use resolution::{ResolutionEvent, ResolutionState};
 use std::collections::HashMap;
@@ -721,11 +719,6 @@ impl Drop for Editor {
                 client.wait(Duration::from_millis(500));
             }
         }
-        // Job clones can outlive the editor. Close the owner's leases
-        // permanently instead of waiting for the last clone's Drop:
-        // no outstanding job may reconnect or publish a new worker.
-        self.remote.workers.close_all();
-        self.filesystem.worker().close();
     }
 }
 

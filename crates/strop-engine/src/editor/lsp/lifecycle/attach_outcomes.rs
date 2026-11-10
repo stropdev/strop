@@ -294,7 +294,7 @@ mod tests {
             &spec,
             Workspace::Local { root: root.clone() },
             client_tx,
-            Some(editor.filesystem.worker().clone()),
+            spec.local_command(&root),
         )
         .expect("the late-attaching client fixture starts");
         let server = client.id();

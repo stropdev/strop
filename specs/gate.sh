@@ -34,6 +34,5 @@ if [ "$violations" != "$expected" ]; then
 fi
 
 echo "editor model gate: bounded checks clean; freshness mutant rejected"
-# plans/0086: the three TLC models on probation as counterexample finders.
+# plans/0086: the TLC models on probation as counterexample finders.
 sh specs/search-gate.sh
-sh specs/worker-session-gate.sh

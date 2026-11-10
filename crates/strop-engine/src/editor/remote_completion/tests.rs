@@ -133,55 +133,10 @@ fn host_candidates_apply_then_cycle_without_new_requests() {
 }
 
 #[test]
-fn tail_range_browse_and_follow_complete_their_uri_operand() {
+fn browse_completes_its_uri_operand() {
     let mut e = editor();
     suppress(&mut e);
-    // :tail BYTES URI keeps the byte count through the apply.
-    e.feed_text(":tail 64k ssh://bui");
-    e.feed_text("<tab>");
-    let ticket = ticket_for(
-        &e,
-        ":tail 64k ssh://bui",
-        RemoteCompletionQuery::Hosts {
-            partial: "bui".into(),
-        },
-    );
-    deliver(&mut e, ticket, hosts_result(&["ssh://build.example.com"]));
-    assert_eq!(e.pending.text(), ":tail 64k ssh://build.example.com");
-    // :tail without a byte count completes too.
-    e.feed_text("<esc><esc>");
-    e.feed_text(":tail ssh://bui");
-    e.feed_text("<tab>");
-    let ticket = ticket_for(
-        &e,
-        ":tail ssh://bui",
-        RemoteCompletionQuery::Hosts {
-            partial: "bui".into(),
-        },
-    );
-    deliver(&mut e, ticket, hosts_result(&["ssh://build.example.com"]));
-    assert_eq!(e.pending.text(), ":tail ssh://build.example.com");
-    // :range with a missing BYTES refuses with the shape hint.
-    e.feed_text("<esc><esc>");
-    e.feed_text(":range 100 ssh://bui");
-    e.feed_text("<tab>");
-    assert_eq!(e.message, ":range needs START BYTES before the URI");
-    assert!(e.remote_completion.ticket().is_none());
-    // :range START BYTES URI completes and keeps both numbers.
-    e.feed_text("<esc><esc>");
-    e.feed_text(":range 100 4k ssh://bui");
-    e.feed_text("<tab>");
-    let ticket = ticket_for(
-        &e,
-        ":range 100 4k ssh://bui",
-        RemoteCompletionQuery::Hosts {
-            partial: "bui".into(),
-        },
-    );
-    deliver(&mut e, ticket, hosts_result(&["ssh://build.example.com"]));
-    assert_eq!(e.pending.text(), ":range 100 4k ssh://build.example.com");
     // :browse completes paths like :e does.
-    e.feed_text("<esc><esc>");
     e.feed_text(":browse ssh://build/var/l");
     e.feed_text("<tab>");
     let ticket = ticket_for(
@@ -201,11 +156,6 @@ fn tail_range_browse_and_follow_complete_their_uri_operand() {
         },
     );
     assert!(e.message.contains("never connects"));
-    // :follow with no operand is not a completion at all.
-    e.feed_text("<esc><esc>");
-    e.feed_text(":follow");
-    e.feed_text("<tab>");
-    assert!(e.remote_completion.ticket().is_none());
 }
 
 #[test]

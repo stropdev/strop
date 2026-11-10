@@ -27,26 +27,6 @@ fn main() -> ExitCode {
 
 fn launch() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
-    // `strop --worker-stdio` (0058 WK04): the unified native worker.
-    // This entry precedes CLI parsing, TUI setup, session restoration,
-    // tracing and config: stdout is protocol frames from the first
-    // byte, diagnostics stay on private bounded stderr. (The separate
-    // `--terminal-helper` process is gone in WK12: PTYs are the
-    // worker's own exec family now.)
-    #[cfg(unix)]
-    if arguments
-        .first()
-        .is_some_and(|argument| argument == "--worker-stdio")
-    {
-        if arguments.len() != 1 {
-            return Err("worker mode takes no arguments".into());
-        }
-        // StdoutLock is !Send (worker request threads write too); the
-        // shared `Stdout` handle locks per write and serve's own writer
-        // mutex holds frame atomicity across the header/body/flush calls.
-        strop_worker::serve::run(io::stdin().lock(), io::stdout())?;
-        return Ok(());
-    }
     let options = cli::parse(arguments.clone())?;
     match &options.command {
         cli::Command::ReplayFull { trace } => {
@@ -136,7 +116,6 @@ fn execute(
         cli::Command::Headless {
             script,
             path,
-            remote_view,
             stdin,
         } => {
             let script = std::fs::read_to_string(script)?;
@@ -163,7 +142,7 @@ fn execute(
                 &mut editor,
                 path.as_ref().and_then(|location| location.line),
             );
-            let open = startup_open(&path, remote_view, directory.then_some(editor.cwd()));
+            let open = startup_open(&path, false, directory.then_some(editor.cwd()));
             headless::run_script(
                 &mut editor,
                 &script,
@@ -176,7 +155,6 @@ fn execute(
         cli::Command::Edit {
             path,
             readonly,
-            remote_view,
             stdin,
         } => {
             let (mut buffer, directory) = initial_buffer(&path)?;
@@ -214,7 +192,7 @@ fn execute(
             let tick = editor.tape().sample_tick();
             editor.recorded_action(
                 editor::trace::drive::Action::Start {
-                    open: startup_open(&path, remote_view, directory.then_some(editor.cwd())),
+                    open: startup_open(&path, readonly, directory.then_some(editor.cwd())),
                 },
                 tick,
             )?;
@@ -246,9 +224,11 @@ fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<(Buffer, bool)
     Ok((buffer, directory.is_some()))
 }
 
+/// The open a remote operand needs at startup (a local one is the
+/// initial buffer already).
 fn startup_open(
     location: &Option<cli::FileLocation>,
-    view: editor::remote::RemoteView,
+    readonly: bool,
     directory: Option<&std::path::Path>,
 ) -> Option<editor::trace::drive::StartupOpen> {
     if let Some(directory) = directory {
@@ -259,9 +239,9 @@ fn startup_open(
     }
     let location = location.as_ref()?;
     let intent = match location.path {
-        files::FileTarget::Remote(_) => editor::io::OpenIntent::RemoteView {
-            view,
-            line: location.line,
+        files::FileTarget::Remote(_) => match location.line {
+            Some(line) => editor::io::OpenIntent::AtLine { line },
+            None => editor::io::OpenIntent::Switch { readonly },
         },
         files::FileTarget::Local(_) => return None,
     };
@@ -366,9 +346,6 @@ fn print_help() {
                 "session-start palette; :theme lists and switches live",
             ),
             ("    --remote URL", "shorthand for `strop remote URL`"),
-            ("    --follow", "follow a growing remote file"),
-            ("    --tail BYTES", "remote view: the last BYTES"),
-            ("    --range A:B", "remote view: one byte range"),
             (
                 "    --script PATH",
                 "headless driver script (same as `headless`)",

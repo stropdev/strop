@@ -25,9 +25,6 @@ def claims : List Name := [
   ``Strop.Kernel.map_through_edits_monotone,
   ``Strop.Kernel.map_through_edits_composition,
   ``Strop.Kernel.consecutive_of_batchOk,
-  ``Strop.Kernel.header_admitted_spec,
-  ``Strop.Kernel.body_admitted_spec,
-  ``Strop.Kernel.frame_ready_spec,
   ``Strop.Kernel.next_generation_spec,
   ``Strop.Kernel.index_for_len_spec,
 ]

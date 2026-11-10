@@ -1,12 +1,8 @@
 #!/bin/sh
-# Shell-level fixtures for .github/scripts/release-catalog.py (0056 AR12,
-# 0058 WK05):
+# Shell-level fixtures for .github/scripts/release-catalog.py (0056 AR12):
 #   - catalog generation is deterministic for fixed inputs
-#   - the WK05 wire shape is pinned: worker manifest (protocol, min_editor,
-#     targets) + per-artifact byte sizes
+#   - the wire shape is pinned: version facts + per-artifact byte sizes
 #   - a tampered checksum sidecar fails generation
-#   - invalid worker facts (protocol < 1, min_editor postdating the release)
-#     fail generation, and worker divergence fails public verification
 #   - non-Linux-x86_64 artifact targets are rejected
 #   - verify accepts matching local/public catalogs and rejects divergence
 # Run: sh tests/release-catalog.sh
@@ -40,8 +36,7 @@ done
 
 gen() { # out
     python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/dist" \
-        --published-at "2026-01-01T00:00:00Z" \
-        --worker-protocol 1 --worker-min-editor "9.0.0" --out "$1" >/dev/null
+        --published-at "2026-01-01T00:00:00Z" --out "$1" >/dev/null
 }
 
 # --- deterministic generation ---------------------------------------------
@@ -56,39 +51,18 @@ grep -q '"published_at": "2026-01-01T00:00:00Z"' "$WORK/a.json" \
     || fail "catalog published_at missing"
 ok "deterministic catalog generation"
 
-# --- WK05 wire shape: worker manifest + artifact byte sizes -----------------
-# This is the exact shape strop-worker-deploy parses; both ends pin it.
+# --- wire shape: version facts + artifact byte sizes ----------------------
+# `strop update`, install.sh and the website parse this shape.
 python3 - "$WORK/a.json" <<'PIN' || fail "catalog wire shape drifted"
 import json, sys
 catalog = json.load(open(sys.argv[1], encoding="utf-8"))
 assert set(catalog) == {"schema", "product", "version", "tag",
-                        "published_at", "artifacts", "worker"}, set(catalog)
-worker = catalog["worker"]
-assert worker == {"protocol": 1,
-                  "min_editor": "9.0.0",
-                  "targets": sorted(a["target"] for a in catalog["artifacts"])}, \
-    worker
-assert isinstance(worker["protocol"], int)
+                        "published_at", "artifacts"}, set(catalog)
 for artifact in catalog["artifacts"]:
     assert set(artifact) == {"target", "name", "sha256", "bytes", "url"}, artifact
     assert isinstance(artifact["bytes"], int) and artifact["bytes"] > 0, artifact
 PIN
-ok "WK05 worker manifest wire shape pinned"
-
-# --- invalid worker facts fail generation -----------------------------------
-if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/dist" \
-    --published-at "2026-01-01T00:00:00Z" \
-    --worker-protocol 0 --worker-min-editor "9.0.0" \
-    --out "$WORK/bad1.json" 2>/dev/null; then
-    fail "worker protocol 0 did not fail catalog generation"
-fi
-if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/dist" \
-    --published-at "2026-01-01T00:00:00Z" \
-    --worker-protocol 1 --worker-min-editor "9.9.10" \
-    --out "$WORK/bad2.json" 2>/dev/null; then
-    fail "min_editor postdating the release did not fail catalog generation"
-fi
-ok "invalid worker facts rejected"
+ok "catalog wire shape pinned"
 
 # --- tampered sidecar fails generation -------------------------------------
 SIDECAR="$WORK/dist/strop-$VERSION-x86_64-unknown-linux-musl.tar.gz.sha256"
@@ -98,7 +72,6 @@ printf '0000000000000000000000000000000000000000000000000000000000000000  %s\n' 
     > "$SIDECAR"
 if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/dist" \
     --published-at "2026-01-01T00:00:00Z" \
-    --worker-protocol 1 --worker-min-editor "9.0.0" \
     --out "$WORK/c.json" 2>/dev/null; then
     fail "tampered sidecar did not fail catalog generation"
 fi
@@ -117,7 +90,6 @@ digest = hashlib.sha256(path.read_bytes()).hexdigest()
 path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n")
 SIDECAR
     if python3 "$SCRIPT" catalog --tag "v$VERSION" --dist "$WORK/retired-dist" \
-        --worker-protocol 1 --worker-min-editor "9.0.0" \
         --out "$WORK/retired.json" >/dev/null 2>&1; then
         fail "$target was advertised in the current release catalog"
     fi
@@ -136,12 +108,6 @@ sed 's/"sha256": "[0-9a-f]*"/"sha256": "deadbeef"/' "$WORK/local.json" \
 if python3 "$SCRIPT" verify --local "$WORK/local.json" \
     --public "$WORK/public-diverged.json" 2>/dev/null; then
     fail "verify accepted a diverged public catalog"
-fi
-sed 's/"protocol": 1/"protocol": 2/' "$WORK/local.json" \
-    > "$WORK/public-worker-diverged.json"
-if python3 "$SCRIPT" verify --local "$WORK/local.json" \
-    --public "$WORK/public-worker-diverged.json" 2>/dev/null; then
-    fail "verify accepted a diverged worker manifest"
 fi
 ok "public catalog verification"
 

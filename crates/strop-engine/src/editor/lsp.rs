@@ -66,14 +66,7 @@ impl Editor {
         &self,
         document: strop_core::id::DocumentId,
     ) -> Option<ResourceLocation> {
-        if self
-            .docs
-            .get(document)?
-            .remote_metadata()
-            .is_some_and(|source| !source.window.is_complete() || self.remote_following(document))
-        {
-            return None;
-        }
+        self.docs.get(document)?;
         self.lsp_doc_path(document)
     }
 

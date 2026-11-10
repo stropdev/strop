@@ -9,8 +9,6 @@ mod prepare;
 mod reconcile;
 mod recovery;
 mod render;
-#[cfg(test)]
-mod session_tests;
 mod shutdown;
 #[cfg(test)]
 mod tests;
@@ -79,9 +77,8 @@ pub(crate) struct Attempt {
     lsp_renames: lsp_rename::RenameServers,
 }
 pub(crate) struct FsState {
-    /// The session's local worker lease (0058 WK04): local user-resource
-    /// I/O rides it; remote endpoints keep their owned SSH helper.
-    worker: strop_worker_client::Worker,
+    /// The local filesystem, in process.
+    local: super::namespace::LocalFs,
     environment: strop_fs::Environment,
     preparing: Option<Ticket<FsKey>>,
     preparing_copies: HashMap<ResourceLocation, ropey::Rope>,
@@ -95,7 +92,7 @@ pub(crate) struct FsState {
 impl Default for FsState {
     fn default() -> Self {
         Self {
-            worker: super::namespace::local_worker(),
+            local: super::namespace::LocalFs::default(),
             environment: strop_fs::Environment::capture(),
             preparing: None,
             preparing_copies: HashMap::new(),
@@ -109,10 +106,10 @@ impl Default for FsState {
     }
 }
 impl FsState {
-    /// The session's local worker lease; prepared authority is bound to
-    /// the worker incarnation that minted it.
-    pub(crate) fn worker(&self) -> &strop_worker_client::Worker {
-        &self.worker
+    /// The local filesystem; prepared authority is bound to its one
+    /// execution context.
+    pub(crate) fn local(&self) -> &super::namespace::LocalFs {
+        &self.local
     }
     pub(crate) fn pending(&self) -> bool {
         self.preparing.is_some()
@@ -373,8 +370,8 @@ impl Editor {
             }
         }
         let tx = self.io.tx.clone();
-        let worker = self.filesystem.worker().clone();
-        let remote = self.remote.workers.clone();
+        let local = self.filesystem.local().clone();
+        let client = self.remote_client();
         let handle = worker::spawn_effect(
             "strop-fs-apply",
             move |outcome| {
@@ -384,8 +381,8 @@ impl Editor {
             },
             move |token| {
                 Outcome::Success(crate::editor::namespace::execute(
-                    &worker,
-                    &remote,
+                    &local,
+                    &client,
                     &proposal.batch,
                     &proposal.copies,
                     &token,

@@ -128,7 +128,7 @@ pub struct CompletionUsage {
 /// The receiver owns newest-query admission and independent source freshness.
 pub type CompletionSink = Arc<dyn Fn(CompletionTransportEvent) + Send + Sync>;
 
-/// A metadata-only capacity wake. Clients keep only a Weak lease; an earlier
+/// A metadata-only capacity wake. Clients keep only a Weak reference; an earlier
 /// cancelled request cannot keep a disabled completion owner alive.
 pub type CompletionWake = Arc<dyn Fn() + Send + Sync>;
 

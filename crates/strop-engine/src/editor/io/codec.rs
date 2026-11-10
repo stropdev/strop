@@ -4,12 +4,11 @@ use crate::editor::document::{Directory, DocumentSource, JumpRecord, RemoteDocum
 use crate::editor::Document;
 use crate::files::FileTarget;
 use serde::{Deserialize, Serialize};
-use strop_remote::{ReadSelection, RemoteWindow};
+use strop_remote::Stamp;
 
 #[derive(Deserialize)]
 struct RemoteRecord {
-    window: RemoteWindow,
-    selection: ReadSelection,
+    stamp: Stamp,
     return_to: Option<JumpRecord>,
 }
 #[derive(Deserialize)]
@@ -21,8 +20,7 @@ struct Record {
 }
 #[derive(Serialize)]
 struct RemoteRecordRef<'a> {
-    window: RemoteWindow,
-    selection: ReadSelection,
+    stamp: Stamp,
     return_to: &'a Option<JumpRecord>,
 }
 #[derive(Serialize)]
@@ -40,8 +38,7 @@ impl Serialize for Opened {
             .document
             .remote_metadata()
             .map(|source| RemoteRecordRef {
-                window: source.window,
-                selection: source.selection,
+                stamp: source.stamp,
                 return_to: &source.return_to,
             });
         RecordRef {
@@ -87,27 +84,13 @@ impl<'de> Deserialize<'de> for Opened {
                             "remote completion must have canonical absolute identity",
                         )
                     })?;
-                    if metadata.window.length().get() != buffer.len_bytes() as u64
-                        || metadata
-                            .window
-                            .start()
-                            .get()
-                            .checked_add(metadata.window.length().get())
-                            .is_none_or(|end| end > metadata.window.file_size().get())
-                    {
-                        return Err(serde::de::Error::custom(
-                            "remote window does not match buffer bytes",
-                        ));
-                    }
                     Document::remote(
                         buffer,
                         RemoteDocument {
                             file,
-                            window: metadata.window,
-                            selection: metadata.selection,
+                            stamp: metadata.stamp,
                             connection: None,
                             return_to: metadata.return_to,
-                            write: None,
                         },
                     )
                 }

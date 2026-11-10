@@ -6,18 +6,9 @@ use strop_core::worker::{FailureKind, Load, Outcome};
 use strop_picker::PickerMsg;
 
 impl Editor {
-    /// Pump raw worker events into the notify queue and apply them
-    /// (headless path; the TUI's forwarder thread does the same move).
+    /// Apply what the watcher thread queued (headless path; the TUI
+    /// does the same on its `AppEvent::Notify` wake).
     pub fn drain_notify(&mut self) {
-        let mut events = Vec::new();
-        if let Some(rx) = &self.notify.rx {
-            while let Ok(event) = rx.try_recv() {
-                events.push(event);
-            }
-        }
-        for event in events {
-            self.notify.queue.push_event(event);
-        }
         self.handle_notify();
     }
 
@@ -393,7 +384,7 @@ pub mod remote {
     use std::rc::Rc;
     use strop_core::worker::{Completion, Outcome, Ticket};
     use strop_core::Buffer;
-    use strop_remote::ReadSelection;
+    use strop_remote::Stamp;
     use strop_trace::replay::Tape;
     use strop_workspace::RemoteFile;
 
@@ -414,27 +405,27 @@ pub mod remote {
         editor.tape = Rc::new(Tape::fixture(|_, _| {
             Err(std::io::Error::other("native work forbidden"))
         }));
-        let id = editor
-            .docs
-            .try_insert(document(text, ReadSelection::Full))
-            .unwrap();
+        let id = editor.docs.try_insert(document(text)).unwrap();
         editor.switch_to(id);
         editor
     }
 
-    pub fn document(text: &str, selection: ReadSelection) -> Document {
+    /// The stamp a fixture read of `text` observed.
+    pub fn stamp(text: &str) -> Stamp {
+        Stamp {
+            size: text.len() as u64,
+            mtime: 1,
+        }
+    }
+
+    pub fn document(text: &str) -> Document {
         Document::remote(
             Buffer::from_text(text),
             RemoteDocument {
                 file: RemoteFile::parse("ssh://fixture/repo/app.log").unwrap(),
-                window: strop_remote::RemoteWindow::resolve(
-                    &selection,
-                    strop_remote::RemoteSize::new(text.len() as u64),
-                ),
-                selection,
+                stamp: stamp(text),
                 connection: None,
                 return_to: None,
-                write: None,
             },
         )
     }
@@ -456,14 +447,9 @@ pub mod remote {
                 Buffer::from_text(text),
                 RemoteDocument {
                     file: file.absolute_file().unwrap().clone(),
-                    window: strop_remote::RemoteWindow::resolve(
-                        &ticket.key.selection,
-                        strop_remote::RemoteSize::new(text.len() as u64),
-                    ),
-                    selection: ticket.key.selection,
+                    stamp: stamp(text),
                     connection: None,
                     return_to: None,
-                    write: None,
                 },
             ),
             canonical: ticket.key.path.clone(),

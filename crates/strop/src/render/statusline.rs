@@ -444,28 +444,12 @@ fn file_display(editor: &Editor) -> (String, String) {
             }
             directory
         });
-        let mut name = file
+        let name = file
             .path()
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        if let Some(source) = editor.cur().remote_metadata() {
-            if !source.window.is_complete() || editor.remote_following(editor.current()) {
-                let window = source.window;
-                name = format!(
-                    "[{}{}..{}/{} B] {name}",
-                    if editor.remote_following(editor.current()) {
-                        "follow "
-                    } else {
-                        ""
-                    },
-                    window.start().get(),
-                    window.start().get() + window.length().get(),
-                    window.file_size().get()
-                );
-            }
-        }
         return (directory, name);
     }
     let buf = editor.buf();

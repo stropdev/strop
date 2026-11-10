@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Real SSH native worker on a Python-free host
+      - name: Remote editing over real SSH on a Python-free host
         run: docker compose run --build --rm ssh-pythonfree
 
   # The required status check on `main` (branch protection names `gate`):

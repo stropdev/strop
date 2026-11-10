@@ -1,6 +1,7 @@
-//! One captured launch intent. Display names and remote-looking paths are not
-//! execution authority; the engine selects the namespace's worker before
-//! constructing it, and the worker's exec admission owns the actual spawn.
+//! One captured launch intent: the program, arguments, directory and
+//! environment overlay of a terminal's child. Display names and
+//! remote-looking paths are not execution authority; the engine picks the
+//! [`crate::service::Target`] that decides where the launch runs.
 use crate::Error;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -47,13 +48,14 @@ impl Launch {
         }
     }
 
-    /// A shell launch for a non-local namespace (0058 WK12): never the
-    /// editor's environment — a local capture forwarded to a remote host
-    /// would leak it. The remote gets the terminal identity variables and
-    /// nothing else; its own profile supplies the rest. The editor cannot
-    /// know the remote user's shell, so `/bin/sh` resolves it there and
-    /// execs it as a login shell (0090 §4, B19) — the user lands in their
-    /// own shell with their own profile, never a bare `sh`.
+    /// A shell launch for a remote host, run in `directory` there through
+    /// [`crate::service::Target::Remote`]: never the editor's environment —
+    /// a local capture forwarded to a remote host would leak it. The remote
+    /// gets the terminal identity variables and nothing else; its own
+    /// profile supplies the rest. The editor cannot know the remote user's
+    /// shell, so `/bin/sh` resolves it there and execs it as a login shell
+    /// (0090 §4, B19) — the user lands in their own shell with their own
+    /// profile, never a bare `sh`.
     pub fn shell_remote(directory: PathBuf, command: Option<OsString>) -> Self {
         let mut arguments: Vec<OsString> = vec![
             "-c".into(),

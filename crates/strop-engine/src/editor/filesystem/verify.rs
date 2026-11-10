@@ -35,8 +35,8 @@ impl Editor {
             }
         }
         let tx = self.io.tx.clone();
-        let worker = self.filesystem.worker().clone();
-        let remote = self.remote.workers.clone();
+        let local = self.filesystem.local().clone();
+        let client = self.remote_client();
         let handle = worker::spawn(
             "strop-fs-verify",
             move |outcome| {
@@ -44,8 +44,7 @@ impl Editor {
                     Completion { ticket, outcome },
                 )))));
             },
-            move |token| match crate::editor::namespace::verify(&worker, &remote, &receipt, &token)
-            {
+            move |token| match crate::editor::namespace::verify(&local, &client, &receipt, &token) {
                 Ok(result) => Outcome::Success(result),
                 Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
             },

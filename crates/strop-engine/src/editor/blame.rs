@@ -26,10 +26,6 @@ impl Editor {
         let local_file = remote.is_none() && !self.buf().readonly && self.buf().path.is_some();
         if !local_file {
             if remote.is_some() {
-                if !self.remote_window_complete() {
-                    self.message = "partial remote snapshot — blame needs a full window".into();
-                    return;
-                }
             } else {
                 return self.blame_line();
             }
@@ -116,7 +112,7 @@ impl Editor {
             })
         });
         let args = ticket.clone();
-        let workers = self.remote.workers.clone();
+        let client = self.remote_client();
         self.launch_git_job(
             "git-blame-file",
             "git.blame_gutter",
@@ -127,8 +123,11 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let lease = super::git_memory::repo_lease(&workers, &repo);
-                let exec = match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
+                let host = super::git_memory::repo_host(&client, &repo, &cancel);
+                let exec = match host.and_then(|host| {
+                    strop_git::GitExec::for_target(&repo, host.as_ref())
+                        .map_err(|error| error.to_string())
+                }) {
                     Ok(exec) => exec,
                     Err(error) => {
                         return Outcome::failed(
@@ -152,13 +151,6 @@ impl Editor {
     pub fn blame_gutter_for(&self, buffer: strop_core::id::DocumentId) -> Option<&BlameGutter> {
         let document = self.docs.get(buffer)?;
         let buf = &document.buf;
-        if document
-            .remote_metadata()
-            .is_some_and(|source| !source.window.is_complete())
-            || self.remote_following(buffer)
-        {
-            return None;
-        }
         let gutter = self.blame_gutters.get(&buffer)?;
         // len_lines counts the trailing newline's phantom line — the
         // content count is what blame rows pair with
@@ -177,10 +169,6 @@ impl Editor {
                 // the card names a file line: a partial window's line
                 // numbers are window-relative — refuse, never blame
                 // the wrong line of the file
-                if !self.remote_window_complete() {
-                    self.message = "partial remote snapshot — blame needs a full window".into();
-                    return;
-                }
                 self.blame_line_remote(file);
             }
             None => match self.buf().path.clone() {
@@ -302,7 +290,7 @@ impl Editor {
         rel: PathBuf,
         line: usize,
     ) {
-        let workers = self.remote.workers.clone();
+        let client = self.remote_client();
         let args = ticket.clone();
         self.launch_git_job(
             "git-blame-line",
@@ -314,8 +302,11 @@ impl Editor {
                 if cancel.is_cancelled() {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
-                let lease = super::git_memory::repo_lease(&workers, &repo);
-                let exec = match strop_git::GitExec::for_target_routed(&repo, lease.as_ref()) {
+                let host = super::git_memory::repo_host(&client, &repo, &cancel);
+                let exec = match host.and_then(|host| {
+                    strop_git::GitExec::for_target(&repo, host.as_ref())
+                        .map_err(|error| error.to_string())
+                }) {
                     Ok(exec) => exec,
                     Err(error) => {
                         return Outcome::failed(

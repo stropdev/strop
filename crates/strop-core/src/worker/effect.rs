@@ -12,8 +12,9 @@ struct State<T> {
 }
 impl<T> State<T> {
     fn ready(&mut self) -> Option<(Emit<T>, Outcome<T>)> {
-        use super::recovery_policy::ready_to_deliver;
-        if !ready_to_deliver(self.outcome.is_some(), self.cancelling) {
+        // An observed outcome is delivered once no cancellation is
+        // still settling.
+        if self.outcome.is_none() || self.cancelling {
             return None;
         }
         let emit = self.emit.take()?;

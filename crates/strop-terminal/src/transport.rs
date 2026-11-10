@@ -1,119 +1,96 @@
-//! Where one session's PTY runs (0090 §4): in this process for a local
-//! directory, on the namespace's admitted worker for a remote one. The
-//! client drives both through one surface; the two differ only in how
-//! a resize is ordered against output and in how the actor waits.
-use crate::{local::LocalPty, model::Geometry, Error};
-use std::{os::unix::net::UnixDatagram, sync::mpsc::TryRecvError};
-use strop_worker_client::{ExecEvent, PtySession, StreamEvent, Worker};
-use strop_worker_protocol::PtyGeometry;
+//! Where one session's shell runs (0090 §4). Every session is an
+//! in-process PTY; a remote one is that PTY running `ssh -tt` on the
+//! endpoint's multiplexed connection, so Ctrl-C is a byte into the PTY
+//! and a resize is `TIOCSWINSZ`, which ssh forwards as a window change.
+use crate::{launch::Launch, Error};
+use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
+use strop_remote::exec::ExecHost;
 
-/// The caller's choice of where the child runs.
+/// The caller's choice of where the shell runs.
+#[derive(Debug, Clone)]
 pub enum Target {
-    /// The editor process, on a fresh in-process PTY.
+    /// This machine: the launch runs as given.
     Local,
-    /// An admitted worker lease (0058 WK12).
-    Worker(Worker),
+    /// The endpoint behind `host`: the launch's program, arguments and
+    /// directory are the remote side's (see [`Launch::shell_remote`]).
+    Remote(ExecHost),
 }
 
-pub(crate) enum Transport {
-    Local(LocalPty),
-    Worker(PtySession),
+/// What the local PTY runs for `launch` on `target`, and whether
+/// typeahead is held until the child first speaks.
+pub(crate) fn local_launch(target: &Target, launch: &Launch) -> Result<(Launch, bool), Error> {
+    let Target::Remote(host) = target else {
+        return Ok((launch.clone(), false));
+    };
+    let argv = remote_argv(launch);
+    let argv: Vec<&OsStr> = argv.iter().map(OsString::as_os_str).collect();
+    let ssh = host.terminal(&argv, Some(&launch.directory));
+    // ssh itself needs no particular directory; the editor's own keeps
+    // any relative path in the user's ssh configuration meaningful.
+    let directory = std::env::current_dir()
+        .ok()
+        .filter(|directory| directory.is_absolute())
+        .unwrap_or_else(|| PathBuf::from("/"));
+    let local = Launch {
+        program: ssh.get_program().to_os_string(),
+        arguments: ssh.get_args().map(OsStr::to_os_string).collect(),
+        directory,
+        // ssh sends its own TERM in the PTY request.
+        environment: vec![("TERM".into(), "xterm-256color".into())],
+    };
+    local.validate()?;
+    Ok((local, true))
 }
 
-impl Transport {
-    /// Input bytes; the wire sequence returned is acknowledged on
-    /// [`ExecEvent::Input`] once delivered.
-    pub(crate) fn feed(&mut self, bytes: &[u8]) -> Result<u64, Error> {
-        match self {
-            Self::Local(pty) => pty.feed(bytes),
-            Self::Worker(pty) => pty
-                .feed(bytes)
-                .map_err(|error| Error::Unavailable(error.to_string())),
-        }
+/// The remote argv: ssh forwards no environment beyond TERM, so the
+/// launch's variables travel as `env NAME=VALUE` words ahead of it.
+fn remote_argv(launch: &Launch) -> Vec<OsString> {
+    let mut argv = Vec::with_capacity(2 + launch.environment.len() + launch.arguments.len());
+    argv.push(OsString::from("env"));
+    for (name, value) in &launch.environment {
+        let mut assignment = name.clone();
+        assignment.push("=");
+        assignment.push(value);
+        argv.push(assignment);
     }
+    argv.push(launch.program.clone());
+    argv.extend(launch.arguments.iter().cloned());
+    argv
+}
 
-    /// Apply a geometry. `true` means an ordered [`StreamEvent::Resized`]
-    /// marker will follow on the output stream and the VT must flip
-    /// there; `false` means the ioctl landed now and the VT flips now.
-    pub(crate) fn resize(&mut self, geometry: Geometry) -> Result<bool, Error> {
-        match self {
-            Self::Local(pty) => pty.resize(geometry).map(|()| false),
-            Self::Worker(pty) => pty
-                .resize(PtyGeometry {
-                    columns: geometry.columns,
-                    rows: geometry.rows,
-                })
-                .map(|()| true)
-                .map_err(|error| Error::Unavailable(error.to_string())),
-        }
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    pub(crate) fn terminate(&mut self) -> Result<(), Error> {
-        match self {
-            Self::Local(pty) => {
-                pty.terminate();
-                Ok(())
-            }
-            Self::Worker(pty) => pty
-                .terminate()
-                .map_err(|error| Error::Unavailable(error.to_string())),
-        }
-    }
-
-    pub(crate) fn try_output(&mut self) -> Result<StreamEvent, TryRecvError> {
-        match self {
-            Self::Local(pty) => {
-                // Retained input gets its chance on every turn.
-                if pty.flush().is_err() {
-                    return Err(TryRecvError::Disconnected);
-                }
-                pty.try_output()
-            }
-            Self::Worker(pty) => pty.try_output(),
-        }
-    }
-
-    pub(crate) fn try_event(&self) -> Result<ExecEvent, TryRecvError> {
-        match self {
-            Self::Local(pty) => pty.events().try_recv(),
-            Self::Worker(pty) => pty.events().try_recv(),
-        }
-    }
-
-    /// Park until a wake (an intent or an output nudge), or until a local
-    /// master can take retained input. The timeout only bounds wake-loss
-    /// recovery; ordinary output arrives by nudge.
-    pub(crate) fn wait(&self, wake: &UnixDatagram) -> Result<(), Error> {
-        use std::os::fd::AsRawFd;
-        let mut descriptors = [
-            libc::pollfd {
-                fd: wake.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: -1,
-                events: libc::POLLOUT,
-                revents: 0,
-            },
-        ];
-        if let Self::Local(pty) = self {
-            if pty.has_pending_input() {
-                descriptors[1].fd = pty.master_fd();
-            }
-        }
-        // SAFETY: the service owns both descriptors and the pollfd storage
-        // for the duration of the call.
-        let result = unsafe { libc::poll(descriptors.as_mut_ptr(), 2, 250) };
-        if result < 0 {
-            let error = std::io::Error::last_os_error();
-            if error.kind() != std::io::ErrorKind::Interrupted {
-                return Err(Error::Io {
-                    operation: "wait for terminal input",
-                    detail: error.to_string(),
-                });
-            }
-        }
-        Ok(())
+    /// What sshd runs after `cd <directory> &&`: the remote argv lands in
+    /// the user's login shell with the terminal identity set.
+    #[test]
+    fn the_remote_argv_runs_a_login_shell_with_the_terminal_identity() {
+        let home = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let launch = Launch::shell_remote(
+            directory.path().to_path_buf(),
+            Some(r#"printf '<%s|%s|%s|%s>' "$TERM_PROGRAM" "$COLORTERM" "$0" "$(pwd -P)""#.into()),
+        );
+        let argv = remote_argv(&launch);
+        let output = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .current_dir(&launch.directory)
+            .env_clear()
+            .env("HOME", home.path())
+            .env("PATH", "/usr/bin:/bin")
+            .env("SHELL", "/bin/sh")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let expected = format!(
+            "<strop|truecolor|/bin/sh|{}>",
+            directory.path().canonicalize().unwrap().display()
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(&expected),
+            "{output:?}"
+        );
     }
 }

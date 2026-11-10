@@ -18,7 +18,7 @@ use strop_core::worker::{CancelToken, FailureKind};
 pub enum EffectiveHostError {
     /// The host text cannot be a hostname or alias — never spawned.
     InvalidHost,
-    /// No admitted worker, or a lease from the wrong SSH endpoint.
+    /// The connection belongs to another SSH endpoint.
     Unavailable(String),
     /// The ssh program could not run.
     Spawn(String),

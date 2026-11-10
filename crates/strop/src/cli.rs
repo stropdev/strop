@@ -1,8 +1,6 @@
 //! Command-line parsing. File operands remain OsString/PathBuf end to end.
-use crate::editor::remote::{view, RemoteView};
 use std::ffi::OsString;
 use std::path::PathBuf;
-use strop_remote::{ReadLimit, ReadSelection};
 use strop_trace::ContentPolicy;
 
 mod location;
@@ -13,14 +11,12 @@ pub enum Command {
     Edit {
         path: Option<FileLocation>,
         readonly: bool,
-        remote_view: RemoteView,
         /// `strop -`: the buffer is stdin (streamed until EOF).
         stdin: bool,
     },
     Headless {
         script: PathBuf,
         path: Option<FileLocation>,
-        remote_view: RemoteView,
         /// `-`: the initial buffer is stdin, read whole.
         stdin: bool,
     },
@@ -68,8 +64,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     let mut terminal_capture = false;
     let mut readonly = false;
     let mut initial_line = None;
-    let mut remote_selection = None;
-    let mut follow = false;
     let mut theme = None;
     let mut headless = false;
     let mut script = None;
@@ -89,27 +83,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 continue;
             }
             match text.as_ref() {
-                "--tail" | "--range" => {
-                    if remote_selection.is_some() {
-                        return Err("choose only one --tail or --range".into());
-                    }
-                    let value = args
-                        .next()
-                        .ok_or("remote view option requires byte arguments")?;
-                    let value = value
-                        .to_str()
-                        .ok_or("byte arguments must be decimal text")?;
-                    remote_selection = Some(if text == "--tail" {
-                        ReadSelection::Tail(view::limit(value).map_err(|error| error.to_string())?)
-                    } else {
-                        view::range(value).map_err(|error| error.to_string())?
-                    });
-                    continue;
-                }
-                "--follow" => {
-                    follow = true;
-                    continue;
-                }
                 "--theme" => {
                     let value = args
                         .next()
@@ -323,20 +296,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         (None, Some(_)) => return Err(location::LocationError::MissingPath.to_string()),
         (None, None) => None,
     };
-    let remote_view = match (follow, remote_selection) {
-        (true, None) => RemoteView::Follow(ReadLimit::DEFAULT_TAIL),
-        (true, Some(ReadSelection::Tail(limit))) => RemoteView::Follow(limit),
-        (true, Some(_)) => return Err("--follow cannot use a fixed byte range".into()),
-        (false, selection) => RemoteView::Snapshot(selection.unwrap_or(ReadSelection::Full)),
-    };
-    if command.is_none()
-        && remote_view != RemoteView::default()
-        && !operand
-            .as_ref()
-            .is_some_and(|file| matches!(file.path, crate::files::FileTarget::Remote(_)))
-    {
-        return Err("remote view options require an ssh:// operand".into());
-    }
     if content == ContentPolicy::Full && trace_path.is_none() {
         return Err(if terminal_capture {
             "--log-terminal-content requires --log or STROP_LOG"
@@ -361,13 +320,11 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         (None, None, true) => Command::Headless {
             script: script.ok_or("--headless requires a script path")?,
             path: operand,
-            remote_view,
             stdin,
         },
         (None, None, false) => Command::Edit {
             path: operand,
             readonly,
-            remote_view,
             stdin,
         },
         _ => return Err("conflicting launch modes".into()),

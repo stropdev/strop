@@ -1,13 +1,11 @@
 //! Applying drained records to documents: hint application, reload
-//! admission/guarding, the worker lease observation, and guarded reload
-//! completion.
+//! admission/guarding, and guarded reload completion.
 use std::path::PathBuf;
 
 use strop_core::id::DocumentId;
 use strop_core::worker::{self, Completion, Outcome};
-use strop_worker_protocol::message::NotifyCoverage;
-use strop_worker_protocol::NotifyHint;
-use strop_workspace::{Filesystem, ResourceLocation};
+use strop_fs::notify::NotifyHint;
+use strop_workspace::Filesystem;
 
 use super::super::directory::DirectoryTask;
 use super::super::io::{IoEvent, Opened};
@@ -23,7 +21,7 @@ impl Editor {
     /// identity are dropped, never acted on.
     pub(crate) fn handle_notify(&mut self) {
         // The wake is not the observation: the bounded queue may hold a
-        // settled refusal or coalesced overflow. Replay has no worker
+        // settled refusal or coalesced overflow. Replay has no watcher
         // thread to refill it, so consume the same typed drain in both
         // modes rather than guessing from AppEvent::Notify.
         let (records, queue_rescan) = match self
@@ -42,32 +40,25 @@ impl Editor {
         let mut deferred: Vec<Record> = Vec::new();
         let mut rescan = queue_rescan;
         let mut hints: Vec<NotifyHint> = Vec::new();
-        // Lifecycle applies first: a subscribe settle may race hints
-        // across the job/forwarder threads, and the last settle wins.
-        let (settles, rest): (Vec<_>, Vec<_>) = records.into_iter().partition(|record| {
-            matches!(record, Record::Settled(_) | Record::RemoteSettled { .. })
-        });
+        // Lifecycle applies first: the settle may race hints, and the
+        // last settle wins.
+        let (settles, rest): (Vec<_>, Vec<_>) = records
+            .into_iter()
+            .partition(|record| matches!(record, Record::Settled(_)));
         for record in settles {
-            match record {
-                Record::Settled(outcome) => self.notify_settled(outcome),
-                Record::RemoteSettled { root, outcome } => {
-                    self.remote_notify_settled(root, outcome)
-                }
-                _ => {}
+            if let Record::Settled(outcome) = record {
+                self.notify_settled(outcome);
             }
         }
-        // Pass 2: identity-checked application. A record's subscription
-        // names its owning scope — the local one or one remote root —
-        // and events stamped by a superseded identity never act.
-        let mut remote_hints: Vec<(ResourceLocation, Vec<NotifyHint>)> = Vec::new();
-        let mut remote_rescans: Vec<ResourceLocation> = Vec::new();
+        // Pass 2: identity-checked application: events stamped by a
+        // superseded identity never act.
         for record in rest {
             let record_subscription = match &record {
                 Record::Hints { subscription, .. } | Record::Overflow { subscription } => {
                     *subscription
                 }
                 Record::Boundary { subscription, .. } => *subscription,
-                Record::Settled(_) | Record::RemoteSettled { .. } => continue,
+                Record::Settled(_) => continue,
             };
             if Some(record_subscription) == self.notify.subscription {
                 match record {
@@ -77,27 +68,7 @@ impl Editor {
                     // the consumers' snapshot semantics (picker cache) and
                     // the reload observation guards; the mark itself needs
                     // no editor-side state.
-                    Record::Boundary { .. } => {}
-                    Record::Settled(_) | Record::RemoteSettled { .. } => {}
-                }
-                continue;
-            }
-            let remote_root = self.notify.remote.iter().find_map(|(root, scope)| {
-                (scope.subscription == Some(record_subscription)).then(|| root.clone())
-            });
-            if let Some(root) = remote_root {
-                match record {
-                    Record::Hints { hints: batch, .. } => {
-                        match remote_hints.iter_mut().find(|(known, _)| *known == root) {
-                            Some((_, batch_hints)) => batch_hints.extend(batch),
-                            None => remote_hints.push((root, batch)),
-                        }
-                    }
-                    Record::Overflow { .. } if !remote_rescans.contains(&root) => {
-                        remote_rescans.push(root);
-                    }
-                    Record::Overflow { .. } => {}
-                    _ => {}
+                    Record::Boundary { .. } | Record::Settled(_) => {}
                 }
                 continue;
             }
@@ -107,12 +78,6 @@ impl Editor {
                 deferred.push(record);
             }
             // Otherwise: a dead generation's late events never act.
-        }
-        for root in remote_rescans {
-            self.remote_notify_rescan(&root.path.clone());
-        }
-        for (root, batch) in remote_hints {
-            self.apply_remote_hints(&root.path.clone(), batch);
         }
         if !deferred.is_empty() {
             self.notify.queue.requeue_front(deferred);
@@ -126,118 +91,35 @@ impl Editor {
         }
     }
 
-    /// The subscribe job settled: adopt the identity, surface coverage
-    /// honestly, and arm the search baseline's push coverage.
+    /// The subscription settled: adopt the identity and arm the search
+    /// baseline's push coverage. A watcher that later fails settles
+    /// again with the failure: coverage is dropped and the baseline is
+    /// rescanned, never trusted stale.
     fn notify_settled(&mut self, outcome: Outcome<SubscribedScope>) {
         self.notify.subscribing = false;
-        self.notify.subscribe_handle = None;
         match outcome {
             Outcome::Success(settled) => {
                 self.notify.subscription = Some(settled.subscription);
                 self.notify
                     .queue
                     .set_owned_trace(settled.owned_trace.map(|path| (settled.subscription, path)));
-                self.notify.session = self.filesystem.worker().session();
-                self.notify.coverage = Some(settled.coverage);
-                if matches!(
-                    settled.coverage,
-                    NotifyCoverage::OnDemand | NotifyCoverage::Unsupported
-                ) {
-                    // CoverageHonest: a visible-but-quiet note, and the
-                    // search baseline keeps per-search scanning.
-                    self.message = "filesystem notifications unavailable in this namespace; freshness is on demand".into();
-                }
             }
             Outcome::Failed { failure, .. } => {
+                let watched = self.notify.subscription.take().is_some();
+                self.notify.queue.set_owned_trace(None);
                 self.message = format!(
-                    "filesystem notifications refused: {}; freshness is on demand",
+                    "filesystem notifications unavailable: {}; freshness is on demand",
                     failure.message
                 );
+                if watched {
+                    self.notify_rescan();
+                }
             }
             Outcome::Cancelled(_) => {}
         }
         if let Some(source) = self.picker_source.as_ref() {
             source.set_watching(&self.cwd, self.notify.push_coverage());
         }
-    }
-
-    /// The remote subscribe job settled: adopt the scope's identity,
-    /// surface coverage honestly, never guess state.
-    fn remote_notify_settled(&mut self, root: ResourceLocation, outcome: Outcome<SubscribedScope>) {
-        let endpoint = self
-            .notify
-            .remote
-            .get(&root)
-            .map(|scope| scope.endpoint.clone());
-        let Some(endpoint) = endpoint else {
-            return;
-        };
-        match outcome {
-            Outcome::Success(settled) => {
-                let session = self
-                    .remote
-                    .workers
-                    .get(&endpoint)
-                    .and_then(|worker| worker.worker().session());
-                if let Some(scope) = self.notify.remote.get_mut(&root) {
-                    scope.subscribing = false;
-                    scope.subscribe_handle = None;
-                    scope.subscription = Some(settled.subscription);
-                    scope.session = session;
-                }
-                if matches!(
-                    settled.coverage,
-                    NotifyCoverage::OnDemand | NotifyCoverage::Unsupported
-                ) {
-                    self.message = format!(
-                        "filesystem notifications for {} are on demand in this namespace",
-                        root.label()
-                    );
-                }
-                if session.is_some() {
-                    self.note_remote_worker_recovered(&endpoint);
-                }
-            }
-            Outcome::Failed { failure, .. } => {
-                self.notify.remote.remove(&root);
-                self.message = format!(
-                    "filesystem notifications refused for {}: {}; freshness is on demand",
-                    root.label(),
-                    failure.message
-                );
-            }
-            Outcome::Cancelled(_) => {
-                if let Some(scope) = self.notify.remote.get_mut(&root) {
-                    scope.subscribing = false;
-                    scope.subscribe_handle = None;
-                }
-            }
-        }
-    }
-
-    /// Subscribe every opened remote workspace root whose endpoint
-    /// admits a worker (WK07). Browsing never deploys: only an existing
-    /// admitted lease subscribes, and the round trip rides a job — the
-    /// settle lands on the notify queue like the local scope's.
-    pub(crate) fn notify_observe_lease(&mut self) {
-        self.observe_remote_leases();
-        let Some(session) = self.notify.session else {
-            return;
-        };
-        if self.filesystem.worker().session() == Some(session) {
-            return;
-        }
-        self.notify.subscription = None;
-        self.notify.queue.set_owned_trace(None);
-        self.notify.session = None;
-        self.notify.coverage = None;
-        if let Some(source) = self.picker_source.as_ref() {
-            source.set_watching(&self.cwd, false);
-        }
-        self.notify_rescan();
-        self.message =
-            "filesystem notifications lost with the worker; reestablishing coverage".into();
-        self.start_notifications();
     }
 
     /// Hints against open state: dirty documents gain external-change
@@ -415,7 +297,7 @@ impl Editor {
         let path = key.path.clone();
         self.notify.reloads.insert(request, key);
         self.notify.reloading.insert(document, request);
-        let worker = self.filesystem.worker().clone();
+        let local = self.filesystem.local().clone();
         let tx = self.io.tx.clone();
         let handle = worker::spawn(
             "fs-notify-reload",
@@ -425,7 +307,7 @@ impl Editor {
                     outcome,
                 })));
             },
-            move |cancel| reload_run(&worker, &path, &cancel),
+            move |cancel| reload_run(&local, &path, &cancel),
         );
         self.worker_handles.insert(request, handle);
     }
@@ -491,7 +373,7 @@ impl Editor {
                     let readonly = self.doc(key.document).buf.readonly;
                     let mut replacement = opened.document;
                     replacement.buf.readonly = readonly;
-                    match self.publish_source_snapshot(key.document, replacement, false) {
+                    match self.publish_source_snapshot(key.document, replacement) {
                         Ok(()) => {
                             {
                                 let mut doc = self.doc_mut(key.document);

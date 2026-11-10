@@ -1,120 +1,61 @@
-//! One PTY session behind a [`Transport`]: in-process for a local
-//! directory (0090 §4), on the namespace's worker for a remote one (0058
-//! WK12). The VT, bounded history and immutable publications stay here;
-//! editor state receives only model::Update, never transport handles.
+//! One PTY session: the in-process [`LocalPty`] a [`Target`] resolves to
+//! (0090 §4), its VT, bounded history and immutable publications. Editor
+//! state receives only model::Update, never PTY handles.
 //!
-//! Ordering contract (the 0055 lifecycle, preserved over the wire):
+//! Ordering contract (the 0055 lifecycle):
 //!
-//! - Input chunks are admitted into one client sequence space and the
-//!   worker acknowledges each delivered chunk ([`ExecEvent::Input`]);
-//!   acknowledgments release the retained-input budget exactly like the
-//!   helper's ACKs did. A child that stops draining fills the worker's
-//!   bounded queue and is revoked — input admission fails truthfully
-//!   here first (the budget), never by a dropped byte.
-//! - Resize rides the worker's ordered PTY control queue; the reply is
-//!   applied-geometry, and the worker client's [`StreamEvent::Resized`]
-//!   marker arrives on the output stream in exact wire order. The VT
-//!   parser's geometry flips only at that marker, so output before it
-//!   is parsed under the old geometry and output after it under the
-//!   new — the helper's ACK-boundary semantics unchanged.
-//! - Exit is truthful: the supervisor's attested status maps to
-//!   [`Phase::Exited`], an unattested one (`Lost`, revocation) carries
-//!   no code, and a dead worker is a failure, never a guessed exit.
-use crate::local::LocalPty;
+//! - Inputs and resizes are accepted into one client sequence space.
+//!   Each one records the PTY's input mark at that point and is
+//!   acknowledged once the master has taken every byte up to it, which
+//!   releases the retained-input budget. A child that stops draining
+//!   leaves input retained here; acceptance then fails truthfully on the
+//!   budget, never by a dropped byte.
+//! - Resize is `TIOCSWINSZ` on the master, applied at once, and the VT
+//!   parser's geometry flips at once: output read after the resize is
+//!   parsed under the new geometry.
+//! - Exit is truthful: the supervisor's recorded status maps to
+//!   [`Phase::Exited`]; a revocation carries no code, and settlement waits
+//!   for the output stream's end so no output is lost behind the exit.
+use crate::local::{LocalPty, Output};
 pub use crate::transport::Target;
-use crate::transport::Transport;
 use crate::{
     launch::Launch,
     model::*,
     vt::{Emission, Vt},
     Error,
 };
-use parking_lot::Mutex;
-use std::{
-    collections::{HashMap, VecDeque},
-    os::unix::net::UnixDatagram,
-    sync::LazyLock,
-};
+use std::{collections::VecDeque, os::unix::net::UnixDatagram, sync::mpsc::TryRecvError};
 use strop_core::worker::CancelToken;
-use strop_worker_client::{ExecEvent, StreamEvent, Worker};
-use strop_worker_protocol::{ExitStatus, StreamId};
 
-/// One admitted input or resize awaiting its worker acknowledgment.
+/// One accepted input or resize awaiting delivery to the master.
 struct Pending {
     sequence: u64,
     bytes: usize,
-    /// Input wire indices exclude resize and no-op frontend actions.
-    wire_sequence: Option<u64>,
-}
-
-/// Stream arrivals nudge the owning service's wake datagram: the
-/// connection's reader thread delivers chunks, this registry turns them
-/// into the same poll wake the intents use, so output latency never
-/// depends on the poll timeout. Entries key on the raw stream id;
-/// cross-worker collisions nudge a second service spuriously (it finds
-/// no chunk and sleeps again), never drop the real owner's wake.
-type WakeRegistry = HashMap<u64, Vec<(u64, UnixDatagram)>>;
-static WAKES: LazyLock<Mutex<WakeRegistry>> = LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// Install the stream-arrival hook on one lease (idempotent): worker
-/// stream chunks nudge the registered service wakes. One hook per
-/// lease; the terminal service owns it (readers of finite payloads use
-/// blocking reads and need no nudge).
-pub(crate) fn install_wake_hook(worker: &Worker) {
-    worker.set_stream_notifier(|stream: StreamId| {
-        let wakes = WAKES.lock();
-        if let Some(entries) = wakes.get(&stream.0) {
-            for (_, wake) in entries {
-                // A full datagram buffer means the service is already
-                // awake; dropping the nudge loses nothing.
-                let _ = wake.send(&[1]);
-            }
-        }
-    });
-}
-
-fn register_wake(stream: StreamId, session: SessionId, wake: UnixDatagram) {
-    WAKES
-        .lock()
-        .entry(stream.0)
-        .or_default()
-        .push((session.get(), wake));
-}
-
-fn deregister_wake(stream: StreamId, session: SessionId) {
-    let mut wakes = WAKES.lock();
-    if let Some(entries) = wakes.get_mut(&stream.0) {
-        entries.retain(|(owner, _)| *owner != session.get());
-        if entries.is_empty() {
-            wakes.remove(&stream.0);
-        }
-    }
+    /// The PTY input mark this entry is delivered at.
+    mark: u64,
 }
 
 pub struct Client {
-    pty: Transport,
-    /// The worker output stream registered for wakes (worker transport only).
-    wake_stream: Option<StreamId>,
+    pty: LocalPty,
     token: CancelToken,
     vt: Vt,
     session: SessionId,
     phase: Phase,
-    exit: Option<ExitStatus>,
+    exit: Option<Phase>,
     output_closed: bool,
     failure: Option<String>,
     warning: Option<String>,
     pending: VecDeque<Pending>,
-    resizes: VecDeque<(u64, Geometry)>,
     retained_input: usize,
     sequence: u64,
     acknowledged: u64,
     geometry_revision: u64,
     effects: Vec<Effect>,
-    /// A local resize flipped the VT; the next poll publishes the reflowed frame.
+    /// A resize flipped the VT; the next poll publishes the reflowed frame.
     resized: bool,
 }
 
-/// Emulator settings owned by the embedder rather than the PTY lease.
+/// Emulator settings owned by the embedder rather than the PTY.
 pub(crate) struct EmulationSettings<'a> {
     pub keyboard: u8,
     pub palette: Option<&'a Palette>,
@@ -123,7 +64,7 @@ pub(crate) struct EmulationSettings<'a> {
 impl Client {
     pub(crate) fn spawn(
         session: SessionId,
-        target: Target,
+        target: &Target,
         launch: &Launch,
         geometry: Geometry,
         emulation: EmulationSettings<'_>,
@@ -132,21 +73,10 @@ impl Client {
     ) -> Result<Self, Error> {
         let mut vt = Vt::new(session, geometry, emulation.palette)?;
         vt.keyboard_capabilities(emulation.keyboard)?;
-        let (pty, wake_stream) = match target {
-            Target::Local => (
-                Transport::Local(LocalPty::spawn(launch, geometry, wake)?),
-                None,
-            ),
-            Target::Worker(worker) => {
-                let pty = spawn_on_worker(&worker, launch, geometry, token)?;
-                let stream = pty.output_stream();
-                register_wake(stream, session, wake);
-                (Transport::Worker(pty), Some(stream))
-            }
-        };
+        let (local, hold) = crate::transport::local_launch(target, launch)?;
+        let pty = LocalPty::spawn(&local, geometry, hold, wake)?;
         Ok(Self {
             pty,
-            wake_stream,
             token: token.clone(),
             vt,
             session,
@@ -156,7 +86,6 @@ impl Client {
             failure: None,
             warning: None,
             pending: VecDeque::new(),
-            resizes: VecDeque::new(),
             retained_input: 0,
             sequence: 0,
             acknowledged: 0,
@@ -171,7 +100,7 @@ impl Client {
     }
 
     /// Wait for service wakes (intents and output nudges share the one
-    /// datagram), or for a local master to take retained input.
+    /// datagram), or for the master to take retained input.
     pub(crate) fn wait(&self, wake: &UnixDatagram) -> Result<(), Error> {
         self.pty.wait(wake)
     }
@@ -220,10 +149,6 @@ impl Client {
         if !geometry.valid() || geometry.revision <= self.geometry_revision {
             return Err(Error::Protocol("stale or invalid terminal geometry".into()));
         }
-        // Applied-geometry semantics: a worker's reply means the ioctl
-        // landed and the parser flips at the ordered output marker; a
-        // local ioctl landed now and the parser flips now.
-        let ordered = self.pty.resize(geometry)?;
         let charge = 16usize;
         if charge > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
             || self.pending.len() >= 128
@@ -234,60 +159,49 @@ impl Client {
             .sequence
             .checked_add(1)
             .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
+        self.pty.resize(geometry)?;
+        self.vt.resize(geometry)?;
         self.retained_input += charge;
         self.sequence = sequence;
         self.pending.push_back(Pending {
             sequence,
             bytes: charge,
-            wire_sequence: None,
+            mark: self.pty.queued(),
         });
         self.geometry_revision = geometry.revision;
-        if ordered {
-            self.resizes.push_back((sequence, geometry));
-        } else {
-            self.vt.resize(geometry)?;
-            self.cover(sequence);
-            self.resized = true;
-        }
+        self.resized = true;
+        self.retire();
         Ok(sequence)
     }
 
-    /// One input emission as bounded ordered chunks. Oversized text is
-    /// split well under the wire ceiling; the last chunk's sequence
-    /// acknowledges the whole emission (chunks are delivered in order).
+    /// One input emission, acknowledged once the master took all of it.
     fn feed(&mut self, bytes: &[u8]) -> Result<u64, Error> {
-        const FEED_CHUNK: usize = 128 * 1024;
         if bytes.is_empty() {
-            // No bytes means no worker acknowledgment will arrive. Reuse the
-            // preceding sequence so the service can settle immediately, or
-            // behind that preceding input if it is still in flight.
+            // No bytes means nothing to deliver. Reuse the preceding
+            // sequence so the service can settle immediately, or behind
+            // that preceding input if it is still in flight.
             return Ok(self.sequence);
         }
-        let chunks = bytes.chunks(FEED_CHUNK);
-        let count = chunks.len();
-        let total: usize = bytes.len() + 8 * count;
-        if total > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
-            || self.pending.len() + count > 128
+        let charge = bytes.len() + 8;
+        if charge > (MAX_INPUT_BYTES + 128).saturating_sub(self.retained_input)
+            || self.pending.len() >= 128
         {
             return Err(Error::InputFull);
         }
-        let mut last = self.sequence;
-        for chunk in chunks {
-            let sequence = self
-                .sequence
-                .checked_add(1)
-                .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
-            let wire_sequence = self.pty.feed(chunk)?;
-            self.retained_input += chunk.len() + 8;
-            self.sequence = sequence;
-            self.pending.push_back(Pending {
-                sequence,
-                bytes: chunk.len() + 8,
-                wire_sequence: Some(wire_sequence),
-            });
-            last = sequence;
-        }
-        Ok(last)
+        let sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or(Error::Capacity("terminal input sequence exhausted"))?;
+        let mark = self.pty.feed(bytes)?;
+        self.retained_input += charge;
+        self.sequence = sequence;
+        self.pending.push_back(Pending {
+            sequence,
+            bytes: charge,
+            mark,
+        });
+        self.retire();
+        Ok(sequence)
     }
 
     pub fn stop(&mut self) -> Result<(), Error> {
@@ -296,15 +210,14 @@ impl Client {
         }
         self.phase = Phase::Closing;
         if !self.pending.is_empty() {
-            self.warning = Some("terminal stopped; unacknowledged input was revoked".into());
+            self.warning = Some("terminal stopped; undelivered input was revoked".into());
         }
-        self.pty.terminate()
+        self.pty.terminate();
+        Ok(())
     }
 
-    /// Consume a bounded turn: output chunks, the ordered resize
-    /// markers and input acknowledgments, then settlement. The VT
-    /// geometry flips only at a marker, preserving the 0055 resize
-    /// boundary over the wire.
+    /// Consume a bounded turn: retained input, output chunks and input
+    /// acknowledgments, then settlement.
     pub fn poll(&mut self) -> Result<Option<Update>, Error> {
         if !self.phase.live() {
             return Ok(None);
@@ -314,14 +227,16 @@ impl Client {
         }
         let mut changed = std::mem::take(&mut self.resized);
         let mut dirty = changed;
+        // Retained input gets its chance on every turn.
+        self.pty.flush()?;
         for _ in 0..32 {
             if self.output_closed {
                 break;
             }
-            let event = match self.pty.try_output() {
-                Ok(event) => event,
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+            let output = match self.pty.try_output() {
+                Ok(output) => output,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
                     self.output_closed = true;
                     if self.exit.is_none() && self.failure.is_none() {
                         self.failure =
@@ -332,94 +247,47 @@ impl Client {
                 }
             };
             changed = true;
-            match event {
-                StreamEvent::Chunk(chunk) => {
-                    // The worker orders the terminal chunk before ExecExit
-                    // on one wire, but the client routes them into separate
-                    // bounded channels. A 32-chunk poll turn may observe
-                    // the exit first while older chunks remain queued.
-                    // Only the output stream's final marker permits phase
-                    // settlement below; the exit event is retained meanwhile.
-                    if !chunk.bytes.is_empty() {
-                        let emission = self.vt.feed(&chunk.bytes)?;
-                        self.emission(emission)?;
-                        dirty = true;
-                    }
-                    if chunk.last {
-                        self.output_closed = true;
-                    }
-                }
-                StreamEvent::Resized => {
-                    let Some((sequence, geometry)) = self.resizes.pop_front() else {
-                        return Err(Error::Protocol(
-                            "unexpected terminal resize boundary".into(),
-                        ));
-                    };
-                    self.vt.resize(geometry)?;
-                    self.cover(sequence);
+            match output {
+                Output::Bytes(bytes) => {
+                    let emission = self.vt.feed(&bytes)?;
+                    self.emission(emission)?;
                     dirty = true;
                 }
-                StreamEvent::Failed(reason) => {
-                    self.failure = Some(reason);
-                    self.output_closed = true;
+                // The exit arrives on its own channel and may be seen
+                // first while older chunks remain queued: only the end
+                // of output permits settlement below.
+                Output::Closed => self.output_closed = true,
+            }
+        }
+        // The first output may have released held typeahead.
+        self.pty.flush()?;
+        changed |= self.retire();
+        match self.pty.try_exit() {
+            Ok(phase) => {
+                self.exit = Some(phase);
+                changed = true;
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                // The waiter is gone without a status: no code is guessed.
+                if self.exit.is_none() {
+                    self.exit = Some(Phase::Exited {
+                        code: None,
+                        signal: None,
+                    });
                 }
             }
         }
-        loop {
-            match self.pty.try_event() {
-                Ok(ExecEvent::Input { sequence }) => {
-                    // The worker numbers only wire input chunks; translate to
-                    // the service's input/resize sequence before retiring credit.
-                    // An earlier ordered resize may already have covered it.
-                    if let Some(local) = self
-                        .pending
-                        .iter()
-                        .find(|pending| pending.wire_sequence == Some(sequence))
-                        .map(|pending| pending.sequence)
-                    {
-                        self.cover(local);
-                    }
-                    changed = true;
-                }
-                Ok(ExecEvent::Exit(status)) => {
-                    self.exit = Some(status);
-                    changed = true;
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    if self.exit.is_none() {
-                        self.exit = Some(ExitStatus::Lost);
-                    }
-                    break;
-                }
+        if self.output_closed {
+            if let Some(exit) = self.exit.take() {
+                self.phase = match self.failure.take() {
+                    Some(failure) => Phase::Failed(failure),
+                    None => exit,
+                };
+                self.pending.clear();
+                self.retained_input = 0;
+                changed = true;
             }
-        }
-        if self.output_closed && self.exit.is_some() {
-            let status = self.exit.take();
-            self.phase = if let Some(failure) = self.failure.take() {
-                Phase::Failed(failure)
-            } else {
-                match status {
-                    Some(ExitStatus::Exit(code)) => Phase::Exited {
-                        code: Some(code),
-                        signal: None,
-                    },
-                    Some(ExitStatus::Signal(signal)) => Phase::Exited {
-                        code: None,
-                        signal: Some(signal),
-                    },
-                    // Revocation and every unattested settlement: no
-                    // code is ever guessed.
-                    Some(ExitStatus::Lost) | None => Phase::Exited {
-                        code: None,
-                        signal: None,
-                    },
-                }
-            };
-            self.pending.clear();
-            self.resizes.clear();
-            self.retained_input = 0;
-            changed = true;
         }
         if !changed && self.effects.is_empty() && self.warning.is_none() {
             return Ok(None);
@@ -441,20 +309,21 @@ impl Client {
         }))
     }
 
-    /// One delivered sequence: inputs and ordered resizes share one
-    /// client sequence space, and the worker delivers in order, so an
-    /// acknowledgment covers every earlier admission.
-    fn cover(&mut self, sequence: u64) {
-        while self
-            .pending
-            .front()
-            .is_some_and(|pending| pending.sequence <= sequence)
-        {
-            if let Some(pending) = self.pending.pop_front() {
-                self.retained_input -= pending.bytes;
+    /// Acknowledge every entry the master has fully taken. Marks rise
+    /// with the sequence, so delivery retires a prefix. `true` when the
+    /// acknowledgment advanced.
+    fn retire(&mut self) -> bool {
+        let delivered = self.pty.delivered();
+        let before = self.acknowledged;
+        while let Some(pending) = self.pending.front() {
+            if pending.mark > delivered {
+                break;
             }
+            self.retained_input -= pending.bytes;
+            self.acknowledged = pending.sequence;
+            self.pending.pop_front();
         }
-        self.acknowledged = self.acknowledged.max(sequence);
+        self.acknowledged != before
     }
 
     fn emission(&mut self, emission: Emission) -> Result<(), Error> {
@@ -482,48 +351,8 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if let Some(stream) = self.wake_stream {
-            deregister_wake(stream, self.session);
-        }
         if self.phase.live() {
-            let _ = self.pty.terminate();
+            self.pty.terminate();
         }
     }
-}
-
-/// Spawn one admitted PTY on a worker lease (0058 WK12); a refusal is
-/// typed, never a guessed local launch.
-fn spawn_on_worker(
-    worker: &Worker,
-    launch: &Launch,
-    geometry: Geometry,
-    token: &CancelToken,
-) -> Result<strop_worker_client::PtySession, Error> {
-    use std::os::unix::ffi::OsStrExt;
-    let spec = strop_worker_protocol::ExecSpec {
-        program: launch.program.as_bytes().to_vec(),
-        argv: launch
-            .arguments
-            .iter()
-            .map(|argument| argument.as_bytes().to_vec())
-            .collect(),
-        cwd: launch.directory.as_os_str().as_bytes().to_vec(),
-        env: launch
-            .environment
-            .iter()
-            .map(|(name, value)| strop_worker_protocol::request::EnvVar {
-                name: name.as_bytes().to_vec(),
-                value: value.as_bytes().to_vec(),
-            })
-            .collect(),
-        service: true,
-        pty: Some(strop_worker_protocol::PtyGeometry {
-            columns: geometry.columns,
-            rows: geometry.rows,
-        }),
-    };
-    worker.exec_pty(token, spec).map_err(|error| match error {
-        strop_worker_client::ClientError::Cancelled => Error::Closed,
-        other => Error::Unavailable(other.to_string()),
-    })
 }

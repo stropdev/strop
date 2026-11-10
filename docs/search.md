@@ -128,11 +128,9 @@ revisions still own that change.
 ## SSH scopes
 
 Search here uses the same query fields, inclusion decisions and source
-previews as local Search, on explicitly scoped SSH directories. Starting a
-remote search explicitly admits a verified worker on that endpoint;
-restricted/SFTP-only hosts refuse search without a fallback. **With/Review
-are unavailable in SSH scopes**; individual remote write permits do not
-authorize project replacement.
+previews as local Search, on explicitly scoped SSH directories: `rg` runs
+on the host over its connection, and a host without `rg` refuses search
+without a fallback. **With/Review are unavailable in SSH scopes**.
 
 Source enumeration is limited to 100,000 selected paths or 16 MiB of names;
 rg records to 1 MiB and 4,096 submatches; decoded batches to 4 MiB; a
