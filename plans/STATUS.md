@@ -41,6 +41,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 |---|---|
 | [0085](0085-independent-critique-0.52.md) | independent critique of 0.52.0; adoption decided in 0086 §5 |
 | [0087](0087-independent-critique-0.53.md) | independent critique of 0.53.0; adoption decided in 0088 §4 |
+| [0089](0089-functionality-critique-0.54.md) | functionality critique of 0.54 (scope, terminal, remote, bugs); adoption pending the owner |
 
 ## Implemented — history
 
