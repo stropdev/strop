@@ -324,3 +324,20 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
         before
     );
 }
+
+#[test]
+fn two_escapes_in_one_write_close_a_picker() {
+    // B4: a fast double Escape arrives as `\x1b\x1b` in one read; vim reads
+    // two keys. The first leaves the query field, the second closes.
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("main.rs"), "fn main() {}\n").unwrap();
+    let trace = directory.path().join("terminal.jsonl");
+    let mut tui = Tui::start(directory.path(), &trace);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b" f");
+    tui.until(|screen| screen.contains("FILES") && screen.contains("esc  close"));
+    tui.send(b"\x1b\x1b");
+    tui.until(|screen| screen.contains("NORMAL") && !screen.contains("esc  close"));
+    tui.send(b":q\r");
+    assert!(tui.wait_exit().success());
+}
