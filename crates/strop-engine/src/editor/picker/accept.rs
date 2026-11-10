@@ -18,21 +18,6 @@ impl Editor {
                 super::super::io::OpenIntent::Browse,
             ),
             Payload::RemoteConnect => self.open_remote_address(),
-            // R03: the toggle flips the session default and the row
-            // re-renders with the new value
-            Payload::SearchOption(setting) => {
-                match setting {
-                    strop_picker::SearchSetting::Hidden => {
-                        self.config.search_show_hidden = !self.config.search_show_hidden;
-                    }
-                    strop_picker::SearchSetting::RespectIgnore => {
-                        self.config.search_respect_ignore = !self.config.search_respect_ignore;
-                    }
-                }
-                // SearchOption payloads only exist in that picker:
-                // reopen it with the fresh values
-                self.open_search_options();
-            }
             // A jumplist menu entry: record the present position first,
             // so ctrl-o after the picker jump returns here (0047 §2).
             Payload::Jump { document, offset } => {

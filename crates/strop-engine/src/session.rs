@@ -9,6 +9,7 @@ use strop_core::{history::History, Buffer};
 mod trust;
 pub use trust::{is_trusted, trust};
 pub(crate) mod persistence;
+pub mod recent;
 pub(crate) mod remotes;
 #[cfg(test)]
 mod tests;
@@ -104,17 +105,24 @@ struct BufferState {
 pub struct SaveRequest {
     path: PathBuf,
     session: Session,
+    /// The project's frecent files travel with every capture (0093 §3.4).
+    recent: Option<(PathBuf, crate::editor::RecentFiles)>,
+}
+
+/// One project's name in the state directory: every per-project record
+/// is filed under it.
+fn project_key(cwd: &Path) -> String {
+    let mut hasher = std::hash::DefaultHasher::new();
+    std::hash::Hash::hash(cwd, &mut hasher);
+    format!("{:016x}", std::hash::Hasher::finish(&hasher))
 }
 
 fn session_path(base_dir: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
-    let base = base_dir?;
-    let mut hasher = std::hash::DefaultHasher::new();
-    std::hash::Hash::hash(cwd, &mut hasher);
-    let key = format!("{:016x}", std::hash::Hasher::finish(&hasher));
     Some(
-        base.join("strop")
+        base_dir?
+            .join("strop")
             .join("sessions")
-            .join(format!("{key}.json")),
+            .join(format!("{}.json", project_key(cwd))),
     )
 }
 
@@ -213,9 +221,13 @@ pub fn capture_save(editor: &Editor) -> Option<SaveRequest> {
         return None;
     }
     let path = session_path(editor.state_dir.as_deref(), &editor.cwd)?;
+    let recent = editor.recent_files();
     Some(SaveRequest {
         path,
         session: capture(editor)?,
+        recent: recent::path(editor.state_dir.as_deref(), &editor.cwd)
+            .filter(|_| !recent.is_empty())
+            .map(|path| (path, recent.clone())),
     })
 }
 
@@ -224,7 +236,11 @@ impl SaveRequest {
     pub fn persist(mut self) -> Result<(), SessionError> {
         self.session.finish_capture();
         self.session.validate()?;
-        persistence::write(&self.path, &self.session)
+        persistence::write(&self.path, &self.session)?;
+        match &self.recent {
+            Some((path, recent)) => recent::store(path, recent),
+            None => Ok(()),
+        }
     }
 }
 

@@ -50,17 +50,9 @@ fn protected(rel: &Path) -> bool {
         .any(|component| component.as_os_str() == ".git")
 }
 
-/// Stream eligible workspace-relative paths. The walk honors ignore
-/// files by default; hidden entries show by default (0051 R03); plan
-/// predicates filter; `.git` is always excluded.
-pub fn walk(
-    cwd: &Path,
-    plan: &FileSelectionPlan,
-    policy: SelectionPolicy,
-    cancelled: &impl Fn() -> bool,
-    mut emit: impl FnMut(std::path::PathBuf) -> bool,
-) -> Result<(), String> {
-    let effective = policy.effective(plan);
+/// The walk both surfaces share: ignore files by default, hidden entries
+/// by policy, `.git` never.
+fn builder(cwd: &Path, effective: SelectionPolicy) -> ignore::WalkBuilder {
     let mut builder = ignore::WalkBuilder::new(cwd);
     builder
         .filter_entry(|entry| entry.file_name() != ".git")
@@ -70,46 +62,138 @@ pub fn walk(
         .git_exclude(effective.respect_ignore);
     builder
         .git_global(effective.respect_ignore)
-        .parents(effective.respect_ignore)
-        // Directory order is the filesystem's; sorting by name makes the
-        // file finder and search list the same tree the same way everywhere.
-        .sort_by_file_name(|a, b| a.cmp(b));
+        .parents(effective.respect_ignore);
+    builder
+}
+
+/// The workspace-relative path of an eligible entry: a regular file, or
+/// a link to one, outside protected metadata, that the plan allows. A
+/// broken or unreadable link is skipped, never a walk-stopping error
+/// (one dangling link must not empty Space f / Space /).
+fn eligible(
+    entry: &ignore::DirEntry,
+    cwd: &Path,
+    plan: &FileSelectionPlan,
+) -> Option<std::path::PathBuf> {
+    let kind = entry.file_type()?;
+    if kind.is_symlink() {
+        if !std::fs::metadata(entry.path()).ok()?.is_file() {
+            return None;
+        }
+    } else if !kind.is_file() {
+        return None;
+    }
+    let rel = entry.path().strip_prefix(cwd).ok()?;
+    if protected(rel) || !plan.allows(&display_path(rel)) {
+        return None;
+    }
+    Some(rel.to_path_buf())
+}
+
+/// Stream eligible workspace-relative paths in tree order: sorting each
+/// directory by name makes the file finder list the same tree the same
+/// way everywhere.
+pub fn walk(
+    cwd: &Path,
+    plan: &FileSelectionPlan,
+    policy: SelectionPolicy,
+    cancelled: &impl Fn() -> bool,
+    mut emit: impl FnMut(std::path::PathBuf) -> bool,
+) -> Result<(), String> {
+    let mut builder = builder(cwd, policy.effective(plan));
+    builder.sort_by_file_name(|a, b| a.cmp(b));
     for result in builder.build() {
         if cancelled() {
             return Ok(());
         }
         let entry = result.map_err(|error| error.to_string())?;
-        let Some(kind) = entry.file_type() else {
-            continue;
-        };
-        if kind.is_symlink() {
-            // only links to regular files are eligible; a broken or
-            // unreadable link is skipped, never a walk-stopping error
-            // (one dangling link must not empty Space f / Space /)
-            let Ok(metadata) = std::fs::metadata(entry.path()) else {
-                continue;
-            };
-            if !metadata.is_file() {
-                continue;
+        if let Some(rel) = eligible(&entry, cwd, plan) {
+            if !emit(rel) {
+                return Ok(());
             }
-        } else if !kind.is_file() {
-            continue;
-        }
-        let Ok(rel) = entry.path().strip_prefix(cwd) else {
-            continue;
-        };
-        if protected(rel) {
-            continue;
-        }
-        let display = display_path(rel);
-        if !plan.allows(&display) {
-            continue;
-        }
-        if !emit(rel.to_path_buf()) {
-            return Ok(());
         }
     }
     Ok(())
+}
+
+/// Why a gathered selection has no path list.
+#[derive(Debug)]
+pub enum CollectError {
+    /// More than `PATH_LIMIT` paths or `PATH_BYTES` of them.
+    Limit,
+    Walk(String),
+}
+
+/// The same eligible set as [`walk`], gathered on `threads` threads in no
+/// particular order (0093 §4.1): content search wants every path as soon
+/// as possible and orders its results itself. A cancelled walk returns
+/// what it had; the caller checks its own token.
+pub fn collect(
+    cwd: &Path,
+    plan: &FileSelectionPlan,
+    policy: SelectionPolicy,
+    cancelled: &(impl Fn() -> bool + Sync),
+    threads: usize,
+) -> Result<Vec<std::path::PathBuf>, CollectError> {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    /// A thread's finds, handed over in runs and once more when it stops.
+    struct Run<'a> {
+        local: Vec<std::path::PathBuf>,
+        gathered: &'a parking_lot::Mutex<Vec<std::path::PathBuf>>,
+    }
+    impl Drop for Run<'_> {
+        fn drop(&mut self) {
+            self.gathered.lock().append(&mut self.local);
+        }
+    }
+    let gathered = parking_lot::Mutex::new(Vec::new());
+    let failure = parking_lot::Mutex::new(None);
+    let (count, bytes) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let over = AtomicBool::new(false);
+    let mut builder = builder(cwd, policy.effective(plan));
+    builder.threads(threads);
+    builder.build_parallel().run(|| {
+        let mut run = Run {
+            local: Vec::new(),
+            gathered: &gathered,
+        };
+        let (failure, count, bytes, over) = (&failure, &count, &bytes, &over);
+        Box::new(move |result| {
+            if cancelled() || over.load(Ordering::Acquire) {
+                return ignore::WalkState::Quit;
+            }
+            let entry = match result {
+                Ok(entry) => entry,
+                Err(error) => {
+                    failure.lock().get_or_insert(error.to_string());
+                    over.store(true, Ordering::Release);
+                    return ignore::WalkState::Quit;
+                }
+            };
+            let Some(rel) = eligible(&entry, cwd, plan) else {
+                return ignore::WalkState::Continue;
+            };
+            let size = rel.as_os_str().as_encoded_bytes().len();
+            if count.fetch_add(1, Ordering::AcqRel) >= PATH_LIMIT
+                || bytes.fetch_add(size, Ordering::AcqRel) + size > PATH_BYTES
+            {
+                over.store(true, Ordering::Release);
+                return ignore::WalkState::Quit;
+            }
+            run.local.push(rel);
+            if run.local.len() >= 256 {
+                run.gathered.lock().append(&mut run.local);
+            }
+            ignore::WalkState::Continue
+        })
+    });
+    if let Some(error) = failure.into_inner() {
+        return Err(CollectError::Walk(error));
+    }
+    if over.into_inner() {
+        return Err(CollectError::Limit);
+    }
+    Ok(gathered.into_inner())
 }
 
 /// The protected-path exclusion as rg argv fragments (`--glob !.git`…).

@@ -2,9 +2,10 @@
 //!
 //! Deterministic synthetic data, the production `feed` + render path,
 //! `Instant` timing, percentile report. No network, no bench framework.
-//! Not a CI assert — wall clock varies by machine; this is the
-//! measurement surface that any perf claim or regression check re-runs
-//! and diffs.
+//! Most scenarios are measurement, not assertion — wall clock varies by
+//! machine; they are the surface any perf claim re-runs and diffs. The
+//! two find scenarios (`find`, `search`, 0093 §7) carry budgets and fail
+//! past them; local release qualification runs those.
 //!
 //! Two scenario families:
 //! - Buffer scenarios drive `Editor::feed` + `headless::frame_string`
@@ -17,6 +18,7 @@
 //!   editor loop, no sleeps for correctness.
 
 mod completion;
+mod find;
 
 use std::io;
 use std::path::PathBuf;
@@ -657,6 +659,12 @@ pub fn run(which: &str) -> io::Result<()> {
     }
     if all || which == "drop_stale" {
         bench_drop_stale()?;
+    }
+    if all || which == "find" {
+        find::finder()?;
+    }
+    if all || which == "search" {
+        find::search()?;
     }
     if all || which == "completion" {
         completion::run()?;

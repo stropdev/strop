@@ -195,6 +195,44 @@ fn grep_picker() {
     });
 }
 
+/// 0093 §3.7: the status row appears under the field once a toggle
+/// leaves the default, in words, and the list is what the toggles admit.
+#[test]
+fn grep_picker_toggled() {
+    each("grep-toggled", |editor| {
+        editor.open_search(false);
+        editor.paste_bracketed("render");
+        for letter in ['c', 'w'] {
+            editor.feed(strop_core::frontend_input::Key::Alt(letter));
+        }
+        editor.wait_picker();
+        settle_picker()
+    });
+}
+
+/// 0093 §5 (0091 B8): a location list reads `path:line  source`, the
+/// open buffer's text winning over the disk's.
+#[test]
+fn locations_picker() {
+    each("locations", |editor| {
+        let root = editor.cwd().to_path_buf();
+        let places = [
+            (root.join("src/render/statusline.rs"), 2),
+            (root.join("src/render/mod.rs"), 3),
+            (root.join("src/render/mod.rs"), 4),
+        ];
+        let sources = places
+            .iter()
+            .map(|(path, line)| {
+                let text = std::fs::read_to_string(path).unwrap();
+                text.lines().nth(*line).unwrap().to_owned()
+            })
+            .collect();
+        editor.locations_fixture(&places, sources);
+        settle_picker()
+    });
+}
+
 #[test]
 fn help() {
     each("help", |editor| {

@@ -99,6 +99,7 @@ pub use normal::{
 };
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
+pub use picker::RecentFiles;
 pub use remote::RemoteEvent;
 pub use remote_completion::{RemoteCompletionKey, RemoteCompletionResult};
 pub use resolution::{ResolutionEvent, ResolutionState};

@@ -176,6 +176,7 @@ fn execute(
                     editor.set_message(format!("session restore failed: {error}"));
                 }
             }
+            editor.load_recent_files();
             apply_initial_line(
                 &mut editor,
                 path.as_ref().and_then(|location| location.line),

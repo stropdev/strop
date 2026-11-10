@@ -82,7 +82,6 @@ pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
     ("select-all", "select all occurrences in buffer"),
     ("select-skip", "skip the next occurrence candidate"),
     ("select-pop", "drop the last-added occurrence"),
-    ("search-options", "choose hidden and ignored search policy"),
     ("tab-size", "choose indentation width: N or auto"),
     (
         "indent-style",

@@ -589,6 +589,7 @@ fn key_token(key: Key) -> String {
         Key::CtrlCaret => "ctrl-^".into(),
         Key::CtrlV => "ctrl-v".into(),
         Key::CtrlL => "ctrl-l".into(),
+        Key::Alt(letter) => format!("alt-{letter}"),
     }
 }
 

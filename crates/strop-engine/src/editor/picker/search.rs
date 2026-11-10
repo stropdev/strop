@@ -426,7 +426,7 @@ impl Editor {
         let mut lost_selection = false;
         if let Some(restore) = context.restore.take() {
             if let Some(index) = restore.selected_item {
-                glue.picker.selected = index;
+                glue.picker.select(index);
             } else {
                 lost_selection = restore.selected.is_some();
             }

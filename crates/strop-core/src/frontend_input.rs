@@ -45,6 +45,10 @@ pub enum Key {
     CtrlV,
     /// vim ctrl-l: force a full terminal repaint (desync recovery).
     CtrlL,
+    /// Alt with a letter, where the focused surface binds that chord: a
+    /// picker's search toggles (0093 §3.7). Everywhere else Alt keeps its
+    /// terminal meaning — Escape, then the letter.
+    Alt(char),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

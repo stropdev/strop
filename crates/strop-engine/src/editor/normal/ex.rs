@@ -258,7 +258,6 @@ impl Editor {
             "sp" | "split" => self.split(false, if arg.is_empty() { None } else { Some(arg) }),
             "help" | "h" => self.open_help_topic(arg),
             "jumps" => self.open_jumps_picker(),
-            "search-options" => self.open_search_options(),
             "tab-size" => self.tab_size_command(arg),
             "theme" => self.theme_command(arg),
             "indent-style" => self.indent_style_command(arg),

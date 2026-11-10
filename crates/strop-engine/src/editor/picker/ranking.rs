@@ -17,10 +17,15 @@ pub struct Event {
     pub picker: PickerId,
     pub update: RankingEvent<Key>,
 }
+/// What outlives any one picker: the ranking channel, and the session's
+/// two pieces of finder memory — how the search field is toggled and
+/// which files this project's user keeps reaching for (0093 §3.4, §3.7).
 pub(crate) struct State {
     pub tx: Sender<Event>,
     pub rx: Option<Receiver<Event>>,
     pub retiring: HashSet<PickerId>,
+    pub modes: strop_picker::query::SearchModes,
+    pub recent: super::RecentFiles,
 }
 impl Default for State {
     fn default() -> Self {
@@ -29,6 +34,8 @@ impl Default for State {
             tx,
             rx: Some(rx),
             retiring: HashSet::new(),
+            modes: Default::default(),
+            recent: Default::default(),
         }
     }
 }

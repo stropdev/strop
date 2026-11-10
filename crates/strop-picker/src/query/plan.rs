@@ -16,8 +16,7 @@ use super::parser::{CaseMode, QueryDiagnostic};
 fn build_regex(pattern: &str, case: CaseMode) -> Result<regex::Regex, QueryDiagnostic> {
     let insensitive = match case {
         CaseMode::Ignore => true,
-        // smart: an all-lowercase pattern matches either case
-        CaseMode::Smart => !pattern.chars().any(|c| c.is_uppercase()),
+        CaseMode::Smart => !has_capital(pattern),
         CaseMode::Sensitive => false,
     };
     regex::RegexBuilder::new(pattern)
@@ -28,6 +27,22 @@ fn build_regex(pattern: &str, case: CaseMode) -> Result<regex::Regex, QueryDiagn
             message: format!("invalid regex: {error}"),
             suggestion: None,
         })
+}
+
+/// Smart case asks whether the pattern *spells* a capital: the letter
+/// after a backslash is an escape (`\S`, `\W`, `\B`), not text.
+fn has_capital(pattern: &str) -> bool {
+    let mut escaped = false;
+    for c in pattern.chars() {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c.is_uppercase() {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

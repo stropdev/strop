@@ -284,8 +284,8 @@ mod tests {
     #[test]
     fn content_case_selects_the_remote_rg_flag() {
         for (input, expected) in [
-            ("needle", "--ignore-case"),
-            ("NEEDLE", "--ignore-case"),
+            ("needle", "--smart-case"),
+            ("NEEDLE", "--smart-case"),
             ("case:ignore NEEDLE", "--ignore-case"),
             ("case:insensitive NEEDLE", "--ignore-case"),
             ("case:sensitive NEEDLE", "--case-sensitive"),

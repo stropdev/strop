@@ -73,16 +73,17 @@ mod tests {
     }
 
     #[test]
-    fn case_is_insensitive_by_default_with_sensitive_and_smart_overrides() {
+    fn case_is_smart_by_default_with_sensitive_and_ignore_overrides() {
+        assert!(fuzzy_score("mixedcase", "src/MixedCase.rs").is_some());
+        assert!(fuzzy_score("MixedCase", "src/MixedCase.rs").is_some());
+        assert!(fuzzy_score("MixedCase", "src/mixedcase.rs").is_none());
         for needle in ["mixedcase", "MIXEDCASE", "MixedCase"] {
-            assert!(
-                fuzzy_score(needle, "src/MixedCase.rs").is_some(),
-                "{needle}"
-            );
-            assert!(
-                fuzzy_score(needle, "src/mixedcase.rs").is_some(),
-                "{needle}"
-            );
+            for text in ["src/MixedCase.rs", "src/mixedcase.rs"] {
+                assert!(
+                    fuzzy_score_with_case(needle, text, crate::query::CaseMode::Ignore).is_some(),
+                    "{needle} {text}"
+                );
+            }
         }
         assert!(fuzzy_score_with_case(
             "MIXEDCASE",

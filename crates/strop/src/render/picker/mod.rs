@@ -83,31 +83,6 @@ fn count_note(picker: &strop_picker::Picker, streaming: bool) -> String {
     }
 }
 
-/// The engine's query summary reads `namespace · mode · hidden X (origin)
-/// · ignored Y (origin)`. It is chrome only when something in it is not
-/// the default: the namespace is dropped when it is the working
-/// directory, and the whole row when the rest matches the config.
-fn non_default_scope(editor: &Editor, summary: &str) -> Option<String> {
-    let config = editor.config();
-    let on_off = |on: bool| if on { "on" } else { "off" };
-    let default_tail = format!(
-        "hidden {} (session) · ignored {} (session)",
-        on_off(config.search_show_hidden),
-        on_off(!config.search_respect_ignore)
-    );
-    let cwd = editor.cwd().to_string_lossy();
-    let (namespace, rest) = summary.split_once(" · ")?;
-    let local = namespace == cwd || namespace == "local";
-    if local && rest.ends_with(&default_tail) && !rest.contains("(query)") {
-        return None;
-    }
-    Some(if local {
-        rest.to_owned()
-    } else {
-        summary.to_owned()
-    })
-}
-
 pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     let Some(glue) = editor.picker() else {
         return;
@@ -237,21 +212,20 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         fields.push(replacement.line);
     }
     frame.render_widget(Paragraph::new(fields), field_area);
-    // The scope row (rule 4): only when a scope differs from the default
-    // — an explicit qualifier, a session toggle away from the config, or
-    // a namespace other than the working directory.
-    let scope_y = field_area.y + input_h - 1;
-    if scope_y < content_area.y && summary_roles {
-        if let Some(scope) = non_default_scope(editor, &glue.query_summary) {
-            frame.render_widget(
-                Paragraph::new(scope).style(Style::default().fg(t.muted)),
-                Rect {
-                    y: scope_y,
-                    height: 1,
-                    ..field_area
-                },
-            );
-        }
+    // The status row (rule 4): only when the search differs from the
+    // default — a toggle, an explicit qualifier, or a root other than the
+    // working directory. The engine words it; an empty row is no row.
+    let status_y = field_area.y + input_h - 1;
+    if status_y < content_area.y && summary_roles && !glue.status_row.is_empty() {
+        let status = strop_core::layout::printable_text(&glue.status_row);
+        frame.render_widget(
+            Paragraph::new(status.into_owned()).style(Style::default().fg(t.muted)),
+            Rect {
+                y: status_y,
+                height: 1,
+                ..field_area
+            },
+        );
     }
 
     // 0050 §8: preparation commits one content-aware split for the list,

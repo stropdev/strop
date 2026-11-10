@@ -18,6 +18,7 @@ use super::super::clip;
 use super::super::file_name::{self, Label, Role};
 use super::super::style::Tokens;
 
+mod location;
 mod search;
 #[cfg(test)]
 mod tests;
@@ -146,6 +147,9 @@ pub(super) fn render_results(
             }
             strop_picker::Kind::Buffers => buffer_row(t, item, match_cols, area.width, active),
             strop_picker::Kind::Diagnostics => diagnostic_row(t, item, root, area.width, active),
+            strop_picker::Kind::Locations => {
+                location::location_row(t, item, match_cols, root, area.width, active)
+            }
             strop_picker::Kind::Theme => match &item.payload {
                 strop_picker::Payload::ThemeChoice(id) => {
                     theme_row(t, *id, match_cols, area.width, active)

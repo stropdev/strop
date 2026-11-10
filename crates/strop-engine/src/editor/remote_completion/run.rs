@@ -20,7 +20,12 @@ pub(super) fn run_completion(
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
     match query {
-        RemoteCompletionQuery::Directory { location, segment } => directory::run(
+        RemoteCompletionQuery::Directory {
+            location,
+            segment,
+            typed,
+        } => directory::run(
+            typed.as_deref(),
             location,
             &segment,
             directory::Sources {

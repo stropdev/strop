@@ -1713,6 +1713,7 @@ name = "strop-picker"
 version = "0.57.0"
 dependencies = [
  "base64",
+ "flate2",
  "globset",
  "grep",
  "ignore",

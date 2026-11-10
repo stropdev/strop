@@ -36,7 +36,13 @@ fn yanked_register_inserts_into_picker_and_prompt_fields() {
     e.feed_text("\"");
     assert_eq!(e.pending.text(), "/Needle");
     e.feed_text("<cr>");
-    assert_eq!(e.head(), 7);
+    // smart case: the capital makes case count, so `needle` on line 2 is
+    // not a match and the search wraps to the word it started on
+    assert_eq!(e.head(), 0);
+    e.feed_text("/needle<cr>");
+    assert_eq!(e.head(), 7, "an all-lowercase pattern matches either case");
+    e.feed_text("n");
+    assert_eq!(e.head(), 0);
     e.set_register(Some('a'), crate::editor::Register::characterwise("é"));
     e.open_picker(Kind::Files);
     e.feed(strop_core::frontend_input::Key::CtrlR);

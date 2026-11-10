@@ -60,7 +60,6 @@ impl Editor {
             // Files launches its walk right after install.
             Kind::Files | Kind::Search | Kind::RemoteHosts | Kind::RemoteAddress => vec![],
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
-            Kind::SearchOptions => unreachable!("search options build their own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
             Kind::Theme => unreachable!("the theme selector builds its own items"),
             Kind::Actions => unreachable!("actions build their own captured selector"),
@@ -69,7 +68,15 @@ impl Editor {
                 unreachable!("location lists use PickerGlue::diagnostics")
             }
         };
-        self.set_picker(PickerGlue::diagnostics(Picker::new(kind, items, false)));
+        let mut picker = Picker::new(kind, items, false);
+        match kind {
+            // The current buffer leads the list; the bar rests on the one
+            // before it, so `Space b` Enter is the alternate (0093 §3.6).
+            Kind::Buffers => picker.resting_row = 1,
+            Kind::Files => picker.priors = self.file_priors(),
+            _ => {}
+        }
+        self.set_picker(PickerGlue::diagnostics(picker));
         if kind == Kind::Files {
             self.picker_input_changed();
         }
@@ -78,48 +85,41 @@ impl Editor {
         }
     }
 
+    /// What the finder leads with (0093 §3.4): the other open files,
+    /// most recently used first, then the current one, then this
+    /// project's frecent files. The current file trails the open ones so
+    /// `Space f` Enter is the file you were just in, never a no-op.
+    fn file_priors(&self) -> strop_picker::rank::Priors {
+        let root = self.current_workspace_root();
+        if root.filesystem != strop_workspace::Filesystem::Local {
+            return Default::default();
+        }
+        let current = self.current();
+        let open = |id: &strop_core::id::DocumentId| {
+            let path = self.docs.get(*id)?.buf.path.as_ref()?;
+            let relative = path.strip_prefix(&root.path).ok()?;
+            Some(strop_picker::display_path(relative).into_owned())
+        };
+        // Frecent paths are filed relative to the working directory; the
+        // finder's rows are relative to its own root.
+        let frecent = self.picker_ranking.recent.ranked().into_iter();
+        let frecent = frecent.filter_map(|path| {
+            let path = self.cwd.join(path);
+            let relative = path.strip_prefix(&root.path).ok()?;
+            Some(strop_picker::display_path(relative).into_owned())
+        });
+        let others = self.mru.iter().filter(|id| **id != current);
+        strop_picker::rank::Priors::new(
+            others.filter_map(open).chain(open(&current)).chain(frecent),
+        )
+    }
+
     /// `space S` (0063 §2): every declaration in the opened scope —
     /// syntax-fallback tier now, language servers merge in as they
     /// warm up. The canonical query AST drives admission; ranking is
     /// local per keystroke.
     pub(crate) fn open_workspace_symbols(&mut self) {
         self.open_picker(Kind::WorkspaceSymbols);
-    }
-
-    /// `:search-options` (0051 R03): the hidden/ignore controls with
-    /// their live values; Enter toggles and the row updates in place.
-    pub(crate) fn open_search_options(&mut self) {
-        let item = |setting: strop_picker::SearchSetting, on: bool| strop_picker::Item {
-            badge: None,
-            text: format!(
-                "{}: {}",
-                match setting {
-                    strop_picker::SearchSetting::Hidden => "hidden (dotfiles)",
-                    strop_picker::SearchSetting::RespectIgnore => "ignored entries",
-                },
-                match (setting, on) {
-                    (strop_picker::SearchSetting::Hidden, true)
-                    | (strop_picker::SearchSetting::RespectIgnore, false) => "include",
-                    _ => "exclude",
-                },
-            ),
-            payload: strop_picker::Payload::SearchOption(setting),
-        };
-        let items = vec![
-            item(
-                strop_picker::SearchSetting::Hidden,
-                self.config.search_show_hidden,
-            ),
-            item(
-                strop_picker::SearchSetting::RespectIgnore,
-                self.config.search_respect_ignore,
-            ),
-        ];
-        self.set_picker(PickerGlue::diagnostics(Picker::new(
-            Kind::SearchOptions,
-            items,
-            false,
-        )));
     }
 
     /// The jumplist as a menu: older records newest-first, the current

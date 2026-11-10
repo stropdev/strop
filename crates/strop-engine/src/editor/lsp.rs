@@ -14,6 +14,7 @@ use strop_workspace::{Filesystem, ResourceLocation};
 
 pub(crate) mod attach;
 mod lifecycle;
+pub(crate) mod locations;
 mod navigation;
 pub(crate) mod remote;
 mod routing;

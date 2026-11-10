@@ -119,6 +119,33 @@ impl Editor {
         self.wait_picker();
     }
 
+    /// Open a location list on fixture places (path, 0-based line)
+    /// through the row builder a server reply uses. `sources` is what
+    /// the language client would have read from disk for each place.
+    pub fn locations_fixture(
+        &mut self,
+        places: &[(std::path::PathBuf, usize)],
+        sources: Vec<String>,
+    ) {
+        let items = places
+            .iter()
+            .map(|(path, line)| strop_lsp::ServerLocation {
+                doc: strop_workspace::ResourceLocation::local(path.clone()),
+                position: strop_lsp::ServerPosition {
+                    line: strop_core::id::LineIndex::new(*line),
+                    column: strop_lsp::ServerColumn::new(0),
+                },
+            })
+            .collect();
+        let rows = super::lsp::locations::rows(self, items, sources);
+        self.set_picker(super::PickerGlue::diagnostics(strop_picker::Picker::new(
+            strop_picker::Kind::Locations,
+            rows,
+            false,
+        )));
+        self.wait_picker();
+    }
+
     /// Whether admitted syntax analysis has not yet landed — the settle
     /// condition for scenes whose analysis flows through the app channel.
     pub fn analysis_pending(&self) -> bool {

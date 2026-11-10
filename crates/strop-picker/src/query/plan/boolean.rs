@@ -57,7 +57,13 @@ impl BooleanPlan {
     /// Whether the AST consults `kind:` — the signal to build the
     /// syntax-fallback symbol index (0063 §2).
     pub fn uses_kind(&self) -> bool {
-        self.root.uses_kind()
+        self.root.uses(MetadataKey::Kind)
+    }
+
+    /// Whether the AST consults `repo:` — the signal to discover the
+    /// scope's project boundaries before searching (0093 §4.3).
+    pub fn uses_repo(&self) -> bool {
+        self.root.uses(MetadataKey::Repo)
     }
 
     pub(super) fn compile_plan(
@@ -405,12 +411,14 @@ impl CompiledExpr {
         }
     }
 
-    fn uses_kind(&self) -> bool {
+    fn uses(&self, wanted: MetadataKey) -> bool {
         match self {
-            Self::And(operands) | Self::Or(operands) => operands.iter().any(Self::uses_kind),
-            Self::Not(inner) => inner.uses_kind(),
+            Self::And(operands) | Self::Or(operands) => {
+                operands.iter().any(|operand| operand.uses(wanted))
+            }
+            Self::Not(inner) => inner.uses(wanted),
             Self::Content(_) => false,
-            Self::Metadata { key, .. } => *key == MetadataKey::Kind,
+            Self::Metadata { key, .. } => *key == wanted,
             Self::Unknown => false,
         }
     }

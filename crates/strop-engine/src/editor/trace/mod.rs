@@ -107,5 +107,6 @@ pub fn replay_token(key: Key) -> String {
         Key::CtrlCaret => "<c-^>".into(),
         Key::CtrlV => "<c-v>".into(),
         Key::CtrlL => "<c-l>".into(),
+        Key::Alt(letter) => format!("<m-{letter}>"),
     }
 }

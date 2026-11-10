@@ -107,11 +107,11 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::TextLine,
     },
     Binding {
-        keys: ":tab-size :indent-style :search-options",
-        desc: "source indentation and search visibility controls",
+        keys: ":tab-size :indent-style",
+        desc: "source indentation controls",
         sections: &["ex"],
         live: true,
-        id: "source-and-search-settings",
+        id: "source-indentation-settings",
         handler: Handler::Contextual,
     },
     Binding {

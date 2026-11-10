@@ -93,10 +93,14 @@ fn local_directory_completion_descends_and_rejects_stale_field_results() {
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_owned());
     editor.feed_text(":e fol<tab>");
     complete_worker(&mut editor);
-    assert!(editor.pending.text().ends_with("/folder/"));
+    // a relative operand completes as typed, never to an absolute URI
+    assert_eq!(editor.pending.text(), ":e folder/");
     editor.feed_text("<tab>");
     complete_worker(&mut editor);
-    assert!(editor.pending.text().ends_with("/folder/child.txt"));
+    assert_eq!(editor.pending.text(), ":e folder/child.txt");
+    editor.feed_text("<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(editor.buf().text(), "child\n");
     editor.feed_text("<esc><esc>:e fol<tab>x");
     let edited = editor.pending.text().to_owned();
     complete_worker(&mut editor);

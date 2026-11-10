@@ -222,6 +222,7 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
                 context,
                 kind,
                 items,
+                ..
             } => json!({
                 "service":"lsp","result":kind.label(),"context":context,"count":items.len(),
             }),

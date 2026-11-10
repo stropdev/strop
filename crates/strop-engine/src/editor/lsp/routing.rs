@@ -238,6 +238,7 @@ impl Editor {
                 context,
                 kind,
                 items,
+                sources,
             } => {
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected("lsp", "location-list owner changed");
@@ -253,37 +254,8 @@ impl Editor {
                         }
                     }
                     count => {
-                        use strop_picker::{Item, Kind, Payload};
-                        let items = items
-                            .into_iter()
-                            .map(|location| {
-                                let line = location.position.line.get() + 1;
-                                let col = location.position.column.get() + 1;
-                                let text = format!("{}:{}:{}", location.doc.label(), line, col);
-                                let payload = match location.doc.filesystem {
-                                    Filesystem::Local => Payload::Grep {
-                                        location: strop_workspace::ResourceLocation::local(
-                                            location.doc.path,
-                                        ),
-                                        line,
-                                        col,
-                                        match_len: 1,
-                                        line_text: "".into(),
-                                    },
-                                    Filesystem::Remote(endpoint) => Payload::Remote {
-                                        endpoint,
-                                        path: location.doc.path,
-                                        line,
-                                        col,
-                                    },
-                                };
-                                Item {
-                                    badge: None,
-                                    text,
-                                    payload,
-                                }
-                            })
-                            .collect();
+                        use strop_picker::Kind;
+                        let items = super::locations::rows(self, items, sources);
                         let mut glue = crate::editor::PickerGlue::diagnostics(
                             strop_picker::Picker::new(Kind::Locations, items, false),
                         );

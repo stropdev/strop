@@ -1,0 +1,49 @@
+   1 //! The modeline: one quiet row at the bottom edge.                        
+   2 //!                                                                        
+   3 //! Every width is a display cell, never a character.                      
+   4                                                                            
+   5 u╭ locations ─────────────────────────────────────────────────── 3 ╮       
+   6  │ ❯ ▏                                                             │       
+   7 /│                                                                 │       
+   8 p│ ▌ …nder/statusline.rs:3  //! Ever… │ src/render/statusline.rs:3 │       
+   9 ││   src/render/mod.rs:4  pub fn ren… │   1 │ //! The modeline: on │       
+  10 ││   src/render/mod.rs:5  statusline… │   2 │ //!                  │       
+  11 ││                                    │▌  3 │ //! Every width is a │       
+  12 }│                                    │   4 │                      │       
+  13  │                                    │   5 │ use std::path::Path; │       
+  14 i│                                    │   6 │                      │       
+  15 ││                                    │   7 │ /// Gather the row.  │       
+  16 ││                                    │   8 │ pub struct Modeline  │       
+  17 ││                                    │   9 │     chip: String,    │       
+  18 ││                                    │  10 │     dirty: bool,     │       
+  19 ││                                    │  11 │     line: usize,     │       
+  20 }╰  enter  open   ctrl-o  collect   esc  close ────────────────────╯       
+~                                                                               
+~                                                                               
+~                                                                               
+  LOCS    src/render/statusline.rs                                       1:1  5%
+
+  0: 1:#464b54/#17191f+b 4:#73572f/#17191f 51:#454a52/#17191f+i 23:#17191f/#17191f 1:reset/reset
+  1: 1:#464b54/#15171c+b 4:#464b54/#15171c 3:#454a52/#15171c+i 71:reset/#15171c 1:reset/reset
+  2: 1:#464b54/#15171c+b 4:#464b54/#15171c 53:#454a52/#15171c+i 21:reset/#15171c 1:reset/reset
+  3: 1:#464b54/#15171c+b 4:#464b54/#15171c 74:reset/#15171c 1:reset/reset
+  4: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#655273/#15171c 1:#858c9a/#1c1f25 11:#e6e1d6/#1c1f25+b 55:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  5: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#1c1f25 61:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  6: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#454a52/#15171c+i 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  7: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#655273/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 1:reset/#23272f 6:#a8adb8/#23272f 13:#e6e1d6/#23272f 2:#a8adb8/#23272f 2:reset/#23272f 9:#e6e1d6/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 11:#a8adb8/#1c1f25 13:#e6e1d6/#1c1f25+b 2:#a8adb8/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  8: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 11:#a8adb8/#1c1f25 6:#e6e1d6/#1c1f25 2:#a8adb8/#1c1f25 2:reset/#1c1f25 11:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 20:#838a97/#1c1f25+i 1:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  9: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 11:#a8adb8/#1c1f25 6:#e6e1d6/#1c1f25 2:#a8adb8/#1c1f25 2:reset/#1c1f25 11:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 3:#838a97/#1c1f25+i 18:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 10: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:#e8a848/#23272f 3:#e6e1d6/#23272f+b 3:#4a5160/#23272f 20:#838a97/#23272f+i 1:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 11: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#51555d/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 21:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 12: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:reset/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 3:#c99ce0/#1c1f25 1:#e6e1d6/#1c1f25 3:#8ecdb8/#1c1f25 2:#9da3af/#1c1f25 4:#e6e1d6/#1c1f25 2:#9da3af/#1c1f25 4:#8ecdb8/#1c1f25 1:#9da3af/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 13: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#655273/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 21:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 14: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 19:#838a97/#1c1f25+i 2:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 15: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 3:#c99ce0/#1c1f25 1:#e6e1d6/#1c1f25 6:#c99ce0/#1c1f25 1:#e6e1d6/#1c1f25 8:#8ecdb8/#1c1f25 1:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 16: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 8:#e6e1d6/#1c1f25 1:#9da3af/#1c1f25 1:#e6e1d6/#1c1f25 6:#8ecdb8/#1c1f25 1:#9da3af/#1c1f25 4:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 17: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 9:#e6e1d6/#1c1f25 1:#9da3af/#1c1f25 1:#e6e1d6/#1c1f25 4:#8ecdb8/#1c1f25 1:#9da3af/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 18: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#1e2128/#15171c 1:#858c9a/#1c1f25 36:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 3:#4a5160/#1c1f25 8:#e6e1d6/#1c1f25 1:#9da3af/#1c1f25 1:#e6e1d6/#1c1f25 5:#8ecdb8/#1c1f25 1:#9da3af/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 19: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#51555d/#15171c 2:#858c9a/#1c1f25 7:#e8a848/#23272f+b 7:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 5:#e8a848/#23272f+b 28:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 20: 1:#2c303a/#15171c 78:reset/#15171c 1:reset/reset
+ 21: 1:#2c303a/#15171c 78:reset/#15171c 1:reset/reset
+ 22: 1:#2c303a/#15171c 78:reset/#15171c 1:reset/reset
+ 23: 8:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 39:reset/#17191f 7:#464b54/#17191f
