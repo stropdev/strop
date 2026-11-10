@@ -12,8 +12,8 @@ mod tests;
 
 pub use parse::parse;
 pub use query::{
-    search_all, search_backward, search_forward, search_visit, CompiledQuery, QueryError,
-    SearchMatch,
+    search_all, search_backward, search_forward, search_visit, search_visit_captures,
+    CompiledQuery, QueryError, SearchMatch,
 };
 pub use resolve::{
     cursor_after, delimiter_pair, find_character, is_keyword, literal_from, matching_delimiter_at,

@@ -48,6 +48,10 @@ pub struct History {
     current: usize,
     /// Open transaction: (undo ops, redo ops), recorded in apply order.
     pending: Option<(Vec<Edit>, Vec<Edit>)>,
+    /// A compound command (`:g`, `:normal` over a range) holds the open
+    /// transaction across the commits of the commands it runs.
+    #[serde(skip)]
+    held: bool,
 }
 
 impl Default for History {
@@ -63,6 +67,7 @@ impl Default for History {
             }],
             current: 0,
             pending: None,
+            held: false,
         }
     }
 }
@@ -255,7 +260,22 @@ impl History {
         }
     }
 
+    /// Keep one transaction open until `release`: every `commit` in
+    /// between is a no-op, so the whole compound command is one undo step.
+    pub fn hold(&mut self) {
+        self.begin();
+        self.held = true;
+    }
+
+    pub fn release(&mut self) {
+        self.held = false;
+        self.commit();
+    }
+
     pub fn commit(&mut self) {
+        if self.held {
+            return;
+        }
         let Some((undo, redo)) = self.pending.take() else {
             return;
         };

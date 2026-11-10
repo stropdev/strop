@@ -214,3 +214,13 @@ pub fn search_visit(
 ) -> Result<(), QueryError> {
     super::resolve::search::visit_all(buf, query, visitor)
 }
+
+/// `search_visit` with each match's capture groups: `groups[n - 1]` is
+/// `\n`, `None` when that group took no part in the match.
+pub fn search_visit_captures(
+    buf: &Buffer,
+    query: &CompiledQuery,
+    visitor: impl FnMut(SearchMatch, &[Option<SearchMatch>]) -> std::ops::ControlFlow<()>,
+) -> Result<(), QueryError> {
+    super::resolve::search::visit_captures(buf, query, visitor)
+}

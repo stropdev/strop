@@ -139,6 +139,13 @@ impl Buffer {
     pub fn commit_undo_group(&mut self) {
         self.history.commit();
     }
+    /// Hold one undo group open across nested commits (`History::hold`).
+    pub fn hold_undo_group(&mut self) {
+        self.history.hold();
+    }
+    pub fn release_undo_group(&mut self) {
+        self.history.release();
+    }
 
     fn validate_range(&self, range: Range) -> Result<(), EditError> {
         if range.start > range.end || !self.is_boundary(range.start) || !self.is_boundary(range.end)
