@@ -73,15 +73,7 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     let replay = root.join("replay.keys");
     std::fs::write(&replay, text).unwrap();
     let replayed = successful(run(root, &["--headless".as_ref(), replay.as_os_str()]));
-    let final_state = |text: &str| -> Value {
-        serde_json::from_str(
-            text.lines()
-                .find_map(|line| line.strip_prefix("─── state "))
-                .unwrap(),
-        )
-        .unwrap()
-    };
-    assert_eq!(final_state(&replayed), final_state(&output));
+    assert_eq!(replayed_state(&replayed), replayed_state(&output));
     assert!(output.contains("needle é<界x>"));
 
     let quit_script = root.join("quit.keys");
@@ -335,13 +327,28 @@ fn metadata_trace_extracts_a_script_that_reproduces_the_run() {
         root,
         &["headless".as_ref(), replay.as_os_str(), file.as_os_str()],
     ));
-    let final_state = |text: &str| -> Value {
-        serde_json::from_str(
-            text.lines()
-                .find_map(|line| line.strip_prefix("─── state "))
-                .unwrap(),
-        )
-        .unwrap()
-    };
-    assert_eq!(final_state(&replayed), final_state(&recorded));
+    assert_eq!(replayed_state(&replayed), replayed_state(&recorded));
+}
+
+/// The editor state a replay must reproduce. `completion.publication`
+/// is left out: it is the completion mailbox's memory accounting
+/// (bytes charged, high-water mark, deliveries destroyed), which depends
+/// on when the worker thread ran against the editor thread — two live
+/// runs of the same keys already differ there. Everything a user can
+/// observe stays in the comparison.
+fn replayed_state(text: &str) -> Value {
+    let mut state: Value = serde_json::from_str(
+        text.lines()
+            .find_map(|line| line.strip_prefix("─── state "))
+            .unwrap(),
+    )
+    .unwrap();
+    let publication = state["completion"]
+        .as_object_mut()
+        .and_then(|completion| completion.remove("publication"));
+    assert!(
+        publication.is_some(),
+        "the state names its completion accounting"
+    );
+    state
 }

@@ -82,7 +82,7 @@ fn completion_physical_word_keys_resize_accept_escape_and_undo() {
             == "result response reusable return_value\nresponse\n"
     });
     tui.send(b":q!\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
     assert_eq!(
         std::fs::read_to_string(root.join("words.txt")).unwrap(),
         "result response reusable return_value\nresponse\n"
@@ -157,7 +157,7 @@ fn completion_tab_preview_cycle_revert_and_commit() {
             == format!("result response reusable return_value\n{chosen}\n")
     });
     tui.send(b":q!\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
     assert_eq!(
         std::fs::read_to_string(root.join("words.txt")).unwrap(),
         format!("result response reusable return_value\n{chosen}\n")
@@ -236,7 +236,7 @@ fn completion_real_clangd_docs_narrow_split_and_acceptance() {
     tui.send(b":w\r");
     tui.until(|_| std::fs::read_to_string(root.join("complete.c")).unwrap() == expected);
     tui.send(b":q!\r:q!\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
     assert_eq!(
         std::fs::read_to_string(root.join("complete.c")).unwrap(),
         expected
@@ -367,5 +367,5 @@ fn completion_held_language_keeps_physical_typing_resize_and_split_live() {
         })
     });
     tui.send(b":q!\r:q!\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
 }

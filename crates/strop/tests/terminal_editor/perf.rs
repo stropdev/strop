@@ -82,7 +82,7 @@ fn native_terminal_input_to_painted_frame_samples() {
         }
     }
     tui.send(b"\x1b:qa!\r");
-    assert!(tui.wait_exit().success(), "TUI did not exit cleanly");
+    tui.expect_clean_exit("TUI did not exit cleanly");
 
     let input_to_grid_ms = benchmark_percentiles(&raw_ms);
     let report = serde_json::json!({
@@ -158,7 +158,7 @@ done
     tui.send(b"\x1c\x0e:terminal-stop\r");
     tui.until(|screen| screen.contains("terminal ended") || screen.contains("terminal exited"));
     tui.send(b":qa\r");
-    assert!(tui.wait_exit().success(), "loaded TUI did not exit cleanly");
+    tui.expect_clean_exit("loaded TUI did not exit cleanly");
 
     let output_to_grid_ms = benchmark_percentiles(&raw_ms);
     let report = serde_json::json!({
