@@ -310,3 +310,17 @@ fn tab_size_selector_applies_and_validates() {
     e.accept_indent_choice(e.current(), strop_picker::IndentChoice::CustomWidth, "");
     assert!(e.message.contains("type a width"), "{}", e.message);
 }
+
+/// The ex surface: `:indent-style tabs` reaches the same override.
+#[test]
+fn indent_style_ex_command_sets_the_style() {
+    let mut e = Editor::new(Buffer::from_text("fn f() {\n    x;\n}\n"));
+    e.reresolve_indents();
+    e.feed_text(":indent-style tabs\r");
+    assert_eq!(e.cur().indent.style, crate::config::IndentStyle::Tabs);
+    e.feed_text("j>>");
+    assert_eq!(e.buf().line_text(1), "\t    x;");
+    e.feed_text(":indent-style\r");
+    let selector = e.picker.as_ref().expect("no argument opens the selector");
+    assert_eq!(selector.picker.kind, strop_picker::Kind::TabSize);
+}

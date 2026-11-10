@@ -329,3 +329,20 @@ fn cancellation_does_not_discard_a_save_receipt_already_queued() {
     );
     assert_eq!(editor.buf().text(), "before draft\n");
 }
+
+/// `:unfollow` keeps the snapshot and stops the follow clock; with
+/// nothing followed it says so.
+#[test]
+fn unfollow_stops_following_and_keeps_the_snapshot() {
+    let limit = ReadLimit::new(32).unwrap();
+    let mut editor = fixture(ReadSelection::Tail(limit));
+    let document = editor.current();
+    editor.start_remote_follow(document, limit);
+    assert!(editor.remote_following(document));
+    editor.feed_text(":unfollow\r");
+    assert_eq!(editor.message(), "follow stopped");
+    assert!(!editor.remote_following(document));
+    assert_eq!(editor.buf().text(), "before\n", "the snapshot stays");
+    editor.feed_text(":unfollow\r");
+    assert_eq!(editor.message(), "not following");
+}

@@ -330,6 +330,11 @@ mod tests {
         let line = e.buf().line_of(e.head());
         let text = e.buf().text().line(line).to_string();
         assert!(text.starts_with("─ Git ─"), "{text:?}");
+        // vim's `:h` abbreviation reaches the same topic
+        e.feed_text("q");
+        e.feed_text(":h git\r");
+        let line = e.buf().line_of(e.head());
+        assert!(e.buf().text().line(line).to_string().starts_with("─ Git ─"));
     }
 
     #[test]

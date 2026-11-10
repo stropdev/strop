@@ -575,6 +575,17 @@ mod picker_tests {
         );
     }
 
+    /// `:search-options` opens the same selector.
+    #[test]
+    fn search_options_ex_command_opens_the_selector() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":search-options\r");
+        e.wait_picker();
+        let p = &e.picker.as_ref().expect("selector").picker;
+        assert_eq!(p.kind, strop_picker::Kind::SearchOptions);
+        assert!(p.items[0].text.contains("hidden (dotfiles)"));
+    }
+
     /// 0051 R03: the search-options selector shows live values and toggles
     /// the session default.
     #[test]
