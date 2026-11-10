@@ -10,7 +10,7 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::editor::Editor;
@@ -113,9 +113,20 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         return;
     };
     let area = frame.area();
-    dim_backdrop(t, frame, area);
     let p = &glue.picker;
     let kind = p.kind;
+    dim_backdrop(t, frame, area);
+    if strop_engine::editor::prepare::picker_owns_frame(kind) {
+        // The workspace card's margins are frame, not backdrop: a dimmed
+        // pane border or long line beside the card border reads as a
+        // broken double border (B10). Only the (dimmed) statusline stays.
+        let above = Rect {
+            height: area.height.saturating_sub(1),
+            ..area
+        };
+        frame.render_widget(Clear, above);
+        frame.render_widget(Block::default().style(Style::default().bg(t.base)), above);
+    }
     let streaming = p.streaming || glue.rank_pending.is_some();
     let search_mode = kind == strop_picker::Kind::Search;
     let replace_mode = search_mode && p.replacement_visible;
