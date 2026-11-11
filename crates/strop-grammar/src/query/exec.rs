@@ -441,10 +441,10 @@ pub(crate) fn visit_captures(
         match m.find_at_saving(prog, at, &mut slots)? {
             Some((start, end)) => {
                 groups.clear();
-                for pair in slots.chunks_exact(2).skip(1) {
-                    groups.push((pair[0] != UNSET && pair[1] != UNSET).then(|| SearchMatch {
-                        start: ByteOffset::new(pair[0]),
-                        end: ByteOffset::new(pair[1]),
+                for [from, to] in slots.as_chunks::<2>().0.iter().skip(1) {
+                    groups.push((*from != UNSET && *to != UNSET).then(|| SearchMatch {
+                        start: ByteOffset::new(*from),
+                        end: ByteOffset::new(*to),
                     }));
                 }
                 if (start < m.len() || start < end)
