@@ -1,9 +1,17 @@
 <div align="center">
   <img src="logo.svg" width="360" alt="strop">
-  <h3>A modal text editor with Vim's keys.</h3>
-  <p>One static binary. File finder, project search and replace, git and language servers are built in.</p>
+  <h3>Vim's keys. Nothing to configure.</h3>
+  <p>A modal text editor for the terminal, in one static binary.<br>
+  File finder, project search and replace, git and language servers are built in.</p>
+  <p>
+    <a href="https://github.com/stropdev/strop/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/stropdev/strop?label=release&color=e8a848&labelColor=15171c"></a>
+    <a href="https://github.com/stropdev/strop/actions/workflows/ci.yml"><img alt="ci" src="https://img.shields.io/github/actions/workflow/status/stropdev/strop/ci.yml?branch=main&label=ci&labelColor=15171c"></a>
+    <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-a8adb8?labelColor=15171c"></a>
+  </p>
   <p>
     <a href="https://strop.dev">strop.dev</a> ·
+    <a href="https://strop.dev/start.html">first ten minutes</a> ·
+    <a href="https://strop.dev/neovim.html">coming from Neovim</a> ·
     <a href="https://github.com/stropdev/strop/releases">what's new</a>
   </p>
 </div>
@@ -17,24 +25,23 @@ at the end, what is still missing. There are no plugins to install: finding file
 and replacing across a project, git blame and history, and language servers
 come with the binary.
 
-## What you see before a change happens
+## What it does
 
-Most Vim commands run the moment you finish typing them, here as in Vim.
-A few longer ones show what they will change first:
-
-| Command | What you see before it runs |
-| --- | --- |
-| `dw`, `ci[`, `dfx`, `.` | Nothing. They run at the last key, as in Vim. |
-| `vi[` then `c`, and other Visual selections | The selection, before you press the operator. |
-| `d/pattern` while you type the pattern | The range that will be deleted, until Enter. |
-| `:s` while you type it | The changed lines, before and after, and how many. |
-| Project replace, a rename across files, file operations | Every change as a diff. `Enter` applies and writes it; `u` in the review puts the buffers and the files back. |
-| Macros, shell commands | Nothing. |
+| | Key | |
+| --- | --- | --- |
+| **Find a file** | `Space f` | Type part of the name. The files you use most in the project come first. |
+| **Search the project** | `Space /` | Live results grouped by file, smart case; `Alt-C` `Alt-W` `Alt-R` for case, whole word, regex. |
+| **Replace** | `Space R` | Every hit as a `-`/`+` pair while you type. `Enter` shows the review, `Enter` applies and writes, `u` puts the files back. |
+| **Edit the hits** | `Ctrl-O` | Collect search hits, references or diagnostics into one buffer and edit them there; `:w` writes every file. `:cdo` and `]q` `[q` work too. |
+| **Git** | `Space g g` | Stage by file, hunk or section, commit with the message in a buffer, switch branches; blame, log and history. |
+| **Language servers** | `gd` `grr` `grn` | Definitions, references, rename, code actions, diagnostics, completion — from the servers you already have. |
+| **Terminal** | `Space t` | A shell in a split. `Ctrl-\ Ctrl-N` leaves it; its output is a buffer you search and yank from. |
+| **SSH** | `strop remote ssh://host/path` | Open, edit and save over plain OpenSSH. Nothing is installed on the host. |
 
 ## Install
 
 ```sh
-curl -fsSL https://strop.dev/install.sh | sh     # prebuilt static Linux/WSL binary
+curl -fsSL https://strop.dev/install.sh | sh     # Linux and WSL, x86_64
 ```
 
 Already installed? `strop update` updates it in place. It downloads and
@@ -139,7 +146,7 @@ Report vulnerabilities privately; the policy and privacy statement live in
 
 ## Links
 
-- [strop.dev](https://strop.dev) — demo, palettes, install
+- [strop.dev](https://strop.dev) — install, first ten minutes, coming from Neovim
 - [docs/](docs/) — the documentation
 - [plans/](plans/) — design notes
 
