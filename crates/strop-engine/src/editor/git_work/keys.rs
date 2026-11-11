@@ -184,6 +184,15 @@ fn stage(view: &StatusView, line: usize, wanted: Move) -> Action {
                 refusal(stage)
             } else if entry.section == Section::Conflicts {
                 say("resolve the conflict, then stage the file")
+            } else if entry.section == Section::Untracked {
+                // an untracked file is one all-new hunk: staging it is
+                // adding the file, which keeps its mode
+                Action::Mutate {
+                    rel: entry.rel.clone(),
+                    op: MutationOp::StageFiles {
+                        entries: vec![entry],
+                    },
+                }
             } else {
                 Action::Mutate {
                     rel: entry.rel,

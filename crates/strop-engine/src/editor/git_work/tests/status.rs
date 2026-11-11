@@ -324,3 +324,41 @@ fn every_new_key_renders_in_help() {
         assert!(help.contains(row), "help is missing {row:?}:\n{help}");
     }
 }
+
+/// Saving a file in the editor is a change to the tree: an open status
+/// buffer shows it without being asked.
+#[test]
+fn saving_a_file_updates_the_status_buffer() {
+    let (_dir, mut e) = work_fixture();
+    let file = e.current();
+    key(&mut e, " gg");
+    let status = e.current();
+    assert!(text(&e).contains("working tree clean"));
+    e.switch_to(file);
+    e.feed_text("Onew first line");
+    e.feed(Key::Esc);
+    key(&mut e, ":w\r");
+    // (the saved file now has a lock beside it: that is not a change)
+    assert!(!e.doc(status).buf.text().to_string().contains("Untracked"));
+    assert!(
+        e.doc(status)
+            .buf
+            .text()
+            .to_string()
+            .contains("Unstaged (1)\nM src/lib.rs\n"),
+        "{}",
+        e.doc(status).buf.text()
+    );
+}
+
+/// `s` on the diff of an untracked file adds the file itself.
+#[test]
+fn staging_an_untracked_file_from_its_diff_adds_the_file() {
+    let (dir, mut e) = status_fixture();
+    goto(&mut e, "? scratch.txt");
+    key(&mut e, "=");
+    goto(&mut e, "+todo");
+    key(&mut e, "s");
+    assert_eq!(e.message, "staged scratch.txt");
+    assert!(porcelain(dir.path()).contains("A  scratch.txt\n"));
+}
