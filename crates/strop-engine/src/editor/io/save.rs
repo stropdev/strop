@@ -290,7 +290,7 @@ impl Editor {
         }
         let renamed = previous_path != document.buf.path;
         if saved {
-            self.commit_message_saved(key.document);
+            self.git_work_saved(key.document);
         }
         if renamed {
             self.lsp_close_document(key.document);

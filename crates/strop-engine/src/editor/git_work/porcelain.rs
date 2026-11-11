@@ -173,12 +173,15 @@ impl Editor {
         }
     }
 
-    /// A confirmed save of the message file arms the commit.
-    pub(crate) fn commit_message_saved(&mut self, document: DocumentId) {
+    /// A confirmed save: the message file's arms the commit, and any
+    /// file's may have changed the tree a status buffer shows.
+    pub(crate) fn git_work_saved(&mut self, document: DocumentId) {
         if self.is_commit_message(document) {
             if let Some(session) = self.git_work.commit.as_mut() {
                 session.written = true;
             }
+        } else {
+            self.refresh_status_buffers();
         }
     }
 
