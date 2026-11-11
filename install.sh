@@ -213,6 +213,6 @@ case ":$PATH:" in
 esac
 info ""
 info "  ${BOLD}strop${RESET}              open the welcome card"
-info "  ${BOLD}strop file.rs${RESET}      see the cut before you make it"
+info "  ${BOLD}strop file.rs${RESET}      open a file"
 info "  ${BOLD}strop update${RESET}       self-update (tarball installs)"
 info ""

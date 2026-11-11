@@ -11,7 +11,7 @@
 ~                                      ╭───────────────────────────────────────────────────────────╮                                        
 ~                                      │                                                           │                                        
 ~                                      │ strop                                                     │                                        
-~                                      │ see the cut before you make it.                           │                                        
+~                                      │ Vim's keys. Nothing to configure.                         │                                        
 ~                                      │                                                           │                                        
 ~                                      │  space  everything    space ?  keybindings    :w  save    │                                        
 ~                                      │                                                           │                                        
@@ -52,7 +52,7 @@
  10: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 61:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
  11: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 59:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
  12: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 5:#262a30/#fdfbf6+b 53:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
- 13: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 31:#8a510f/#fdfbf6 27:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 33:#8a510f/#fdfbf6 25:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
  14: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 59:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
  15: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 7:#8a510f/#e5dfd0+b 11:#656d7b/#fdfbf6 3:reset/#fdfbf6 9:#8a510f/#e5dfd0+b 12:#656d7b/#fdfbf6 3:reset/#fdfbf6 4:#8a510f/#e5dfd0+b 5:#656d7b/#fdfbf6 4:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset
  16: 1:#aeb3ba/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#fdfbf6 59:reset/#fdfbf6 1:#656d7b/#fdfbf6 39:reset/#f6f2e9 1:reset/reset

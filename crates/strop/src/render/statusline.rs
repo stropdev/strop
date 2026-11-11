@@ -8,7 +8,7 @@
 //! on failure, `Spaces:N` only when it differs from the configured
 //! default, then the position — separated by two spaces. While an
 //! operator pends, the grammar's spec footer replaces the right side in
-//! the accent (0001 §4: "see the cut before you make it"). Messages never
+//! the accent (0001 §4). Messages never
 //! live here: they have their own echo row (`render/echo.rs`).
 //!
 //! Every width is a display cell, never a character: under pressure the

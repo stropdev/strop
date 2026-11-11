@@ -55,7 +55,7 @@ fn workspace() -> tempfile::TempDir {
     .unwrap();
     std::fs::write(
         root.path().join("README.md"),
-        "# strop\n\nsee the cut before you make it.\n",
+        "# strop\n\nA modal text editor with Vim's keys.\n",
     )
     .unwrap();
     root

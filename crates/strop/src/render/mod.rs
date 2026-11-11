@@ -197,7 +197,7 @@ fn render_welcome(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         .iter()
         .map(|(key, desc)| clip::width(key) + 2 + 1 + clip::width(desc) + 3)
         .sum();
-    let tagline = "see the cut before you make it.";
+    let tagline = "Vim's keys. Nothing to configure.";
     // Only keys that do what the card says (0091 B10).
     let note = "space f finds a file · space / searches the project";
     let content = keys_row.max(clip::width(note)).max(clip::width(tagline)) + 4;
