@@ -1,6 +1,6 @@
 # 0095 — The keys
 
-- Status: **in force**
+- Status: **in force** (built: §3 has the corpus as it stands, §8 what is left)
 - Date: 2026-11-10
 - Adopts: [0091](0091-editor-critique-0.56.md) §2 and §7 "the keys";
   [0092](0092-registers-and-pinned-project.md) §3
@@ -45,49 +45,76 @@ Reading 0091 §2 and 0092 §3 against the source gives five causes, not eighty.
 The resolver stays pure and stays the one consumer-facing function
 (doctrine 2). It grows by data.
 
-- **Operators**: `gU` `gu` `g~` `g?` `=` `gq` `gw` `!` join `d y c > <`.
+- **Operators**: `gU` `gu` `g~` `g?` `!` join `d y c > <`.
   `Op::from_keys(&str)` replaces `from_key(char)`; a doubled operator
-  (`gUU`, `gUgU`, `==`, `g??`) is `Target::Linewise` as `dd` is.
+  (`gUU`, `gUgU`, `g??`, `!!`) is `Target::Linewise` as `dd` is. `=` `gq`
+  `gw` `zf` are parsed too, so that they take their motion, but are not
+  implemented: the engine answers that they are not supported (§2.7).
 - **Motions**: `-` `+` `Enter` `(` `)` `[(` `[{` `])` `]}` `g_` `g0` `gj`
   `gk` `N%`, counted `$` (down N−1 lines), and three that need editor state:
-  marks (`'a` `` `a `` and the special marks `'[ '] '< '> '' '. '^`), the
-  window lines (`H` `M` `L`) and the repeats (`;` `,` `n` `N`).
-- **Text objects**: `ip` `ap`, `is` `as`, `it` `at`, `ib` `iB` (aliases of
-  `i(` `i{`), `gn` `gN`; counts on all of them (`d2aw`, `2i(` for the second
-  enclosing pair). In Visual, an object extends a selection that is already
-  more than one character (`viwiw`).
-- **Forcing**: `v` `V` `Ctrl-V` between operator and motion
-  (`Command::force`), as `:help o_v` defines.
+  marks (`'a` `` `a `` and the special marks `'< '> '' '. '^`), the
+  window lines (`H` `M` `L`), the repeats (`;` `,` `n` `N`), and the column
+  `gj` / `gk` want.
+- **Text objects**: `ip` `ap`, `it` `at`, `ib` `iB` (aliases of `i(` `i{`),
+  `gn` `gN`; counts on all of them (`d2aw`, `2i(` for the second enclosing
+  pair). In Visual, an object extends a selection that is already more than
+  one character (`viwiw`, `vipip`, `vi(i(`).
+- **Forcing**: `v` `V` between operator and motion (`Command::force`), as
+  `:help o_v` defines. `Ctrl-V` parses and resolves to nothing: a forced
+  block needs a column model the resolver does not have.
 - **Editor-bound targets.** A mark, a window line or "the last search" is not
   in the buffer, so the resolver cannot see it. The parser emits the unbound
   form (`Motion::Mark { name, exact }`); the engine binds it to a position
   immediately before resolution (`Editor::bind_command`), and dot-repeat keeps
   the unbound command so `.` reads the mark again. A command that reaches the
   resolver unbound resolves to nothing. No callback, no second resolver.
-- **Range rules**, applied once after the motion resolves, in Vim's order:
-  the `w` rule, then exclusive-linewise, then forcing.
+- **Vim's cursor model.** Vim's word, sentence and object code is written
+  against a cursor that can stand on a line's end and steps from there to
+  the next line. `resolve/walk.rs` is that cursor, and `words.rs`,
+  `blocks.rs` and `objects.rs` are ports of `fwd_word`, `bck_word`,
+  `end_word`, `bckend_word`, `current_word`, `findpar`, `findsent`,
+  `current_par` and `current_block` over it. Porting, not re-deriving, is
+  what makes the edge cases agree: an empty line is a word, the last word
+  of a line ends there, `di{` takes whole lines.
+- **Range rules**, applied once in `resolve::operated`, in Vim's order:
+  forcing, exclusive-linewise (`:help exclusive-linewise`), whole lines for
+  the operators that act on lines, then the `d` exception (`:help d`).
+  Every target is first a `Span` — two positions and how the far one counts
+  — so motions and text objects pass through the same rules.
 - **A motion that cannot move fails**: `j` on the last line, `k` on the
-  first, `h` in column 1 and `l` at the line's last character under an
-  operator resolve to nothing; the command is refused and the register is not
-  touched.
+  first, `2dd` on the last line, a search with no match resolve to nothing;
+  the operator is cancelled and the register is not touched. A motion that
+  can only not move (`h` in column 1) gives an empty region instead: `c`
+  still opens Insert there, the others do nothing.
+- **Where the cursor ends** is part of the answer (`Resolved::origin`,
+  `end_adjusted`): Neovim's `nostartofline` keeps the column after a
+  linewise delete or shift, a yank leaves the cursor at the start of what
+  it yanked.
 
 ### 2.2 One operator engine
 
 `normal/execute.rs` applies a resolved plan; `visual.rs` had its own copy for
-selections. They become one function, `apply_operator(op, register, ranges)`,
-with Normal passing the plan's ranges and Visual passing the selection (one
-range, or one per row for a block). The new operators are arms of it, so every
-operator works in Normal, in all three Visual modes, with a register and under
-dot-repeat without a second implementation.
+selections. They become one function, `normal/operators.rs`
+`apply_operator`, with Normal passing the plan's ranges and Visual passing
+the selection (one range, or one per row for a block). The new operators are
+arms of it, so every operator works in Normal, in all three Visual modes,
+with a register and under dot-repeat without a second implementation. A
+block's `d y c` and an occurrence selection's keep their own code: a block
+has its own register shape, occurrences keep their cursors.
+
+The new files are functions over `&mut Editor`, not new `impl Editor`
+blocks, and Insert's new state is one owned struct (`insert::keys::
+InsertKeys`): the ratchet of 0087 A4 (`editor/tests/ratchet_tests.rs`) holds.
 
 ### 2.3 Visual has a table
 
 The binding table gets a second compiled index: rows whose sections include
-`visual` are Visual's keys, looked up before the grammar. `U u ~ J gJ r p P I
-A o O * # = gq D X Y C R Ctrl-A Ctrl-X` are rows with typed handlers that
-receive the count and the register, as Normal's do. Rows that are Visual-only
-(`u` lowercases there) are left out of Normal's index, so one key can mean two
-things in two modes without the first row in the table winning.
+`visual` are Visual's keys, looked up before the grammar. `d x y c s > < U u
+~ g? ! J gJ r p P I A o O * # D X Y C R Ctrl-A Ctrl-X Ctrl-C S` are rows
+whose handler is typed data, `Handler::Visual(VisualVerb)`, and receive the
+count and the register as Normal's do. Those rows are left out of Normal's
+index, so one key can mean two things in two modes (`u` lowercases in
+Visual) without the first row in the table winning.
 
 Dot-repeat after a Visual operator replays it over the same extent from the
 cursor, as Vim does: N lines for a linewise selection, N characters on one
@@ -106,8 +133,12 @@ line, otherwise the selection's line and column deltas.
 - Insert: `Ctrl-W` (word back), `Ctrl-U` (to the start of the inserted text
   or the line), `Ctrl-O` (one Normal command), `Ctrl-T` / `Ctrl-D` (indent),
   `Ctrl-H`.
-- Marks move with the text (they were raw offsets and went stale on the
-  first edit above them).
+- Marks move with the text, and a mark whose line is deleted is gone, as in
+  Vim (it used to slide to the line that took its place).
+- `j` `k` `G` `gg` keep the column the cursor wants through shorter lines
+  (Vim's curswant); only block Visual did before.
+- A Ctrl chord with no meaning is dropped at the frontend instead of
+  arriving as its letter (`Ctrl-Y` was `y`, `Ctrl-K` typed `k`).
 
 ### 2.5 Registers (0092 §3)
 
@@ -126,8 +157,8 @@ for the dispatch — one list, as `EX_COMMANDS` was meant to be.
 - Ranges are honoured by every command that takes one; `:` from Visual is
   prefilled with `'<,'>` and returns to Normal.
 - `:s`: `&` `\0`–`\9` `~` `\n` `\r` `\t` and `\u \l \U \L \E` in the
-  replacement; flags `g i I n c &`; `:&` `:&&` `:~`; case-sensitive unless
-  `\c`. `c` asks at each match with the match highlighted (`y n a q l`).
+  replacement; flags `g i I n c &`; `:&` `:&&` `:~`. `c` asks at each match
+  with the match highlighted (`y n a q l`).
 - `:g` `:v` (and `:g!`), `:norm[al]`, `:m`, `:t`/`:co`, `:d [x]`, `:y [x]`,
   `:pu`, `:j`, `:>` `:<`, `:sort`, `:[range]!cmd`.
 - `:b {n|name}` `:bn` `:bp` `:bd` `:ls`, `:reg`, `:marks`, `:wa` `:wqa`
@@ -139,16 +170,28 @@ for the dispatch — one list, as `EX_COMMANDS` was meant to be.
   session and recovery files, picker catalogues, the LSP "outside the
   project" test.
 
-`/` keeps its case policy; that belongs to the find track (0093).
+**Case.** `:s` compiles its pattern with the compiler `/` uses and so has
+`/`'s case policy, as in Vim, where both obey `ignorecase` and `smartcase`;
+`\c` and `\C` override it per pattern. This plan does not change that
+policy: the find track (0093) makes it smart case for `/`, the finder and
+project search at once, and `:s` follows. The cases written for this plan
+do not depend on case folding; eight inherited or generated ones do, and are
+listed as one known divergence (§3).
 
 ### 2.7 What is still missing is listed
 
 `keymap/missing.rs` holds two lists: **Missing** (Neovim binds it, strop does
-not: folds, tabs, `q:`, `"=`, …) and **Reassigned** (Neovim binds it, strop
-uses the key for something else: `Q`, `K`, `gI`, `gs`, Visual `S`, …).
-`strop compat` and `docs/vim-compat.md` print both. A test feeds every
-Missing row and asserts it does not dispatch — a row that starts working
-fails the test until it is moved into the table.
+not: folds, tabs, `=`, `gq`, `U`, `K`, `q:`, …) and **Reassigned** (Neovim
+binds it, strop uses the key for something else: `Q`, `gd`, `gI`, `gr`,
+`gs`, Visual `S`, …). `strop compat` and `docs/vim-compat.md` print both,
+and a test holds the checked-in page to the generated one. Another feeds
+every Missing row and asserts it does not dispatch: the text, the cursor's
+line and the mode are unchanged, nothing is left pending, no prompt opens —
+a row that starts working fails until it is moved into the table.
+
+A missing *operator* is the dangerous kind: `gq` refused, then `ip` typed,
+is Insert mode and a `p` in the buffer. So `=`, `gq`, `gw` and `zf` are
+parsed as operators, take their motion, and then say they are not supported.
 
 ## 3. The corpus
 
@@ -158,19 +201,24 @@ fails the test until it is moved into the table.
 |---|---|---|
 | `hand.rs` | 95 | behaviours somebody once got wrong (the old list) |
 | `critique.rs` | 151 | 0091 §2, verbatim, on its ten-line buffer |
-| `ex.rs` | written | ranges, `:s`, `:g`, `:norm`, registers, buffers |
-| `generated.rs` | generated | operator × target × count × mode |
+| `keys.rs` | 174 | what this plan added that the generator does not reach |
+| `ex.rs` | 186 | ranges, `:s`, `:g`, `:norm`, registers, buffers |
+| `generated.rs` | 3,467 | operator × target × count × mode |
+
+4,073 in all; the suite takes about 40 seconds on the development machine.
 
 **The generator.** A case is `position + operator + target`, rendered three
 ways: Normal (`{op}{count}{target}`), Visual (`v{count}{target}{op}`) and
-dot-repeat (the Normal case, a move, then `.`). Operators that open Insert
-type a marker and Escape; `y` is followed by `P` so the yank is visible in
-the text as well as in the registers. Targets are every motion and text
-object of §2.1 that does not need a second buffer or a window size. Two
-fixtures (prose with paragraphs and sentences; code with nesting, quotes,
-tags and numbers) and a fixed set of start positions (line start, mid-word,
-on punctuation, on a blank line, last line). The names are derived
-(`gen/code@3:4/d2aw/visual`), so a failure names its own reproduction.
+dot-repeat (the Normal case, `j`, then `.`). `c` types a marker and Escape.
+The 64 targets are every motion and text object of §2.1 that needs no
+second buffer. Two fixtures (prose with sentences, paragraphs, an indented
+block and trailing blanks; code with nesting, quotes, a tag pair and
+numbers) and six start positions in each (line start, mid-word, inside
+brackets and a string, an empty line, the last line). `d` runs from every
+position, `c` and `y` from one per fixture, the other six operators from
+one position in one fixture: they share the resolver, so more positions
+would test `d` again. The names are derived
+(`gen/code@4:14/normal/d2aw`), so a failure names its own reproduction.
 
 The compared state is the final text, cursor, mode, `""`, `"0 "1 "2 "- "a
 "b` and `modified`. Cases run one process pair each, on every core.
@@ -185,6 +233,21 @@ The compared state is the final text, cursor, mode, `""`, `"0 "1 "2 "- "a
   state the harness does not set (window height, a second buffer, the
   clipboard) is not generated; it is not a divergence.
 - The floor is in the test: fewer than `MINIMUM_CASES` (600) fails.
+
+**The known divergences**, four reasons covering 18 cases:
+
+1. *Missing* (7 critique cases): folds, `U`, `=`, `gq` / `gw`, search
+   offsets. On the Missing list; nothing happens.
+2. *Reassigned* (2): `gd` and `gI` are the language server's.
+3. *Search folds case* (8): `/edge` finds `Edge`; after `gU`, `/in` still
+   finds `IN`. The policy is 0093's.
+4. *A refused `daw`* (1, inherited): Vim's failed `current_word` still moves
+   the cursor a column.
+
+Two Neovim behaviours are bugs strop reproduces rather than lists, because
+they are cheap and exact: a shift that changes no line still sets
+'modified', and a case operator over an empty motion from column 1 runs to
+the line's end (one character on the first line).
 
 ## 4. Tests beyond the corpus
 
@@ -216,4 +279,26 @@ change.
 ## 7. Not in this plan
 
 Folds, tabs, `:set` beyond what the editor already has options for, a
-`[keys]` remap, quickfix and `:cdo` (0094), `/` smartcase (0093).
+`[keys]` remap, quickfix and `:cdo` (0094), `/` smartcase (0093), the
+`gr*` family of Neovim 0.11 (`grr` `grn` `gra` `gri`, 0094).
+
+## 8. Left for later
+
+Each is on the Missing list or stated here, so none is a silent gap.
+
+- **`=`** needs the structural indenter to answer "what indent does this
+  line want" for an arbitrary line; today it answers for the line being
+  opened or closed. **`gq` / `gw`** need Vim's comment-leader rules to be
+  worth having. **`U`**, folds, tabs.
+- **Search offsets** (`/pat/e`, `/pat/+1`): `Motion::Search` carries a
+  query and no offset.
+- **Sentence objects** `is` / `as`: the motion `(` `)` is ported
+  (`findsent`); `current_sent` is not.
+- **`"=`**, the expression register: there is no expression language.
+- **`Ctrl-V` as an operator force** (`d<C-v>j`): parsed, resolves to nothing.
+- **Visual `p` of a block**, and of the clipboard read asynchronously: the
+  put over a selection reads the register file synchronously.
+- **`:cd`** does not restart running language servers or change the
+  process's own working directory; collection buffers keep their old labels
+  until rebuilt; it refuses while a write or a recovery read is in flight.
+- **A count before a Visual `>`** shifts once.
