@@ -10,8 +10,8 @@ build = "build.rs"
 include = ["Cargo.toml", "src/**", "native/**", "vendor/**", "build.rs"]
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.59.0" }
-strop-remote = { path = "../strop-remote", version = "0.59.0" }
+strop-core = { path = "../strop-core", version = "0.60.0" }
+strop-remote = { path = "../strop-remote", version = "0.60.0" }
 ropey = "1"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
