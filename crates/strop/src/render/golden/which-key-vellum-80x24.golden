@@ -1,13 +1,13 @@
    1 //! The modeline: one quiet row at the bottom edge.                        
    2 //!    ╭ space ───────────────────────────────────────────────╮            
    3 //! Eve│  |  pipe line/selection through shell (:! runs)      │            
-   4        │  e  reveal source in its Directory buffer            │            
+   4        │  e  show this file in its directory                  │            
    5 use std│  f  file finder                                      │            
    6        │  o  open remote destination                          │            
    7 /// Gat│  t  terminal in a split below (TERMINAL mode)        │            
    8 pub str│  T  terminal in this pane (= :terminal)              │            
    9 │   chi│  b  buffers (MRU)                                    │            
-  10 │   dir│  /  Search workspace (resume investigation)          │            
+  10 │   dir│  /  Search the project (or return to it)             │            
   11 │   lin│  R  Search with replacement                          │            
   12 }      │  ?  help buffer                                      │            
   13        │  y  yank motion → system clipboard                   │            
@@ -26,13 +26,13 @@ PENDING   src/render/statusline.rs                                space  1:1  5%
   0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 51:#696d77/#efeadf+i 23:#efeadf/#efeadf 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 4:reset/#f6f2e9 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 48:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 44:#262a30/#fdfbf6 6:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 38:#262a30/#fdfbf6 12:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 32:#262a30/#fdfbf6 18:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 3:#1f6e5c/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 38:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 26:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 42:#262a30/#fdfbf6 8:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 36:#262a30/#fdfbf6 14:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 14:#262a30/#fdfbf6 36:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
-  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 40:#262a30/#fdfbf6 10:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 37:#262a30/#fdfbf6 13:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 26:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  11: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 6:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 38:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 31:#262a30/#fdfbf6 19:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset

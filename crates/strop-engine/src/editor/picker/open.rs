@@ -28,6 +28,10 @@ impl Editor {
             self.open_tab_size_picker();
             return;
         }
+        if kind == Kind::Branches {
+            self.open_branches();
+            return;
+        }
         let items = match kind {
             Kind::Buffers => {
                 let cwd = self.cwd.clone();
@@ -62,6 +66,7 @@ impl Editor {
             Kind::Jumps => unreachable!("the jumplist builds its own items"),
             Kind::TabSize => unreachable!("the tab-size selector builds its own items"),
             Kind::Theme => unreachable!("the theme selector builds its own items"),
+            Kind::Branches => unreachable!("the branch list arrives from its job"),
             Kind::Actions => unreachable!("actions build their own captured selector"),
             Kind::Symbols | Kind::WorkspaceSymbols => vec![],
             Kind::Diagnostics | Kind::Locations => {

@@ -1,146 +1,208 @@
-# Editor surfaces
+# Editing: indentation, themes, completion, registers, windows
 
-Themes, completion, indentation and the visual system — the parts of strop
-you configure rather than drive. For the input grammar see the README's
-card; for pickers see [search.md](search.md).
+How strop indents, what the screen shows, how to change the theme, and how
+completion, registers, windows and sessions behave. The keys are listed in
+[vim-compat.md](vim-compat.md) and under `Space ?`. Searching is in
+[search.md](search.md).
 
 ## Indentation
 
-Enter between `{}`, `[]` or `()` opens an indented inner line and leaves
-the closing delimiter aligned. Typing a closer on an indentation-only line
-aligns it with its matching opener, even when the current indentation is
-wrong. Each cursor uses its own source context, indentation unit and line
-endings. Undo, counted insertion and dot repeat preserve the operation
-rather than copying generated indentation from a different location.
+Enter between `{}`, `[]` or `()` opens an indented line in between and
+leaves the closing bracket lined up with the opening line. Typing a closing
+bracket on a line that holds only indentation lines it up with its opening
+bracket, even when the line was indented wrongly. With several cursors,
+each new line is indented for the place it is in. `.` and a count work out
+the indentation again at the new place; they do not copy the spaces from
+the first one.
 
-In C and C++, typing `:` uses vim's electric-label indentation. Bare access
-specifiers (`private:`, `protected:`, `public:`) and `case`/`default:` labels
-snap to one unit inside their enclosing brace; named labels snap to column
-zero. C-mapped buffers (`.h`, `.c`) behave like C++, since headers detect as
-C. The second colon in a C++ scope operator (`std::`) restores statement
-indentation after the first colon's possible-label interpretation. Other
-languages and non-label punctuation insert the colon unchanged.
+In C and C++, typing `:` after a label moves the line where Vim would put
+it. `private:`, `protected:`, `public:`, `case` and `default:` go one level
+inside their enclosing brace; a named label goes to column zero. `.c` and
+`.h` files get the same rules as C++. Typing `std::` does not leave the
+line pulled out as a label: the second colon puts the indentation back. In
+other languages, and after anything that is not a label, the colon is just
+typed.
 
-A trailing colon opens a one-unit deeper body where the language gives it
-that meaning — one punctuation rule decided by the language registry, not
-per-language editor code:
+A colon at the end of a line indents the next line one level deeper, in the
+languages where it opens a block:
 
-- **Python**: a block colon (`if ready:`) deepens the next line; a colon
-  inside brackets (a slice or annotation) does not.
-- **C, C++, Java, C#, Go, JavaScript/TypeScript, PHP**: the label colon
-  deepens its body — access specifiers (`private:`, `public:`), `case` and
-  `default:` arms, and named labels. In a C++ class, Enter after
+- **Python**: a block colon (`if ready:`) indents the next line; a colon
+  inside brackets (a slice or an annotation) does not.
+- **C, C++, Java, C#, Go, JavaScript/TypeScript, PHP**: a label colon
+  indents what follows it: access specifiers (`private:`, `public:`),
+  `case` and `default:`, and named labels. In a C++ class, Enter after
   `private:` puts the members one level inside the section.
-- **Rust, JSON, CSS and prose**: a trailing colon never deepens.
+- **Rust, JSON, CSS and prose**: a colon at the end of a line never indents.
 
-Structural delimiter support covers Rust, Python, JavaScript, TypeScript,
-Go, C, C++, JSON, Java, C# and CSS. Strings and comments are excluded.
-Named prose/unsupported files inherit whitespace; unnamed scratch buffers
-retain generic brace behavior. This is not a formatter, HTML tag
-indentation, or keyword-based `end`/`else` alignment. Large-file analysis
-runs on the existing revision-checked worker, never the render path.
+Bracket indentation works in Rust, Python, JavaScript, TypeScript, Go, C,
+C++, JSON, Java, C# and CSS. Brackets inside strings and comments do not
+count. In prose and in languages not listed here, a new line copies the
+indentation of the line above. A new buffer with no name still indents
+after an opening brace. strop does not reformat code, does not indent HTML
+tags, and does not line up `end` or `else` with their opening keyword. In a
+large file the indentation is worked out in the background, so typing never
+waits for it.
 
-## The look
+### Indent width and tabs or spaces
 
-Every surface reads its colours from one token set: three background
-planes (`base` < `surface` < `raised`), four greys for text, one accent,
-mode colours, diagnostic and diff inks, syntax roles. The accent means one
-thing — where you are and what will happen: the Normal chip, the current
-line number, the pending-operator footer, the input caret, matched
-characters. Cards (pickers, which-key, completion, hover, blame, command)
-share one primitive: rounded, title top-left, hints as keycaps in the
-bottom border. Selected rows are a raised band with `▌`; the applied theme
-and dirty buffers are marked `●`. Chrome appears only when it carries
-information: the scrollbar is a thumb that disappears when the file fits,
-pane titles sit in the pane's top border only with two or more panes, the
-`LSP!` badge appears only when a language server failed, `Spaces:N` only
-when a buffer's indent differs from your configured default, and the
-picker's scope row only when a scope differs from the default.
+strop detects each file's indentation when it opens it, and falls back to
+your configured `tab_size` and `indent_style`. To change it for the current
+file:
 
-Messages have their own echo row above the statusline, present only while
-something is live: the response to your last key first, then retained
-feedback by severity (`✗` failure, `▲` warning, `●` info) with its `space a`
-or `:explain` hint. The statusline itself is a fixed 8-cell mode chip,
-branch, path, then — only when non-zero — `●1 ▲2` diagnostics, the service
-badge, the indent, and the position.
+- `:tab-size 3` sets the width (1 to 16); `:tab-size auto` goes back to
+  the detected or configured width.
+- `:indent-style tabs`, `:indent-style spaces`, `:indent-style auto`.
+- `:tab-size` or `:indent-style` alone opens a short menu of the same
+  choices, with the current one marked.
+
+Changing these settings does not change text already in the file. The
+status line shows `Spaces:N` or `Tabs:N` when a file's indent differs from
+your default; `:explain` says whether it was detected, configured or set by
+hand.
+
+With the cursor on a bracket, that bracket and its partner are highlighted
+(the same pair `%` jumps between). The view does not scroll to show a
+partner that is off screen.
+
+## What is on screen
+
+The accent colour marks where you are and what will happen next: the mode
+chip, the current line number, a pending operator, the cursor in an input
+field, and the characters a search matched. In a list, the selected row has
+a `▌` at its left. `●` marks the theme in use and buffers with unsaved
+changes. Pickers, the key hints, completion, hover and the `:` line are all
+drawn the same way: a rounded box with its title at the top left and its
+keys along the bottom edge.
+
+Things appear only when they have something to say. The scrollbar is
+hidden when the whole file fits. Pane titles appear when there are two or
+more panes. `LSP!` appears when a language server failed and `LSP?` when
+one was refused (see [`:trust`](#trust)). `Spaces:N` appears when a buffer's indent
+differs from your default. A line under a search field appears when a
+toggle is on, or when the search is not in the project directory.
+
+Messages appear on a row above the status line, and only while there is
+one to show: first the answer to your last key, then any message still
+waiting for you (`✗` failure, `▲` warning, `●` info) with the key that
+deals with it, `Space a` or `:explain`. The status line itself shows the
+mode, the branch, the path, then, only when not zero, the diagnostics count
+(`●1 ▲2`), the language-server badge, the indent and the position.
+
+A failed save, a failed connection or a terminal that needs a decision
+leaves a message that stays until you deal with it. Moving, searching or a
+later success message does not clear it. `Space a` lists what you can do
+about it (retry, or dismiss the message) and `:explain` shows the full
+detail. Dismissing the message only hides it. It does not cancel anything
+and does not mark a save as done. `:messages` lists the last 50 messages.
 
 ## Themes
 
-`:theme` opens the searchable palette selector; Enter applies a choice and
-Escape leaves the current theme unchanged (once enters the picker's Normal
-mode; twice closes it). `:theme vellum` switches directly. Rows show the
-human label, six swatches (base, surface, text, accent, keyword, string)
-and `●` on the applied theme; the selected row's canonical name and full
-description appear in a bounded detail area. Small terminals omit
-decoration before hiding identity or input.
+`:theme` opens a list of the themes; Enter applies the selected one and
+Escape leaves the current theme as it is (once goes to the picker's Normal
+mode; twice closes it). `:theme vellum` switches directly. Each row shows
+the theme's label, six swatches (background, panel, text, accent, keyword,
+string) and `●` on the theme in use. Below the list you see the selected
+theme's name, as you would type it, and its description. In a small
+terminal the swatches and the description go first; the names and the
+search field stay.
 
-Six original palettes ship, every one holding the same contrast contract:
-text ≥ 10:1, secondary ≥ 7:1, comments and every syntax ink ≥ 4.5:1 on both
-the base and the surface plane, a visible Visual selection.
+There are six themes. All six meet the same contrast minimums: main text at
+least 10:1, secondary text 7:1, comments and syntax colours 4.5:1.
 
 | Name | Character |
 | --- | --- |
-| `hone` | Graphite dark with the amber accent; the default |
-| `slate` | Low-chroma dark: syntax by luminance, one brass accent |
-| `carbide` | High-contrast dark for projectors and bright rooms (every ink ≥ 7:1) |
-| `vellum` | Warm paper, graphite ink, burnt-umber accent |
-| `paper` | Warm off-white paper with deep green ink and forest accents |
-| `paper-dark` | Warm green-black paper with soft ivory and sage accents |
+| `hone` | Graphite dark with an amber accent; the default |
+| `slate` | Muted dark: syntax told apart by brightness, one brass accent |
+| `carbide` | High-contrast dark for projectors and bright rooms (every colour at least 7:1) |
+| `vellum` | Warm paper, graphite text, burnt-umber accent |
+| `paper` | Warm off-white paper with deep green text and forest accents |
+| `paper-dark` | Warm green-black with soft ivory text and sage accents |
 
-Choose at launch with `strop --theme vellum file.rs`, or persist the choice
-in `$XDG_CONFIG_HOME/strop/config.toml` (normally
+Choose one at launch with `strop --theme vellum file.rs`, or keep the
+choice in `$XDG_CONFIG_HOME/strop/config.toml` (normally
 `~/.config/strop/config.toml`):
 
 ```toml
 theme = "vellum"
 ```
 
-The same canonical names work for a session-only switch (`:theme slate`).
-Precedence is the built-in default, then the user config, then `--theme`.
-`:theme` changes the running session only; it does not rewrite the config.
-A config naming an unknown theme (including the retired `dark`, `light`,
-`strop-ink`, `catppuccin-*` and `nord`) starts on `hone` with a warning
-that lists the six names. Syntax, pickers/previews, diffs, diagnostics,
-help and statusline share the palette. Existing terminal sessions update
-their default colors without overwriting child-selected truecolor or OSC
-palette customizations. All palettes are original and compiled into the
-binary: no downloads, plugins, licences or setup.
+`--theme` wins over the config file, and the config file over the built-in
+default. `:theme` changes the running editor only; it does not rewrite the
+config. `:theme` with a name strop does not have keeps the current theme
+and lists the six names. A config file that names an unknown theme keeps
+the default theme and shows a warning with the six names; every other
+setting in the file still applies. The same goes for any key strop does
+not know or any value it cannot use: that one key is skipped and named.
 
-## Panes, previews and language services
+Syntax, pickers, previews, diffs, diagnostics, help and the status line all
+follow the theme. Open terminals switch to the new theme's default colours;
+colours a program inside the terminal chose for itself are left alone. The
+themes are built into the binary: nothing to download or install.
 
-Local pane titles use workspace-relative paths; duplicate directories,
-outside-workspace paths and remote authority remain identifiable.
-Pane numbers, focus, dirty and read-only markers survive narrow layouts.
-File, search and symbol previews automatically reclaim unused result-list
-width from short admitted labels, within bounded stable layout limits. Long
-paths keep their list budget; narrow terminals retain stacked or omitted
-preview fallbacks.
+## Pane titles and previews
 
-The modeline presents owned LSP starting, ready, refused and failed states as
-compact badges. Long server prose does not displace mode and position. Use
-`:explain` to inspect the complete server, workspace/endpoint and failure
-reason in a real read-only buffer; recovered servers clear their old failure
-without erasing another workspace's problem or an independent warning. A
-server that crashes after it was ready restarts by itself, up to three times
-per workspace: the status line says `restarting (1/3)`, the `LSP!` badge stays
-until the replacement is ready, and every file the old server had open —
-library files included — reopens on the new one. After the third restart, or
-for a server that never started, the next language request names the failure
-and starts one scoped reattach; repeat the request after it is ready.
+A pane title is the pane's number and the file's path inside the project.
+Two files with the same name are told apart by their directories. A file
+outside the project shows its full path, and a file on an SSH host shows
+the host (`ssh:devbox /etc/app.conf`). `●` marks unsaved changes and `[RO]`
+a read-only buffer. In a narrow pane the directories are shortened first;
+the number, the file name and the markers stay.
+
+In Files, Search and the symbol pickers, the preview takes the spare width
+when the result rows are short. When paths are long, the list keeps its
+width. In a narrow terminal the preview moves below the list, or is
+hidden.
+
+## Language servers
+
+strop starts the language server for a file's language when that server is
+installed; `Space ?` lists which server each language uses. The status line
+shows `LSP!` when a server failed and `LSP?` when one could not start: it
+is not installed (the message names it and says how to install it, e.g.
+`lsp: rust-analyzer not found on PATH — rustup component add
+rust-analyzer`), or the project has not been trusted yet. A long
+error from the server never pushes the mode or the position off the line.
+`:explain` opens the full story in a read-only buffer: which server, which
+project, and why it failed. When a server recovers, its failure message
+goes away. Messages about other projects or other problems stay.
+
+A server that crashes after it was ready restarts by itself, up to three
+times per project: a message says `restarting (1/3)`, the `LSP!` badge
+stays until the new server is ready, and every file the old server had
+open, library files included, is opened on the new one. After the third
+restart, or if the server never started, the next thing you ask of it (go
+to definition, hover, and so on) shows the reason and tries once more to
+start it. Repeat the command when the server is ready.
+
+### `:trust`
+
+A project can name its own language-server command in
+`.strop/languages.toml`. strop does not run a command that comes from a
+project until you allow that project: the message reads
+`lsp: NAME needs :trust for this project`, and `:explain` shows the command.
+`:trust` allows the current project, and the server starts. The answer is
+remembered on this machine (under `$XDG_STATE_HOME/strop`, normally
+`~/.local/state/strop`). Servers from strop's built-in list and from your
+own config need no `:trust`.
 
 ## The project root
 
 The project is the directory strop was launched in, and it stays there
 until you move it: `:pwd` shows it, `:cd DIR` changes it (`:cd -` goes
-back, `:cd` alone goes home). The session and draft-recovery files, buffer
-names and the file watcher follow the new root. Files (`Space f`), Search (`Space /`) and new terminals are
-scoped to it whichever file has focus. Following go-to-definition into the
-Rust standard library, a cargo registry crate or a system header does not
-re-root anything — that file opens read-only, and the project's language
-server keeps serving it (a library file belongs to the project that depends
-on it; no second server is started in the library's directory). Browsing a
-directory deliberately (`:browse DIR`) scopes Files and Search to that
-directory while it has focus.
+back, `:cd` alone goes home). After `:cd`, the saved session and the
+recovery drafts are the new project's, open buffers keep pointing at the
+same files, and changes on disk are noticed under the new directory. Files
+(`Space f`), Search (`Space /`) and new terminals work in the project root
+whichever file has focus. Following go-to-definition into the Rust standard
+library, a cargo registry crate or a system header does not change the
+project: that file opens read-only, and the project's language server keeps
+serving it (no second server is started in the library's directory).
+Browsing a directory on purpose (`:browse DIR`) makes Files and Search work
+in that directory while it has focus.
+
+When a file changes on disk, a buffer with no unsaved edits reloads and
+says so. A buffer with unsaved edits keeps them and tells you the file
+changed; `:w!` overwrites the file, `:e!` takes the version on disk.
 
 ## Vim's keys
 
@@ -201,7 +263,7 @@ Commands take their Vim abbreviations (`:s`, `:g`, `:norm`, `:d`, `:m`,
 - **Many lines at once**: `:g/pattern/cmd` runs a command on every matching
   line (`:g!` and `:v` on the others); `:[range]norm keys` types Normal-mode
   keys on each line. Each is one undo step.
-- **Substitute**: see [search.md](search.md#ex-substitution).
+- **Substitute**: see [search.md](search.md#substitute-s).
 - **Buffers**: `:b N` or `:b name` (a fragment that matches one buffer),
   `:bn`, `:bp`, `:bd [N]`; `:ls`, `:reg [names]` and `:marks` open their
   listing as a read-only buffer.
@@ -217,7 +279,8 @@ flag of `:s` inside `:g` or `:norm`, `:set` beyond `ro`, `:r file`, and
 
 ## Registers
 
-One register file serves every text input. `y` fills `"0`; a delete or change
+The same registers work everywhere you type: buffers, the `:` and `/` lines,
+and every picker field. `y` fills `"0`; a delete or change
 of a line or more shifts `"1`–`"9`, a smaller one fills `"-`; `"a`–`"z` are
 named (`"A` appends), `"_` discards, `". ": "/ "% "#` are the last insert, last
 `:` line, last search, file name and alternate file name. `p`/`P` read them in
@@ -253,24 +316,29 @@ nothing else. `Space w` remains, with `1`–`9` to focus a pane by number.
 
 ## Code completion
 
-Insert mode offers language-server candidates and incremental words from the
-current editable source. Word suggestions remain usable without a language
-server. The menu shows kind, source and detail. Kind chips use the symbol
-picker's quiet family colors, and the ASCII `lsp` / `buf` provenance tags stay
-color-coded without requiring an icon font; selected language items can show
-documentation without changing the buffer.
+In Insert mode strop suggests completions from the language server and
+words from the current buffer. Words work without a language server. Each
+row shows the kind (function, struct, …), where it came from (`lsp` or
+`buf`) and a short detail. No icon font is needed. A selected
+language-server item can show its documentation without changing the
+buffer.
 
-- `Ctrl-Space`: request both providers; `Ctrl-X Ctrl-O`: language completion.
+- `Ctrl-Space`: ask for both kinds; `Ctrl-X Ctrl-O`: the language server
+  only.
 - `Ctrl-N` / `Ctrl-P`: choose a candidate; `Ctrl-Y`: accept it.
-- Enter and Tab accept only after deliberate selection; otherwise they keep
-  their ordinary Insert behavior.
-- `Ctrl-E`: dismiss without editing. Escape dismisses and leaves Insert mode.
+- `Tab` / `Shift-Tab` step through the candidates and show each one in the
+  text as you go. With the menu closed they indent and dedent.
+- Enter accepts only after you have chosen a candidate; otherwise it starts
+  a new line as usual.
+- `Ctrl-E`: close the menu without changing the text. Escape closes it and
+  leaves Insert mode.
 
-Primary edits and represented imports are validated together and share the
-Insert undo group. Stale, overlapping or invalid edits are refused as a
-whole; unsupported snippets and commands are not approximated by a label
-insertion. Read-only and partial sources do not gain write authority
-through completion.
+When a candidate also adds an import, both edits are made together and one
+`u` undoes both. If the text changed so that the server's edit no longer
+fits, nothing is inserted. A candidate that needs a snippet format or a
+server command strop does not support is marked as unsupported in the menu,
+and accepting it inserts nothing. Completion does not open in a read-only
+buffer, or in a `strop -` buffer that is still reading its input.
 
 ```toml
 [completion]
@@ -278,29 +346,28 @@ enabled = true
 auto_popup = true
 ```
 
-Set `auto_popup = false` for manual-only completion; an opened manual
-session still follows typing. `enabled = false` also disables manual
-invocation and retires completion-only work.
+With `auto_popup = false` the menu opens only when you ask (`Ctrl-Space`),
+and then updates as you type. `enabled = false` turns completion off, the
+keys included.
 
 ## Syntax and display
 
-Tree-sitter highlighting for 26 languages (including CMake, Markdown,
-TOML, YAML, HTML and CSS); grammars and licensed queries ship in the
-binary. Markdown fences select any bundled language — not just Rust — and
-the same injection pipeline highlights fenced examples inside Rust
-documentation comments, JS/TS/TSX, C/C++ and Java documentation blocks,
-declaration-attached Go block comments, and Python's initial
-module/class/function docstrings. Comment delimiters remain comments;
-independent documentation groups cannot leak unclosed fences into each
-other. Only rustdoc defaults unlabelled fences to Rust. HTML embeds
-JavaScript and CSS.
+Syntax highlighting covers 26 languages (including CMake, Markdown, TOML,
+YAML, HTML and CSS), all built into the binary. Code blocks inside Markdown
+are highlighted in their own language, for any of the 26. The same goes for
+code examples in documentation comments: Rust doc comments, JS/TS/TSX,
+C/C++ and Java doc blocks, Go block comments above a declaration, and
+Python docstrings. A code block you forgot to close ends with its comment.
+In Rust doc comments a block with no language is treated as Rust. HTML
+highlights the JavaScript and CSS inside it.
 
-Syntax, structural indentation guides and search counts are
-revision-owned worker results. Long-line byte/cell checkpoints keep
-horizontal navigation and typing from repeatedly walking the line prefix.
-Horizontal views, block selection and carets share display-cell geometry;
-new edits preserve the buffer's line endings. The modeline keeps filenames,
-live status and position legible at narrow widths.
+Highlighting, indent guides and the search match count are worked out in
+the background. They are never shown for an older version of the text.
+Very long lines stay fast to scroll sideways and to type in. Tabs and wide
+characters line up the same way for the cursor, block selection and
+sideways scrolling. A file keeps its line endings (LF or CRLF) when you
+edit it. In a narrow terminal the status line still shows the file name,
+the messages and the position.
 
 ## Reading stdin
 
@@ -312,13 +379,45 @@ buffer: edit it, `:w path` saves it. Keys come from the terminal, not stdin.
 
 ## Sessions
 
-File/native work runs on owned jobs rather than blocking keystrokes.
-Sessions use private atomic files and lossless native paths, including undo
-history and the active window's jump history. Per-project sessions restore cursor,
-viewport and jump positions across restarts; retained jump records also restore
-their selections. Each pane keeps an independent 100-entry jumplist, copied on
-split. Quit-all writes one complete project snapshot before closing any buffer.
-`Ctrl-O` / `Ctrl-I` traverse jump origins without discarding newer entries
-when a new jump branches from history. Undo history is available in the `Space u`
-tree browser. Remote contents and write permits are never restored from persisted
-sessions.
+strop remembers each project. Start it again in the same directory with no
+file argument (`strop`) and the files you had open are back, the current
+one at its cursor and scroll position, with undo history and the jump
+list. Undo history comes back only for a file that has not changed on disk
+since. Splits, marks and registers are not kept. `strop FILE` opens just
+that file. The session file is readable only by you, and file names that
+are not valid UTF-8 survive.
+
+`:qa` saves the session for the whole project before it closes anything.
+
+Each pane has its own jump list of 100 entries; a split starts with a copy.
+`Ctrl-O` and `Ctrl-I` go back and forward through it, and put the cursor,
+the scroll position and any extra cursors back as they were. Jumping
+somewhere new from the middle of the list does not throw away the newer
+entries. `Space u` opens the undo history as a tree: Enter goes to that
+state of the text, `q` closes.
+
+Files on SSH hosts, terminals and buffers with no file are not reopened
+from a saved session. Connect again and open them.
+
+## Recovering unsaved work
+
+While you edit, strop keeps a copy of the unsaved text of each modified
+file (under `$XDG_STATE_HOME/strop`, normally `~/.local/state/strop`), so
+a crash or a closed terminal does not lose it. Saving the file removes the
+copy. Unsaved text over 16 MiB is not kept, and strop says so.
+
+When you open a file that has such a copy, a card offers:
+
+| Key | Does |
+| --- | --- |
+| `r` | put the unsaved text in the buffer; `:w` saves it, `u` returns to the file on disk |
+| `o` | open the file read-only and keep the copy |
+| `d` | delete the copy |
+| `e` or `Esc` | edit the file as it is on disk and keep the copy |
+
+`:recover` lists every copy strop holds, numbered, including those of
+buffers that never had a file name. `:recover restore N` opens copy N in a
+new buffer without touching the file; `:recover discard N` deletes it.
+Unsaved text of files on SSH hosts is kept only after
+`:recover consent remote`, for the current run; `:recover consent off`
+stops it.

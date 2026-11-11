@@ -361,7 +361,7 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
 pub fn compat_report() -> String {
     let mut out = String::from(
         "# Vim compatibility\n\nGenerated from the command table (`strop compat`).\n\
-         `✓` ships exactly; `(soon)` is a planned slot. What Neovim binds and strop\n\
+         `✓` works today; `(soon)` is planned. What Neovim binds and strop\n\
          does not is listed at the end, under Missing and Reassigned.\n",
     );
     for section in SECTIONS {

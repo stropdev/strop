@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.62.0 — 2026-11-11
+
+### Changed
+
+- **Git keys mean one thing everywhere**: `Space g u` now unstages the hunk under the cursor (as `u` does in the status buffer) and `Space g X` discards it. `Space g S` is gone. The blame gutter moved from `Space g b` to `Space g B`.
+- **Git buffers are titled alike**: `git status`, `git log`, `git files`, `git diff`, `git hunk`.
+
+- **A language server that is not installed says so**: `lsp: rust-analyzer not found on PATH — rustup component add rust-analyzer` instead of "refused". A server that fails to start says it did not start; a project that needs `:trust` says that.
+- **The docs and the in-editor help are rewritten in plain words** and checked against the editor: about a hundred corrections, among them five `:help` rows that described old behaviour. `docs/terminal-and-scripting.md` is now `docs/terminal.md` and `docs/scripting.md`.
+- **The README demo shows the everyday loop** — find a file, edit, search the project, replace across files, stage and commit — in the default palette.
+
+### Added
+
+- **`Space g g` shows what changed** (plans/0096): staged, unstaged and untracked files (and conflicts) in one buffer. `s` stages, `u` unstages and `-` toggles the file under the cursor — or the hunk, or the whole section from its heading. `=` shows a file's diff under its row, `]c` / `[c` move between hunks, `enter` opens the file at that line, and `X` discards after `y` confirms. The list keeps itself current: after each change, when files change on disk, and when you come back to the window.
+- **`Space g c` commits** — `cc` from the status buffer, `ca` to amend. The message is written in a buffer that lists what the commit will hold; `:wq` commits and `:q!` aborts. The commit is made by `git` itself, so hooks, signing and your git configuration apply, and a hook's refusal is shown as it wrote it.
+- **`Space g b` switches branch**: local and remote branches in the picker, the current one marked. `enter` switches; the last row creates a branch from the name you typed. If git refuses because your changes would be overwritten, you see its message and nothing changes. Open files follow the new branch.
+- **Not yet on SSH projects**: status, commit and the branch picker say they need a local repository there. Signs, log, blame and diffs work as before.
+
+### Fixed
+
+- **A mistake in `config.toml` costs only that setting**: an unknown theme name, an unknown key or a value strop cannot use is skipped and named in the warning, and every other setting in the file applies. It used to throw away the whole file.
+- **The finder and project search no longer list the editor's own lock files** (`.strop-lock-…`) that sit beside open files while hidden files are shown.
+
 ## 0.61.0 — 2026-11-11
 
 ### Changed

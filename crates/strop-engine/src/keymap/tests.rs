@@ -100,8 +100,15 @@ fn which_key_children() {
         "space j is the live jumplist picker (0047)"
     );
     let git = children_of(" g", Mode::Normal);
-    assert_eq!(git.len(), 9); // l h b y o u s S p
-    assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
+    assert_eq!(git.len(), 12); // g c b l h B s u X p y o
+                               // one meaning per letter across the family (0096 §2.5): `u` unstages
+                               // here as it does in the status buffer, `X` discards
+    assert!(git
+        .iter()
+        .any(|h| h.key == "u" && h.desc.contains("unstage")));
+    assert!(git
+        .iter()
+        .any(|h| h.key == "X" && h.desc.contains("discard")));
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
     // + gb gB g␣, the case operators (gU gu g~ g?), the g motions
     // (g_ g0 g^ g$ gj gk gn gN), gp gP, gJ, g* g#, g&, gc, and
@@ -148,13 +155,16 @@ const DISPATCHED: &[&str] = &[
     "]f",
     "[f",
     // git namespace
+    "space g g",
+    "space g c",
     "space g u",
     "space g s",
-    "space g S",
+    "space g X",
     "space g p",
     "space g l",
     "space g h",
     "space g b",
+    "space g B",
     "space g y",
     "space g o",
     "space u",

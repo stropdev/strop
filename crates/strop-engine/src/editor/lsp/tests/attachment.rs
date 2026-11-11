@@ -77,8 +77,10 @@ fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
         },
         layers: Vec::new(),
     });
-    assert!(e.message.contains("refused"));
-    assert!(e.message.contains(":explain"));
+    assert_eq!(
+        e.message,
+        "lsp: rust-analyzer not found on PATH — rustup component add rust-analyzer"
+    );
     let refusal = &e.lsp_state.attach.refused[&attach_key(&e, "rust")];
     let details = crate::editor::explain::explain_decision(refusal);
     assert!(details.contains("not found on PATH"));
@@ -290,7 +292,7 @@ fn spawn_failure_refusal_carries_its_reason() {
         },
         layers: Vec::new(),
     });
-    assert!(e.message.contains("refused"), "{}", e.message);
+    assert!(e.message.contains("did not start"), "{}", e.message);
     assert!(e.message.contains(":explain"), "{}", e.message);
     assert!(!e.message.contains("runtime"), "{}", e.message);
     let refusal = &e.lsp_state.attach.refused[&attach_key(&e, "rust")];

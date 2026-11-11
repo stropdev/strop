@@ -98,7 +98,7 @@ pub(super) const ROWS: &[Binding] = &[
     ),
     row(
         ":recover",
-        "draft recovery: list, restore N, discard N, consent remote|off",
+        "recover unsaved text after a crash: list, restore N, discard N",
         "ex-recover",
     ),
     row(
@@ -118,7 +118,7 @@ pub(super) const ROWS: &[Binding] = &[
     ),
     Binding {
         keys: ":tab-size :indent-style",
-        desc: "source indentation controls",
+        desc: "indent width and tabs or spaces for this file",
         sections: &["ex"],
         live: true,
         id: "source-indentation-settings",
@@ -126,7 +126,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: ":fs :browse :filter :remote :terminal-local",
-        desc: "filesystem actions, namespace-aware browsing, folder filtering, remote destinations, a local shell",
+        desc: "file operations, browse a directory (local or ssh://), filter its listing, SSH hosts, a local shell",
         sections: &["ex"],
         live: true,
         id: "filesystem",

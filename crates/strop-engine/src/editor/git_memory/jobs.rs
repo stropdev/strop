@@ -47,6 +47,7 @@ pub(crate) fn git_failure(op: &str, error: GitError) -> Failure {
             format!("{op}: path outside the repository workdir"),
         ),
         GitError::Native(message) => Failure::new(FailureKind::Exit, format!("{op}: {message}")),
+        GitError::NothingStaged => Failure::new(FailureKind::InvalidInput, error.to_string()),
     }
 }
 
@@ -199,6 +200,7 @@ impl Editor {
         if let Some(ticket) = self.dive_requests.remove(&doc) {
             self.cancel_git_worker(ticket.request, CancelReason::Dismissed);
         }
+        self.revoke_git_work_for(doc);
     }
 
     // ---- context (discovery) ------------------------------------------------
@@ -283,12 +285,11 @@ impl Editor {
 
     // ---- mutations --------------------------------------------------------------
 
-    /// Launch the next queued mutation if none is running. Index
-    /// writes are serialized FIFO; each request still gets its own
-    /// ticket at launch and settles terminally.
+    /// Launch the next queued mutation if none is running. Each
+    /// request gets its own ticket at launch and settles terminally.
     pub(crate) fn pump_git_mutations(&mut self) {
-        while self.git_mutation.is_none() {
-            let Some(mutation) = self.git_mutations.pop_front() else {
+        while self.git_work.mutation.is_none() {
+            let Some(mutation) = self.git_work.mutations.pop_front() else {
                 return;
             };
             // pure re-validation at launch: the buffer, the view the
@@ -312,7 +313,7 @@ impl Editor {
             let Some(ticket) = self.git_ticket(mutation.key.clone()) else {
                 return; // identity exhausted: later requests cannot fare better
             };
-            self.git_mutation = Some(ticket.clone());
+            self.git_work.mutation = Some((ticket.clone(), mutation.op.clone()));
             strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
                 serde_json::json!({
                     "service":"git","request":"mutation","edge":ticket.key.kind.edge(),
@@ -344,11 +345,7 @@ impl Editor {
                             }
                         }
                     };
-                    let result = match &op {
-                        MutationOp::Stage { hunk } => repo.stage_hunk(&rel, hunk),
-                        MutationOp::Unstage { hunk } => repo.unstage_hunk(&rel, hunk),
-                    };
-                    match result {
+                    match op.apply(&repo, &rel) {
                         Ok(()) => Outcome::Success(()),
                         Err(message) => Outcome::Failed {
                             failure: Failure::new(
@@ -364,15 +361,18 @@ impl Editor {
     }
 
     pub(crate) fn handle_mutation_completion(&mut self, completion: Completion<MutationKey, ()>) {
-        if self.git_mutation.as_ref() != Some(&completion.ticket) {
+        let Some((_, op)) = self
+            .git_work
+            .mutation
+            .take_if(|(ticket, _)| *ticket == completion.ticket)
+        else {
             trace::services::rejected("git", "mutation superseded");
             return;
-        }
-        self.git_mutation = None;
+        };
         self.worker_handles.remove(&completion.ticket.request);
         let key = completion.ticket.key;
-        // the index write already happened (or failed) — validation
-        // decides only whether THIS editor view still reports it
+        // the write already happened (or failed) — validation decides
+        // only whether THIS editor view still reports it
         let current = !self.docs.is_empty()
             && self.current() == key.document
             && self
@@ -384,23 +384,32 @@ impl Editor {
             Outcome::Success(()) => {
                 // the index changed under every cached diff: new view
                 self.invalidate_git_view();
+                // a discard rewrote working files under open buffers
+                let workdir = key.repo.workdir();
+                let rewritten: Vec<std::path::PathBuf> = match &op {
+                    MutationOp::DiscardHunk { .. } => vec![workdir.join(&key.rel)],
+                    MutationOp::DiscardFiles { entries } => entries
+                        .iter()
+                        .map(|entry| workdir.join(&entry.rel))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                self.files_rewritten(&rewritten);
+                self.refresh_status_buffers();
                 if current {
-                    self.message = match key.kind {
-                        MutationKind::Stage => "hunk staged".into(),
-                        MutationKind::Unstage => "hunk unstaged".into(),
-                    };
+                    self.message = op.done();
                 }
             }
             Outcome::Failed { failure, .. } => {
+                // a partial batch may have landed: show the tree as it is
+                self.refresh_status_buffers();
                 if current {
-                    self.message = match key.kind {
-                        MutationKind::Stage => {
-                            format!("stage failed: {}", failure.message)
-                        }
-                        MutationKind::Unstage => {
-                            format!("unstage failed: {}", failure.message)
-                        }
+                    let verb = match key.kind {
+                        MutationKind::Stage => "stage",
+                        MutationKind::Unstage => "unstage",
+                        MutationKind::Discard => "discard",
                     };
+                    self.message = format!("{verb} failed: {}", failure.message);
                 }
             }
             Outcome::Cancelled(_) => {}
@@ -639,7 +648,7 @@ impl Editor {
         match (landing, outcome) {
             (DiveLanding::HunkPreview(origin), Outcome::Success(DiveData::Delta(diff))) => {
                 self.message.clear();
-                self.open_delta("hunk", diff, Some(origin), None);
+                self.open_delta("git hunk", diff, Some(origin), None);
             }
             (DiveLanding::LogSurface, Outcome::Success(DiveData::Files(files))) => {
                 let sha = match &key.target {
@@ -649,7 +658,7 @@ impl Editor {
                 let text = files.text();
                 self.message.clear();
                 self.push_surface(
-                    Some("commit files"),
+                    Some("git files"),
                     text,
                     Surface::ChangedFiles {
                         sha,
@@ -670,7 +679,7 @@ impl Editor {
                     current: path.clone(),
                 };
                 self.message.clear();
-                self.open_delta("delta", diff, None, Some(commit));
+                self.open_delta("git diff", diff, None, Some(commit));
             }
             (DiveLanding::Delta { cf, path }, Outcome::Success(DiveData::Delta(diff))) => {
                 self.load_commit_delta(&cf, &path, diff);
@@ -699,6 +708,10 @@ impl Editor {
             GitJob::Gutter(c) => self.handle_gutter_completion(c),
             GitJob::Card(c) => self.handle_card_completion(c),
             GitJob::Dive(c) => self.handle_dive_completion(c),
+            GitJob::Status(c) => self.handle_status_completion(c),
+            GitJob::CommitDraft(c) => self.handle_commit_draft(c),
+            GitJob::Porcelain(c) => self.handle_porcelain_completion(c),
+            GitJob::Branches(c) => self.handle_branches_completion(c),
         }
     }
 }

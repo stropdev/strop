@@ -13,12 +13,12 @@ use crate::files::FileTarget;
 
 use super::git_memory::{
     git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, HunkSet, MutationKey,
-    MutationKind, MutationOp,
+    MutationOp,
 };
 use super::transact::ChangeSet;
 use super::Editor;
 
-/// What a hunk verb (`Space g u`/`g s`) targets from the current view.
+/// What a hunk verb (`Space g X`/`g s`) targets from the current view.
 enum HunkTarget {
     /// Not on a hunk surface: act on the cursor's own buffer.
     NotASurface,
@@ -385,7 +385,7 @@ impl Editor {
                 super::transact::ApplyError::Edit(strop_core::EditError::StaleRevision {
                     ..
                 }) => "buffer changed — reopen the hunk preview".into(),
-                other => format!("hunk reset failed: {other}"),
+                other => format!("hunk discard failed: {other}"),
             };
             return false;
         }
@@ -405,11 +405,11 @@ impl Editor {
         true
     }
 
-    /// `Space g u`: reset a hunk to HEAD's content. From the hunk
+    /// `Space g X`: discard a hunk — back to HEAD's content. From the hunk
     /// surface it restores the origin buffer's hunk (0010 §2). A
     /// remote origin refuses: the snapshot is readonly and the remote
     /// repository has no writable index to restore from (RW4).
-    pub(crate) fn undo_hunk(&mut self) {
+    pub(crate) fn discard_hunk(&mut self) {
         if self.remote_endpoint().is_some() {
             self.message = "remote Git mutations are not supported".into();
             return;
@@ -419,7 +419,7 @@ impl Editor {
                 editor.docs.get(idx).map(|d| &d.source),
                 Some(super::document::DocumentSource::Remote(_))
             )
-            .then(|| "remote snapshots are read-only — hunk reset refused".to_string())
+            .then(|| "remote snapshots are read-only — hunk discard refused".to_string())
         };
         match self.hunk_surface_target() {
             HunkTarget::Fresh {
@@ -430,7 +430,7 @@ impl Editor {
                 if let Some(message) = remote_refusal(self, buffer) {
                     self.message = message;
                 } else if self.restore_hunk_in(buffer, &hunk, untracked) {
-                    self.message = "hunk reset".into();
+                    self.message = "hunk discarded".into();
                 }
             }
             HunkTarget::Stale => self.message = "buffer changed — reopen the hunk preview".into(),
@@ -445,7 +445,7 @@ impl Editor {
                 }
                 let untracked = self.hunks_untracked;
                 if self.restore_hunk_in(self.current(), &hunk, untracked) {
-                    self.message = "hunk reset".into();
+                    self.message = "hunk discarded".into();
                 }
             }
         }
@@ -500,22 +500,20 @@ impl Editor {
             self.message = "buffer not under workdir".into();
             return;
         };
+        let op = MutationOp::Stage { hunk: hunk.clone() };
         let key = MutationKey {
             document: idx,
             revision: self.doc(idx).buf.revision(),
-            kind: MutationKind::Stage,
+            kind: op.kind(),
             rel,
             repo: context.repo.clone(),
             git_view: self.git_view,
         };
-        self.git_mutations.push_back(GitMutation {
-            key,
-            op: MutationOp::Stage { hunk: hunk.clone() },
-        });
+        self.git_work.mutations.push_back(GitMutation { key, op });
         self.pump_git_mutations();
     }
 
-    /// `Space g S`: unstage the hunk under the cursor — the index→HEAD
+    /// `Space g u`: unstage the hunk under the cursor — the index→HEAD
     /// edge. Queued like staging; the index write never blocks input.
     /// A remote repository refuses by capability (RW4) — no remote
     /// index exists to write, and the local one is never touched.
@@ -555,24 +553,22 @@ impl Editor {
             self.message = "buffer not under workdir".into();
             return;
         };
+        let op = MutationOp::Unstage { hunk };
         let key = MutationKey {
             document: self.current(),
             revision: self.buf().revision(),
-            kind: MutationKind::Unstage,
+            kind: op.kind(),
             rel,
             repo: context.repo.clone(),
             git_view: self.git_view,
         };
-        self.git_mutations.push_back(GitMutation {
-            key,
-            op: MutationOp::Unstage { hunk },
-        });
+        self.git_work.mutations.push_back(GitMutation { key, op });
         self.pump_git_mutations();
     }
 
     /// `Space g p`: preview the hunk under the cursor as a diff surface
     /// (0010 §2) — a readonly buffer you can move in; `q` closes,
-    /// `Space g u`/`g s` still act on the file.
+    /// `Space g X`/`g s` still act on the file.
     pub(crate) fn preview_hunk(&mut self) {
         self.hunk_load.retry_failed();
         self.refresh_hunks();
@@ -598,7 +594,7 @@ impl Editor {
         self.register_dive(key);
     }
 
-    /// What a `Space g u`/`g s` from the current buffer should act on:
+    /// What a `Space g X`/`g s` from the current buffer should act on:
     /// the hunk surface's origin when fresh, a refusal when the origin
     /// buffer has moved on, and the cursor's own hunk otherwise.
     fn hunk_surface_target(&self) -> HunkTarget {

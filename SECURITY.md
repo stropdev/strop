@@ -28,5 +28,5 @@ strop sends no telemetry and transfers no files, source text or terminal
 content in the background. Network traffic happens only for operations you
 start or configure: language servers, SSH, Git remotes, and update
 checks or downloads. Optional traces record content only under their
-documented opt-in controls ([docs/terminal-and-scripting.md](docs/terminal-and-scripting.md));
+documented opt-in controls ([docs/scripting.md](docs/scripting.md));
 inspect a trace before sharing it.

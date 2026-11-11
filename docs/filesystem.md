@@ -1,15 +1,26 @@
-# The filesystem workspace
+# Files and directories
 
-Open a directory with `strop DIRECTORY`, `:browse`, or `:e DIRECTORY`.
-`Space e` reveals the current source in its parent. Browsing keeps the
-process cwd unchanged; Enter opens a structured entry and `-`/Backspace
-goes to its parent. In a Directory buffer `Space a` lists the filesystem
-operations valid there; `:fs` with no verb lists them from anywhere. On a
-source file `Space a` is about the code: the language server's actions and
-any recovery a failed save or connection left behind.
+Browse a directory, and create, rename, move, copy and delete files without
+leaving strop.
 
-Filesystem mutations use **Review → Apply → Receipt**, locally and on SSH
-hosts (see [SSH hosts](#ssh-hosts) for what differs there):
+Open a directory with `strop DIRECTORY`, `:browse` or `:e DIRECTORY`.
+`Space e` opens the directory of the current file with the cursor on it.
+Enter opens the entry under the cursor; `-` or Backspace goes up. Browsing
+does not change the project root. Each row shows the name, the size, and
+the kind and permissions; `:filter TEXT` narrows the listing and `:filter`
+alone shows everything again.
+
+In a directory listing `Space a` lists the file operations you can do
+there; `:fs` with no verb lists them from anywhere. In a file, `Space a` is
+about the code: the language server's actions, and anything a failed save
+or connection left for you to deal with.
+
+## File operations
+
+Nothing changes on disk until you confirm. Each `:fs` command opens a
+review that lists the exact steps. `Enter` (or `:fs apply`) does them; `q`
+(or `:fs cancel`) drops them. This works the same on your machine and on an
+SSH host (see [SSH hosts](#ssh-hosts) for what differs there).
 
 ```vim
 :fs create nested/new.txt
@@ -27,79 +38,117 @@ hosts (see [SSH hosts](#ssh-hosts) for what differs there):
 :fs undo OPERATION STEP
 ```
 
-Each verb opens a review of the exact steps. `Enter` in the review (or
-`:fs apply`) performs them; `q` (or `:fs cancel`) discards them.
+In a listing, the commands act on the entry under the cursor, on the lines
+of a range (`:'<,'>fs trash`), or on the entries you marked with `:fs mark`.
 
-Relative filesystem destinations use the current Directory, or the current
-source's parent; source-less buffers use the workspace root. Explicit
-resource URIs select another namespace. Creation never truncates an
-occupied name; rename/move is no-clobber. Review lists missing-parent
-creation explicitly. Stored-copy and buffer-copy select different versions
-without saving the source. Trash uses native recovery facilities where
-supported; remote Trash is unavailable, not an alias for permanent removal.
-Recursive removal of non-empty directories and unsafe alias/root operations
-are refused.
+A relative name is taken from the directory you are browsing, or from the
+directory of the current file. In a buffer with no file it is taken from
+the project root. A destination can also be an `ssh://` address, but one
+review works on one machine: strop does not copy or move between your
+machine and a host, or between two hosts.
 
-## The filename draft
+strop never overwrites: creating, renaming or moving onto a name that
+exists is refused. If parent directories have to be created, the review
+lists each one. `:fs copy stored` copies the file as it is on disk;
+`:fs copy buffer` copies the text in the buffer, unsaved edits included.
+Neither saves the file. Only single files are copied, not directories.
 
-`:fs edit` enters a name-only **filename draft**. Ordinary motions, edits,
-whole-line yank/paste, undo/redo and macros change the draft, not disk.
-`:w` prepares review; `Enter` or `:fs apply` performs the filesystem
-changes; `q` or `:fs cancel` returns to the intact draft. Browsing or refreshing the
-directory retains edited names and source provenance. Use `:fs discard` to
-discard explicitly. Copies need a distinct name; ambiguous joins and
-conflicting targets refuse instead of guessing which file a row represents.
+`:fs trash` moves the file to your system's trash. On an SSH host there is
+no trash, and `:fs trash` is refused; it never deletes instead.
+`:fs remove` deletes for good, and the review says so. It will not remove
+a directory that still has files in it. strop also refuses to rename or
+remove `/`, the project directory or a directory that contains it, and
+symbolic links, hard-linked files and special files.
 
-## Relocation and barriers
+Afterwards strop keeps a record of each step and whether it succeeded:
 
-Confirmed relocation keeps source text, history and document identity.
-Pending saves and unconfirmed operations
-block conflicting work. Receipts survive leaving the view; verification
-never blindly retries a mutation.
+- `:fs operations` lists what was done in this run of strop. Operations
+  and their steps are numbered; those are the OPERATION and STEP numbers
+  the next two commands take. Each step is marked committed, refused,
+  cancelled or unconfirmed, with the command to use next.
+- `:fs verify OPERATION STEP` checks the disk to see whether a step really
+  happened. Use it when a step is **unconfirmed**: strop could not tell
+  whether it went through, for example because the connection dropped
+  before the answer came. It only looks; it never does the step again.
+- `:fs undo OPERATION STEP` opens a review of the reverse step: rename
+  back, restore from the trash, or remove what was created or copied. A
+  permanent removal cannot be undone.
 
-Local saves/save-as and local filesystem mutations use a conservative
-per-editor write barrier, including parent aliases. Let a pending save
-finish before applying a local filesystem review, and resolve unconfirmed
-receipts before saving. Move verification and recovery require the recorded
-post-publication version: finding the same inode at a pathname is not
-sufficient ownership evidence. Receipts are in-memory, not crash recovery.
-Graceful global exit refuses unresolved outcomes; explicit `:qa!` reports
-them and exits unsuccessfully rather than claiming they were resolved or
-persisted.
+## Renaming by editing the list
 
-Removing an otherwise empty directory may retire its validated, quiescent
-protocol locks. Active locks, unknown entries and other directory contents
-cause refusal; partial housekeeping is reported even when cancellation
-prevents removal.
+`:fs edit` makes the directory listing editable: change the names as text.
+Motions, edits, yanking and pasting whole lines, undo and macros all work,
+and nothing on disk changes yet. `:w` opens the review; `Enter` (or
+`:fs apply`) does the changes; `:fs cancel` goes back to your edited list.
+Your edits survive a refresh or a visit to another directory. `:fs discard`
+throws them away.
 
-## Indentation controls
+- Change a name to rename the entry.
+- Add a line to create a file; end the name with `/` for a directory.
+- Delete a line to remove the entry. On your machine it goes to the trash.
+  On an SSH host you first have to say `:fs deletes permanent`.
+- Yank a line and paste it to copy the file. The copy needs a new name.
+- Delete a line and paste it back to keep the entry: that is a move, not
+  a removal.
 
-`:tab-size` opens source-specific width/style controls; `:tab-size 3`,
-`:tab-size auto`, and `:indent-style tabs|spaces|auto` are direct forms.
-Changing indentation settings never rewrites existing bytes. The modeline
-names the effective input owner and source setting. Matching delimiters use
-the same cancellable source resolver as `%`, without moving the view. The
-indentation engine itself is described in [editor.md](editor.md#indentation).
+If two lines end up with the same name, or strop cannot tell which file a
+line stands for (two entries joined with `J`, one name split over two
+lines), it refuses and names the line; undo that edit or `:fs discard`. A
+listing of more than 512 entries has to be filtered before `:fs edit`.
+
+## Open files, saves in progress, and quitting
+
+When you rename or move a file that is open, the buffer follows it and
+keeps its text, unsaved edits and undo history.
+
+On your own machine strop does one disk change at a time. While a save is
+still running, a file operation is refused with a message: wait for the
+save, then confirm again. While a file operation is running or one of its
+steps is unconfirmed, `:w` is refused the same way: settle the step with
+`:fs verify`, then save. Nothing is queued behind your back.
+
+`:fs verify` and `:fs undo` on a moved file act only if the file is still
+exactly as strop left it. If another program changed or replaced it since,
+they refuse and say so.
+
+The record of steps stays after you leave the review, but it is lost when
+strop exits or crashes. `:qa` refuses to quit while a step is unconfirmed.
+`:qa!` quits, lists those steps on the terminal, and exits with an error
+status.
+
+### Lock files
+
+When strop saves a file or does a file operation on your machine, it
+leaves a small lock file beside it, named `.strop-lock-` followed by a
+long string of letters and digits. Files (`Space f`), Search and git status never list them; a
+directory listing does. A directory that holds only leftover lock files
+counts as empty: removing it deletes them too, and the record says how
+many. A lock that is in use, or anything else in the directory, stops the
+removal.
 
 ## SSH hosts
 
-In a directory or file on a connected SSH host the same commands run over
-the host's SFTP connection, with the same review, receipts and
-verification: create files and directories (missing parents become their
-own steps), rename/move, copy a regular file (stored bytes or the pinned
-buffer) and remove. The differences are honest limits of SFTP:
+On an SSH host the same commands work, with the same review first and the
+same record afterwards: create files and directories, rename, move, copy a
+file (as it is on the host, or the text in your buffer) and remove. What
+differs, because of how SFTP works:
 
-- **No Trash.** `:fs trash` is refused on a host; `:fs remove` deletes
-  permanently, and the review says so.
-- **Nothing is replaced.** An occupied destination is refused in the
-  review, and checked again just before each step runs (files are created
-  exclusively, renames refuse an existing name). A source that changed on
-  the host since the review is refused.
-- **Directories are not copied recursively**; copy files one at a time or
-  use the host's terminal. Only an empty directory can be removed.
-- **No atomicity across steps** and no lock against other programs on the
-  host. A step whose reply was lost is reported unconfirmed; `:fs verify`
-  observes the host and never retries it.
-- Copies keep permission bits, not owner or times; new files and
-  directories get 0644/0755 under the host's umask.
+- **No trash.** `:fs trash` is refused on a host; `:fs remove` deletes for
+  good, and the review says so.
+- **Nothing is overwritten.** A name that is taken is refused in the
+  review, and checked again just before each step runs. If the name
+  appears on the host between the review and the step, the step fails
+  instead of overwriting. A file that changed on the host since the review
+  is refused too.
+- **Directories are not copied**; copy files one at a time, or use a
+  terminal on the host. Only an empty directory can be removed.
+- **Steps are not all-or-nothing.** If step 3 of 5 fails, steps 1 and 2
+  stay done. Nothing stops another program on the host from changing the
+  same files. If the connection drops before the host answers, the step is
+  shown as unconfirmed. `:fs verify` checks the host to see whether it
+  happened. It never runs the step again.
+- A copy keeps the file's permissions, not its owner or times. New files
+  and directories get 0644 and 0755, less the host's umask.
 
+Indent width and tabs or spaces (`:tab-size`, `:indent-style`) are in
+[editor.md](editor.md#indent-width-and-tabs-or-spaces).

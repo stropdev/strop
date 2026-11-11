@@ -180,13 +180,21 @@ impl Editor {
                 self.message = match decision {
                     attach::AttachDecision::NoServer => format!("no language server for {name}"),
                     attach::AttachDecision::TrustRequired { .. } => {
-                        format!("lsp: {name} refused — :trust to allow; :explain for details")
+                        format!("lsp: {name} needs :trust for this project — :explain for details")
                     }
-                    attach::AttachDecision::TrustError { .. }
-                    | attach::AttachDecision::NotExecutable { .. }
-                    | attach::AttachDecision::SpawnFailed { .. }
-                    | attach::AttachDecision::RemoteIo { .. } => {
-                        format!("lsp: {name} refused — :explain for details")
+                    attach::AttachDecision::NotExecutable {
+                        command,
+                        reason,
+                        hint,
+                    } => format!("lsp: {command} {reason} — {hint}"),
+                    attach::AttachDecision::TrustError { .. } => {
+                        format!("lsp: {name} trust check failed — :explain for details")
+                    }
+                    attach::AttachDecision::SpawnFailed { .. } => {
+                        format!("lsp: {name} did not start — :explain for details")
+                    }
+                    attach::AttachDecision::RemoteIo { .. } => {
+                        format!("lsp: {name} could not start on the host — :explain for details")
                     }
                     attach::AttachDecision::Attached | attach::AttachDecision::Cancelled => {
                         unreachable!("matched above")

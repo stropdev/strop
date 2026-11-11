@@ -13,6 +13,7 @@ pub mod memory;
 pub mod permalink;
 pub mod remote;
 pub mod ssh;
+pub mod status;
 pub mod target;
 
 mod diff;
@@ -24,6 +25,7 @@ pub use diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin, Sign};
 pub use exec::{GitExec, GitExecError, GitRun};
 pub use repo::{GitContext, GitError, Repo};
 pub use revision::{GitRevision, SourceLocation};
+pub use status::{Branch, Change, FileDelta, Section, StatusEntry, Tracking, WorkingTree};
 pub use target::RepoTarget;
 
 #[cfg(test)]

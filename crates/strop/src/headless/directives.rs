@@ -91,7 +91,7 @@ pub(super) fn parse(line: &str) -> io::Result<(DirectiveKind, &str)> {
             .join(", ");
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("unknown script directive {name:?}; expected {names}; see docs/terminal-and-scripting.md"),
+            format!("unknown script directive {name:?}; expected {names}; see docs/scripting.md"),
         ));
     };
     if spec.arguments.is_empty() && !arguments.trim().is_empty() {

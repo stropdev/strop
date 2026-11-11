@@ -274,7 +274,7 @@ available; no server was configured in the handover-writing environment.
   exiting language server can exercise failure presentation without claiming
   a bug in a real language server.
 - A useful reproduction: launch `sample.rs` using the existing
-  [Rust fixture](../demos/fixtures/demo.rs), split with `Space w v`, open a
+  [Rust fixture](../demos/fixtures/proj/src/sharpen.rs), split with `Space w v`, open a
   sibling README using `:e`, return with `Space w h`, filter `Space f` to
   `sample`, inspect `:theme`, then shrink to 48×16. Use the documented
   [headless capture workflow](../docs/terminal-and-scripting.md), including

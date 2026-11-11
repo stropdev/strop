@@ -159,7 +159,7 @@ fn gutters_and_sidebar_render() {
     let (dir, mut e) = fixture();
     let root = dir.path().to_path_buf();
     settle(&mut e, |e| e.git().is_some());
-    e.feed_text(" gb");
+    e.feed_text(" gB");
     pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
     let frame = crate::headless::frame_string(&mut e, 100, 10).unwrap();
     let first_sha = git_out(&root, &["rev-parse", "HEAD~1"]);

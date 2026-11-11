@@ -291,14 +291,14 @@ fn permalink_alias_open_waits_for_resolution() {
     assert!(e.osc52.is_none(), "open never stages a clipboard payload");
 }
 
-/// `Space g b` toggles a per-buffer gutter; Enter dives into the
+/// `Space g B` toggles a per-buffer gutter; Enter dives into the
 /// cursor line's commit, positioned at its sha (0011 §3).
 #[test]
 fn blame_gutter_toggles_and_dives() {
     let (dir, mut e) = fixture();
     let root = dir.path().to_path_buf();
     settle(&mut e, |e| e.git.is_some());
-    e.feed_text(" gb");
+    e.feed_text(" gB");
     assert_eq!(e.blame_gutters.len(), 1, "gutter on for the buffer");
     pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
     let gutter = e
@@ -333,7 +333,7 @@ fn blame_gutter_toggles_and_dives() {
     // q returns; the gutter survives; toggle off removes it
     e.feed_text("q");
     assert_eq!(e.blame_gutters.len(), 1, "gutter is per-buffer view state");
-    e.feed_text(" gb");
+    e.feed_text(" gB");
     assert!(e.blame_gutters.is_empty(), "second toggle turns it off");
     e.feed(Key::Enter);
     assert!(
@@ -348,7 +348,7 @@ fn blame_gutter_toggles_and_dives() {
 fn stale_gutter_falls_back_to_card() {
     let (_d, mut e) = fixture();
     settle(&mut e, |e| e.git.is_some());
-    e.feed_text(" gb");
+    e.feed_text(" gB");
     // settle the gutter AND the interim card request: both must be
     // terminal before the edit voids the pairing
     pump_ready(&mut e, |e| {
@@ -451,13 +451,13 @@ fn gutter_result_dropped_after_toggle_off() {
     let (_dir, mut e) = fixture();
     let key = e.current();
     settle(&mut e, |e| e.git.is_some());
-    e.feed_text(" gb"); // on (job in flight)
+    e.feed_text(" gB"); // on (job in flight)
     let ticket = e
         .blame_gutters
         .get(&key)
         .and_then(|g| g.request.clone())
         .expect("gutter owns its request");
-    e.feed_text(" gb"); // off: entry removed, request cancelled
+    e.feed_text(" gB"); // off: entry removed, request cancelled
     assert!(e.blame_gutters.is_empty());
     e.handle_git_job(GitJob::Gutter(strop_core::worker::Completion {
         ticket,
@@ -610,7 +610,7 @@ fn hunk_discard_undoes_byte_exact() {
         !matches!(e.hunk_load, strop_core::worker::Load::Running(_))
     });
     assert!(!e.hunks.is_empty(), "the worktree edit shows as a hunk");
-    e.undo_hunk();
+    e.discard_hunk();
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
     // u restores the exact pre-discard text
     e.feed_text("u");

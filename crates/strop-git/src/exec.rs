@@ -85,7 +85,7 @@ impl std::error::Error for GitExecError {}
 /// refuses a truncated head.
 const OUTPUT_LIMIT: u64 = 16 * 1024 * 1024;
 const STDERR_LIMIT: u64 = 64 * 1024;
-const DEADLINE: Duration = Duration::from_secs(60);
+pub(crate) const DEADLINE: Duration = Duration::from_secs(60);
 
 /// Where one Git query executes. Constructed from a [`RepoTarget`] so a
 /// non-local workdir can only ever reach its own endpoint's host.
@@ -128,13 +128,26 @@ impl<'a> GitExec<'a> {
     /// executable shell text, even with control bytes: the remote line
     /// quotes every word.
     pub fn run(&self, argv: &[OsString], cancel: &CancelToken) -> Result<GitRun, GitExecError> {
+        self.run_within(argv, DEADLINE, cancel)
+    }
+
+    /// [`Self::run`] with the caller's deadline: a commit runs the
+    /// repository's hooks, which may lint or test for minutes.
+    pub fn run_within(
+        &self,
+        argv: &[OsString],
+        deadline: Duration,
+        cancel: &CancelToken,
+    ) -> Result<GitRun, GitExecError> {
         match self {
             Self::Local { workdir } => {
                 let mut command = Command::new("git");
                 command.arg("-C").arg(workdir).args(argv);
-                capture(&mut command, cancel)
+                capture(&mut command, deadline, cancel)
             }
-            Self::Remote { host, workdir } => run_program(host, "git", workdir, argv, cancel),
+            Self::Remote { host, workdir } => {
+                run_program(host, "git", workdir, argv, deadline, cancel)
+            }
         }
     }
 
@@ -173,20 +186,25 @@ pub(crate) fn run_program(
     program: &str,
     workdir: &Path,
     argv: &[OsString],
+    deadline: Duration,
     cancel: &CancelToken,
 ) -> Result<GitRun, GitExecError> {
     let mut words: Vec<&OsStr> = vec![OsStr::new(program)];
     words.extend(argv.iter().map(OsString::as_os_str));
     let mut command = host.command(&words, Some(workdir));
-    capture(&mut command, cancel)
+    capture(&mut command, deadline, cancel)
 }
 
-fn capture(command: &mut Command, cancel: &CancelToken) -> Result<GitRun, GitExecError> {
+fn capture(
+    command: &mut Command,
+    deadline: Duration,
+    cancel: &CancelToken,
+) -> Result<GitRun, GitExecError> {
     let policy = CapturePolicy {
         stdout_limit: OUTPUT_LIMIT,
         stderr_limit: STDERR_LIMIT,
         stderr_tail: 0,
-        deadline: DEADLINE,
+        deadline,
         stdin: StdinPolicy::Null,
     };
     let output = capture_with(command, cancel, &policy).map_err(|error| match error {

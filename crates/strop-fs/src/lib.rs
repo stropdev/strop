@@ -22,6 +22,7 @@ mod stage;
 mod tests;
 mod trash;
 
+pub use guard::reserved as is_protocol_path;
 pub use listing::{assemble, list, parent, ListedDirectory, ObservedEntry};
 pub use observation::observe;
 use strop_workspace::operation::{FsFailure, FsFailureKind};

@@ -43,17 +43,12 @@ jobs:
         run: |
           # VHS 0.11.0: validated fresh output; 0.12.0 can exit zero without encoding.
           docker run --rm -v "$PWD:/vhs" -w /vhs --entrypoint sh ghcr.io/charmbracelet/vhs@sha256:9d5fc3dc0c160b0fb1d2212baff07e6bdf3fa9438c504a3237484567302fcf93 -c '
-            apt-get update -qq && apt-get install -y -qq ripgrep git gzip curl build-essential >/dev/null \
-            && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --component rust-analyzer,rust-src >/dev/null \
-            && export PATH="/usr/local/bin:$HOME/.cargo/bin:$PATH" \
-            && mkdir -p /tmp/proj /vhs/demo-artifacts \
+            apt-get update -qq && apt-get install -y -qq ripgrep git gzip >/dev/null \
+            && mkdir -p /vhs/demo-artifacts \
             && rm -f /vhs/demo-artifacts/demo.gif \
             && tar -xzf /vhs/dist/strop-*.tar.gz -C /tmp \
             && install -m755 /tmp/strop-*/strop /usr/local/bin/strop \
             && /usr/local/bin/strop --version \
-            && cp /vhs/demos/fixtures/demo.rs /tmp/proj/demo.rs \
-            && cp -r /vhs/demos/fixtures/lsp-proj /tmp/lsp-proj \
-            && (cd /tmp/lsp-proj && cargo metadata --format-version 1 >/dev/null 2>&1 || true) \
             && vhs /vhs/demos/demo.tape --output /vhs/demo-artifacts/demo.gif \
             && test -s /vhs/demo-artifacts/demo.gif \
             && frames="$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 /vhs/demo-artifacts/demo.gif)" \
@@ -96,32 +91,3 @@ jobs:
           else
             gh pr create --base main --head demo/artifacts --title "$title" --body "$body"
           fi
-
-      # Ship the GIF to the site and redeploy it. Needs SITE_REPO_TOKEN
-      # (fine-grained PAT, contents:write on the site repo) — non-fatal
-      # while unset.
-      - name: Publish GIF to the site repo
-        continue-on-error: true
-        env:
-          SITE_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
-        run: |
-          git clone --depth 1 "https://x-access-token:${SITE_TOKEN}@github.com/stropdev/stropdev.github.io.git" /tmp/site
-          mkdir -p /tmp/site/img
-          cp /tmp/gif/demo.gif /tmp/site/img/
-          git -C /tmp/site config user.name "github-actions[bot]"
-          git -C /tmp/site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C /tmp/site add img/demo.gif
-          if git -C /tmp/site diff --cached --quiet; then
-            echo "site GIF unchanged"
-          else
-            git -C /tmp/site commit -m "img: refresh demo.gif (strop@${GITHUB_SHA:0:8})"
-            git -C /tmp/site push
-          fi
-
-      - name: Ping the site to redeploy
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
-        run: |
-          gh api repos/stropdev/stropdev.github.io/dispatches \
-            -f event_type=rebuild

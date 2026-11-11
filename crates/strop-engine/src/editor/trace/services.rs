@@ -48,6 +48,10 @@ pub fn git(job: &GitJob) {
         GitJob::Gutter(value) => completion("git", "gutter", value),
         GitJob::Card(value) => completion("git", "blame_card", value),
         GitJob::Dive(value) => completion("git", "dive", value),
+        GitJob::Status(value) => completion("git", "status", value),
+        GitJob::CommitDraft(value) => completion("git", "commit_draft", value),
+        GitJob::Porcelain(value) => completion("git", "porcelain", value),
+        GitJob::Branches(value) => completion("git", "branches", value),
     });
 }
 

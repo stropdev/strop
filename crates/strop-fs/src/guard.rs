@@ -58,7 +58,10 @@ fn open_lock(
     Ok((file, identity))
 }
 
-pub(crate) fn reserved(path: &Path) -> bool {
+/// The path names one of the editor's own protocol files — a lock, a
+/// save stage or a filesystem-operation stage — in any component.
+/// They live beside the user's files and are never the user's content.
+pub fn reserved(path: &Path) -> bool {
     path.components().any(|part| {
         let Component::Normal(name) = part else {
             return false;

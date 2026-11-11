@@ -446,6 +446,16 @@ impl Editor {
             self.accept_indent_choice(document, choice, &draft);
             return;
         }
+        if glue.picker.kind == Kind::Branches {
+            let typed = glue.picker.input.text().trim().to_string();
+            let Some(Payload::Branch(choice)) = payload else {
+                self.message = "no matching branch".into();
+                return;
+            };
+            self.close_picker();
+            self.accept_branch(choice, &typed);
+            return;
+        }
         if glue.picker.kind == Kind::Actions {
             let Some(Payload::Action(index)) = payload else {
                 self.message = "no matching action".into();

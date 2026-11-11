@@ -12,7 +12,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space e",
-        desc: "reveal source in its Directory buffer",
+        desc: "show this file in its directory",
         sections: &["leader"],
         live: true,
         id: "directory-reveal",
@@ -60,7 +60,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space /",
-        desc: "Search workspace (resume investigation)",
+        desc: "Search the project (or return to it)",
         sections: &["leader"],
         live: true,
         id: "search",

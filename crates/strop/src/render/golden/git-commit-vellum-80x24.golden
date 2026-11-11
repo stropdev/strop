@@ -1,0 +1,49 @@
+   1 docs: say how staging works                                                
+   2                                                                            
+   3 # Write the message above; lines starting with # are left out.             
+   4 # :wq commits, :q! aborts.                                                 
+   5 #                                                                          
+   6 # On branch main                                                           
+   7 # Changes to be committed:                                                 
+   8 #   A docs/git.md                                                          
+   9 #                                                                          
+  10 # Not in this commit: 2 unstaged, 1 untracked.                             
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+ INSERT   main  .git/COMMIT_EDITMSG ●                                  1:28  10%
+
+  0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 27:#262a30/#efeadf 47:#efeadf/#efeadf 1:reset/reset
+  1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 62:#696d77/#f6f2e9 12:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#696d77/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
+  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#696d77/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 16:#696d77/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
+  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#696d77/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
+  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 17:#696d77/#f6f2e9 57:reset/#f6f2e9 1:reset/reset
+  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#696d77/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 46:#696d77/#f6f2e9 28:reset/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 11: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 12: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 14: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 15: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 16: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 17: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 18: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 19: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 20: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
+ 23: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 14:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 34:reset/#fdfbf6 9:#656d7b/#fdfbf6

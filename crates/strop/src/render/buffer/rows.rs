@@ -266,6 +266,10 @@ pub(super) fn render_pane(
             Some(crate::editor::ReviewRow::Warning) => style.row_fg = Some(t.warning),
             _ => {}
         }
+        // a commit message's `#` lines are commentary git leaves out
+        if text.chars().next() == Some('#') && editor.is_commit_message(view.doc) {
+            style.row_fg = Some(t.syn.comment);
+        }
         match surface.and_then(|surface| surface.diff_row(line_idx)) {
             Some(crate::editor::DiffRow::Stats | crate::editor::DiffRow::HunkHeader(_)) => {
                 // structural text uses the SAME fixed inset its caret

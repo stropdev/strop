@@ -512,8 +512,15 @@ pub fn effective_host(
             connection.endpoint()
         )));
     }
-    let run = run_program(connection, "ssh", workdir, &args, cancel)
-        .map_err(|error| EffectiveHostError::Spawn(error.to_string()))?;
+    let run = run_program(
+        connection,
+        "ssh",
+        workdir,
+        &args,
+        crate::exec::DEADLINE,
+        cancel,
+    )
+    .map_err(|error| EffectiveHostError::Spawn(error.to_string()))?;
     if !run.success {
         return Err(EffectiveHostError::Failed(
             String::from_utf8_lossy(&run.stderr).trim().to_string(),

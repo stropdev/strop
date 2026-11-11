@@ -17,6 +17,8 @@ pub enum GitError {
     /// The path is not inside the repository workdir — the caller's
     /// buffer cannot take part in this repository's edges at all.
     OutsideWorkdir,
+    /// A commit was asked for with an empty index.
+    NothingStaged,
 }
 
 impl std::fmt::Display for GitError {
@@ -24,6 +26,7 @@ impl std::fmt::Display for GitError {
         match self {
             Self::Native(message) => write!(f, "{message}"),
             Self::OutsideWorkdir => write!(f, "path is outside the repository workdir"),
+            Self::NothingStaged => write!(f, "nothing staged — s stages a file in Space g g"),
         }
     }
 }
@@ -67,7 +70,7 @@ impl GitContext {
 }
 
 pub struct Repo {
-    inner: git2::Repository,
+    pub(crate) inner: git2::Repository,
     pub(crate) workdir: PathBuf,
 }
 
@@ -523,7 +526,7 @@ pub(crate) fn hunks_from_buffers(
 /// Byte-precise line split: (content-without-terminator, had-newline)
 /// pairs. Unlike str::lines, the final unterminated line keeps its
 /// identity — staging round-trips a missing trailing newline (0018).
-fn split_lines_bytes(bytes: &[u8]) -> Vec<(Vec<u8>, bool)> {
+pub(crate) fn split_lines_bytes(bytes: &[u8]) -> Vec<(Vec<u8>, bool)> {
     let mut out = Vec::new();
     let mut start = 0;
     for (i, b) in bytes.iter().enumerate() {

@@ -70,6 +70,18 @@ pub enum Payload {
     /// absolute project root. Informational chrome, never a symbol
     /// candidate; accepting opens the root as a directory.
     ProjectStatus(#[serde(with = "strop_core::path_serde")] PathBuf),
+    /// A `Space g b` row: a branch to switch to, or the pinned
+    /// "create from the typed name" row.
+    Branch(BranchChoice),
+}
+
+/// What a branch-picker row does when accepted.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum BranchChoice {
+    /// `git switch <name>`.
+    Switch(String),
+    /// `git switch -c <the typed filter text>`.
+    Create,
 }
 
 /// A `:tab-size` selector row's action (0051 R08): the width/style
@@ -128,6 +140,8 @@ pub enum Kind {
     TabSize,
     /// The `:theme` palette selector (0.42.0).
     Theme,
+    /// `Space g b`: local and remote branches.
+    Branches,
 }
 
 impl Kind {
@@ -142,6 +156,7 @@ impl Kind {
             Kind::Jumps => " jumps ",
             Kind::TabSize => " tab size ",
             Kind::Theme => " theme ",
+            Kind::Branches => " branches ",
             Kind::Symbols => " symbols ",
             Kind::WorkspaceSymbols => " workspace symbols ",
             Kind::RemoteAddress => " connect to remote ",

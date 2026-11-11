@@ -2,7 +2,8 @@
 //! `FileSelectionPlan` plus the session visibility policy produce the
 //! same eligible path set for file find, grep and replace. `.git/` and
 //! other repository internals are protected metadata — never ordinary
-//! project search results, even with `ignored:include`.
+//! project search results, even with `ignored:include`; neither are the
+//! editor's own protocol files (`strop_fs::is_protocol_path`).
 
 use std::path::Path;
 pub(super) const PATH_LIMIT: usize = 100_000;
@@ -51,11 +52,15 @@ fn protected(rel: &Path) -> bool {
 }
 
 /// The walk both surfaces share: ignore files by default, hidden entries
-/// by policy, `.git` never.
+/// by policy, `.git` never, and never the editor's own protocol files
+/// (locks, save and filesystem stages) that sit beside the user's.
 fn builder(cwd: &Path, effective: SelectionPolicy) -> ignore::WalkBuilder {
     let mut builder = ignore::WalkBuilder::new(cwd);
     builder
-        .filter_entry(|entry| entry.file_name() != ".git")
+        .filter_entry(|entry| {
+            let name = entry.file_name();
+            name != ".git" && !strop_fs::is_protocol_path(Path::new(name))
+        })
         .hidden(!effective.hidden)
         .ignore(effective.respect_ignore)
         .git_ignore(effective.respect_ignore)
@@ -251,6 +256,36 @@ mod tests {
             "{got:?}"
         );
         assert!(!got.contains(&"target/build.rs".to_string()), "{got:?}");
+    }
+
+    #[test]
+    fn the_editor_s_own_protocol_files_are_never_listed() {
+        let dir = fixture();
+        let lock = format!(".strop-lock-{}", "a".repeat(64));
+        std::fs::write(dir.path().join("src").join(&lock), "").unwrap();
+        std::fs::create_dir(dir.path().join(".strop-fs-stage")).unwrap();
+        std::fs::write(dir.path().join(".strop-fs-stage/main.rs"), "x\n").unwrap();
+        std::fs::write(dir.path().join(".strop-save-main.rs"), "x\n").unwrap();
+        let everything = SelectionPolicy {
+            hidden: true,
+            respect_ignore: false,
+        };
+        let listed = collect(dir.path(), "", everything);
+        assert!(
+            !listed.iter().any(|path| path.contains(".strop-")),
+            "{listed:?}"
+        );
+        assert!(listed.contains(&".env".to_string()), "{listed:?}");
+        // Content search gathers through the same builder.
+        let plan = FileSelectionPlan::compile(&SearchQuery::parse("")).unwrap();
+        let gathered = super::collect(dir.path(), &plan, everything, &|| false, 2).unwrap();
+        assert!(
+            !gathered
+                .iter()
+                .any(|path| path.to_string_lossy().contains(".strop-")),
+            "{gathered:?}"
+        );
+        assert!(gathered.contains(&std::path::PathBuf::from("src/main.rs")));
     }
 
     #[test]

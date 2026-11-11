@@ -357,6 +357,7 @@ impl Editor {
             || self.remote_write_pending(request)
             || self.destination_write_pending(request)
             || self.filesystem.mutation_pending(request)
+            || self.git_work.write_pending(request)
             || self
                 .io
                 .saves
