@@ -105,7 +105,7 @@ Type "q"
 Sleep 400ms
 Space
 Type "g"
-Type "u"
+Type "X"
 Sleep 1.2s
 
 # commit browser: dive commit → files → delta view (0010 diff surfaces)
@@ -129,12 +129,12 @@ Type "q"
 Sleep 500ms
 Space
 Type "g"
-Type "b"
+Type "B"
 Sleep 2s
 # the same chord toggles the blame gutter off
 Space
 Type "g"
-Type "b"
+Type "B"
 Sleep 400ms
 Type "jjj"
 Sleep 300ms
