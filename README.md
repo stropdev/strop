@@ -59,7 +59,7 @@ Q                            multicursor      Space c              cursor below
 Space  f files · o remote · b buffers · / Search · R replace · ? help
 Space w  - horizontal · v vertical · 1-9 focus · h/j/k/l/w move · q close
 Ctrl-W   h j k l w W p move · s v n split · c q o close · = equal
-Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
+Space g  g status · c commit · b branches · l log · h history · B blame · s/u/X/p hunk
 ```
 
 `Space ?` lists every binding in the editor; `:help` explains each surface.
@@ -75,6 +75,9 @@ Space g  l log · h history · b blame gutter · y/o permalink · u/s/p hunk
   **[docs/search.md](docs/search.md)**
 - **Editor surfaces** — themes, completion, structural + label-colon
   indentation, syntax, sessions → **[docs/editor.md](docs/editor.md)**
+- **Git** — status with staging by file, hunk or section, commit with
+  the message in a buffer, branch switching, log, history and blame →
+  **[docs/git.md](docs/git.md)**
 - **SSH and remote editing** — plain OpenSSH, nothing installed on the
   host: a connected host is editable, saves refuse a file changed on the
   host, and search, Git, language servers and terminals run there; for
