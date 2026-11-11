@@ -59,6 +59,7 @@ fn picker_label(kind: strop_picker::Kind) -> &'static str {
         Kind::Diagnostics => "DIAG",
         Kind::Jumps => "JUMPS",
         Kind::Theme => "THEME",
+        Kind::Branches => "BRANCHES",
         Kind::Locations => "LOCS",
         Kind::RemoteHosts | Kind::RemoteAddress => "REMOTE",
         Kind::TabSize | Kind::Actions => "PICKER",

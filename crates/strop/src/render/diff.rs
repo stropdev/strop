@@ -16,6 +16,7 @@ use super::style::Tokens;
 
 mod list;
 mod margins;
+mod status;
 
 pub(crate) use list::{surface_list_row, RowDecoration};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};

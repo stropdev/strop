@@ -6,7 +6,7 @@
 //! only ever turns one way.
 
 /// Fields of `pub struct Editor` in `editor/mod.rs`. Lower it, never raise it.
-const EDITOR_FIELDS: usize = 111;
+const EDITOR_FIELDS: usize = 110;
 /// Inherent `impl Editor` blocks across the crate. Lower it, never raise it.
 const EDITOR_IMPL_BLOCKS: usize = 154;
 

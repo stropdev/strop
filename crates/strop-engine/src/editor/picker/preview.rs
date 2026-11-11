@@ -341,7 +341,8 @@ impl PreviewProbe<'_> {
             | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
-            | Payload::ThemeChoice(_) => None,
+            | Payload::ThemeChoice(_)
+            | Payload::Branch(_) => None,
             Payload::Buffer(_) => None, // handled via label in the admitting path
             Payload::File(path) => Some((
                 strop_workspace::ResourceLocation::local(self.editor.picker_path(path)),
@@ -385,7 +386,8 @@ impl Editor {
             | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
-            | Payload::ThemeChoice(_) => {
+            | Payload::ThemeChoice(_)
+            | Payload::Branch(_) => {
                 self.cancel_other_previews(picker, None);
                 return None;
             }

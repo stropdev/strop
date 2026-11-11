@@ -234,14 +234,18 @@ mod tests {
         e.feed_text(" g");
         let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
         for verb in [
-            "commit browser",
+            "status: changed files",
+            "commit (:wq commits",
+            "branches: switch / create",
+            "log",
             "file history",
-            "blame",
+            "blame gutter / card",
+            "hunk: stage",
+            "hunk: unstage",
+            "hunk: discard",
+            "hunk: preview",
             "permalink: copy",
             "permalink: open",
-            "hunk: undo",
-            "hunk: stage",
-            "hunk: preview",
         ] {
             assert!(frame.contains(verb), "git card missing {verb:?}");
         }
@@ -345,21 +349,21 @@ mod tests {
         e.feed_text(" g");
         let wide = crate::headless::frame_string(&mut e, 100, 24).unwrap();
         assert!(
-            wide.contains("hunk: undo unstaged (restore from index)"),
+            wide.contains("commit (:wq commits, :q! aborts)"),
             "the full description fits: {wide}"
         );
         assert!(
             wide.contains("file history (visual: selected lines)"),
             "{wide}"
         );
-        let narrow = crate::headless::frame_string(&mut e, 48, 16).unwrap();
+        let narrow = crate::headless::frame_string(&mut e, 36, 16).unwrap();
         assert!(narrow.contains('…'), "narrow card ellipsizes: {narrow}");
         // the core invariant: a description is either complete or
         // ellipsized — never a mid-word cut against the border
         for line in narrow.lines() {
-            if line.contains("undo unstaged") {
+            if line.contains("commit (:wq") {
                 assert!(
-                    line.contains("restore from index") || line.contains('…'),
+                    line.contains(":q! aborts)") || line.contains('…'),
                     "no hard truncation: {line}"
                 );
             }

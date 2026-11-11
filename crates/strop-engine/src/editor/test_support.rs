@@ -350,6 +350,42 @@ pub mod git {
         (dir, e)
     }
 
+    /// A repository on `main` for the working-tree flows (0096): a
+    /// twenty-line `src/lib.rs` and a short `notes.md`, both committed,
+    /// with the editor on `src/lib.rs`. Tests then change the tree.
+    pub fn work_fixture() -> (tempfile::TempDir, Editor) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["config", "user.email", "t@t.t"]);
+        git(&["config", "user.name", "t"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        std::fs::create_dir(root.join("src")).unwrap();
+        let lines: String = (1..=20).map(|n| format!("line {n}\n")).collect();
+        std::fs::write(root.join("src/lib.rs"), lines).unwrap();
+        std::fs::write(root.join("notes.md"), "# notes\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "base"]);
+        let mut e = Editor::new(Buffer::open(root.join("src/lib.rs").to_str().unwrap()).unwrap());
+        e.cwd = root.to_path_buf();
+        e.discover_git();
+        settle(&mut e, |editor| editor.git.is_some());
+        (dir, e)
+    }
+
+    /// Settle every working-tree job: status snapshots, mutations, the
+    /// commit template and the `git` CLI runs, with the IO they start.
+    pub fn settle_work(e: &mut Editor) {
+        settle(e, |e| !e.git_work.pending() && !e.io_pending());
+    }
+
     /// Drain async work until `done` or the deadline (real threads need
     /// real pumping — the event loop's shape).
     pub fn settle(e: &mut Editor, done: impl Fn(&Editor) -> bool) {

@@ -165,12 +165,17 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
         git_view: view,
     };
     let mutation_ticket = e.git_ticket(key).unwrap();
-    e.git_mutation = Some(mutation_ticket.clone());
+    e.git_work.mutation = Some((
+        mutation_ticket.clone(),
+        MutationOp::Stage {
+            hunk: all_add_hunk().into(),
+        },
+    ));
     e.handle_git_job(GitJob::Mutation(Completion {
         ticket: mutation_ticket,
         outcome: Outcome::Success(()),
     }));
-    assert!(e.git_mutation.is_none(), "mutation settled");
+    assert!(e.git_work.mutation.is_none(), "mutation settled");
     assert!(e.message.contains("staged"), "{}", e.message);
     assert_ne!(e.git_view, view, "a new git view was allocated");
     assert!(
@@ -214,18 +219,18 @@ fn queued_mutations_are_serial_and_failure_keeps_the_queue_live() {
     let op = MutationOp::Stage {
         hunk: all_add_hunk().into(),
     };
-    e.git_mutations.push_back(GitMutation {
+    e.git_work.mutations.push_back(GitMutation {
         key: key(MutationKind::Stage),
         op: op.clone(),
     });
-    e.git_mutations.push_back(GitMutation {
+    e.git_work.mutations.push_back(GitMutation {
         key: key(MutationKind::Unstage),
         op: MutationOp::Unstage {
             hunk: all_add_hunk().into(),
         },
     });
     e.pump_git_mutations();
-    let first = e.git_mutation.clone().expect("exactly one running");
+    let (first, _) = e.git_work.mutation.clone().expect("exactly one running");
     assert_eq!(first.key.kind, MutationKind::Stage, "FIFO head first");
     // the first fails: the second (same view) may launch
     e.handle_git_job(GitJob::Mutation(Completion {
@@ -240,7 +245,7 @@ fn queued_mutations_are_serial_and_failure_keeps_the_queue_live() {
         "the initiating view sees the failure: {}",
         e.message
     );
-    let second = e.git_mutation.clone().expect("baton passed");
+    let (second, _) = e.git_work.mutation.clone().expect("baton passed");
     assert_eq!(second.key.kind, MutationKind::Unstage);
     assert_ne!(second.request, first.request);
     // success settles and drains the queue
@@ -248,19 +253,22 @@ fn queued_mutations_are_serial_and_failure_keeps_the_queue_live() {
         ticket: second,
         outcome: Outcome::Success(()),
     }));
-    assert!(e.git_mutation.is_none() && e.git_mutations.is_empty());
+    assert!(e.git_work.mutation.is_none() && e.git_work.mutations.is_empty());
     // now the invalidated-view variant: a queued mutation computed
     // against the pre-success view is refused at launch
-    e.git_mutations.push_back(GitMutation {
+    e.git_work.mutations.push_back(GitMutation {
         key: key(MutationKind::Stage),
         op,
     });
     e.pump_git_mutations();
     assert!(
-        e.git_mutation.is_none(),
+        e.git_work.mutation.is_none(),
         "a stale-view mutation never launches"
     );
-    assert!(e.git_mutations.is_empty(), "and is dropped from the queue");
+    assert!(
+        e.git_work.mutations.is_empty(),
+        "and is dropped from the queue"
+    );
 }
 
 /// Log results land only through the surface's registered request;

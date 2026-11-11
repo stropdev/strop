@@ -17,9 +17,12 @@ pub use presentation::PreparedDiff;
 pub use sidebar::{Sidebar, SidebarRow};
 mod types;
 pub use types::GitJob;
+#[cfg(test)]
+pub(crate) use types::MutationKind;
 pub(crate) use types::{
-    BlameKey, CardKey, ContextKey, DiveData, DiveKey, DiveTarget, GitMutation, HunkData, HunkKey,
-    LogKey, MutationKey, MutationKind, MutationOp,
+    BlameKey, BranchKey, CardKey, CommitDraft, ContextKey, DiveData, DiveKey, DiveTarget, DraftKey,
+    GitMutation, HunkData, HunkKey, LogKey, MutationKey, MutationOp, Porcelain, PorcelainDone,
+    PorcelainKey, StatusData, StatusKey,
 };
 
 use std::path::{Path, PathBuf};
@@ -264,6 +267,7 @@ impl Editor {
                 self.review_cancel_pub();
             }
             self.cancel_directory_filter(self.current());
+            self.git_work.clear_pending_keys();
             self.walker.clear();
             return;
         }
@@ -282,10 +286,22 @@ impl Editor {
             }
             return;
         }
+        if key == Key::Char('c')
+            && self.status_view().is_some()
+            && (self.walker.at_prefix(&["]"]) || self.walker.at_prefix(&["["]))
+        {
+            let forward = self.walker.at_prefix(&["]"]);
+            let n = self.walker.state.count().unwrap_or(1);
+            self.walker.clear();
+            for _ in 0..n {
+                self.status_hunk_step(forward);
+            }
+            return;
+        }
         if !self.walker.is_ground() {
             return self.feed_command(key);
         }
-        if self.directory_key(key) || self.review_key(key) {
+        if self.status_key(key) || self.directory_key(key) || self.review_key(key) {
             return;
         }
         match key {
@@ -363,6 +379,32 @@ impl Editor {
     fn close_surface(&mut self) {
         self.close_pane_or_buffer(true);
     }
+
+    /// The current buffer's repo-relative path for `repo` — a local
+    /// buffer's path or a remote buffer's remote-file path, stripped
+    /// by the repository that owns it. A buffer never borrows another
+    /// machine's spelling: a remote file only resolves under its own
+    /// endpoint's repository, a local file only under a local one.
+    pub(crate) fn current_buffer_rel(&self, repo: &RepoTarget) -> Option<PathBuf> {
+        match &self.cur().source {
+            super::document::DocumentSource::Remote(file) => match repo {
+                RepoTarget::Remote { endpoint, .. } if endpoint == file.file.endpoint() => {
+                    repo.rel_of(file.file.path())
+                }
+                _ => None,
+            },
+            super::document::DocumentSource::File => {
+                let path = self.cur().buf.path.as_deref()?;
+                let abs = if Path::new(path).is_absolute() {
+                    PathBuf::from(path)
+                } else {
+                    repo.workdir().join(path)
+                };
+                repo.rel_of(&abs)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Added/deleted counts across hunks.
@@ -402,41 +444,6 @@ pub(crate) fn diff_surface_text(label: &str, hunks: &[Hunk]) -> String {
 /// The git job channel ends (created once in `Editor::new`).
 pub fn git_channel() -> (Sender<GitJob>, Receiver<GitJob>) {
     channel()
-}
-
-impl Editor {
-    /// Table shim (0008 stage 2).
-    pub(crate) fn open_log_pub(&mut self, file_scoped: bool) {
-        self.open_log(file_scoped);
-    }
-}
-
-impl Editor {
-    /// The current buffer's repo-relative path for `repo` — a local
-    /// buffer's path or a remote buffer's remote-file path, stripped
-    /// by the repository that owns it. A buffer never borrows another
-    /// machine's spelling: a remote file only resolves under its own
-    /// endpoint's repository, a local file only under a local one.
-    pub(crate) fn current_buffer_rel(&self, repo: &RepoTarget) -> Option<PathBuf> {
-        match &self.cur().source {
-            super::document::DocumentSource::Remote(file) => match repo {
-                RepoTarget::Remote { endpoint, .. } if endpoint == file.file.endpoint() => {
-                    repo.rel_of(file.file.path())
-                }
-                _ => None,
-            },
-            super::document::DocumentSource::File => {
-                let path = self.cur().buf.path.as_deref()?;
-                let abs = if Path::new(path).is_absolute() {
-                    PathBuf::from(path)
-                } else {
-                    repo.workdir().join(path)
-                };
-                repo.rel_of(&abs)
-            }
-            _ => None,
-        }
-    }
 }
 
 #[cfg(test)]

@@ -39,6 +39,9 @@ impl Editor {
                 self.message = "theme choice requires its original selector".into()
             }
             Payload::Action(_) => self.message = "action choice requires its original list".into(),
+            // Branch rows carry the typed filter text for the create
+            // row: they are accepted by the branch picker itself.
+            Payload::Branch(_) => self.message = "branch choice requires its original list".into(),
             // A project status row (0063 §2): Enter browses the project
             // root as a directory — never a symbol location jump.
             Payload::ProjectStatus(root) => {

@@ -122,6 +122,17 @@ pub(super) fn for_picker(
             },
             ESC_CLOSE,
         ],
+        Kind::Branches => vec![
+            Hint {
+                key: "enter",
+                desc: "switch",
+            },
+            Hint {
+                key: "↑↓",
+                desc: "move",
+            },
+            ESC_CLOSE,
+        ],
         _ => vec![
             ENTER_OPEN,
             Hint {

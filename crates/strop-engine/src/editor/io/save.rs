@@ -289,6 +289,9 @@ impl Editor {
             document.external_change = false;
         }
         let renamed = previous_path != document.buf.path;
+        if saved {
+            self.commit_message_saved(key.document);
+        }
         if renamed {
             self.lsp_close_document(key.document);
             if !self.docs.is_empty() && self.current() == key.document {

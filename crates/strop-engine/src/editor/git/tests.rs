@@ -93,7 +93,7 @@ fn hunk_nav_and_undo() {
     pump_hunks(&mut e);
     e.jump_hunk(true);
     assert_eq!(e.buf().line_of(e.head()) + 1, 3, "]c lands on the hunk");
-    e.undo_hunk();
+    e.discard_hunk();
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
 
@@ -135,7 +135,7 @@ fn hunk_surface_moves_and_undoes() {
     e.feed_text("j");
     assert_eq!(e.buf().line_of(e.head()), 2);
     // undo acts on the origin file buffer, not the surface
-    e.feed_text(" gu");
+    e.feed_text(" gX");
     let text = e.doc(e.first_doc()).buf.text().to_string();
     assert_eq!(text, "fn a() {}\nfn b() {}\n", "hunk restored: {text}");
     e.feed_text("q");
@@ -173,7 +173,7 @@ fn stage_refuses_a_dirty_buffer() {
     e.feed_text(":w\r");
     settle(&mut e, |e| !e.doc(e.first_doc()).buf.is_dirty());
     e.feed_text(" gs");
-    settle(&mut e, |e| e.git_mutation.is_none());
+    settle(&mut e, |e| e.git_work.mutation.is_none());
     assert!(e.message.contains("staged"), "{}", e.message);
 }
 
@@ -207,7 +207,7 @@ fn stale_hunk_surface_refuses() {
         .edit()
         .insert(0, "// touched\n")
         .unwrap();
-    e.feed_text(" gu");
+    e.feed_text(" gX");
     assert!(
         e.message.contains("buffer changed"),
         "stale preview must refuse: {}",
@@ -226,7 +226,7 @@ fn stage_and_unstage_name_their_edges() {
     settle(&mut e, |e| !e.doc(e.first_doc()).buf.is_dirty());
     pump_hunks(&mut e);
     e.feed_text("]c gs");
-    settle(&mut e, |e| e.git_mutation.is_none());
+    settle(&mut e, |e| e.git_work.mutation.is_none());
     assert!(e.message.contains("staged"), "{}", e.message);
     let staged = Command::new("git")
         .args(["diff", "--cached", "--stat"])
@@ -238,8 +238,8 @@ fn stage_and_unstage_name_their_edges() {
     pump_hunks(&mut e);
     assert!(e.sign_at_staged(3), "staged line marked");
     assert!(e.sign_at(3).is_none(), "not also unstaged");
-    e.feed_text(" gS");
-    settle(&mut e, |e| e.git_mutation.is_none());
+    e.feed_text(" gu");
+    settle(&mut e, |e| e.git_work.mutation.is_none());
     assert!(e.message.contains("unstaged"), "{}", e.message);
     let staged = Command::new("git")
         .args(["diff", "--cached", "--stat"])
