@@ -85,11 +85,9 @@ fn answering_every_match_ends_the_question() {
 }
 
 #[test]
-fn each_lines_replacements_are_one_undo_step() {
+fn the_whole_confirmation_is_one_undo_step() {
     let mut e = asking("yyyy");
     assert_eq!(text(&e), "X X\nb\nX X\n");
-    e.feed_text("u");
-    assert_eq!(text(&e), "X X\nb\na a\n");
     e.feed_text("u");
     assert_eq!(text(&e), TEXT);
 }

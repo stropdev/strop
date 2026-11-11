@@ -101,6 +101,14 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Visual(VisualVerb::Operator(Op::Rot13)),
     },
     Binding {
+        keys: "gc",
+        desc: "toggle comments on the selected lines",
+        sections: &["visual"],
+        live: true,
+        id: "visual-comment-operator",
+        handler: Handler::Visual(VisualVerb::Operator(Op::Comment)),
+    },
+    Binding {
         keys: "!",
         desc: "filter the selected lines through a shell command",
         sections: &["visual"],

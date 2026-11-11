@@ -23,6 +23,8 @@ pub enum Op {
     Rot13,
     /// ! — filter the lines through a shell command.
     Filter,
+    /// gc — toggle line comments.
+    Comment,
     /// = — reindent. Parsed so that it consumes its motion; not implemented.
     Reindent,
     /// gq / gw — reflow. Parsed so that they consume their motion; not
@@ -47,6 +49,7 @@ impl Op {
         (Op::ToggleCase, "g~"),
         (Op::Rot13, "g?"),
         (Op::Filter, "!"),
+        (Op::Comment, "gc"),
         (Op::Reindent, "="),
         (Op::Format, "gq"),
         (Op::FormatKeep, "gw"),
@@ -65,6 +68,7 @@ impl Op {
             Op::ToggleCase => "toggle case",
             Op::Rot13 => "rot13",
             Op::Filter => "filter",
+            Op::Comment => "comment",
             Op::Reindent => "reindent",
             Op::Format | Op::FormatKeep => "reflow",
             Op::Fold => "fold",
@@ -86,6 +90,7 @@ impl Op {
             Op::Indent
                 | Op::Dedent
                 | Op::Filter
+                | Op::Comment
                 | Op::Reindent
                 | Op::Format
                 | Op::FormatKeep

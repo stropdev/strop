@@ -1,7 +1,7 @@
 //! `:s///c`: ask at each match. The matches come from the one plan the
 //! preview showed; an accepted one is applied at once, so the text under
-//! the question is the text as it will be. As in Vim, each line's
-//! replacements are one undo step.
+//! the question is the text as it will be. As in Neovim, the whole
+//! confirmation is one undo step.
 
 use std::collections::VecDeque;
 
@@ -118,12 +118,6 @@ fn confirm_replace(editor: &mut Editor) -> bool {
     confirm.delta += grown;
     confirm.replaced += 1;
     confirm.last = Some(range.start.get());
-    // The next match on another line starts a new undo step.
-    let line = editor.buf().line_of(range.start.get());
-    let next = confirm_range(editor).map(|next| editor.buf().line_of(next.start.get()));
-    if next != Some(line) {
-        editor.tx_commit();
-    }
     true
 }
 

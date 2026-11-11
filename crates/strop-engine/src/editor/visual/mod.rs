@@ -175,13 +175,24 @@ impl Editor {
 
     fn toggle_visual_comments(&mut self) {
         let column = self.buf().col_of(self.head());
-        let (first, _) = crate::editor::visual::verbs::selected_lines(self);
+        let (first, _) = verbs::selected_lines(self);
         let lines = self.selected_line_range();
-        let start = self.buf().line_start(first);
+        self.mode = Mode::Normal;
+        self.set_head(self.buf().line_start(first) + column);
+        self.toggle_comments(lines);
+    }
+
+    /// Toggle line comments on whole lines (`gc`, Visual `Ctrl-C`); the
+    /// cursor keeps its line and column.
+    pub(crate) fn toggle_comments(&mut self, lines: Range) {
+        let head = self.head();
         let path = self.buf().path.clone();
         let edits = match strop_syntax::comments::toggle(path.as_deref(), self.buf(), lines) {
             Ok(edits) => edits,
             Err(error) => {
+                // Neovim: with no comment syntax nothing changes, and the
+                // buffer is 'modified' all the same
+                self.buf_mut().mark_dirty();
                 self.message = error;
                 return;
             }
@@ -199,9 +210,9 @@ impl Editor {
             return;
         }
         self.tx_commit();
-        self.mode = Mode::Normal;
-        self.set_head(start + column);
-        self.flash(Range::charwise(start, start));
+        self.set_head(head);
+        self.clamp_cursor();
+        self.flash(Range::charwise(lines.start, lines.start));
         self.last_insert = None;
     }
 

@@ -59,8 +59,8 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ q<a>` — record macro into register
 - `✓ @<a>` — play macro (count repeats); @: repeats the last : command
 - `✓ Q` — toggle cursor at point (multicursor)
-- `✓ d y c > < gU gu g~ g? !` — operators + motion/object: delete, yank, change, indent, case, rot13, filter (opens :{range}!)
-- `✓ dd yy cc` — an operator doubled acts on whole lines (>> << gUU guu g~~ g??)
+- `✓ d y c > < gU gu g~ g? ! gc` — operators + motion/object: delete, yank, change, indent, case, rot13, filter (opens :{range}!), comment
+- `✓ dd yy cc` — an operator doubled acts on whole lines (>> << gUU guu g~~ g?? gcc)
 - `✓ D` — delete to line end
 - `✓ C` — change to line end
 - `✓ Y` — yank to line end
@@ -120,6 +120,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ u gu` — lowercase the selection
 - `✓ ~ g~` — toggle the selection's case
 - `✓ g?` — rot13 the selection
+- `✓ gc` — toggle comments on the selected lines
 - `✓ !` — filter the selected lines through a shell command
 - `✓ D X` — delete the selected lines
 - `✓ Y` — yank the selected lines

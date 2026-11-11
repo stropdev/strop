@@ -104,8 +104,8 @@ fn which_key_children() {
     assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
     // + gb gB g␣, the case operators (gU gu g~ g?), the g motions
-    // (g_ g0 g^ g$ gj gk gn gN), gp gP, gJ, g* g#, g&
-    assert_eq!(children_of("g", Mode::Normal).len(), 34);
+    // (g_ g0 g^ g$ gj gk gn gN), gp gP, gJ, g* g#, g&, gc
+    assert_eq!(children_of("g", Mode::Normal).len(), 35);
     // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
     assert_eq!(v.len(), 1);

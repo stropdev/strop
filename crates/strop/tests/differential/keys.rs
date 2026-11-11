@@ -103,7 +103,7 @@ pub const CASES: &[Case] = &[
     ("visual d then dot", WORDS, "wved."),
     ("visual line d then dot", WORDS, "Vjdd."),
     ("visual *", "one two one two\n", "wve*"),
-    ("visual #", "one two one two\n", "$ve#"),
+    ("visual #", "one two one two\n", "$bve#"),
     ("visual ctrl-a", NUMBERS, "Vj<c-a>"),
     ("visual v leaves", WORDS, "vwvx"),
     ("visual V switches", WORDS, "vwVd"),

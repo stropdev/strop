@@ -145,14 +145,14 @@ directory while it has focus.
 ## Vim's keys
 
 Neovim with no configuration is the specification: where Neovim's default
-differs from Vim's, strop follows Neovim (`Y` is `y$`, Visual `*` searches the
-selection, `&` keeps the substitute's flags). `Space ?` lists every key;
+differs from Vim's, strop follows Neovim (`Y` is `y$`, `gc` comments, Visual
+`*` searches the selection, `&` keeps the substitute's flags). `Space ?` lists every key;
 [vim-compat.md](vim-compat.md) is the same list, and ends with what Neovim
 binds that strop does not (**Missing**) or uses differently (**Reassigned**).
 
 - **Operators** take any motion or text object, a count and a register, and
   repeat with `.`: `d` `y` `c` `>` `<`, the case operators `gU` `gu` `g~`,
-  `g?` (rot13), and `!`, which opens the `:` line with the lines as its range
+  `g?` (rot13), `gc` (toggle line comments), and `!`, which opens the `:` line with the lines as its range
   so the command you type filters them. Doubled, an operator takes whole
   lines (`dd`, `gUU`, `g??`). `v`, `V` or `Ctrl-V` between an operator and
   its motion forces characterwise, linewise or blockwise (`dvj`, `dVw`).

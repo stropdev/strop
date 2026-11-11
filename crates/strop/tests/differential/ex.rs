@@ -171,7 +171,7 @@ pub const CASES: &[Case] = &[
     ("s confirm last", WORDS, ":%s/alpha/X/gc<cr>nl"),
     ("s confirm quit", WORDS, ":%s/alpha/X/gc<cr>yq"),
     ("s confirm escape", WORDS, ":%s/alpha/X/gc<cr>y<esc>"),
-    ("s confirm undoes line by line", WORDS, ":%s/alpha/X/gc<cr>yyyyu"),
+    ("s confirm is one undo step", WORDS, ":%s/alpha/X/gc<cr>yyyyu"),
     // :g and :v
     ("g delete", WORDS, ":g/beta/d<cr>"),
     ("g delete adjacent lines", "a\na\nb\na\n", ":g/a/d<cr>"),

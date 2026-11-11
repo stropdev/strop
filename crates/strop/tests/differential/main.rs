@@ -1,6 +1,6 @@
 //! Tier 1 differential harness (0001 §5.10, 0006, 0095): the same key
-//! sequence drives strop (headless) and pinned nvim (`-u NONE -i NONE
-//! -n`); final text, cursor, mode, the unnamed register, the lifecycle
+//! sequence drives strop (headless) and nvim (`-u NONE -i NONE -n`) — the
+//! Neovim of the Docker `test` image is the oracle (0095 §3); final text, cursor, mode, the unnamed register, the lifecycle
 //! registers (`"0 "1 "2 "- "a "b`, plan 0092) and 'modified' must agree.
 //!
 //! The corpus is five lists: `hand` (cases somebody once got wrong),

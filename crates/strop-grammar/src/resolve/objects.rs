@@ -192,6 +192,10 @@ fn block(
             continue;
         }
         if selection.is_some() {
+            if first.pos > last.pos {
+                // nothing between the brackets: Visual selects nothing
+                return None;
+            }
             if line_start && !last.at_end() {
                 last.inc();
             }

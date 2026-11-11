@@ -138,6 +138,11 @@ pub(crate) fn apply_operator(editor: &mut Editor, operation: Operation<'_>) {
                 more => format!(".,.+{more}!"),
             });
         }
+        Op::Comment => {
+            let lines = Range::linewise(first.range.start, first.range.end);
+            editor.set_head(primary_origin);
+            editor.toggle_comments(lines);
+        }
         Op::Reindent | Op::Format | Op::FormatKeep | Op::Fold => {
             editor.message = format!(
                 "{} ({}) is not supported — `strop compat` lists what is missing",

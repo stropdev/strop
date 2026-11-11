@@ -95,6 +95,10 @@ fn visual_operate(editor: &mut Editor, op: Op, register: Option<char>, whole_lin
     if !editor.register_writable(register) {
         return;
     }
+    if op == Op::Comment {
+        editor.toggle_visual_comments();
+        return;
+    }
     if op == Op::Filter {
         let (first, _) = selected_lines(editor);
         editor.mode = Mode::Normal;
@@ -337,9 +341,6 @@ fn visual_search(editor: &mut Editor, backward: bool) {
             return;
         }
     };
-    // Neovim's default mapping is `y/\V<C-R>"<CR>`: the selection is
-    // yanked on the way
-    editor.yank_register(None, Register::characterwise(text.to_owned()));
     editor.mode = Mode::Normal;
     editor.set_head(range.start.get());
     editor.last_search = Some(LastSearch { query, backward });

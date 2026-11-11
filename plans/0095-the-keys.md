@@ -9,8 +9,10 @@
   [0003](0003-modes-leader-and-house-style.md) §5.7 (the Missing list)
 
 The owner's direction: "if at the end we are Neovim reimplemented in Rust that
-should be fine." Neovim 0.9.5 with no configuration (`-u NONE`) is the
-specification. Where Neovim's default differs from Vim's, Neovim's wins
+should be fine." Neovim with no configuration (`-u NONE`) is the
+specification — the Neovim of the Docker `test` image, which is the gate:
+0.12.2 today. (The critique measured 0.9.5, and so does a development
+machine that has that version installed; §3 lists where the two differ.) Where Neovim's default differs from Vim's, Neovim's wins
 (`Y` is `y$`, Visual `*` searches the selection). The target is a day of work
 without a key doing something else.
 
@@ -206,6 +208,14 @@ parsed as operators, take their motion, and then say they are not supported.
 | `generated.rs` | 3,467 | operator × target × count × mode |
 
 4,073 in all; the suite takes about 40 seconds on the development machine.
+
+**Which Neovim.** The gate's: the `test` image installs Alpine's `neovim`
+(0.12.2). Nine cases answer differently under 0.9.5, and strop follows the
+gate: `gcc` is the comment operator (0.10+), Visual `*` / `#` search the
+selection without yanking it, `:s///c` is one undo step, and an inner
+bracket object in Visual selects nothing when the block is empty (`()`).
+A machine with an older Neovim sees those nine as divergences; the image
+is the authority.
 
 **The generator.** A case is `position + operator + target`, rendered three
 ways: Normal (`{op}{count}{target}`), Visual (`v{count}{target}{op}`) and

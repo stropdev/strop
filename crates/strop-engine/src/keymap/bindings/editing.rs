@@ -75,8 +75,8 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| crate::editor::Editor::toggle_cursor(e)),
     },
     Binding {
-        keys: "d y c > < gU gu g~ g? !",
-        desc: "operators + motion/object: delete, yank, change, indent, case, rot13, filter (opens :{range}!)",
+        keys: "d y c > < gU gu g~ g? ! gc",
+        desc: "operators + motion/object: delete, yank, change, indent, case, rot13, filter (opens :{range}!), comment",
         sections: &["editing"],
         live: true,
         id: "operators",
@@ -84,7 +84,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "dd yy cc",
-        desc: "an operator doubled acts on whole lines (>> << gUU guu g~~ g??)",
+        desc: "an operator doubled acts on whole lines (>> << gUU guu g~~ g?? gcc)",
         sections: &["editing"],
         live: true,
         id: "line-ops",

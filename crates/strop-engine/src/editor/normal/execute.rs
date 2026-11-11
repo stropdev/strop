@@ -137,7 +137,7 @@ impl Editor {
         // semantic dot-repeat (0014): `.` re-resolves this command from
         // the new position — it never replays a stale key string through
         // a changed keymap. Only a command that found its target is kept.
-        if op != Op::Yank && op != Op::Filter && !op.missing() {
+        if !matches!(op, Op::Yank | Op::Filter) && !op.missing() {
             self.last_change = Some(typed.clone());
             self.last_cmd_keys.clear();
             self.last_insert = None;
