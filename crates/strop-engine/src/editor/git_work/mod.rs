@@ -31,6 +31,16 @@ use super::git_memory::{
 use super::io::OpenIntent;
 use super::{trace, Editor};
 
+/// The working tree as the user means it: git's status without the
+/// editor's own lock and stage files, which sit beside open files and
+/// are never part of anyone's change.
+fn working_tree(repo: &strop_git::Repo) -> Result<strop_git::WorkingTree, strop_git::GitError> {
+    let mut tree = repo.status()?;
+    tree.entries
+        .retain(|entry| !strop_fs::is_protocol_path(&entry.rel));
+    Ok(tree)
+}
+
 /// One status buffer's snapshot in flight. `again` records that the
 /// tree moved meanwhile: one follow-up runs when this one lands.
 struct StatusRequest {
@@ -108,7 +118,13 @@ impl Editor {
     /// local is touched; no repository says so.
     fn working_repo(&mut self, what: &str) -> Option<RepoTarget> {
         let Some(context) = self.git_context() else {
-            self.message = "not a git repository".into();
+            // discovery is a job: right after opening, it may not be back
+            self.message = if matches!(self.git_discovery, strop_core::worker::Load::Running(_)) {
+                "still looking for the repository — try again"
+            } else {
+                "not a git repository"
+            }
+            .into();
             return None;
         };
         if context.repo.is_remote() {
@@ -228,7 +244,7 @@ impl Editor {
                     Ok(repo) => repo,
                     Err(failure) => return failed(failure),
                 };
-                let tree = match repo.status() {
+                let tree = match working_tree(&repo) {
                     Ok(tree) => tree,
                     Err(error) => return failed(git_failure("status", error)),
                 };

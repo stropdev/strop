@@ -195,11 +195,7 @@ fn space_g_b_lists_branches_and_enter_switches() {
     key(&mut e, " gb");
     assert_eq!(
         branch_rows(&e),
-        [
-            "main — current",
-            "topic",
-            "create a branch from the typed name"
-        ]
+        ["main — current", "topic", "new branch from the typed name"]
     );
     e.paste_bracketed("top");
     accept(&mut e);

@@ -32,6 +32,8 @@ mod frame_tests;
 #[cfg(test)]
 mod golden;
 #[cfg(test)]
+mod golden_git_tests;
+#[cfg(test)]
 mod golden_tests;
 mod help;
 mod hover_card;
