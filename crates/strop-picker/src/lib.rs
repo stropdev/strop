@@ -55,8 +55,6 @@ pub enum Payload {
     /// Index into the editor's captured `Space a` list (its typed owners
     /// never cross the picker).
     Action(usize),
-    /// A search-visibility setting toggle (0051 R03).
-    SearchOption(SearchSetting),
     /// A jumplist entry: document + byte offset (0047 §2).
     Jump {
         document: strop_core::id::DocumentId,
@@ -90,13 +88,6 @@ pub enum IndentChoice {
     CustomWidth,
 }
 
-/// Which search-visibility setting a SearchOption row toggles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum SearchSetting {
-    Hidden,
-    RespectIgnore,
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Item {
     /// What the results list renders.
@@ -112,8 +103,6 @@ pub struct Item {
 pub enum Kind {
     /// The jumplist as a menu (0047 §2).
     Jumps,
-    /// Hidden/ignore visibility controls for search surfaces (R03).
-    SearchOptions,
     /// A language server's document symbols (0047 §1).
     Symbols,
     /// Every declaration in the opened scope: syntax-fallback tier now
@@ -149,7 +138,6 @@ impl Kind {
             Kind::Diagnostics => " diagnostics ",
             Kind::RemoteHosts => " remote destinations ",
             Kind::Jumps => " jumps ",
-            Kind::SearchOptions => " search options ",
             Kind::TabSize => " tab size ",
             Kind::Theme => " theme ",
             Kind::Symbols => " symbols ",
@@ -181,6 +169,14 @@ pub struct Picker {
     pub rows: Vec<Row>,
     match_columns: Vec<u32>,
     pub selected: usize,
+    /// True once the user has moved the bar for the current query. Until
+    /// then every installed ranking leaves the bar on its resting row —
+    /// the top one — so a streaming catalog can never slide a different
+    /// file under Enter (0093 §3.1). A moved bar follows its item.
+    selection_moved: bool,
+    /// The resting row while the query is empty: 0 everywhere except
+    /// Buffers, which rests on the alternate buffer (0093 §3.6).
+    pub resting_row: usize,
     /// First logical result in the viewport, independent of replacement visibility.
     pub scroll_top: usize,
     /// Streaming sources: true while the worker may still send.
@@ -204,6 +200,10 @@ pub struct Picker {
     /// qualifiers never fuzzy-match paths — only the free text ranks).
     pub rank_query: Option<String>,
     pub rank_mode: rank::MatchMode,
+    /// What the user reached for lately, best first (0093 §3.4): open
+    /// buffers, then frecent files. It orders the empty query and nudges
+    /// equal matches; it never admits a row the query rejects.
+    pub priors: rank::Priors,
 }
 
 impl Picker {
@@ -219,6 +219,8 @@ impl Picker {
             rows: Vec::new(),
             match_columns: Vec::new(),
             selected: 0,
+            selection_moved: false,
+            resting_row: 0,
             scroll_top: 0,
             streaming,
             error: None,
@@ -227,6 +229,7 @@ impl Picker {
             pinned: Vec::new(),
             rank_query: None,
             rank_mode: rank::MatchMode::default(),
+            priors: rank::Priors::default(),
         };
         p.append(items);
         p
@@ -363,6 +366,8 @@ impl Picker {
             upstream_filtered: self.kind == Kind::Search,
             pinned_tail: self.pinned_tail,
             mode: self.rank_mode.clone(),
+            paths: matches!(self.kind, Kind::Files | Kind::Buffers),
+            priors: self.priors.clone(),
         }
     }
 
@@ -370,23 +375,40 @@ impl Picker {
         if ranking.item_count() != self.items.len() {
             return false;
         }
-        let selected = self.rows.get(self.selected).map(|row| row.item);
-        let top = self.rows.get(self.scroll_top).map(|row| row.item);
         let rows = ranking.rows;
-        let locate = |item: Option<usize>, fallback: usize| {
-            item.and_then(|item| {
-                rows.get(item)
-                    .filter(|row| row.item == item)
-                    .map(|_| item)
-                    .or_else(|| rows.iter().position(|row| row.item == item))
-            })
-            .unwrap_or_else(|| fallback.min(rows.len().saturating_sub(1)))
-        };
-        self.selected = locate(selected, self.selected);
-        self.scroll_top = locate(top, self.scroll_top);
+        let last = rows.len().saturating_sub(1);
+        if self.selection_moved {
+            let selected = self.rows.get(self.selected).map(|row| row.item);
+            let top = self.rows.get(self.scroll_top).map(|row| row.item);
+            let locate = |item: Option<usize>, fallback: usize| {
+                item.and_then(|item| {
+                    rows.get(item)
+                        .filter(|row| row.item == item)
+                        .map(|_| item)
+                        .or_else(|| rows.iter().position(|row| row.item == item))
+                })
+                .unwrap_or_else(|| fallback.min(last))
+            };
+            self.selected = locate(selected, self.selected);
+            self.scroll_top = locate(top, self.scroll_top);
+        } else {
+            self.selected = if self.input.text().is_empty() {
+                self.resting_row.min(last)
+            } else {
+                0
+            };
+            self.scroll_top = 0;
+        }
         self.rows = rows;
         self.match_columns = ranking.columns;
         true
+    }
+
+    /// Put the bar on a row on the user's behalf (a restored view): it
+    /// then follows that item across re-ranks like any moved bar.
+    pub fn select(&mut self, row: usize) {
+        self.selected = row;
+        self.selection_moved = true;
     }
 
     pub fn match_columns(&self, row: &Row) -> &[u32] {
@@ -397,6 +419,7 @@ impl Picker {
         self.rows.clear();
         self.match_columns.clear();
         self.selected = 0;
+        self.selection_moved = false;
         self.scroll_top = 0;
     }
 
@@ -473,6 +496,7 @@ impl Picker {
         }
         let n = self.rows.len() as i32;
         self.selected = ((self.selected as i32 + delta).rem_euclid(n)) as usize;
+        self.selection_moved = true;
     }
 
     pub fn current(&self) -> Option<&Item> {
@@ -508,269 +532,4 @@ pub fn replaced_line(line_text: &str, col: usize, match_len: usize, replacement:
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn filter_and_rank() {
-        let items = vec![
-            Item {
-                badge: None,
-                text: "src/main.rs".into(),
-                payload: Payload::File("src/main.rs".into()),
-            },
-            Item {
-                badge: None,
-                text: "src/render.rs".into(),
-                payload: Payload::File("src/render.rs".into()),
-            },
-            Item {
-                badge: None,
-                text: "tests/e2e.py".into(),
-                payload: Payload::File("tests/e2e.py".into()),
-            },
-        ];
-        let mut p = Picker::new(Kind::Files, items, false);
-        for c in "render".chars() {
-            p.push_char(c);
-        }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        assert_eq!(p.rows.len(), 1);
-        assert_eq!(p.current().unwrap().text, "src/render.rs");
-    }
-
-    #[test]
-    fn ranking_defaults_to_insensitive_and_sensitive_restores_exact_case() {
-        let item = |text: &str| Item {
-            badge: None,
-            text: text.into(),
-            payload: Payload::File(text.into()),
-        };
-        for needle in ["mixedcase", "MIXEDCASE"] {
-            let mut picker = Picker::new(
-                Kind::Files,
-                vec![item("src/MixedCase.rs"), item("src/mixedcase.rs")],
-                false,
-            );
-            picker.paste(needle);
-            picker.install_ranking(
-                rank::rank(&picker.filter_request(), || false)
-                    .unwrap()
-                    .unwrap(),
-            );
-            assert_eq!(picker.rows.len(), 2, "{needle}");
-        }
-        let mut picker = Picker::new(
-            Kind::Files,
-            vec![item("src/MixedCase.rs"), item("src/mixedcase.rs")],
-            false,
-        );
-        picker.paste("MIXEDCASE");
-        picker.rank_mode = rank::MatchMode::Fuzzy(query::CaseMode::Sensitive);
-        picker.install_ranking(
-            rank::rank(&picker.filter_request(), || false)
-                .unwrap()
-                .unwrap(),
-        );
-        assert!(picker.rows.is_empty());
-        picker.rank_query = Some("MixedCase".into());
-        picker.install_ranking(
-            rank::rank(&picker.filter_request(), || false)
-                .unwrap()
-                .unwrap(),
-        );
-        assert_eq!(picker.rows.len(), 1);
-        assert_eq!(picker.current().unwrap().text, "src/MixedCase.rs");
-
-        let mut picker = Picker::new(
-            Kind::Files,
-            vec![item("src/MixedCase.rs"), item("src/mixedcase.rs")],
-            false,
-        );
-        picker.rank_query = Some("MIXEDCASE".into());
-        picker.rank_mode = rank::MatchMode::Exact(
-            std::sync::Arc::new(query::ContentExpr::Literal("MIXEDCASE".into())),
-            query::CaseMode::default(),
-        );
-        picker.install_ranking(
-            rank::rank(&picker.filter_request(), || false)
-                .unwrap()
-                .unwrap(),
-        );
-        assert_eq!(picker.rows.len(), 2);
-        picker.rank_mode = rank::MatchMode::Exact(
-            std::sync::Arc::new(query::ContentExpr::Literal("MIXEDCASE".into())),
-            query::CaseMode::Sensitive,
-        );
-        picker.install_ranking(
-            rank::rank(&picker.filter_request(), || false)
-                .unwrap()
-                .unwrap(),
-        );
-        assert!(picker.rows.is_empty());
-    }
-
-    #[test]
-    fn pinned_tail_survives_filtering_below_real_matches() {
-        // The remote destinations picker pins "Add a host…": filtering a
-        // query that matches nothing real still offers it, and any real
-        // match ranks above it.
-        let items = vec![
-            Item {
-                badge: None,
-                text: "prtdv-pw-846".into(),
-                payload: Payload::RemoteConnect,
-            },
-            Item {
-                badge: None,
-                text: "Add a host\u{2026}".into(),
-                payload: Payload::RemoteConnect,
-            },
-        ];
-        let mut p = Picker::new(Kind::RemoteHosts, items, false);
-        p.pinned_tail = 1;
-        for c in "ewosd".chars() {
-            p.push_char(c);
-        }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        assert_eq!(p.rows.len(), 1, "the pinned row survives a dead query");
-        assert_eq!(p.current().unwrap().text, "Add a host\u{2026}");
-        let mut p = Picker::new(
-            Kind::RemoteHosts,
-            vec![
-                Item {
-                    badge: None,
-                    text: "prtdv-pw-846".into(),
-                    payload: Payload::RemoteConnect,
-                },
-                Item {
-                    badge: None,
-                    text: "Add a host\u{2026}".into(),
-                    payload: Payload::RemoteConnect,
-                },
-            ],
-            false,
-        );
-        p.pinned_tail = 1;
-        for c in "prtdv".chars() {
-            p.push_char(c);
-        }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        assert_eq!(p.rows.len(), 2);
-        assert_eq!(
-            p.current().unwrap().text,
-            "prtdv-pw-846",
-            "a real match ranks above the pinned row"
-        );
-    }
-
-    #[test]
-    fn shrinking_pinned_tail_keeps_installed_rows_addressable() {
-        let item = |text: &str| Item {
-            badge: None,
-            text: text.into(),
-            payload: Payload::ProjectStatus(PathBuf::from(text)),
-        };
-        let mut p = Picker::new(
-            Kind::WorkspaceSymbols,
-            vec![Item {
-                badge: None,
-                text: "src/main.rs".into(),
-                payload: Payload::File("src/main.rs".into()),
-            }],
-            false,
-        );
-        p.set_pinned(vec![item("/old/one"), item("/old/two")]);
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        p.selected = p.rows.len() - 1;
-
-        p.set_pinned(vec![item("/new")]);
-
-        // The catalog changes synchronously; consumers can read the published
-        // rows before the next asynchronous ranking completes.
-        assert!(p.rows.iter().all(|row| {
-            let item = &p.items[row.item];
-            item.text == "src/main.rs" || item.text == "/new"
-        }));
-        assert_eq!(
-            p.current().map(|item| item.text.as_str()),
-            p.rows
-                .get(p.selected)
-                .map(|row| p.items[row.item].text.as_str())
-        );
-    }
-
-    #[test]
-    fn selection_wraps() {
-        let mut arena: strop_core::id::Arena<strop_core::id::DocumentKind, ()> =
-            strop_core::id::Arena::default();
-        let items: Vec<Item> = (0..3)
-            .map(|i| Item {
-                badge: None,
-                text: format!("f{i}"),
-                payload: Payload::Buffer(arena.try_insert(()).unwrap()),
-            })
-            .collect();
-        let mut p = Picker::new(Kind::Buffers, items, false);
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        p.move_by(-1);
-        assert_eq!(p.selected, 2);
-        p.move_by(1);
-        assert_eq!(p.selected, 0);
-    }
-
-    #[test]
-    fn ctrl_d_excludes_a_whole_file() {
-        let hit = |path: &str| Item {
-            badge: None,
-            text: path.into(),
-            payload: Payload::Grep {
-                location: strop_workspace::ResourceLocation::local(PathBuf::from(path)),
-                line: 1,
-                col: 1,
-                match_len: 1,
-                line_text: "x".into(),
-            },
-        };
-        let mut p = Picker::search(vec![hit("a.rs"), hit("a.rs"), hit("b.rs")], false, true);
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        p.toggle_file_excluded(); // row 0 -> a.rs
-        assert_eq!(p.accepted().count(), 1);
-        assert_eq!(p.accepted().next().unwrap().text, "b.rs");
-        p.toggle_file_excluded(); // toggle back
-        assert_eq!(p.accepted().count(), 3);
-    }
-    #[test]
-    fn regex_query_never_hides_rg_rows() {
-        // 0020 §9: "foo|bar" matched three rows upstream — all of them
-        // stay visible even though none contains the literal "|"
-        let mut p = Picker::new(
-            Kind::Search,
-            vec![
-                Item {
-                    badge: None,
-                    text: "a.rs:1 foo".into(),
-                    payload: Payload::File("a.rs".into()),
-                },
-                Item {
-                    badge: None,
-                    text: "b.rs:2 bar".into(),
-                    payload: Payload::File("b.rs".into()),
-                },
-                Item {
-                    badge: None,
-                    text: "c.rs:3 baz".into(),
-                    payload: Payload::File("c.rs".into()),
-                },
-            ],
-            false,
-        );
-        for c in "foo|bar".chars() {
-            p.push_char(c);
-        }
-        p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
-        assert_eq!(p.rows.len(), 3);
-        // and the apply set is exactly those rows
-        assert_eq!(p.accepted().count(), 3);
-    }
-}
+mod tests;

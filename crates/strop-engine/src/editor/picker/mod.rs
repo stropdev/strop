@@ -14,9 +14,12 @@ use super::Editor;
 
 mod accept;
 mod drain;
+#[cfg(test)]
+mod find_tests;
 mod keys;
 #[cfg(test)]
 mod lifecycle_traces;
+mod modes;
 mod open;
 mod preview;
 pub(crate) use preview::PreviewWatchdog;
@@ -24,6 +27,8 @@ mod query;
 #[cfg(test)]
 mod query_tests;
 pub(crate) mod ranking;
+pub(crate) mod recent;
+pub use recent::RecentFiles;
 mod replace;
 pub(crate) mod status;
 pub use replace::checked_hit_range;
@@ -99,7 +104,9 @@ pub struct PickerGlue {
     /// it; it owns accept/cancel keys until dismissed.
     pub suggestions: Option<SuggestionList>,
     pub query_highlights: Vec<strop_picker::query::HighlightSpan>,
-    pub query_summary: String,
+    /// The row under the field: what this search does differently from
+    /// the default, in words; empty when nothing (0088 rule 4).
+    pub status_row: String,
     pub(crate) query: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
     file_scope: Option<std::sync::Arc<strop_picker::query::SearchQuery>>,
     /// Exact namespace/root captured when a Files surface opens.
@@ -153,7 +160,7 @@ impl PickerGlue {
             accept_when_ranked: false,
             suggestions: None,
             query_highlights: Vec::new(),
-            query_summary: String::new(),
+            status_row: String::new(),
             project_statuses: Vec::new(),
             file_scope: None,
             file_root: None,

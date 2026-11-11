@@ -3,7 +3,7 @@
 use super::PickerMsg;
 use crate::{Item, Payload};
 use parking_lot::{Condvar, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
@@ -148,7 +148,9 @@ impl From<mpsc::Sender<PickerMsg>> for SourceSink {
 #[derive(Default)]
 pub(super) struct BatchProgress {
     ticks: AtomicUsize,
-    delivery_waiting: AtomicBool,
+    /// Producers currently blocked on delivery credit. A count, not a
+    /// flag: parallel search threads wait and resume independently.
+    delivery_waiting: AtomicUsize,
 }
 impl BatchProgress {
     pub(super) fn get(&self) -> usize {
@@ -158,10 +160,10 @@ impl BatchProgress {
         self.ticks.fetch_add(1, Ordering::AcqRel);
     }
     pub(super) fn delivery_waiting(&self) -> bool {
-        self.delivery_waiting.load(Ordering::Acquire)
+        self.delivery_waiting.load(Ordering::Acquire) > 0
     }
     fn wait_for_delivery(&self) -> DeliveryWait<'_> {
-        self.delivery_waiting.store(true, Ordering::Release);
+        self.delivery_waiting.fetch_add(1, Ordering::AcqRel);
         DeliveryWait { progress: self }
     }
 }
@@ -172,7 +174,7 @@ impl Drop for DeliveryWait<'_> {
     fn drop(&mut self) {
         self.progress
             .delivery_waiting
-            .store(false, Ordering::Release);
+            .fetch_sub(1, Ordering::AcqRel);
     }
 }
 

@@ -362,8 +362,30 @@ impl Editor {
         self.view_mut().doc = id;
         if switching {
             self.restore_terminal_view(id);
+            self.note_file_visit(id);
         }
         self.touch_mru(id);
+    }
+
+    /// Count a visit toward this project's frecent files (0093 §3.4): a
+    /// local file under the working directory, by its relative path.
+    pub(crate) fn note_file_visit(&mut self, id: strop_core::id::DocumentId) {
+        let Some(document) = self.docs.get(id) else {
+            return;
+        };
+        if document.remote_metadata().is_some() {
+            return;
+        }
+        let Some(relative) = document
+            .buf
+            .path
+            .as_ref()
+            .and_then(|path| path.strip_prefix(&self.cwd).ok())
+        else {
+            return;
+        };
+        let relative = strop_picker::display_path(relative).into_owned();
+        self.picker_ranking.recent.visit(&relative);
     }
 
     /// Open a temporary readonly output surface — help, explain, the

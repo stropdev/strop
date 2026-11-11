@@ -386,7 +386,7 @@ fn remote_search_reentry_keeps_root_and_explicit_scope_stays_authoritative() {
         .picker
         .as_ref()
         .unwrap()
-        .query_summary
+        .status_row
         .contains("ssh://dev@example.com/srv/app"));
     editor.close_picker();
     editor.open_search(false);
@@ -407,7 +407,7 @@ fn remote_search_reentry_keeps_root_and_explicit_scope_stays_authoritative() {
         .picker
         .as_ref()
         .unwrap()
-        .query_summary
+        .status_row
         .contains("ssh://dev@example.com/other/app"));
 }
 

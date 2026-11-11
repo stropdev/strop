@@ -405,6 +405,12 @@ pub enum LspEvent {
         context: ReplyContext,
         kind: LocKind,
         items: Vec<ServerLocation>,
+        /// The source line each item points at, read from disk where the
+        /// reply was decoded — off the editor's thread. Index-aligned
+        /// with `items`; an entry is empty when the line was not read
+        /// (a remote file, a missing one, or past the read bounds).
+        #[serde(default)]
+        sources: Vec<String>,
     },
     /// Formatting reply: the document's replacement spans in
     /// server-domain positions (empty when the server has no changes).

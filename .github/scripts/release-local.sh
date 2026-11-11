@@ -84,6 +84,10 @@ package)
     printf 'fn main() { let x = 1; }\n' > "$WORK/smoke.rs"
     printf 'frame\n' > "$WORK/smoke.txt"
     "$BINARY" --headless "$WORK/smoke.txt" "$WORK/smoke.rs" | grep -q "fn main"
+    # The find budgets (plans/0093 §7): finder paint and per-key list,
+    # search first hit and completion. Either exits non-zero past its budget.
+    TMPDIR="$WORK" "$BINARY" --bench find
+    TMPDIR="$WORK" "$BINARY" --bench search
     catalog
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
     echo "qualified local release directory: $DIST"

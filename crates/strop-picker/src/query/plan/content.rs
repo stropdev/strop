@@ -138,6 +138,12 @@ impl ContentPlan {
         self.boolean.as_ref().is_some_and(|exact| exact.uses_kind())
     }
 
+    /// Whether discovering project boundaries pays off for this query —
+    /// only `repo:` atoms consult the catalog (0063 §2).
+    pub fn needs_catalog(&self) -> bool {
+        self.boolean.as_ref().is_some_and(|exact| exact.uses_repo())
+    }
+
     pub fn compile_expression(
         expr: &ContentExpr,
         case: CaseMode,

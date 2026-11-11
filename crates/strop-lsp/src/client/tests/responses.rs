@@ -279,6 +279,7 @@ fn locations_null_is_an_empty_list_and_errors_are_notes() {
             context,
             kind,
             items,
+            ..
         } = event(&rx).await
         else {
             panic!("locations")

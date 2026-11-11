@@ -175,6 +175,44 @@ fn locations(
     (items, dropped)
 }
 
+/// Files and bytes one location list may read for its rows' source text.
+const SOURCE_FILES: usize = 64;
+const SOURCE_BYTES: u64 = 1024 * 1024;
+
+/// The line each location points at, for the list's rows. Local files
+/// only, each read once, within the bounds above; anything else yields
+/// an empty entry and the row shows its place without text.
+fn source_lines(items: &[ServerLocation]) -> Vec<String> {
+    let mut files: Vec<(&std::path::Path, Option<String>)> = Vec::new();
+    items
+        .iter()
+        .map(|location| {
+            if location.doc.filesystem != strop_workspace::Filesystem::Local {
+                return String::new();
+            }
+            let path = location.doc.path.as_path();
+            let known = files.iter().position(|(seen, _)| *seen == path);
+            let index = match known {
+                Some(index) => index,
+                None if files.len() == SOURCE_FILES => return String::new(),
+                None => {
+                    let small = std::fs::metadata(path)
+                        .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= SOURCE_BYTES);
+                    let text = small.then(|| std::fs::read_to_string(path).ok()).flatten();
+                    files.push((path, text));
+                    files.len() - 1
+                }
+            };
+            files[index]
+                .1
+                .as_deref()
+                .and_then(|text| text.lines().nth(location.position.line.get()))
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect()
+}
+
 /// The locations family: references/implementation/type definition/
 /// declaration. Ok(None) and an all-dropped list are explicit empties;
 /// an error is an explicit failure note.
@@ -271,10 +309,12 @@ pub(super) async fn request_locations(
                     text: format!("no file on {} {}", env.workspace.label(), kind.label()),
                 });
             } else {
+                let sources = source_lines(&items);
                 let _ = env.tx.send(LspEvent::Locations {
                     context,
                     kind,
                     items,
+                    sources,
                 });
             }
         }
@@ -284,6 +324,7 @@ pub(super) async fn request_locations(
                 context,
                 kind,
                 items: Vec::new(),
+                sources: Vec::new(),
             });
         }
     }

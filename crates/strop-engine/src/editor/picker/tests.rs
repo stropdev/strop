@@ -34,12 +34,12 @@ mod picker_tests {
         e.open_picker(Kind::Buffers);
         e.wait_picker();
         let sel = |e: &Editor| e.picker.as_ref().unwrap().picker.selected;
-        assert_eq!(sel(&e), 0);
+        assert_eq!(sel(&e), 1, "the bar rests on the alternate buffer");
         e.feed(strop_core::frontend_input::Key::Esc); // normal mode on the field
         e.feed_text("jj");
-        assert_eq!(sel(&e), 2, "j moved the selection down twice");
+        assert_eq!(sel(&e), 3, "j moved the selection down twice");
         e.feed_text("k");
-        assert_eq!(sel(&e), 1);
+        assert_eq!(sel(&e), 2);
         e.feed_text("i"); // back to insert
         e.feed_text("j"); // types into the query instead
         assert_eq!(
@@ -570,30 +570,6 @@ mod picker_tests {
             e.picker.as_ref().unwrap().suggestions.is_none(),
             "no suggestions in the With field"
         );
-    }
-
-    /// 0051 R03: the search-options selector shows live values and toggles
-    /// the session default.
-    #[test]
-    fn search_options_toggle_the_session_default() {
-        let mut e = Editor::new(Buffer::from_text("x\n"));
-        e.open_search_options();
-        e.wait_picker();
-        let p = &e.picker.as_ref().unwrap().picker;
-        assert!(p.items[0].text.contains("hidden (dotfiles): include"));
-        e.feed(strop_core::frontend_input::Key::Enter);
-        assert!(!e.config.search_show_hidden, "the toggle flipped");
-        let p = &e.picker.as_ref().unwrap().picker;
-        assert!(p.items[0].text.contains("hidden (dotfiles): exclude"));
-        // and the qualifier still overrides the session default per query
-        e.config.search_show_hidden = true;
-        let policy = strop_picker::SelectionPolicy {
-            hidden: e.config.search_show_hidden,
-            respect_ignore: e.config.search_respect_ignore,
-        };
-        let query = strop_picker::query::SearchQuery::parse("hidden:exclude");
-        let plan = strop_picker::query::FileSelectionPlan::compile(&query).unwrap();
-        assert!(!policy.effective(&plan).hidden, "the query qualifier wins");
     }
 }
 // Worker lifecycle: injected terminal events (deterministic — no real

@@ -100,6 +100,7 @@ pub use lsp::attach::{AttachDecision, AttachRecord};
 pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
+pub use picker::RecentFiles;
 pub use remote::RemoteEvent;
 pub use remote_completion::{RemoteCompletionKey, RemoteCompletionResult};
 pub use resolution::{ResolutionEvent, ResolutionState};

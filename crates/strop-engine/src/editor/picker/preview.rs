@@ -338,7 +338,6 @@ impl PreviewProbe<'_> {
             | Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
             | Payload::Jump { .. }
-            | Payload::SearchOption(_)
             | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)
@@ -383,7 +382,6 @@ impl Editor {
             Payload::WorkspaceRoot(_)
             | Payload::RemoteDirectory(_)
             | Payload::RemoteConnect
-            | Payload::SearchOption(_)
             | Payload::Action(_)
             | Payload::ProjectStatus(_)
             | Payload::IndentChoice(_)

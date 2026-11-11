@@ -57,6 +57,11 @@ pub enum RemoteCompletionQuery {
     Directory {
         location: strop_workspace::ResourceLocation,
         segment: Vec<u8>,
+        /// The directory part exactly as typed, when the operand is a
+        /// plain relative path: candidates keep that spelling instead of
+        /// turning into absolute URIs (0093 §6).
+        #[serde(default)]
+        typed: Option<String>,
     },
 }
 

@@ -346,12 +346,9 @@ fn boolean_queries_search_through_the_engine_surface() {
         "the conjunction matches its line: {:?}",
         picker.items.iter().map(|i| &i.text).collect::<Vec<_>>()
     );
-    assert!(editor
-        .picker
-        .as_ref()
-        .unwrap()
-        .query_summary
-        .contains("boolean"));
+    let glue = editor.picker.as_ref().unwrap();
+    assert!(glue.query.as_ref().unwrap().boolean.is_some());
+    assert_eq!(glue.status_row, "", "a default search draws no status row");
 }
 
 #[test]

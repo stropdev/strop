@@ -299,7 +299,9 @@ impl Editor {
             | Key::CtrlP
             | Key::CtrlY
             | Key::CtrlE
-            | Key::Backtab => {}
+            | Key::Backtab
+            // only a picker binds an Alt chord; none reaches a document
+            | Key::Alt(_) => {}
             Key::Tab => {
                 // vim: Tab inserts the indent unit — a tab or the
                 // document's spaces (config indent_style; detection may

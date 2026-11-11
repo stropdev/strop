@@ -40,6 +40,25 @@ impl Editor {
         self.session_policy = policy;
     }
 
+    /// This project's frecent files (0093 §3.4).
+    pub fn recent_files(&self) -> &super::RecentFiles {
+        &self.picker_ranking.recent
+    }
+
+    /// Startup: read this project's frecent files from the state
+    /// directory, then count the file the editor opened on. A record
+    /// that cannot be read is reported and started afresh — the finder
+    /// works without its memory.
+    pub fn load_recent_files(&mut self) {
+        if self.session_policy == crate::session::SessionPolicy::Automatic {
+            match crate::session::recent::load(self.state_dir.as_deref(), &self.cwd) {
+                Ok(recent) => self.picker_ranking.recent = recent,
+                Err(error) => self.message = format!("recent files unavailable: {error}"),
+            }
+        }
+        self.note_file_visit(self.current());
+    }
+
     /// The interaction mode (0056 AR02 readonly query): paint reads it;
     /// input through [`Editor::feed`]/[`Editor::handle_frontend_input`]
     /// is the only way it changes.

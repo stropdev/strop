@@ -12,12 +12,15 @@ mod diagnostics;
 
 use diagnostics::{closest_language, qualifier_shaped_error};
 
-/// Case behavior for the search expression, resolved once.
+/// Case behavior for the search expression, resolved once. Smart is the
+/// default everywhere a query is typed (0093 §3.7): an all-lowercase
+/// query matches either case, one capital makes case count — ripgrep's
+/// `--smart-case`, fzf's default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CaseMode {
+    #[default]
     Smart,
     Sensitive,
-    #[default]
     Ignore,
 }
 
@@ -94,7 +97,7 @@ pub struct SearchQuery {
     /// None = session default; Some = this query's explicit override.
     pub hidden: Option<bool>,
     pub ignored: Option<bool>,
-    /// None = case-insensitive default; Some = this query's explicit override.
+    /// None = the smart-case default; Some = this query's explicit override.
     pub case: Option<CaseMode>,
     /// Some when the query carries a Boolean operator (0063 §3); then
     /// the flat `content` stays None and execution compiles from the AST.

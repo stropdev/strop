@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.60.0 — 2026-11-11
+
+### Changed
+
+- **The file finder puts the file you meant first.** A match in the file name now beats a match in a directory name, typing a whole name lists the files with exactly that name (shortest path first), and space-separated words must all match — `core.c sched` finds `kernel/sched/core.c`.
+- **The finder remembers what you use.** With nothing typed, `Space f` starts with your other open files, then the files you open most in this project; `Space f` `Enter` goes back to the file you were just in. When you type, a file you use often wins among equally good matches. This is remembered per project between runs.
+- **`Space b` starts on the previous buffer**, so `Space b` `Enter` switches back instead of staying put.
+- **Project search is about five times faster** on large trees: it now uses several cores. On the Linux kernel sources a search finishes in about a quarter of a second instead of 1.2–1.3 seconds — the same as `rg` on the same number of threads. Results are still listed in the same order every time.
+- **Searching is smart-case everywhere** — the finder, project search and `/` in a buffer. An all-lowercase search matches either case; one capital letter makes case count. `case:ignore` and `case:sensitive` (or `\c` and `\C` in a buffer search) decide outright.
+- **References and other location lists are readable**: each row is `path:line` followed by the text on that line, with the path relative to your project, instead of a clipped absolute path.
+- **`:e` completes the path you typed**: `:e src/ma<Tab>` becomes `:e src/main.rs`, not a long `file:///…` address.
+
+### Added
+
+- **Search toggles**: `Alt-C` match case, `Alt-W` whole word, `Alt-R` regular expression, in project search and replace. `Alt-H` shows or hides hidden files and `Alt-I` files your ignore rules skip, in the finder and in search. Whenever a toggle is on, a line under the search field says so in plain words; it disappears when everything is back to default.
+- **`Ctrl-U` clears the search field** in every picker.
+
+### Removed
+
+- **`:search-options`**: `Alt-H` and `Alt-I` replace it.
+
+### Fixed
+
+- **Enter in the finder could open the wrong file** when you typed quickly in a large project: the selection drifted down the list as more files loaded. The selection now stays on the top result until you move it.
+
 ## 0.59.0 — 2026-11-11
 
 ### Fixed

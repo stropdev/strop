@@ -15,7 +15,8 @@ impl Editor {
         }
         match input {
             Input::Key(key) => {
-                for event in editor_events(key).into_iter().flatten() {
+                let chord = self.picker_alt_chord(&key);
+                for event in editor_events(key, chord).into_iter().flatten() {
                     self.handle_app_event(event);
                 }
             }
@@ -31,9 +32,13 @@ impl Editor {
 
 /// Legacy Alt also represents a coalesced Escape prefix. Preserve existing editor
 /// semantics, including Esc before an unmapped base key, but never apply to PTYs.
-fn editor_events(mut key: KeyEvent) -> [Option<AppEvent>; 2] {
+/// A chord the focused picker binds is the one exception: it arrives whole.
+fn editor_events(mut key: KeyEvent, chord: Option<char>) -> [Option<AppEvent>; 2] {
     if key.kind == KeyKind::Release {
         return [None, None];
+    }
+    if let Some(letter) = chord {
+        return [Some(AppEvent::EditorKey(Key::Alt(letter))), None];
     }
     let alt = key.modifiers.alt;
     key.modifiers.alt = false;

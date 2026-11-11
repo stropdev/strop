@@ -2,10 +2,37 @@
 //! resolves against the live field state (insert, or the normal-mode
 //! field machine), never against the document behind the card.
 
-use super::{Editor, Kind};
-use strop_core::frontend_input::Key;
+use super::{modes::Toggle, Editor, Kind};
+use strop_core::frontend_input::{Key, KeyCode, KeyEvent};
 
 impl Editor {
+    /// The letter of an Alt chord the open picker binds (0093 §3.7): only
+    /// such a chord arrives whole; any other Alt key keeps its terminal
+    /// meaning of Escape-then-letter.
+    pub(crate) fn picker_alt_chord(&self, key: &KeyEvent) -> Option<char> {
+        let kind = self.picker.as_ref()?.picker.kind;
+        match key.code {
+            KeyCode::Char(letter) if key.modifiers.alt && !key.modifiers.control => {
+                Toggle::bound(kind, letter).map(|_| letter)
+            }
+            _ => None,
+        }
+    }
+
+    /// Flip one search toggle for the session and re-ask the source: the
+    /// toggle changes what is searched, so the results are new results.
+    fn toggle_search_mode(&mut self, letter: char) {
+        let Some(toggle) = self
+            .picker
+            .as_ref()
+            .and_then(|glue| Toggle::bound(glue.picker.kind, letter))
+        else {
+            return;
+        };
+        toggle.flip(&mut self.picker_ranking.modes);
+        self.filesystem_picker_changed();
+    }
+
     pub(crate) fn feed_picker(&mut self, key: Key) {
         let Some(glue) = &mut self.picker else {
             return;
@@ -105,8 +132,24 @@ impl Editor {
             }
             Key::CtrlL => self.needs_repaint = true,
             Key::CtrlT if search => self.toggle_search_replacement(),
+            Key::Alt(letter) => self.toggle_search_mode(letter),
+            // readline's unix-line-discard: in a query field the field's
+            // key wins over the pager's (0091 B12)
+            Key::CtrlU => {
+                let replace_field = replace && glue.picker.field == strop_picker::Field::Replace;
+                let field = glue.picker.active_field();
+                let caret = field.cursor();
+                if caret > 0 {
+                    field.delete_range(0, caret);
+                    if replace_field {
+                        self.search_intent_changed();
+                    } else {
+                        self.picker_input_changed();
+                    }
+                }
+            }
             Key::CtrlW | Key::CtrlT | Key::CtrlA => {}
-            Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret | Key::CtrlC => {}
+            Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret | Key::CtrlC => {}
             Key::CtrlY | Key::CtrlE => {}
             Key::Up | Key::CtrlP => glue.picker.move_by(-1),
             Key::Down | Key::CtrlN => glue.picker.move_by(1),

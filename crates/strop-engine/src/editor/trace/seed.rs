@@ -57,6 +57,9 @@ pub struct Seed {
     completion_settings_generation: u64,
     generation: u64,
     message: String,
+    /// The finder's memory orders its rows, so replay starts from it.
+    #[serde(default)]
+    recent: crate::editor::RecentFiles,
 }
 
 impl Seed {
@@ -114,6 +117,7 @@ impl Seed {
             completion_settings_generation,
             generation: editor.generation,
             message: editor.message.clone(),
+            recent: editor.recent_files().clone(),
         })
     }
 
@@ -231,6 +235,7 @@ impl Seed {
         );
         editor.generation = self.generation;
         editor.message = self.message;
+        editor.picker_ranking.recent = self.recent;
         editor.tape = tape;
         Ok(editor)
     }
