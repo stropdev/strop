@@ -247,6 +247,35 @@ impl Tui {
         }
     }
 
+    /// The editor must exit 0. Its stderr is the PTY, so a failure's
+    /// reason is on the screen it left behind (the main screen, after the
+    /// alternate one is gone): drain what is still in flight, then show
+    /// the status, that screen, the raw tail and the trace.
+    pub(crate) fn expect_clean_exit(&mut self, what: &str) {
+        let status = self.wait_exit();
+        // EIO/EOF ends this once the exited child's last bytes are read.
+        let _ = self.until_soft(Duration::from_secs(2), |_| false);
+        if status.success() {
+            return;
+        }
+        let tail = &self.output[self.output.len().saturating_sub(2048)..];
+        let trace = std::fs::read_to_string(&self.trace).unwrap_or_default();
+        let last_events = trace
+            .lines()
+            .rev()
+            .take(8)
+            .map(|line| line.chars().take(400).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        panic!(
+            "{what}: {status}\nscreen after exit:\n{}\nlast terminal bytes:\n{}\n\
+             recent trace:\n{}\nlast trace events (newest first):\n{last_events}",
+            self.screen.screen().contents(),
+            String::from_utf8_lossy(tail).escape_debug(),
+            self.recent_trace(),
+        );
+    }
+
     pub(crate) fn send(&mut self, mut bytes: &[u8]) {
         let deadline = Instant::now() + Duration::from_secs(15);
         while !bytes.is_empty() {

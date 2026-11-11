@@ -88,7 +88,7 @@ pub use picker::{
     checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, PreviewTitle,
     Previews, ReplacementHit, SearchScope,
 };
-pub use registers::{ClipboardKey, ClipboardResult, Register};
+pub use registers::{ClipboardKey, ClipboardResult, Register, RegisterError};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 
 pub use lsp::attach::{AttachDecision, AttachRecord};
@@ -193,7 +193,7 @@ pub struct Editor {
     pub(crate) last_search: Option<LastSearch>,
     /// Live occurrence selection (0049 §7): needle + add-order ranges.
     pub(crate) occurrence: Option<occurrence::OccurrenceState>,
-    pub(crate) registers: HashMap<char, Register>,
+    pub(crate) registers: registers::RegisterStore,
     /// Marks: char → (document, byte offset). `m{a}` sets, `'{a}` jumps.
     pub(crate) marks: HashMap<char, (strop_core::id::DocumentId, usize)>,
     /// What the next frame paints beyond the documents: palette, yank
@@ -295,7 +295,10 @@ pub struct Editor {
     /// document until the read lands (0023 §4).
     pub(crate) clip_tx: std::sync::mpsc::Sender<ClipboardResult>,
     pub(crate) clip_rx: Option<std::sync::mpsc::Receiver<ClipboardResult>>,
-    pub(crate) clip_paste_pending: Option<(bool, strop_core::worker::Ticket<ClipboardKey>)>,
+    pub(crate) clip_paste_pending: Option<(
+        registers::PasteDestination,
+        strop_core::worker::Ticket<ClipboardKey>,
+    )>,
     /// LSP server pool (0014 wave 2): one client per (workspace root,
     /// server) — a rust file and a python file in one session get their
     /// own servers. Diagnostics by path, hover card, open bookkeeping.
@@ -457,7 +460,7 @@ impl Editor {
             walker: input::Walker::new(),
             last_search: None,
             undo_browser: None,
-            registers: HashMap::new(),
+            registers: registers::RegisterStore::default(),
             marks: HashMap::new(),
             last_find: None,
             presentation: presentation::Presentation::default(),
@@ -534,6 +537,7 @@ impl Editor {
                 view_top: 0,
                 hscroll: strop_core::id::DisplayColumn::new(0),
                 desired_column: None,
+                focused: 0,
                 jumps,
             }],
             active_pane: 0,
@@ -617,6 +621,7 @@ impl Editor {
             let at_ground = self.walker.is_ground() && !self.pending.is_active();
             if at_ground && key == Key::Char('q') {
                 self.recording = None;
+                self.macro_recorded(reg);
                 self.message = format!("recorded @{}", reg);
                 return;
             }
@@ -729,6 +734,11 @@ pub fn state_json(editor: &Editor) -> String {
     if editor.docs.is_empty() {
         return serde_json::json!({"should_quit":editor.should_quit,"documents":0,"message":editor.message}).to_string();
     }
+    let lifecycle_registers: serde_json::Map<String, serde_json::Value> =
+        ['0', '1', '2', '-', 'a', 'b']
+            .into_iter()
+            .map(|name| (name.to_string(), editor.register(Some(name)).text.into()))
+            .collect();
     serde_json::json!({
         "mode": if editor.terminal_input_active() { "TERMINAL" } else { editor.mode.chip() },
         "cursor": editor.head(),
@@ -744,6 +754,8 @@ pub fn state_json(editor: &Editor) -> String {
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),
         "picker_streaming": editor.picker.as_ref().map(|g| g.picker.streaming),
         "register": editor.register(None).text,
+        // the lifecycle registers the differential harness diffs (0092)
+        "registers": lifecycle_registers,
         "dirty": editor.buf().is_dirty(),
         "terminal":editor.terminal_status(editor.current()),
         "completion": editor.completion_snapshot(true),

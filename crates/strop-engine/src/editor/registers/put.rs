@@ -1,138 +1,17 @@
-//! Registers and paste (vim's " machinery) plus the system clipboard
-//! (`+` via OSC52/wl-paste, helix's playbook). Reads run on workers;
-//! results land on the drain — never a subprocess on the input path.
-//!
-//! Register CONTENT is a typed domain (R13): [`Register`] carries its
-//! text plus a [`RegisterShape`] — the `(String, bool)` tuple could
-//! not say blockwise, and a block needs its rectangle width in
-//! display cells to land straight under configured tabs and wide
-//! clusters. No bare `bool` crosses the register or paste boundary.
+//! Put (`p`/`P`): a register lands per its shape — charwise and
+//! linewise text at every cursor, a block as its rectangle.
 
 use strop_core::id::DisplayColumn;
 use strop_core::layout::LineLayout;
-use strop_core::worker::{self, Completion, FailureKind, Outcome, Ticket};
 
-use super::trace;
-use super::Editor;
-
-/// The document that asked for a clipboard read (R9): the terminal
-/// result owns this ticket — a paste lands only in the buffer that
-/// requested it, and failures surface instead of collapsing into
-/// "empty clipboard".
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClipboardKey {
-    pub document: strop_core::id::DocumentId,
-}
-
-/// The owned terminal clipboard-read result.
-pub type ClipboardResult = Completion<ClipboardKey, String>;
-
-/// How register text sits in the document when it lands — vim's
-/// three register shapes. Blockwise carries the rectangle's cell
-/// width, measured with the configured tab size at yank time, so
-/// paste replays the same rectangle on any tab/wide-char mix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegisterShape {
-    Characterwise,
-    Linewise,
-    /// Rows joined by `\n` in [`Register::text`]; `width` is the
-    /// rectangle's width in display cells.
-    Blockwise {
-        width: DisplayColumn,
-    },
-}
-
-/// One register cell: text + shape (vim's unnamed register is `"`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Register {
-    pub text: String,
-    pub shape: RegisterShape,
-    pub file_provenance: Option<std::sync::Arc<super::filesystem::draft::FileRegister>>,
-}
-
-impl Register {
-    pub fn characterwise(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            shape: RegisterShape::Characterwise,
-            file_provenance: None,
-        }
-    }
-
-    pub fn linewise(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            shape: RegisterShape::Linewise,
-            file_provenance: None,
-        }
-    }
-
-    /// `width` is the rectangle's width in display cells (the same
-    /// streamed layout that measured it at yank).
-    pub fn blockwise(text: impl Into<String>, width: DisplayColumn) -> Self {
-        Self {
-            text: text.into(),
-            shape: RegisterShape::Blockwise { width },
-            file_provenance: None,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.text.is_empty()
-    }
-}
+use super::{Register, RegisterShape};
+use crate::editor::Editor;
 
 impl Editor {
-    pub fn register(&self, name: Option<char>) -> &Register {
-        static EMPTY: Register = Register {
-            text: String::new(),
-            shape: RegisterShape::Characterwise,
-            file_provenance: None,
-        };
-        self.registers.get(&name.unwrap_or('"')).unwrap_or(&EMPTY)
-    }
-
-    pub(crate) fn set_register(&mut self, name: Option<char>, register: Register) {
-        let name = name.unwrap_or('"');
-        // the `+` register is the system clipboard: yank/delete into it
-        // stages an OSC52 payload for the TUI to emit
-        if name == '+' {
-            self.osc52 = Some(register.text.clone());
-        }
-        // Vim's ordinary named writes also fill the unnamed register;
-        // the black hole is the exception. Keep the named value intact
-        // so explicit puts still read exactly the selected register.
-        if name != '"' && name != '_' {
-            self.registers.insert('"', register.clone());
-        }
-        self.registers.insert(name, register);
-    }
-
-    /// `p`/`P` (vim `2p`): the register lands per its shape —
-    /// charwise/linewise text repeats, a block repeats its rectangle
-    /// horizontally; always one undo unit.
-    pub(crate) fn paste(&mut self, name: Option<char>, count: usize, before: bool) {
-        if self.buf().readonly {
-            self.message = "readonly buffer".into();
-            return;
-        }
-        // `"+p`: the system clipboard is read by a provider job — never
-        // a subprocess on the input path (0001 §3)
-        if name == Some('+') {
-            self.clipboard_paste(before);
-            return;
-        }
-        let register = self.register(name).clone();
-        if register.is_empty() {
-            return;
-        }
-        self.paste_register(&register, count, before);
-    }
-
     /// Paste one register's content without storing it (bracketed
     /// paste and clipboard results never touch the register file —
     /// vim's rule).
-    fn paste_register(&mut self, register: &Register, count: usize, before: bool) {
+    pub(super) fn paste_register(&mut self, register: &Register, count: usize, before: bool) {
         match register.shape {
             RegisterShape::Blockwise { width } => {
                 self.paste_blockwise(register, width, count, before)
@@ -148,96 +27,6 @@ impl Editor {
                 },
                 count,
             ),
-        }
-    }
-
-    /// `Space p` / `"+p`: spawn a clipboard read; the result lands in
-    /// drain_clipboard on a later tick.
-    pub(crate) fn clipboard_paste(&mut self, before: bool) {
-        if self.buf().readonly {
-            self.message = "readonly buffer".into();
-            return;
-        }
-        if self.clip_paste_pending.is_some() {
-            return; // one read in flight
-        }
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return;
-            }
-        };
-        let ticket = Ticket {
-            request,
-            key: ClipboardKey {
-                document: self.current(),
-            },
-        };
-        self.clip_paste_pending = Some((before, ticket.clone()));
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({"service":"clipboard","request":request.get(),
-                "document":{"slot":self.current().index(),"generation":self.current().generation()}})
-        });
-        match self.tape.request("clipboard.read", &ticket) {
-            Ok(false) => return,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_clipboard(Completion {
-                    ticket,
-                    outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
-                });
-                return;
-            }
-        }
-        let tx = self.clip_tx.clone();
-        let handle = worker::spawn(
-            "strop-clipboard",
-            move |outcome| {
-                let _ = tx.send(Completion { ticket, outcome });
-            },
-            |_| read_system_clipboard(),
-        );
-        self.worker_handles.insert(request, handle);
-    }
-
-    /// One owned clipboard-read result.
-    pub(crate) fn handle_clipboard(&mut self, result: ClipboardResult) {
-        trace::services::clipboard(&result);
-        let Some((before, ticket)) = self.clip_paste_pending.as_ref() else {
-            return;
-        };
-        if *ticket != result.ticket {
-            trace::services::rejected("clipboard", "clipboard request superseded");
-            return;
-        }
-        let before = *before;
-        self.clip_paste_pending = None;
-        self.worker_handles.remove(&result.ticket.request);
-        // the read answers the document that asked (0023 §4): a switch
-        // mid-read must not paste into the newly active buffer
-        if self.docs.is_empty() || self.current() != result.ticket.key.document {
-            self.message = "clipboard: destination changed — paste dropped".into();
-            trace::services::rejected("clipboard", &self.message);
-            return;
-        }
-        match result.outcome {
-            // a trailing newline is vim's linewise paste convention;
-            // Success("") is a real empty clipboard, not a failure
-            Outcome::Success(text) if !text.is_empty() => {
-                let register = if text.ends_with('\n') {
-                    Register::linewise(text)
-                } else {
-                    Register::characterwise(text)
-                };
-                self.paste_register(&register, 1, before);
-            }
-            Outcome::Success(_) => self.message = "clipboard: empty".into(),
-            Outcome::Failed { failure, .. } => {
-                self.message = format!("clipboard: {}", failure.message)
-            }
-            // the owning paste left (cancelled/superseded): nothing to do
-            Outcome::Cancelled(_) => {}
         }
     }
 
@@ -313,7 +102,7 @@ impl Editor {
         text: String,
         shape: RegisterShape,
         before: bool,
-        provenance: Option<&std::sync::Arc<super::filesystem::draft::FileRegister>>,
+        provenance: Option<&std::sync::Arc<crate::editor::filesystem::draft::FileRegister>>,
         count: usize,
     ) {
         // nvim rule: every command is one undo unit — a lone paste must
@@ -506,91 +295,4 @@ fn block_row(row: &str, width: DisplayColumn, count: usize, mid_row: bool, tab: 
         unit.push_str(&" ".repeat(pad));
     }
     unit.repeat(count)
-}
-
-/// Read the system clipboard via the first working provider (helix's
-/// playbook: wl-paste, xclip, xsel). Runs on a worker; every
-/// failure is terminal and typed — "not installed" tries the next
-/// provider, anything else (spawn error, nonzero exit, non-UTF-8
-/// data) reports itself instead of masquerading as an empty
-/// clipboard.
-fn read_system_clipboard() -> Outcome<String> {
-    let providers: [(&str, &[&str]); 3] = [
-        ("wl-paste", &[]),
-        ("xclip", &["-selection", "clipboard", "-o"]),
-        ("xsel", &["--clipboard", "--output"]),
-    ];
-    let mut failed = Vec::new();
-    for (cmd, args) in providers {
-        let output = match std::process::Command::new(cmd)
-            .args(args)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-        {
-            Ok(output) => output,
-            // not installed: the next provider gets its chance
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => {
-                return Outcome::failed(FailureKind::Spawn, format!("{cmd}: {error}"));
-            }
-        };
-        if !output.status.success() {
-            failed.push(format!("{cmd}: exited {}", output.status));
-            continue;
-        }
-        return match String::from_utf8(output.stdout) {
-            Ok(text) => Outcome::Success(text),
-            Err(error) => Outcome::failed(
-                FailureKind::Io,
-                format!("{cmd}: clipboard is not UTF-8: {error}"),
-            ),
-        };
-    }
-    let mut message = String::from("no clipboard provider succeeded");
-    if !failed.is_empty() {
-        message.push_str(&format!(" ({})", failed.join("; ")));
-    }
-    Outcome::failed(FailureKind::Unavailable, message)
-}
-
-impl Editor {
-    /// Table shims (0008 stage 2): `Space y` arms the `+` register for
-    /// the next yank; `Space p/P` paste from the system clipboard.
-    pub(crate) fn clipboard_yank_pub(&mut self) {
-        self.walker
-            .begin_operator(strop_grammar::Op::Yank, Some('+'), None);
-    }
-    pub(crate) fn clipboard_paste_pub(&mut self, before: bool) {
-        self.clipboard_paste(before);
-    }
-    /// Bracketed paste (0017): one undo unit, no key interpretation —
-    /// the payload is text, not keystrokes. A live prompt consumes it
-    /// through the pending reducer; an open picker pastes into its
-    /// focused field; in normal mode it behaves like p; a trailing
-    /// newline pastes linewise (vim's paste plugin convention).
-    pub fn paste_bracketed(&mut self, text: &str) {
-        if text.is_empty() {
-            return;
-        }
-        if self.pending.is_active() {
-            self.feed_pending_event(super::pending::PendingEvent::Paste(text.to_owned()));
-            return;
-        }
-        if self.picker_open() {
-            self.paste_picker(text);
-            return;
-        }
-        if self.mode == super::Mode::Insert {
-            self.insert_literal(text, super::insert::replay::InsertTargets::Primary);
-        } else {
-            let register = if text.ends_with('\n') {
-                Register::linewise(text)
-            } else {
-                Register::characterwise(text)
-            };
-            self.paste_register(&register, 1, false);
-        }
-    }
 }

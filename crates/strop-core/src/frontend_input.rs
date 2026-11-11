@@ -45,6 +45,8 @@ pub enum Key {
     CtrlV,
     /// vim ctrl-l: force a full terminal repaint (desync recovery).
     CtrlL,
+    /// Search: toggle the With field (ctrl-r stays vim's register key).
+    CtrlT,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

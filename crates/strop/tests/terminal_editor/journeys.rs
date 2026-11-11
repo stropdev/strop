@@ -38,7 +38,7 @@ fn kitty_shifted_punctuation_opens_ex_commands() {
     tui.send(b"\x1b[59:58;2u");
     tui.until(|screen| screen.contains("COMMAND"));
     tui.send(b"q\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
 }
 
 /// The legacy C0 byte of `Ctrl-\` (0x1c) followed by `Ctrl-N` is the
@@ -269,7 +269,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     tui.send(b"\x1c\x0e:qa\r");
     tui.until(|screen| screen.contains("1 terminal running") && screen.contains(":qa! stops them"));
     tui.send(b":qa!\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
     // The flood never degraded the capture: the file says so itself.
     let terminal = std::fs::read_to_string(&trace)
         .unwrap()
@@ -320,5 +320,5 @@ fn two_escapes_in_one_write_close_a_picker() {
     tui.send(b"\x1b\x1b");
     tui.until(|screen| screen.contains("NORMAL") && !screen.contains("esc  close"));
     tui.send(b":q\r");
-    assert!(tui.wait_exit().success());
+    tui.expect_clean_exit("the editor did not exit cleanly");
 }

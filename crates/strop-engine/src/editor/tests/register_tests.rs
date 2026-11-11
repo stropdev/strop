@@ -7,7 +7,7 @@ fn editor(text: &str) -> Editor {
     Editor::new(Buffer::from_text(text))
 }
 fn block(editor: &mut Editor, rows: &str, width: usize) {
-    editor.set_register(None, Register::blockwise(rows, DisplayColumn::new(width)));
+    editor.yank_register(None, Register::blockwise(rows, DisplayColumn::new(width)));
 }
 
 #[test]
@@ -116,9 +116,55 @@ fn block_paste_creates_crlf_rows_without_mixing_endings() {
 #[test]
 fn multibyte_characterwise_paste_lands_on_a_character_boundary() {
     let mut e = editor("a÷b\n");
-    e.set_register(None, Register::characterwise("÷"));
+    e.yank_register(None, Register::characterwise("÷"));
     e.set_head(1);
     e.feed_text("p");
     assert_eq!(e.buf().text().to_string(), "a÷÷b\n");
     assert_eq!(e.head(), 3);
+}
+
+#[test]
+fn a_recording_is_register_content_and_a_register_replays_as_keys() {
+    // vim: `qa` fills "a, and `@a` executes whatever "a holds
+    let mut e = editor("  text\nIZ\n");
+    e.feed_text("qaIX<esc>q");
+    assert_eq!(e.register(Some('a')).text, "IX\u{1b}");
+    assert_eq!(e.register(None).text, "", "recording is not a yank");
+    e.feed_text("@a");
+    assert_eq!(e.buf().text().to_string(), "  XXtext\nIZ\n");
+    // a yank into "a replaces the recording
+    e.feed_text("j0\"ayiw@a");
+    assert_eq!(e.buf().text().to_string(), "  XXtext\nZIZ\n");
+}
+
+#[test]
+fn black_hole_reads_empty_and_keeps_the_unnamed_register() {
+    let mut e = editor("one\ntwo\n");
+    e.feed_text("yiwj\"_dd\"_p");
+    assert_eq!(e.buf().text().to_string(), "one\n");
+    assert_eq!(e.register(None).text, "one");
+}
+
+#[test]
+fn a_plain_yank_reaches_the_system_clipboard_and_a_delete_does_not() {
+    // 0092 §1.4: yank, then the terminal's paste carries it
+    let mut e = editor("one two\nthree\n");
+    e.feed_text("yiw");
+    assert_eq!(e.osc52.take().as_deref(), Some("one"));
+    assert_eq!(e.register(Some('+')).text, "one");
+    e.feed_text("jdd");
+    assert_eq!(e.osc52, None, "a delete never overwrites the clipboard");
+    e.feed_text("x");
+    assert_eq!(e.osc52, None);
+    e.feed_text("\"ayiw");
+    assert_eq!(e.osc52, None, "a named yank stays in its register");
+    assert_eq!(e.register(Some('+')).text, "one");
+    e.feed_text("Vy");
+    assert_eq!(e.osc52.take().as_deref(), Some("ne two\n"));
+    // too large to push through the terminal: kept, and said
+    let mut e = editor(&"x".repeat((1 << 20) + 1));
+    e.feed_text("yy");
+    assert_eq!(e.osc52, None);
+    assert!(e.message.contains("too large"), "{}", e.message);
+    assert_eq!(e.register(None).text.len(), (1 << 20) + 1);
 }

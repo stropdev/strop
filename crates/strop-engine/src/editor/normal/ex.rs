@@ -81,7 +81,7 @@ impl Editor {
                     true,
                     false,
                 );
-                self.set_register(None, register);
+                self.delete_register(None, register, false);
                 self.tx_begin();
                 self.filename_delete_hint(strop_core::Range::charwise(s, e), true);
                 self.buf_mut().delete(strop_core::Range::charwise(s, e));
@@ -105,7 +105,7 @@ impl Editor {
                     false,
                     false,
                 );
-                self.set_register(None, register);
+                self.yank_register(None, register);
                 self.message = format!("{} lines yanked", hi - lo + 1);
             }
             _ => self.message = format!("unsupported ranged command: {rest}"),
@@ -238,6 +238,9 @@ impl Editor {
             "qa" | "qall" => self.quit_all(false),
             "qa!" | "qall!" => self.quit_all(true),
             "trust" => self.request_trust(),
+            // The project root is pinned at launch (0092 §2): this is
+            // what Files, Search and new terminals scope to.
+            "pwd" => self.message = self.cwd.display().to_string(),
             "noh" => {
                 // nohlsearch: the persistent highlight drops (0001 §5.8)
                 self.last_search = None;

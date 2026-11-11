@@ -352,7 +352,7 @@ impl Editor {
             .map(|target| self.buf().slice_string(target.range))
             .collect::<Vec<_>>()
             .join("\n");
-        self.set_register(
+        self.yank_register(
             command.register,
             if range.is_linewise() {
                 super::Register::linewise(text)

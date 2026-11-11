@@ -89,6 +89,9 @@ impl Editor {
         // semantic dot-repeat (0014): `.` re-resolves this command from
         // the new position — it never replays a stale key string through
         // a changed keymap
+        if cmd.op.is_some() && !self.register_writable(cmd.register) {
+            return;
+        }
         self.last_change = Some(cmd.clone());
         self.last_cmd_keys.clear();
         self.note_search(cmd);
@@ -134,7 +137,7 @@ impl Editor {
                     false,
                     true,
                 );
-                self.set_register(cmd.register, register);
+                self.yank_register(cmd.register, register);
                 self.flash(kept[0].1);
             }
             Op::Indent | Op::Dedent => {
@@ -179,7 +182,11 @@ impl Editor {
                     Register::characterwise(text)
                 };
                 register.file_provenance = provenance;
-                self.set_register(cmd.register, register);
+                self.delete_register(
+                    cmd.register,
+                    register,
+                    crate::editor::registers::reg_one_motion(&cmd.target),
+                );
                 // landings: each range start minus what lower deletes
                 // already removed (deletes applied bottom-up above)
                 let mut shift = 0usize;
@@ -187,6 +194,15 @@ impl Editor {
                 for (c, r, _) in &kept {
                     landings.push((*c == self.head(), r.start.get() - shift));
                     shift += r.end - r.start;
+                }
+                if linewise {
+                    // deleting the final lines leaves no line at that
+                    // index: vim lands on the new last line, never on
+                    // the phantom row past the final break
+                    let last = self.buf().line_start(self.buf().last_content_line());
+                    for landing in &mut landings {
+                        landing.1 = landing.1.min(last);
+                    }
                 }
                 self.set_head(
                     landings
@@ -296,7 +312,7 @@ impl Editor {
             .collect();
         let mut register = Register::linewise(texts.join(""));
         register.file_provenance = provenance;
-        self.set_register(register_name, register);
+        self.delete_register(register_name, register, false);
         self.set_head(
             landings
                 .iter()
@@ -518,7 +534,7 @@ impl Editor {
             if backward {
                 self.set_head(start);
             }
-            self.set_register(None, Register::characterwise(text));
+            self.delete_register(None, Register::characterwise(text), false);
             self.flash(range);
             self.last_cmd_keys = if backward { "X" } else { "x" }.into();
             self.last_change = None;

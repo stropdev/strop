@@ -136,6 +136,10 @@ Generated from the command table (`strop compat`).
 - `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
 - `✓ space w v / -` — pane split (vertical / horizontal)
 - `✓ space w q` — close pane (last → buffer)
+- `✓ ctrl-w h ctrl-w j ctrl-w k ctrl-w l ctrl-w w ctrl-w W ctrl-w p` — window: left / down / up / right / next / previous / last used (ctrl-w ctrl-{key} is the same)
+- `✓ ctrl-w s ctrl-w v ctrl-w n` — window: split below / split right / new empty buffer below
+- `✓ ctrl-w c ctrl-w q ctrl-w o` — window: close / quit (:q) / keep only this one
+- `✓ ctrl-w =` — window: equal sizes (panes always are)
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs
 
 ## Git
@@ -161,7 +165,8 @@ Generated from the command table (`strop compat`).
 - `✓ ctrl-x` — Search: exclude/include match
 - `✓ ctrl-space` — query field: qualifier, language and value suggestions
 - `✓ ctrl-d` — Search: exclude/include file
-- `✓ ctrl-r` — Search: toggle replacement; document: redo
+- `✓ ctrl-r` — input field: insert register {reg} (" is the last yank/delete)
+- `✓ ctrl-t` — Search: toggle replacement
 - `✓ enter` — Search Find: open source; With: prepare review
 - `✓ ctrl-o` — Search: collect included matches
 

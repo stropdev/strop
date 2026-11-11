@@ -87,6 +87,8 @@ fn editor_key(key: KeyEvent) -> Option<Key> {
         KeyCode::Char('\x05') => Key::CtrlE,
         KeyCode::Char('r') if control => Key::CtrlR,
         KeyCode::Char('x') if control => Key::CtrlX,
+        KeyCode::Char('t') if control => Key::CtrlT,
+        KeyCode::Char('\x14') => Key::CtrlT,
         KeyCode::Char('l') if control => Key::CtrlL,
         KeyCode::Char('\x0c') => Key::CtrlL,
         KeyCode::Char('v') if control => Key::CtrlV,

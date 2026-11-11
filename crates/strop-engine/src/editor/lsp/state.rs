@@ -79,6 +79,8 @@ pub(crate) struct LspState {
     pub attach: AttachState,
     /// Terminal server failures, one current reason per resource scope.
     pub failures: Vec<super::status::LspFailure>,
+    /// Automatic restarts per workspace scope (plan 0092 §2.4).
+    pub restarts: Vec<super::status::Restart>,
 }
 
 impl Default for LspState {
@@ -91,6 +93,7 @@ impl Default for LspState {
             navigation: None,
             attach: AttachState::new(),
             failures: Vec::new(),
+            restarts: Vec::new(),
         }
     }
 }
@@ -365,9 +368,13 @@ impl Editor {
             self.lsp_server_for(self.current(), &doc.path, &language, &doc.filesystem)
         else {
             // A terminal server failure removes the placement, but it does
-            // not make an installed server disappear. Retry only the exact
-            // language/target workspace containing this document; other
-            // failed roots and out-of-context external files stay isolated.
+            // not make an installed server disappear. Retry the exact
+            // language/target workspace containing this document — or,
+            // for a library file outside the pinned project, the
+            // project's own failed server (0092 §2.3). Other failed
+            // roots stay isolated.
+            let outside = doc.filesystem == strop_workspace::Filesystem::Local
+                && !doc.path.starts_with(&self.cwd);
             let failed = self
                 .lsp_state
                 .failures
@@ -375,24 +382,44 @@ impl Editor {
                 .filter(|failure| {
                     failure.language == language
                         && failure.target == doc.filesystem
-                        && doc.path.starts_with(&failure.root)
+                        && (doc.path.starts_with(&failure.root)
+                            || (outside
+                                && (failure.root.starts_with(&self.cwd)
+                                    || self.cwd.starts_with(&failure.root))))
                 })
                 .max_by_key(|failure| failure.root.as_os_str().len())
-                .map(|failure| failure.name.clone());
-            if let Some(name) = failed {
-                self.message = if self.lsp_state.attach.enabled {
-                    format!(
+                .map(|failure| (failure.name.clone(), failure.root.clone()));
+            if let Some((name, root)) = failed {
+                // Discovery must find the failed workspace again, so a
+                // document inside it leads; this one opens on the
+                // replacement when it is placed.
+                let inside = if doc.path.starts_with(&root) {
+                    Some(self.current())
+                } else {
+                    self.docs.iter().map(|(id, _)| id).find(|id| {
+                        self.lsp_document_location(*id).is_some_and(|other| {
+                            other.filesystem == doc.filesystem
+                                && other.path.starts_with(&root)
+                                && super::lsp_language(&other.path) == Some(language.as_str())
+                        })
+                    })
+                };
+                self.message = match inside {
+                    Some(_) if self.lsp_state.attach.enabled => format!(
                         "lsp: {name} failed — reattaching; repeat {} after ready — :explain for details",
                         kind.label()
-                    )
-                } else {
-                    format!("lsp: {name} failed — :explain for details")
+                    ),
+                    Some(_) => format!("lsp: {name} failed — :explain for details"),
+                    None => format!(
+                        "lsp: {name} failed — open a project file to restart it — :explain for details"
+                    ),
                 };
-                if self.lsp_state.attach.enabled {
+                if let Some(representative) = inside.filter(|_| self.lsp_state.attach.enabled) {
                     // The ordinary pending/refusal/transport admission path
                     // bounds this to one discovery attempt per explicit
                     // request. The request itself is not replayed at Ready.
-                    self.lsp_attach_document(self.current());
+                    self.lsp_refill_restarts(&language, &doc.filesystem);
+                    self.lsp_attach_document(representative);
                 }
                 return;
             }

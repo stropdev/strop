@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.58.0 — 2026-11-11
+
+### Fixed
+
+- **A yank pastes in every text input** (plans/0092 §1): `Ctrl-R {register}` now works in Search's Find and With fields as well as Files, the `:` and `/` lines and insert mode, and `p` / `P` / `"ap` work in the normal mode of every field. `Ctrl-R "` is the last yank or delete; Files and the other list pickers show it in their hint row.
+- **Registers follow Vim's rules**: `"0` keeps the last yank through later deletes; deleting a line or more shifts `"1`–`"9` and a smaller delete fills `"-`; `"A` appends to `"a`; `"_` discards and reads empty (it used to be stored and pasted back); `".` `":` `"/` `"%` are the last insert, last `:` line, last search and file name, and refuse to be written before anything is deleted. The differential harness now diffs these registers against Neovim.
+- **Visual mode takes a register**: `"ay`, `"ad`, `"_d` on a charwise, linewise, block or multi-occurrence selection. They used to do nothing.
+- **A macro is register content**: `qa` fills `"a` (so `"ap` shows it), and `@a` runs whatever `"a` holds, including text you yanked there.
+- **A yank reaches the system clipboard** (plans/0092 §1.4): `y` with no register also copies, so the terminal's own paste and other applications get it. Deletes, changes and named-register yanks never touch the clipboard; a yank over 1 MB stays in strop and says so (`"+y` sends it anyway).
+- **`Ctrl-R +` reads the real system clipboard** in insert mode, prompts and pickers instead of whatever strop last copied, and a read that returns after its prompt or picker closed is dropped instead of landing in the document.
+- **The project stays where you launched strop** (plans/0092 §2): following go-to-definition into the Rust standard library, a cargo registry crate or a system header no longer turns that directory into the scope of Files, Search and new terminals.
+- **Library files keep their language server**: a file outside the project is served by the project's server for its language however it was opened — file finder, `:e`, jumplist, restored session — instead of only when reached by `gd`. No second server is started in the library's directory.
+- **A crashed language server restarts**: up to three times per workspace, without switching buffers or repeating a request. The status line says `restarting (1/3)`, `LSP!` stays lit until the replacement is ready, and every file the old server had open, library files included, reopens on it.
+- **`dd` on the last line** leaves the cursor on the new last line instead of the empty row below it.
+
+- **`Ctrl-W` no longer drops its second key into Normal mode** (plans/0091 B7): `Ctrl-W v` used to start Visual, `Ctrl-W c` a change. An unbound key now reports `ctrl-w x is not bound` and does nothing.
+- **The welcome card and README say only what the editor does** (plans/0091 B10): the card's last line names two real keys instead of "ci[ previews the cut", and is no longer clipped at 80 columns.
+
+### Changed
+
+- **Search toggles its With field with `Ctrl-T`**; `Ctrl-R` there is now the register key it is everywhere else. `Space R` still opens Search with With visible.
+- **A one-line linewise yank (`yy`) pastes its line into a prompt or picker**; text with inner line breaks is still refused with a message.
+
+### Added
+
+- **Vim's window commands**: `Ctrl-W` + `h j k l` (move), `w` `W` `p` (next, previous, last used), `s` `v` `n` (split below, split right, new empty buffer), `c` `q` `o` (close, quit, keep only this one), `=`. `Ctrl-W Ctrl-{key}` is the same. `Space w` stays.
+- **`:pwd`** shows the pinned project root.
+
 ## 0.57.0 — 2026-11-10
 
 ### Changed

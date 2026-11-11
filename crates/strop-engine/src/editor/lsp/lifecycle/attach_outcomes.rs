@@ -62,6 +62,7 @@ impl Editor {
                 }) {
                     self.retire_superseded_transport(Some(server));
                     self.lsp_did_open_document(self.current());
+                    self.lsp_reopen_restarted(&language, &root, &target);
                     return;
                 }
                 self.lsp_state
@@ -142,6 +143,7 @@ impl Editor {
                     }
                 }
                 self.lsp_did_open_document(self.current());
+                self.lsp_reopen_restarted(&language, &root, &target);
             }
             decision => {
                 if warm {

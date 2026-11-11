@@ -20,7 +20,7 @@
 │                                               │                              │
 │                                               │                              │
 │                                               │                              │
-╰  enter  open   ctrl-r  replace   ctrl-x  drop hit   ctrl-d  drop file ───────╯
+╰  enter  open   ctrl-t  replace   ctrl-x  drop hit   ctrl-d  drop file ───────╯
  SEARCH   src/render/statusline.rs                                       1:1  5%
 
   0: 1:#858c9a/#1c1f25 8:#e6e1d6/#1c1f25+b 71:#858c9a/#1c1f25

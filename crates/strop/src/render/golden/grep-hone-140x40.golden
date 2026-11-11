@@ -36,7 +36,7 @@
   │                                                                                │                                                     │  
   │                                                                                │                                                     │  
   │                                                                                │                                                     │  
-  ╰  enter  open   ctrl-r  replace   ctrl-x  drop hit   ctrl-d  drop file   ctrl-o  collect   ctrl-space  suggest   esc  close ──────────╯  
+  ╰  enter  open   ctrl-t  replace   ctrl-x  drop hit   ctrl-d  drop file   ctrl-o  collect   ctrl-space  suggest   esc  close ──────────╯  
  SEARCH   src/render/statusline.rs                                                                                                   1:1  5%
 
   0: 2:reset/#15171c 1:#858c9a/#1c1f25 8:#e6e1d6/#1c1f25+b 127:#858c9a/#1c1f25 2:reset/#15171c

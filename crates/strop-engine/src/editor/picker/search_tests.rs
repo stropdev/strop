@@ -15,12 +15,12 @@ fn toggling_a_live_query_keeps_its_producer_and_parked_editors() {
     editor.open_search(false);
     editor.paste_bracketed("needle");
     let owner = editor.picker.as_ref().unwrap().active.clone().unwrap();
-    editor.feed(Key::CtrlR);
+    editor.feed(Key::CtrlT);
     editor.paste_bracketed("literal $1");
     editor.feed(Key::Left);
     editor.feed(Key::Esc);
-    editor.feed(Key::CtrlR);
-    editor.feed(Key::CtrlR);
+    editor.feed(Key::CtrlT);
+    editor.feed(Key::CtrlT);
     let glue = editor.picker.as_ref().unwrap();
     assert_eq!(
         glue.active.as_ref(),
@@ -106,14 +106,14 @@ fn included_same_line_matches_drive_both_collect_and_review() {
     editor.feed(Key::CtrlO);
     assert!(editor.picker_open());
     assert!(editor.collections.is_empty());
-    editor.feed(Key::CtrlR);
+    editor.feed(Key::CtrlT);
     editor.paste_bracketed("new");
     editor.feed(Key::Enter);
     assert!(editor.picker_open());
     assert!(!editor.io_pending());
     editor.feed(Key::CtrlD); // restoring file retains the first-match exclusion
     assert_eq!(editor.picker.as_ref().unwrap().picker.accepted().count(), 2);
-    editor.feed(Key::CtrlR); // collecting with replacement hidden sees the same workset
+    editor.feed(Key::CtrlT); // collecting with replacement hidden sees the same workset
     editor.feed(Key::CtrlO);
     editor.wait_io().unwrap();
     assert_eq!(

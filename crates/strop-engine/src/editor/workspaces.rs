@@ -183,10 +183,13 @@ impl super::Editor {
             .map(|(_, context)| context.root.as_path())
     }
 
-    /// Default scope for Files/Search: the focused file's parent or Directory
-    /// location, resolved through its selected longest covering project. An
-    /// unbound resource keeps its exact directory context as a non-durable
-    /// scope; browsing never binds a root or mutates process cwd implicitly.
+    /// Default scope for Files/Search/terminals: the focused resource's
+    /// selected longest covering project. The project is pinned (plan 0092
+    /// §2): a local FILE outside every selected root — a library source
+    /// reached by go-to-definition, a loose file — keeps the launch project
+    /// as its scope; visiting it never re-roots the editor. Only a
+    /// deliberately browsed Directory, a terminal's launch location or an
+    /// unbound remote resource scopes to its own exact location.
     pub fn current_workspace_root(&self) -> ResourceLocation {
         if let Some(launch) = self.terminal_launch_location(self.current()) {
             return self
@@ -194,7 +197,13 @@ impl super::Editor {
                 .unwrap_or_else(|| launch.clone());
         }
         let context = self.directory_context();
-        self.workspace_root_for(&context).unwrap_or(context)
+        if let Some(root) = self.workspace_root_for(&context) {
+            return root;
+        }
+        if self.directory().is_none() && context.filesystem == Filesystem::Local {
+            return ResourceLocation::local(self.cwd.clone());
+        }
+        context
     }
 }
 
@@ -339,5 +348,54 @@ mod tests {
         assert_ne!(fresh, retired);
         assert_eq!(registry.get(fresh).unwrap().incarnation, 0);
         assert_eq!(registry.iter().count(), 2);
+    }
+
+    /// Plan 0092 §2, the reported drift: launch in the project, follow
+    /// go-to-definition into the Rust stdlib, open Files — the scope must
+    /// still be the project, not the library's directory.
+    #[test]
+    fn a_file_outside_the_project_never_re_roots_files_search_or_terminals() {
+        use strop_core::Buffer;
+        let fixture = tempfile::tempdir().unwrap();
+        let project = fixture.path().join("workspace");
+        let library = fixture.path().join("rustup/library/core/src");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::create_dir_all(&library).unwrap();
+        std::fs::write(project.join("src/main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(library.join("option.rs"), "pub enum Option<T> {}\n").unwrap();
+        let mut editor = super::super::Editor::new_in(
+            Buffer::open(project.join("src/main.rs")).unwrap(),
+            project.clone(),
+        );
+        let pinned = ResourceLocation::local(project.clone());
+        assert_eq!(editor.current_workspace_root(), pinned);
+
+        let outside = editor
+            .docs
+            .try_insert(super::super::document::Document::new(
+                Buffer::open(library.join("option.rs")).unwrap(),
+            ))
+            .unwrap();
+        editor.switch_to(outside);
+        assert_eq!(editor.current_workspace_root(), pinned);
+        editor.open_picker(strop_picker::Kind::Files);
+        assert_eq!(
+            editor.picker.as_ref().unwrap().file_root.as_ref(),
+            Some(&pinned)
+        );
+        editor.close_picker();
+        editor.open_search(false);
+        assert_eq!(editor.search_scope().unwrap().root, pinned);
+        editor.close_picker();
+        editor.feed_text(":pwd<cr>");
+        assert_eq!(editor.message, project.display().to_string());
+
+        // Deliberately browsing a directory is the explicit way out.
+        editor.browse_directory(&library.to_string_lossy()).unwrap();
+        editor.wait_io().unwrap();
+        assert_eq!(
+            editor.current_workspace_root(),
+            ResourceLocation::local(library)
+        );
     }
 }

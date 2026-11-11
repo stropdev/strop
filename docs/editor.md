@@ -120,20 +120,54 @@ The modeline presents owned LSP starting, ready, refused and failed states as
 compact badges. Long server prose does not displace mode and position. Use
 `:explain` to inspect the complete server, workspace/endpoint and failure
 reason in a real read-only buffer; recovered servers clear their old failure
-without erasing another workspace's problem or an independent warning. If a
-server exits during source navigation, the next language request names that
-failure and starts one scoped reattach instead of claiming the installed
-server is missing; repeat the request after it is ready.
+without erasing another workspace's problem or an independent warning. A
+server that crashes after it was ready restarts by itself, up to three times
+per workspace: the status line says `restarting (1/3)`, the `LSP!` badge stays
+until the replacement is ready, and every file the old server had open —
+library files included — reopens on the new one. After the third restart, or
+for a server that never started, the next language request names the failure
+and starts one scoped reattach; repeat the request after it is ready.
 
-Failed or unconfirmed saves, connection/admission failures and terminal
-decisions use the same owner-scoped retained feedback. They
-survive motions, search and unrelated success messages. **Space a** exposes
-only currently valid recovery actions; **`:explain`** retains the complete
-owner, detail and evidence. A compact textual severity marker remains in the
-modeline even at ultra-narrow widths; there are no floating notification cards
-to dismiss or fade. Dismissing a notice changes only presentation—it never
-cancels work, clears a save barrier or marks an unconfirmed outcome as
-successful.
+## The project root
+
+The project is the directory strop was launched in, and it stays there:
+`:pwd` shows it. Files (`Space f`), Search (`Space /`) and new terminals are
+scoped to it whichever file has focus. Following go-to-definition into the
+Rust standard library, a cargo registry crate or a system header does not
+re-root anything — that file opens read-only, and the project's language
+server keeps serving it (a library file belongs to the project that depends
+on it; no second server is started in the library's directory). Browsing a
+directory deliberately (`:browse DIR`) scopes Files and Search to that
+directory while it has focus.
+
+## Registers
+
+One register file serves every text input. `y` fills `"0`; a delete or change
+of a line or more shifts `"1`–`"9`, a smaller one fills `"-`; `"a`–`"z` are
+named (`"A` appends), `"_` discards, `". ": "/ "%` are the last insert, last
+`:` line, last search and file name. `p`/`P` read them in Normal mode, and
+`Ctrl-R {register}` inserts one in Insert mode, on the `:` and `/` lines, and
+in every picker field — Files, Search's Find and With, symbols, buffers.
+`Ctrl-R "` is the last yank or delete.
+
+A plain yank is also a copy: `y` (with no register) puts the text on the
+system clipboard as well, so the terminal's own paste (Ctrl-Shift-V, or Ctrl-V
+in Windows Terminal) and other applications get what you yanked. Deletes and
+changes (`dd`, `x`, `cw`) and yanks into a named register do not touch the
+clipboard, so they never overwrite something you copied elsewhere. `"+` (and
+`"*`) is the clipboard by name: `"+y` / `Space y` copy to it, `"+p` /
+`Space p` / `Ctrl-R +` read it. `p` on its own reads the unnamed register, not
+the clipboard. A yank over 1 MB stays in strop and says so; `"+y` sends it
+anyway.
+
+## Windows
+
+`Ctrl-W` is Vim's window prefix: `h j k l` move, `w` / `W` next and previous,
+`p` the last used window, `s` / `v` split below and right, `n` a new empty
+buffer, `c` close, `q` quit the window, `o` keep only this one, `=` equal
+sizes. Holding Ctrl for the second key works too (`Ctrl-W Ctrl-V`). A key
+`Ctrl-W` does not bind is reported — `ctrl-w x is not bound` — and does
+nothing else. `Space w` remains, with `1`–`9` to focus a pane by number.
 
 ## Code completion
 
