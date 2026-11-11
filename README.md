@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo.svg" width="480" alt="strop">
+  <img src="logo.svg" width="360" alt="strop">
   <h3>A modal text editor with Vim's keys.</h3>
   <p>One static binary. File finder, project search and replace, git and language servers are built in.</p>
   <p>
