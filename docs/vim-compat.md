@@ -141,15 +141,24 @@ Generated from the command table (`strop compat`).
 ## Git
 
 - `✓ space g` — git…
-- `✓ space g l` — commit browser
+- `✓ space g g` — status: changed files
+- `✓ space g c` — commit (:wq commits, :q! aborts)
+- `✓ space g b` — branches: switch / create
+- `✓ space g l` — log
 - `✓ space g h` — file history (visual: selected lines)
-- `✓ space g b` — toggle blame gutter / card
+- `✓ space g B` — blame gutter / card
+- `✓ space g s` — hunk: stage
+- `✓ space g u` — hunk: unstage
+- `✓ space g X` — hunk: discard
+- `✓ space g p` — hunk: preview
 - `✓ space g y` — permalink: copy
 - `✓ space g o` — permalink: open
-- `✓ space g u` — hunk: undo unstaged (restore from index)
-- `✓ space g s` — hunk: stage (live→index)
-- `✓ space g S` — hunk: unstage (index→HEAD)
-- `✓ space g p` — hunk: preview
+- `✓ s u -` — status: stage / unstage / toggle the file, hunk or section
+- `✓ =` — status: show / hide the file's diff
+- `✓ X` — status: discard (y confirms)
+- `✓ cc ca` — status: commit / amend
+- `✓ enter` — status: open the file at the cursor
+- `✓ ]c [c` — status: next / prev hunk
 - `✓ ]f [f` — next / prev file in commit diff
 - `✓ enter` — dive into the line's commit (blame gutter)
 - `✓ q` — close surface (readonly buffers)

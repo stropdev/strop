@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`Space g g` shows what changed** (plans/0096): staged, unstaged and untracked files (and conflicts) in one buffer. `s` stages, `u` unstages and `-` toggles the file under the cursor — or the hunk, or the whole section from its heading. `=` shows a file's diff under its row, `]c` / `[c` move between hunks, `enter` opens the file at that line, and `X` discards after `y` confirms. The list keeps itself current: after each change, when files change on disk, and when you come back to the window.
+- **`Space g c` commits** — `cc` from the status buffer, `ca` to amend. The message is written in a buffer that lists what the commit will hold; `:wq` commits and `:q!` aborts. The commit is made by `git` itself, so hooks, signing and your git configuration apply, and a hook's refusal is shown as it wrote it.
+- **`Space g b` switches branch**: local and remote branches in the picker, the current one marked. `enter` switches; the last row creates a branch from the name you typed. If git refuses because your changes would be overwritten, you see its message and nothing changes. Open files follow the new branch.
+
+### Changed
+
+- **Git keys mean one thing everywhere**: `Space g u` now unstages the hunk under the cursor (as `u` does in the status buffer) and `Space g X` discards it. `Space g S` is gone. The blame gutter moved from `Space g b` to `Space g B`.
+- **Git buffers are titled alike**: `git status`, `git log`, `git files`, `git diff`, `git hunk`.
+
+### Not yet
+
+- On an SSH project, status, commit and the branch picker say they need a local repository. Signs, log, blame and diffs work there as before.
+
 ## 0.57.0 — 2026-11-10
 
 ### Changed

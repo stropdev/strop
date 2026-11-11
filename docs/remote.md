@@ -87,7 +87,8 @@ copied recursively, and nothing is atomic across steps.
 They run **on the host**, as commands on the connection:
 
 - **`Space /`** searches the remote workspace with `rg` on the host.
-- **Git** signs, log (`Space g l`), blame and diffs run `git` there.
+- **Git** signs, log (`Space g l`), blame and diffs run `git` there. Status,
+  commit and the branch picker need a local repository ([git.md](git.md)).
 - A language server starts on the host when it is installed there; the
   configuration comes from your local `languages.toml` and the project's
   `.strop/languages.toml` on the host.
