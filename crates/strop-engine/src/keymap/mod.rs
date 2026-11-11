@@ -4,7 +4,8 @@
 //! file per section, in the curated order `SECTIONS` fixes).
 //!
 //! Coverage contract (0003 §5.7): every dispatchable binding renders in
-//! help; the tests pin both directions. `live: false` rows are planned
+//! help; the tests pin both directions. What Neovim binds and strop does
+//! not is listed too (`missing`), and tested not to dispatch. `live: false` rows are planned
 //! slots — reserved keys with no dispatch yet (0003 §6) — and render
 //! muted with a "(soon)" suffix, never as live bindings.
 //!
@@ -51,10 +52,41 @@ pub enum Handler {
     AbsorbChar(AbsorbKind),
     /// `"x` — register selection.
     AbsorbRegister,
+    /// A Visual-mode verb: it acts on the selection (0095 §2.3).
+    Visual(VisualVerb),
     /// Implemented by a modal field or Ex host, not the document trie.
     Contextual,
     /// Planned slot: no dispatch yet (renders muted "(soon)").
     Soon,
+}
+
+/// What a Visual-mode key does with the selection. Typed, so the
+/// dispatch is a `match` on data and never an ordered chain of key tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisualVerb {
+    /// An operator over the selection (`d`, `y`, `gU`, …).
+    Operator(strop_grammar::Op),
+    /// `D X Y C R`: the operator over the selection's whole lines.
+    Lines(strop_grammar::Op),
+    /// `p` / `P`: put a register over the selection. `keep` (`P`) leaves
+    /// the unnamed register alone.
+    Put { keep: bool },
+    /// `J` / `gJ`.
+    Join { spaces: bool },
+    /// `r<c>`: every selected character becomes `<c>`.
+    Replace,
+    /// `S<c>`: wrap the selection in a pair.
+    Surround,
+    /// `I` / `A`: Insert at the selection's start / after its end.
+    Insert { append: bool },
+    /// `o` / `O`: move the cursor to the selection's other end.
+    SwapEnds,
+    /// `*` / `#`: search for the selected text.
+    Search { backward: bool },
+    /// `Ctrl-C`: toggle comments on the selected lines.
+    Comment,
+    /// `Ctrl-A` / `Ctrl-X`: add to the first number on each selected line.
+    Add { negative: bool },
 }
 
 /// The one-char absorber flavors.
@@ -62,7 +94,10 @@ pub enum Handler {
 pub enum AbsorbKind {
     Replace,
     MarkSet,
+    /// `` `<a> ``: the mark's exact position.
     MarkJump,
+    /// `'<a>`: the first non-blank of the mark's line.
+    MarkLine,
     Find,
     /// q<a> — toggle macro recording into register a.
     MacroRecord,
@@ -150,10 +185,13 @@ impl Section {
 
 mod bindings;
 pub use bindings::BINDINGS;
+pub mod missing;
 
 pub(crate) mod lookup;
 
-pub use lookup::{any_child, children_of, compat_report, find_row, Hint};
+pub use lookup::{
+    any_child, any_visual_child, children_of, compat_report, find_row, find_visual_row, Hint,
+};
 
 #[cfg(test)]
 mod tests;

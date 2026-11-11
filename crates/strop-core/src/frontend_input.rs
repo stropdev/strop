@@ -33,6 +33,8 @@ pub enum Key {
     CtrlY,
     CtrlE,
     CtrlW,
+    /// vim ctrl-a: add to the number at or after the cursor.
+    CtrlA,
     /// Replace picker: exclude/include the selected match (0007 §2).
     CtrlX,
     /// vim ctrl-u/ctrl-f/ctrl-b: half/full page up.

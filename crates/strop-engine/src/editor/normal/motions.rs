@@ -4,6 +4,14 @@ use strop_grammar::{self as grammar, Command};
 
 impl Editor {
     pub(crate) fn move_cursor(&mut self, command: &Command) {
+        let bound = match crate::editor::normal::bind::bind_command(self, command) {
+            Ok(bound) => bound.into_owned(),
+            Err(message) => {
+                self.message = message;
+                return;
+            }
+        };
+        let command = &bound;
         if self.defer_resolution(
             command,
             self.all_cursors(),
@@ -14,7 +22,27 @@ impl Editor {
         if self.block_vertical(command) {
             return;
         }
-        self.view_mut().desired_column = None;
+        // Vertical motions keep the column the cursor wants, through
+        // shorter lines (Vim's curswant); `$` wants the line's end.
+        let wanted = match &command.target {
+            grammar::Target::Motion(
+                grammar::Motion::Down
+                | grammar::Motion::Up
+                | grammar::Motion::ScreenDown { .. }
+                | grammar::Motion::ScreenUp { .. }
+                | grammar::Motion::FirstLine
+                | grammar::Motion::LastLine
+                | grammar::Motion::Window { .. },
+            ) => Some(
+                self.view()
+                    .desired_column
+                    .unwrap_or_else(|| self.cluster_cells(self.head()).1 - 1),
+            ),
+            grammar::Target::Motion(grammar::Motion::LineEnd) => {
+                Some(strop_core::id::DisplayColumn::new(usize::MAX / 2))
+            }
+            _ => None,
+        };
         let cursors = self.all_cursors();
         let resolutions = match self.resolved_many(command, &cursors) {
             Ok(resolutions) => resolutions,
@@ -71,6 +99,13 @@ impl Editor {
         self.sels_mut().set_extra_selections(extras);
         self.clamp_cursor();
         self.normalize_cursors();
+        if let Some(column) = wanted {
+            if head.is_some() {
+                let line = self.buf().line_of(self.head());
+                self.land_at_cell(line, column);
+            }
+            self.view_mut().desired_column = Some(column);
+        }
         if is_search && primary.is_none() {
             self.message = "pattern not found".into();
         }

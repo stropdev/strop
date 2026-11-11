@@ -3,9 +3,11 @@
 //! -n`); final text, cursor, mode, the unnamed register, the lifecycle
 //! registers (`"0 "1 "2 "- "a "b`, plan 0092) and 'modified' must agree.
 //!
-//! The corpus is three lists: `hand` (cases somebody once got wrong), `ex`
-//! (the command line) and `generated` (each operator × each motion or text
-//! object × count × Normal, Visual and dot-repeat).
+//! The corpus is five lists: `hand` (cases somebody once got wrong),
+//! `critique` (the everyday sequences of plan 0091 §2), `keys` (what
+//! plan 0095 added), `ex` (the command line) and `generated` (each
+//! operator × each motion or text object × count × Normal, Visual and
+//! dot-repeat).
 //!
 //! Deviations are bugs by doctrine (0001 pillar 1). Intended ones live
 //! in `divergences::KNOWN` with a reason — the list is capped, and a
@@ -21,10 +23,12 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+mod critique;
 mod divergences;
 mod ex;
 mod generated;
 mod hand;
+mod keys;
 
 /// A written case: name, initial buffer text, strop-token keys.
 type Case = (&'static str, &'static str, &'static str);
@@ -48,6 +52,12 @@ fn corpus() -> Vec<Run> {
             .collect()
     };
     let mut runs = written("", hand::CASES);
+    runs.extend(critique::CASES.iter().map(|(name, keys)| Run {
+        name: format!("critique/{name}"),
+        text: critique::TEXT.to_owned(),
+        keys: (*keys).to_owned(),
+    }));
+    runs.extend(written("keys/", keys::CASES));
     runs.extend(written("ex/", ex::CASES));
     runs.extend(generated::cases());
     runs
@@ -77,10 +87,12 @@ fn token(text: &str) -> Option<(u8, usize)> {
     let byte = match &text[1..=end] {
         "cr" | "enter" => b'\r',
         "esc" => 0x1b,
-        "bs" => 0x7f,
+        // Ctrl-H: a raw DEL byte is not Backspace to feedkeys()
+        "bs" => 0x08,
         "tab" => b'\t',
         "space" => b' ',
         "lt" => b'<',
+        "gt" => b'>',
         control if control.len() == 3 && control.starts_with("c-") => {
             let key = control.as_bytes()[2];
             if !key.is_ascii_lowercase() {
@@ -206,10 +218,10 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
         })?;
     let v: serde_json::Value = serde_json::from_str(json.trim_start_matches("─── state ")).unwrap();
     Ok(State {
-        text: std::fs::read_to_string(&file)
-            .unwrap()
-            .trim_end_matches('\n')
-            .to_string(),
+        text: {
+            let text = std::fs::read_to_string(&file).unwrap();
+            text.strip_suffix('\n').unwrap_or(&text).to_owned()
+        },
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
         mode: v["mode"].as_str().unwrap().to_owned(),
@@ -318,10 +330,13 @@ fn differential_vs_nvim() {
     reports.sort();
 
     let mut failures = Vec::new();
-    let mut explained = vec![0usize; divergences::KNOWN.len()];
+    let mut explained = std::collections::BTreeSet::new();
     for (index, report) in &reports {
-        match divergences::reason(&runs[*index].name) {
-            Some(known) => explained[known] += 1,
+        let name = runs[*index].name.as_str();
+        match divergences::reason(name) {
+            Some(_) => {
+                explained.insert(name);
+            }
             None => failures.push(report.as_str()),
         }
     }
@@ -329,18 +344,25 @@ fn differential_vs_nvim() {
         std::io::stderr().lock(),
         "differential: {} cases, {} explained divergences, {} unexplained",
         runs.len(),
-        reports.len() - failures.len(),
+        explained.len(),
         failures.len()
     )
     .unwrap();
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
     if only.is_none() {
-        for (known, count) in explained.iter().enumerate() {
-            assert!(
-                *count > 0,
-                "{:?} is listed as divergent but every case agrees now — delist it",
-                divergences::KNOWN[known].0
-            );
+        // The list only shrinks: a named case that agrees again, or a
+        // family with no diverging case left, must be delisted.
+        for (cases, _) in divergences::KNOWN {
+            for case in *cases {
+                let still = match case.strip_suffix('*') {
+                    Some(prefix) => explained.iter().any(|name| name.starts_with(prefix)),
+                    None => explained.contains(case),
+                };
+                assert!(
+                    still,
+                    "{case:?} is listed as divergent but agrees now — delist it"
+                );
+            }
         }
     }
 }

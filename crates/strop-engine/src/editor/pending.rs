@@ -199,6 +199,11 @@ impl PendingInput {
         self.prompt().map(TextPrompt::sigil)
     }
 
+    /// What the prompt's last operator yanked or removed, once.
+    pub(crate) fn take_register_write(&mut self) -> Option<super::field::FieldWrite> {
+        self.machine.take_write()
+    }
+
     /// Open a prompt. Opening while another is active is a caller bug:
     /// the previous origin would be silently discarded. The field
     /// machine grounds here, so a dead prompt's pending operator never

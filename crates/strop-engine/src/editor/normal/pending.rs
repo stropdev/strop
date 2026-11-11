@@ -13,12 +13,25 @@ use crate::editor::{input::ParserState, Editor, Mode};
 use strop_core::frontend_input::Key;
 
 impl Editor {
+    /// Open the `:` line with `body` already typed (`!{motion}`).
+    pub(crate) fn open_ex_line(&mut self, body: &str) {
+        self.cancel_pending();
+        let origin = SearchOrigin {
+            pane_index: self.active_pane,
+            pane: self.view().clone(),
+            revision: self.buf().revision(),
+        };
+        self.pending
+            .open(TextPrompt::with_body(PromptContext::Ex(origin), body));
+    }
+
     /// A text line opened (`: / ? |`) with the typed entry state that
     /// survived the crossing — counts, register, operator.
     pub(crate) fn begin_text_line(&mut self, sigil: char, state: ParserState) {
         self.cancel_pending();
         // Vim: `:` ends Visual mode. The selection stays behind as the
-        // marks `'<` and `'>`, and the line opens with that range typed.
+        // marks `'<` and `'>` (`feed_visual` recorded it on this key), and the
+        // line opens with that range typed.
         let from_visual = sigil == ':'
             && matches!(
                 self.mode,
@@ -26,7 +39,6 @@ impl Editor {
             );
         if from_visual {
             let selection = self.sels().primary();
-            self.last_visual = Some((selection.anchor, selection.head));
             self.mode = Mode::Normal;
             // Vim leaves the cursor at the selection's start.
             let start = selection.anchor.min(selection.head);
@@ -132,7 +144,11 @@ impl Editor {
             self.message = "input cancelled: document or pane changed".into();
             return;
         }
-        match self.pending.reduce(event) {
+        let effect = self.pending.reduce(event);
+        if let Some(write) = self.pending.take_register_write() {
+            self.store_field_write(write);
+        }
+        match effect {
             PendingEffect::ReadRegister(name) => {
                 self.paste_from(name, super::super::registers::PasteDestination::Prompt);
             }
@@ -237,6 +253,7 @@ impl Editor {
             count: state.count(),
             target: grammar::Target::Motion(target),
             // Execution records the typed command for dot repeat.
+            force: None,
             keys: String::new(),
         }))
     }

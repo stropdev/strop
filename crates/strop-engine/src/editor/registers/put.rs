@@ -11,7 +11,7 @@ impl Editor {
     /// Paste one register's content without storing it (bracketed
     /// paste and clipboard results never touch the register file —
     /// vim's rule).
-    pub(super) fn paste_register(&mut self, register: &Register, count: usize, before: bool) {
+    pub(crate) fn paste_register(&mut self, register: &Register, count: usize, before: bool) {
         match register.shape {
             RegisterShape::Blockwise { width } => {
                 self.paste_blockwise(register, width, count, before)
@@ -85,11 +85,17 @@ impl Editor {
                         .min(self.buf().len_bytes())
                 };
                 // vim: the cursor lands on the LAST pasted char, both p
-                // and P — the whole char, never a mid-cluster byte
+                // and P — the whole char, never a mid-cluster byte. Text
+                // that spans lines leaves it on the first pasted char.
                 let last = text.chars().next_back().map_or(0, char::len_utf8);
+                let land = if text.contains('\n') {
+                    at
+                } else {
+                    at + text.len().saturating_sub(last)
+                };
                 Spot {
                     at,
-                    land: at + text.len().saturating_sub(last),
+                    land,
                     text: text.to_string(),
                 }
             }

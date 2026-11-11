@@ -73,6 +73,29 @@ impl Editor {
         self.normalize_cursors();
     }
 
+    /// `gn` / `gN` with no operator: select the match in Visual.
+    pub(crate) fn select_match(&mut self, command: &Command) {
+        let bound = match crate::editor::normal::bind::bind_command(self, command) {
+            Ok(bound) => bound.into_owned(),
+            Err(message) => {
+                self.message = message;
+                return;
+            }
+        };
+        match self.resolved_many(&bound, &[self.head()]) {
+            Ok(resolved) => match resolved.into_iter().next().flatten() {
+                Some(hit) if !hit.range.is_empty() => {
+                    self.sels_mut().collapse_extras();
+                    let last = self.buf().clamp_boundary(hit.range.end.get() - 1);
+                    self.sels_mut().stretch_primary(hit.range.start.get(), last);
+                    self.mode = crate::editor::Mode::Visual;
+                }
+                _ => self.message = "pattern not found".into(),
+            },
+            Err(error) => self.message = error,
+        }
+    }
+
     /// `n` / `N`: repeat the armed search, wrapping at the file edges.
     /// Cascades: every cursor seeks from its own position (0013 §3).
     /// The query is the one compiled engine — whole-word and the regex
@@ -92,6 +115,7 @@ impl Editor {
             register: None,
             count: None,
             target: grammar::Target::Motion(motion),
+            force: None,
             keys: if invert { "N" } else { "n" }.into(),
         };
         if self.defer_resolution(
@@ -108,7 +132,8 @@ impl Editor {
 
     /// `*` / `#` (vim): search the word under the cursor — whole-word,
     /// forward / backward, wrapping. `n`/`N` keep the same anchors.
-    pub(crate) fn search_word_under_cursor(&mut self, backward: bool) {
+    /// `g*` / `g#` (`whole_word` false) also match inside longer words.
+    pub(crate) fn search_word_under_cursor(&mut self, backward: bool, whole_word: bool) {
         // char-classified (0017): identifiers in every script count —
         // é/fün/変数 are words. Walk scalar boundaries directly on the rope.
         let word_char = |c: char| c.is_alphanumeric() || c == '_';
@@ -146,7 +171,7 @@ impl Editor {
             }
         }
         let pattern = self.buf().text().byte_slice(start..end).to_string();
-        let query = match grammar::CompiledQuery::compile(&pattern, true) {
+        let query = match grammar::CompiledQuery::compile(&pattern, whole_word) {
             Ok(query) => query,
             Err(error) => {
                 self.message = error.to_string();

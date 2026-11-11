@@ -86,7 +86,8 @@ fn i_caret_tilde_s_work() {
 
 #[test]
 fn rejected_commands_report_and_leave_input_reusable() {
-    for keys in ["=", "gZ", "dZ"] {
+    // (`==` is an operator strop lacks: it takes its motion, then says so)
+    for keys in ["==", "gZ", "dZ"] {
         let mut editor = Editor::new(Buffer::from_text("abc\n"));
         editor.feed_text(keys);
         assert!(

@@ -85,7 +85,8 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let start = self.buf().line_start(line);
         let end = self.buf().line_end(line);
-        let max = if self.mode == Mode::Insert {
+        // Insert types there; charwise Visual selects the line break there
+        let max = if matches!(self.mode, Mode::Insert | Mode::Visual) {
             end
         } else {
             end.max(start + 1) - 1
@@ -101,7 +102,8 @@ impl Editor {
         let line = self.buf().line_of(pos);
         let start = self.buf().line_start(line);
         let end = self.buf().line_end(line);
-        let max = if self.mode == Mode::Insert {
+        // Insert types there; charwise Visual selects the line break there
+        let max = if matches!(self.mode, Mode::Insert | Mode::Visual) {
             end
         } else {
             end.max(start + 1) - 1
@@ -221,6 +223,99 @@ impl Editor {
             self.view_mut().view_top = line;
         } else if line >= self.view_top() + rows {
             self.view_mut().view_top = line + 1 - rows;
+        }
+    }
+
+    // ---- marks: `m{a}`, `'{a}` / `` `{a} ``, and the marks Vim keeps itself:
+    // `<` `>` (the last Visual selection), `'` `` ` `` (where the last jump left
+    // from), `.` (the last change), `^` (where Insert was last left). Letter
+    // marks move with the text (`transact::sync_document`).
+
+    /// `m{a}`: set mark a at the cursor.
+    pub(crate) fn set_mark(&mut self, mark: char) {
+        self.marks.insert(mark, (self.current(), self.head()));
+        self.message = format!("mark {mark} set");
+    }
+
+    /// Where mark `name` points in the current buffer.
+    pub(crate) fn mark_offset(&self, name: char) -> Option<usize> {
+        let clamp = |offset: usize| {
+            self.buf()
+                .clamp_boundary(offset.min(self.buf().len_bytes()))
+        };
+        match name {
+            '<' => self
+                .last_visual
+                .map(|last| clamp(last.anchor.min(last.head))),
+            '>' => self
+                .last_visual
+                .map(|last| clamp(last.anchor.max(last.head))),
+            '\'' | '`' => self
+                .view()
+                .jumps
+                .entries
+                .last()
+                .filter(|record| record.document == self.current())
+                .map(|record| clamp(record.offset)),
+            '.' => self.buf().history().change_positions().last().copied(),
+            '^' => self.last_insert_pos.map(clamp),
+            name => self
+                .marks
+                .get(&name)
+                .filter(|(document, _)| *document == self.current())
+                .map(|(_, offset)| clamp(*offset)),
+        }
+    }
+
+    /// (name, 1-based line, trimmed line text) per set mark, name-sorted —
+    /// the which-key mark cards' live rows (0047 §3).
+    pub fn mark_rows(&self) -> Vec<(char, usize, String)> {
+        let mut rows: Vec<_> = self
+            .marks
+            .iter()
+            .filter_map(|(name, (document, offset))| {
+                let doc = self.docs.get(*document)?;
+                let line = doc.buf.line_of(*offset);
+                let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
+                Some((*name, line + 1, text))
+            })
+            .collect();
+        rows.sort_by_key(|row| row.0);
+        rows
+    }
+
+    /// `` `{a} `` (`exact`) / `'{a}` (the line's first non-blank): jump to
+    /// a mark, switching buffer if a letter mark lives in another one.
+    pub(crate) fn jump_mark(&mut self, mark: char, exact: bool) {
+        let target = match self.marks.get(&mark).copied() {
+            Some(target) => Some(target),
+            None => self
+                .mark_offset(mark)
+                .map(|offset| (self.current(), offset)),
+        };
+        match target {
+            Some((buf, offset)) if self.docs.get(buf).is_some() => {
+                self.push_jump();
+                if buf != self.current() {
+                    self.switch_to(buf);
+                    self.discover_git();
+                }
+                let mut at = self
+                    .buf()
+                    .clamp_boundary(offset.min(self.buf().len_bytes()));
+                if !exact {
+                    let line = self.buf().line_of(at);
+                    let (start, end) = (self.buf().line_start(line), self.buf().line_end(line));
+                    at = (start..end)
+                        .find(|at| !matches!(self.buf().byte(*at), b' ' | b'\t'))
+                        .unwrap_or(end);
+                }
+                self.set_head(at);
+                self.clamp_cursor();
+                self.place_jump_target();
+            }
+            Some(_) => self.message = format!("mark {mark} is no longer available"),
+            None => self.message = format!("mark {mark} not set"),
         }
     }
 }

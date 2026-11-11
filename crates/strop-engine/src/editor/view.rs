@@ -20,6 +20,27 @@ impl Editor {
         self.scroll_by(self.view_rows().saturating_sub(1).max(1), down);
     }
 
+    /// `Ctrl-E` / `Ctrl-Y`: move the window `lines` down or up over the
+    /// text; the cursor stays on its line unless that line leaves the window.
+    pub(crate) fn scroll_lines(&mut self, lines: usize, down: bool) {
+        let rows = self.view_rows();
+        let last = self.buf().last_content_line();
+        let top = if down {
+            (self.view_top() + lines).min(last)
+        } else {
+            self.view_top().saturating_sub(lines)
+        };
+        self.view_mut().view_top = top;
+        let line = self.buf().line_of(self.head());
+        let kept = line.clamp(top, (top + rows.saturating_sub(1)).min(last));
+        if kept != line {
+            let column = self.buf().col_of(self.head());
+            let (start, end) = (self.buf().line_start(kept), self.buf().line_end(kept));
+            self.set_head((start + column).min(end));
+            self.clamp_cursor();
+        }
+    }
+
     pub(crate) fn scroll_by(&mut self, rows: usize, down: bool) {
         let line = self.buf().line_of(self.head());
         let last = self.buf().last_content_line();
@@ -126,7 +147,7 @@ impl Editor {
 
     /// `gv`: reselect the last visual range exactly (vim).
     pub(crate) fn reselect_visual(&mut self) {
-        let Some((anchor, head)) = self.last_visual else {
+        let Some(super::visual::LastVisual { anchor, head, mode }) = self.last_visual else {
             self.message = "no previous visual selection".into();
             return;
         };
@@ -135,7 +156,7 @@ impl Editor {
         let a = self.buf().clamp_boundary(a);
         let h = self.buf().clamp_boundary(h);
         self.sels_mut().stretch_primary(a, h);
-        self.mode = Mode::Visual;
+        self.mode = mode;
     }
 
     /// `gi`: insert where the last insert session ended (vim).

@@ -203,9 +203,9 @@ pub mod contract {
         let buf = Buffer::from_text("alpha = 1\n");
         assert_eq!(resolve_str(&buf, 2, "cw"), "pha"); // on 'p'
         assert_eq!(resolve_str(&buf, 3, "cw"), "ha"); // on 'h'
-                                                      // on whitespace, cw reaches like e
+                                                      // on blanks, cw changes the blanks (vim: it is `dw` there)
         let buf = Buffer::from_text("  beta = 1\n");
-        assert_eq!(resolve_str(&buf, 0, "cw"), "  beta");
+        assert_eq!(resolve_str(&buf, 0, "cw"), "  ");
     }
 }
 
@@ -348,7 +348,8 @@ mod cursor_moves {
         let c = contract::cmd("}");
         let last = buf.line_start(buf.last_content_line());
         let r = resolve(&buf, last, &c).unwrap().unwrap();
-        assert_eq!(cursor_after(&buf, last, &c, &r), last);
+        // vim: with no blank line below, the last character of the last line
+        assert_eq!(cursor_after(&buf, last, &c, &r), last + 4);
         let r = resolve(&buf, 0, &c).unwrap().unwrap();
         assert_eq!(cursor_after(&buf, 0, &c, &r), buf.line_start(1));
     }

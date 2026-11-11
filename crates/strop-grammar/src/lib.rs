@@ -17,8 +17,8 @@ pub use query::{
 };
 pub use resolve::{
     cursor_after, delimiter_pair, find_character, is_keyword, literal_from, matching_delimiter_at,
-    plan, resolve, resolve_many, resolve_many_cancellable, word_run, ActionPlan, MatchCancelled,
-    PlannedTarget,
+    plan, resolve, resolve_many, resolve_many_cancellable, select_object, word_run, ActionPlan,
+    MatchCancelled, ObjectSelection, PlannedTarget,
 };
 
 pub use types::*;

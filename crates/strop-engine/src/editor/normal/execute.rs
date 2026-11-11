@@ -6,7 +6,7 @@ use strop_grammar::{self as grammar, Command, Op};
 use crate::editor::{Editor, Mode};
 use strop_core::frontend_input::Key;
 
-use crate::editor::Register;
+use super::operators::{Operand, Operation};
 
 impl Editor {
     /// ds" / cs"' / ysiw" (sandwich lineage). Returns Some when the
@@ -78,7 +78,18 @@ impl Editor {
         Some(())
     }
 
-    pub(super) fn execute(&mut self, cmd: &Command) {
+    /// Run an operator command. `typed` is the command as the keys spelled
+    /// it: dot-repeat keeps that form, so `.` binds marks and the last
+    /// search afresh.
+    pub(super) fn execute(&mut self, typed: &Command) {
+        let bound = match crate::editor::normal::bind::bind_command(self, typed) {
+            Ok(bound) => bound.into_owned(),
+            Err(message) => {
+                self.message = message;
+                return;
+            }
+        };
+        let cmd = &bound;
         if self.defer_resolution(
             cmd,
             self.all_cursors(),
@@ -86,14 +97,12 @@ impl Editor {
         ) {
             return;
         }
-        // semantic dot-repeat (0014): `.` re-resolves this command from
-        // the new position — it never replays a stale key string through
-        // a changed keymap
-        if cmd.op.is_some() && !self.register_writable(cmd.register) {
+        let Some(op) = cmd.op else {
+            return;
+        };
+        if !self.register_writable(cmd.register) {
             return;
         }
-        self.last_change = Some(cmd.clone());
-        self.last_cmd_keys.clear();
         self.note_search(cmd);
         // surround targets execute as pair edits, not operator ranges
         if let Some(()) = self.execute_surround(cmd) {
@@ -103,8 +112,19 @@ impl Editor {
         // these same targets — one object, no preview/execute drift
         let plan = match self.resolved_plan(cmd, &self.all_cursors()) {
             Ok(Some(plan)) => plan,
+            // vim: a motion that fails cancels the operator, quietly
             Ok(None) => {
-                self.message = "no target".into();
+                if matches!(
+                    cmd.target,
+                    grammar::Target::Motion(
+                        grammar::Motion::ScreenDown { .. } | grammar::Motion::ScreenUp { .. }
+                    )
+                ) {
+                    // … but gj/gk have moved as far as they could by then
+                    let mut motion = cmd.clone();
+                    motion.op = None;
+                    self.move_cursor(&motion);
+                }
                 return;
             }
             // a refused query is typed (R5) — it surfaces, never
@@ -114,224 +134,66 @@ impl Editor {
                 return;
             }
         };
-        let kept: Vec<(usize, Range, bool)> = plan
+        // semantic dot-repeat (0014): `.` re-resolves this command from
+        // the new position — it never replays a stale key string through
+        // a changed keymap. Only a command that found its target is kept.
+        if op != Op::Yank && op != Op::Filter && !op.missing() {
+            self.last_change = Some(typed.clone());
+            self.last_cmd_keys.clear();
+            self.last_insert = None;
+        }
+        let operands: Vec<Operand> = plan
             .targets
             .iter()
-            .map(|t| (t.cursor, t.range, t.range.is_linewise()))
+            .map(|target| Operand {
+                cursor: target.cursor,
+                range: target.range,
+                origin: target.origin,
+                end_adjusted: target.end_adjusted,
+            })
             .collect();
-        match cmd.op.unwrap() {
-            Op::Yank => {
-                // one register, parts joined with newlines (helix rule)
-                let texts: Vec<String> = kept
-                    .iter()
-                    .map(|(_, r, _)| self.buf().slice_string(*r))
-                    .collect();
-                let text = texts.join("\n");
-                let mut register = if kept.first().is_some_and(|t| t.2) {
-                    Register::linewise(text)
-                } else {
-                    Register::characterwise(text)
-                };
-                register.file_provenance = self.capture_filename_register(
-                    kept.iter().map(|(_, range, linewise)| (*range, *linewise)),
-                    false,
-                    true,
-                );
-                self.yank_register(cmd.register, register);
-                self.flash(kept[0].1);
-            }
-            Op::Indent | Op::Dedent => {
-                self.tx_begin();
-                for (_, r, _) in kept.iter().rev() {
-                    self.apply_indent(*r, cmd.op.unwrap() == Op::Indent);
-                }
-                self.tx_commit();
-                self.normalize_cursors();
-                self.flash(Range::charwise(self.head(), self.head()));
-            }
-            Op::Delete | Op::Change => {
-                if cmd.op.unwrap() == Op::Change && kept.first().is_some_and(|t| t.2) {
-                    // vim cc/S: clear content, keep the line — never
-                    // merge with the next one
-                    self.change_lines(cmd.register, &cmd.keys, &kept);
-                    self.last_cmd_keys = cmd.keys.clone();
-                    self.last_insert = None;
-                    return;
-                }
-                // yank text reads top-down before any delete lands
-                let texts: Vec<String> = kept
-                    .iter()
-                    .map(|(_, r, _)| self.buf().slice_string(*r))
-                    .collect();
-                let linewise = kept.first().is_some_and(|t| t.2);
-                let provenance = self.capture_filename_register(
-                    kept.iter().map(|(_, range, linewise)| (*range, *linewise)),
-                    true,
-                    true,
-                );
-                self.tx_begin();
-                for (_, r, _) in kept.iter().rev() {
-                    self.filename_delete_hint(*r, r.is_linewise());
-                    self.buf_mut().delete(*r);
-                    self.clear_filename_hint();
-                }
-                let text = texts.join("\n");
-                let mut register = if linewise {
-                    Register::linewise(text)
-                } else {
-                    Register::characterwise(text)
-                };
-                register.file_provenance = provenance;
-                self.delete_register(
-                    cmd.register,
-                    register,
-                    crate::editor::registers::reg_one_motion(&cmd.target),
-                );
-                // landings: each range start minus what lower deletes
-                // already removed (deletes applied bottom-up above)
-                let mut shift = 0usize;
-                let mut landings: Vec<(bool, usize)> = Vec::with_capacity(kept.len());
-                for (c, r, _) in &kept {
-                    landings.push((*c == self.head(), r.start.get() - shift));
-                    shift += r.end - r.start;
-                }
-                if linewise {
-                    // deleting the final lines leaves no line at that
-                    // index: vim lands on the new last line, never on
-                    // the phantom row past the final break
-                    let last = self.buf().line_start(self.buf().last_content_line());
-                    for landing in &mut landings {
-                        landing.1 = landing.1.min(last);
-                    }
-                }
-                self.set_head(
-                    landings
-                        .iter()
-                        .find(|(p, _)| *p)
-                        .map(|(_, s)| *s)
-                        .unwrap_or(self.head()),
-                );
-                // extras are the SECONDARY landings — the primary must
-                // never stack with itself (0015: dw leaves 1 cursor)
-                let mut starts: Vec<usize> = landings
-                    .iter()
-                    .filter(|(p, _)| !*p)
-                    .map(|(_, s)| *s)
-                    .collect();
-                starts.sort_unstable();
-                self.sels_mut().set_extras(starts);
-                if cmd.op.unwrap() == Op::Change {
-                    // no commit: the insert session closes the undo unit
-                    self.enter_insert_from(&cmd.keys);
-                    // clamp AFTER the mode switch — insert mode allows
-                    // the end-of-line cursor C just earned (0001 §5.5)
-                    self.clamp_cursor();
-                } else {
-                    self.clamp_cursor();
-                    self.tx_commit();
-                }
-                self.flash(Range::charwise(self.head(), self.head()));
-            }
-        }
-        self.last_cmd_keys = cmd.keys.clone();
-        self.last_insert = None;
+        let column = operands
+            .iter()
+            .find(|operand| operand.cursor == self.head())
+            .or(operands.first())
+            .and_then(|operand| crate::editor::normal::operators::kept_column(self, op, operand));
+        // `>$`, `>g_`: the cursor wanted the line's end and gets it
+        let column = match (op, &cmd.target) {
+            (
+                Op::Indent | Op::Dedent,
+                grammar::Target::Motion(grammar::Motion::LineEnd | grammar::Motion::LastNonBlank),
+            ) => column.map(|_| strop_core::id::DisplayColumn::new(usize::MAX / 2)),
+            _ => column,
+        };
+        crate::editor::normal::operators::apply_operator(
+            self,
+            Operation {
+                op,
+                register: cmd.register,
+                operands: &operands,
+                reg_one: crate::editor::registers::reg_one_motion(&cmd.target),
+                keys: &cmd.keys,
+                column,
+            },
+        );
     }
 
-    /// vim `cc` / `S` (and counted `2cc`): clear each line's content,
-    /// keep the line and its indent, open insert at the indent. The
-    /// register gets the full lines (with newlines), linewise.
-    pub(crate) fn change_lines(
-        &mut self,
-        register_name: Option<char>,
-        keys: &str,
-        kept: &[(usize, strop_core::Range, bool)],
-    ) {
-        let provenance = self.capture_filename_register(
-            kept.iter().map(|(_, range, linewise)| (*range, *linewise)),
-            false,
-            false,
-        );
-        let newline = self.newline_str();
-        // texts + indents read top-down before any edit lands
-        let texts: Vec<String> = kept
-            .iter()
-            .map(|(_, r, _)| {
-                let first = self.buf().line_of(r.start);
-                let last = self.buf().line_of(r.end.saturating_sub(1));
-                let s = self.buf().line_start(first);
-                let e = self.buf().line_start(last + 1).min(self.buf().len_bytes());
-                self.buf().text().byte_slice(s..e).to_string()
-            })
-            .collect();
-        let indents: Vec<String> = kept
-            .iter()
-            .map(|(_, r, _)| {
-                let line = self.buf().line_of(r.start);
-                self.buf()
-                    .line_text(line)
-                    .chars()
-                    .take_while(|c| *c == ' ' || *c == '\t')
-                    .collect()
-            })
-            .collect();
-        self.tx_begin();
-        // apply bottom-up: each entry's range is still valid when it
-        // applies; record (primary?, landing, net byte delta) per entry
-        // and shift higher landings by the nets of the lower ones
-        let mut entries: Vec<(bool, usize, isize)> = Vec::with_capacity(kept.len());
-        for ((c, r, _), indent) in kept.iter().zip(indents.iter()).rev() {
-            let first = self.buf().line_of(r.start);
-            let last = self.buf().line_of(r.end.saturating_sub(1));
-            let start = self.buf().line_start(first);
-            let before = self.buf().len_bytes() as isize;
-            if first == last {
-                // one line: clear content, keep the newline
-                let end = self.buf().line_end(first);
-                self.buf_mut().delete(Range::charwise(start, end));
-                self.buf_mut().insert(start, indent);
-            } else {
-                // N lines collapse into one fresh line
-                let end = self.buf().line_start(last + 1).min(self.buf().len_bytes());
-                self.filename_change_hint(Range::charwise(start, end));
-                self.buf_mut().delete(Range::charwise(start, end));
-                self.clear_filename_hint();
-                self.buf_mut().insert(start, &format!("{indent}{newline}"));
-            }
-            let net = self.buf().len_bytes() as isize - before;
-            entries.push((*c == self.head(), start + indent.len(), net));
-        }
-        let landings: Vec<(bool, usize)> = entries
-            .iter()
-            .enumerate()
-            .map(|(i, (p, at, _))| {
-                // entries after i applied at lower positions → they
-                // shift this landing
-                let shift: isize = entries[i + 1..].iter().map(|(_, _, n)| n).sum();
-                (*p, (*at as isize + shift).max(0) as usize)
-            })
-            .collect();
-        let mut register = Register::linewise(texts.join(""));
-        register.file_provenance = provenance;
-        self.delete_register(register_name, register, false);
-        self.set_head(
-            landings
-                .iter()
-                .find(|(p, _)| *p)
-                .map(|(_, s)| *s)
-                .unwrap_or(self.head()),
-        );
-        let mut starts: Vec<usize> = landings.iter().map(|(_, s)| *s).collect();
-        starts.sort_unstable();
-        self.sels_mut().set_extras(starts);
-        self.enter_insert_from(keys);
-        self.clamp_cursor();
-        self.flash(Range::charwise(self.head(), self.head()));
-    }
-
-    fn dot_repeat(&mut self) {
+    /// `.`: the last change again. A count replaces the count the change
+    /// was made with, and sticks for later repeats.
+    pub(crate) fn dot_repeat(&mut self, count: Option<usize>) {
         if self.last_change.is_none() && self.last_cmd_keys.is_empty() && self.last_insert.is_none()
         {
             return;
+        }
+        if let Some(count) = count {
+            if let Some(change) = self.last_change.as_mut() {
+                change.count = Some(count);
+            } else {
+                let keys = self
+                    .last_cmd_keys
+                    .trim_start_matches(|c: char| c.is_ascii_digit());
+                self.last_cmd_keys = format!("{count}{keys}");
+            }
         }
         if let Some(command) = self.last_change.clone() {
             if self.defer_resolution(
@@ -347,6 +209,11 @@ impl Editor {
         if let Some(cmd) = self.last_change.clone() {
             // the same change, resolved fresh from here (0014 §input)
             self.execute(&cmd);
+            if cmd.op == Some(Op::Change) && self.mode != Mode::Insert && insert.is_some() {
+                // the change found no target here: there is no Insert
+                // to type the text into
+                return;
+            }
         } else {
             // direct (non-grammar) commands replay their keys
             let keys = self.last_cmd_keys.clone();
@@ -413,71 +280,6 @@ impl Editor {
         self.last_insert = None;
     }
 
-    fn join_lines(&mut self) {
-        self.tx_begin();
-        let line = self.buf().line_of(self.head());
-        if line + 1 >= self.buf().len_lines() {
-            self.tx_commit();
-            return;
-        }
-        let eol = self.buf().line_end(line);
-        let next_start = self.buf().line_start(line + 1);
-        let next_end = self.buf().line_end(line + 1);
-        // delete newline + leading whitespace of the next line, add one space
-        let mut join_at = next_start;
-        while join_at < next_end
-            && self.buf().byte(join_at).is_ascii_whitespace()
-            && self.buf().byte(join_at) != b'\n'
-        {
-            join_at += 1;
-        }
-        self.buf_mut().delete(Range::charwise(eol, join_at));
-        if join_at < next_end {
-            self.buf_mut().insert(eol, " ");
-        }
-        self.set_head(eol);
-        self.tx_commit();
-        self.clamp_cursor();
-        self.flash(Range::charwise(eol, (eol + 1).min(self.buf().len_bytes())));
-        self.last_cmd_keys = "J".into();
-        self.last_change = None;
-        self.last_insert = None;
-    }
-
-    /// `~`: toggle the case of the char under the cursor and advance
-    /// (non-letters just advance; EOL stays put).
-    fn toggle_case(&mut self) {
-        if self.buf().readonly {
-            self.message = "readonly buffer".into();
-            return;
-        }
-        let line_end = self.buf().line_end(self.buf().line_of(self.head()));
-        if self.head() >= line_end {
-            return;
-        }
-        let b = self.buf().byte(self.head());
-        let c = b as char;
-        if c.is_ascii_alphabetic() {
-            let flipped = if c.is_ascii_lowercase() {
-                c.to_ascii_uppercase()
-            } else {
-                c.to_ascii_lowercase()
-            };
-            let cursor = self.head();
-            self.tx_begin();
-            self.buf_mut().delete(Range::charwise(cursor, cursor + 1));
-            self.buf_mut().insert(cursor, &flipped.to_string());
-            self.tx_commit();
-        }
-        // advance one char, not one byte — a multibyte char would
-        // otherwise park the cursor mid-char for the next edit
-        self.set_head(self.buf().ceil_boundary(self.head() + 1));
-        self.clamp_cursor();
-        self.last_cmd_keys = "~".into();
-        self.last_change = None;
-        self.last_insert = None;
-    }
-
     /// > / < applied to every line a resolved range covers.
     pub(crate) fn apply_indent(&mut self, range: Range, right: bool) {
         let line = self.buf().line_of(range.start);
@@ -485,8 +287,11 @@ impl Editor {
         for l in line..last {
             let start = self.buf().line_start(l);
             if right {
-                let indent = self.cur_indent().unit();
-                self.buf_mut().insert(start, &indent);
+                // vim: an empty line gets no indent
+                if self.buf().line_end(l) > start {
+                    let indent = self.cur_indent().unit();
+                    self.buf_mut().insert(start, &indent);
+                }
             } else {
                 let end = self.buf().line_end(l);
                 let width = self.cur_indent().width;
@@ -503,45 +308,10 @@ impl Editor {
                 }
             }
         }
+        // Neovim: a shift sets 'modified' even when no line changed
+        self.buf_mut().mark_dirty();
         self.set_head(self.buf().line_start(line));
         self.clamp_cursor();
-    }
-
-    /// `x` deletes the character under the cursor; `X` deletes the
-    /// preceding character without crossing the line start.
-    pub(crate) fn delete_char(&mut self, backward: bool) {
-        let line = self.buf().line_of(self.head());
-        let line_start = self.buf().line_start(line);
-        let (start, end) = if backward {
-            let end = self.head();
-            (
-                self.buf()
-                    .clamp_boundary(end.saturating_sub(1))
-                    .max(line_start),
-                end,
-            )
-        } else {
-            let end = self
-                .buf()
-                .ceil_boundary(self.head() + 1)
-                .min(self.buf().line_end(line));
-            (self.head(), end)
-        };
-        if end > start {
-            self.tx_begin();
-            let range = Range::charwise(start, end);
-            let text = self.buf_mut().delete(range);
-            if backward {
-                self.set_head(start);
-            }
-            self.delete_register(None, Register::characterwise(text), false);
-            self.flash(range);
-            self.last_cmd_keys = if backward { "X" } else { "x" }.into();
-            self.last_change = None;
-            self.last_insert = None;
-            // one `x` is one undo step (vim): the group closes here
-            self.tx_commit();
-        }
     }
 
     /// `p` / `P` (dot-repeatable): paste the register after/before
@@ -595,33 +365,6 @@ impl Editor {
             .map(|edit| edit.text.clone());
         self.enter_insert_from("O");
         self.apply_indentation(&edits);
-    }
-
-    /// `v` / `V`: visual mode is primary-only — extras collapse (0013).
-    pub(crate) fn enter_visual(&mut self, linewise: bool) {
-        self.sels_mut().collapse_extras();
-        self.mode = if linewise {
-            Mode::VisualLine
-        } else {
-            Mode::Visual
-        };
-        let h = self.head();
-        self.sels_mut().stretch_primary(h, h);
-    }
-
-    /// `.` — see dot_repeat (semantic; 0014).
-    pub(crate) fn dot_repeat_pub(&mut self) {
-        self.dot_repeat();
-    }
-
-    /// `~` — see toggle_case.
-    pub(crate) fn toggle_case_pub(&mut self) {
-        self.toggle_case();
-    }
-
-    /// `J` — see join_lines.
-    pub(crate) fn join_lines_pub(&mut self) {
-        self.join_lines();
     }
 }
 

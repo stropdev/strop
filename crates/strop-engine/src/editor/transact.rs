@@ -118,6 +118,23 @@ impl super::Editor {
             return;
         }
         let active = self.active_pane;
+        // Vim: a mark goes with its line. A deletion that starts in
+        // column 1 and covers the mark took the mark's line with it.
+        let line_starts: Vec<bool> = journal
+            .iter()
+            .map(|(start, _, _)| *start == document.buf.line_start(document.buf.line_of(*start)))
+            .collect();
+        self.marks.retain(|_, (owner, position)| {
+            *owner != id
+                || !journal.iter().zip(&line_starts).any(
+                    |((start, old_end, new_end), line_start)| {
+                        *line_start
+                            && new_end == start
+                            && *start <= *position
+                            && *position < *old_end
+                    },
+                )
+        });
         for (owner, position) in self.marks.values_mut() {
             if *owner == id {
                 *position = map(*position);

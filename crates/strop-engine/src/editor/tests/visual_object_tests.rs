@@ -13,12 +13,12 @@ fn vi_paren_selects_inner() {
 }
 
 #[test]
-fn va_quote_includes_quotes() {
+fn va_quote_includes_quotes_and_trailing_blanks() {
     let mut e = Editor::new(Buffer::from_text("say \"hi\" now\n"));
     e.feed_text("w"); // onto "hi"
     e.feed_text("va\"");
     let r = e.visual_range().expect("visual range");
-    assert_eq!(e.buf().slice_string(r), "\"hi\"");
+    assert_eq!(e.buf().slice_string(r), "\"hi\" ");
 }
 
 #[test]

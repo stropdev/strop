@@ -100,6 +100,8 @@ pub(crate) const NAMED: &[&str] = &[
     "ctrl-r",
     "ctrl-t",
     "ctrl-x",
+    "ctrl-a",
+    "ctrl-c",
     "ctrl-d",
     "ctrl-u",
     "ctrl-f",
@@ -187,17 +189,27 @@ struct Index {
     hints: Vec<HintSequence>,
 }
 
-static INDEX: LazyLock<Index> = LazyLock::new(Index::compile);
+/// Normal's keys: every row but Visual's own verbs.
+static INDEX: LazyLock<Index> = LazyLock::new(|| Index::compile(false));
+/// Visual's own keys: the rows of the `visual` section. A key that means
+/// something else in Normal (`u`, `p`, `J`) is a different row here.
+static VISUAL: LazyLock<Index> = LazyLock::new(|| Index::compile(true));
 
 impl Index {
-    fn compile() -> Self {
+    fn compile(visual: bool) -> Self {
         let mut index = Self {
             nodes: vec![Node::default()],
             hints: Vec::new(),
         };
         for (row, binding) in BINDINGS.iter().enumerate() {
+            let member = if visual {
+                binding.sections.contains(&"visual")
+            } else {
+                !matches!(binding.handler, super::Handler::Visual(_))
+            };
             for tokens in expand(binding.keys) {
-                if binding.live && !matches!(binding.handler, super::Handler::Contextual) {
+                if member && binding.live && !matches!(binding.handler, super::Handler::Contextual)
+                {
                     index.insert(row, per_key(&tokens));
                 }
                 index.hints.push(HintSequence::new(row, tokens));
@@ -288,6 +300,16 @@ pub fn any_child(path: &[String]) -> bool {
     INDEX.has_child(ROOT, path)
 }
 
+/// The Visual-section row completed by this path.
+pub fn find_visual_row(path: &[String]) -> Option<&'static Binding> {
+    VISUAL.find(ROOT, path).map(|row| &BINDINGS[row])
+}
+
+/// Whether a Visual-section sequence strictly extends this path.
+pub fn any_visual_child(path: &[String]) -> bool {
+    VISUAL.has_child(ROOT, path)
+}
+
 /// One which-key hint row: the next key after a pending prefix, with
 /// the row's home section so cards group the way help does.
 pub struct Hint {
@@ -339,7 +361,8 @@ pub fn children_of(prefix: &str, mode: crate::editor::Mode) -> Vec<Hint> {
 pub fn compat_report() -> String {
     let mut out = String::from(
         "# Vim compatibility\n\nGenerated from the command table (`strop compat`).\n\
-         `✓` ships exactly; `(soon)` is a planned slot.\n",
+         `✓` ships exactly; `(soon)` is a planned slot. What Neovim binds and strop\n\
+         does not is listed at the end, under Missing and Reassigned.\n",
     );
     for section in SECTIONS {
         out.push_str(&format!("\n## {}\n\n", section.title));
@@ -348,6 +371,31 @@ pub fn compat_report() -> String {
             let soon = if b.live { "" } else { " (soon)" };
             out.push_str(&format!("- `{mark} {}` — {}{}\n", b.keys, b.desc, soon));
         }
+    }
+    out.push_str(
+        "\n## Missing\n\nNeovim binds these; in strop the key does nothing. \
+         An operator on this list\n(`=`, `gq`, `gw`, `zf`) still takes its motion, \
+         so the motion's keys never run as\ncommands.\n\n",
+    );
+    for row in super::missing::MISSING {
+        out.push_str(&format!(
+            "- {}: `{}` — {}\n",
+            row.place.title(),
+            row.keys.join("` `"),
+            row.what
+        ));
+    }
+    out.push_str(
+        "\n## Reassigned\n\nNeovim binds these; strop uses the key for something else.\n\n",
+    );
+    for row in super::missing::REASSIGNED {
+        out.push_str(&format!(
+            "- {}: `{}` — Neovim: {}. strop: {}.\n",
+            row.place.title(),
+            row.keys,
+            row.neovim,
+            row.strop
+        ));
     }
     out
 }

@@ -347,9 +347,12 @@ mod tests {
         e.feed_text("}{");
         assert_eq!(e.view().jumps.entries.len(), 3);
         e.feed_text("G");
-        let before = e.view().jumps.clone();
         e.feed_text("}");
-        assert_eq!(e.view().jumps, before, "EOF paragraph does not move");
+        assert_eq!(
+            e.head(),
+            e.buf().len_bytes() - 2,
+            "with no blank line below, }} goes to the last character"
+        );
 
         let mut e = Editor::new(Buffer::from_text("one\n\ntwo\n\nthree\n"));
         e.scroll_to_cursor(3);

@@ -630,7 +630,7 @@ impl Editor {
                     ResolutionPurpose::Preview => {}
                     ResolutionPurpose::VisualObject => editor.select_visual_object(command),
                     ResolutionPurpose::RepeatSearch(invert) => editor.repeat_search(invert),
-                    ResolutionPurpose::DotRepeat => editor.dot_repeat_pub(),
+                    ResolutionPurpose::DotRepeat => editor.dot_repeat(None),
                     ResolutionPurpose::Indentation => {}
                 }
             });

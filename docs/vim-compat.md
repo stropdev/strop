@@ -1,7 +1,8 @@
 # Vim compatibility
 
 Generated from the command table (`strop compat`).
-`✓` ships exactly; `(soon)` is a planned slot.
+`✓` ships exactly; `(soon)` is a planned slot. What Neovim binds and strop
+does not is listed at the end, under Missing and Reassigned.
 
 ## Moving
 
@@ -12,12 +13,18 @@ Generated from the command table (`strop compat`).
 - `✓ g;` — older change (changelist)
 - `✓ g,` — newer change (changelist)
 - `✓ ge gE { }` — word-end back / paragraph motions
+- `✓ - +` — line up / down, on the first non-blank
+- `✓ ( )` — sentence back / forward
+- `✓ [( [{ ]) ]}` — the unmatched bracket before / after
+- `✓ g_ g0 g^ g$ gj gk` — last non-blank; line start, first non-blank, end; line down / up
+- `✓ gn gN` — select the next / previous search match (cgn then . changes each)
 - `✓ 0 $ G %` — line/file/pair jumps
 - `✓ g<space>` — collection: open full source at caret
 - `✓ gg` — top of file
 - `✓ enter` — line down, first non-blank (blame gutter: dive)
 - `✓ tab` — jump list forward (ctrl-i)
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
+- `✓ ctrl-e ctrl-y` — scroll the window one line down / up
 - `✓ ctrl-^` — alternate buffer
 - `✓ gr` — references (LSP)
 - `✓ gI` — implementation (LSP)
@@ -35,7 +42,8 @@ Generated from the command table (`strop compat`).
 - `✓ ]c` — next git hunk
 - `✓ [c` — previous git hunk
 - `✓ m<a>` — set mark at cursor
-- `✓ '<a> `<a>` — jump to mark
+- `✓ '<a>` — jump to mark: its line ('' is where the last jump left from)
+- `✓ `<a>` — jump to mark: its exact position
 - `✓ ; ,` — repeat find, same / reversed
 - `✓ |` — column motion (vim); pipe moved to space |
 - `✓ ^ _` — first non-blank
@@ -43,27 +51,39 @@ Generated from the command table (`strop compat`).
 ## Editing
 
 - `✓ ZZ` — write + close window
+- `✓ ZQ` — close window without writing
 - `✓ gi` — insert at last insert
 - `✓ gb` — select next occurrence of word/selection
 - `✓ gB` — select all occurrences in buffer
 - `✓ ctrl-r` — redo
 - `✓ q<a>` — record macro into register
-- `✓ @<a>` — play macro (count repeats)
+- `✓ @<a>` — play macro (count repeats); @: repeats the last : command
 - `✓ Q` — toggle cursor at point (multicursor)
-- `✓ d y c > <` — operators + motion/object (live preview)
-- `✓ dd yy cc` — line delete/yank/change
+- `✓ d y c > < gU gu g~ g? !` — operators + motion/object: delete, yank, change, indent, case, rot13, filter (opens :{range}!)
+- `✓ dd yy cc` — an operator doubled acts on whole lines (>> << gUU guu g~~ g??)
 - `✓ D` — delete to line end
 - `✓ C` — change to line end
-- `✓ Y` — yank line
+- `✓ Y` — yank to line end
 - `✓ s` — substitute char
-- `✓ x X` — delete char / char back
+- `✓ x` — delete char
+- `✓ X` — delete char back
 - `✓ iw i" i' i( i[ i{` — inner objects (quotes scan the line)
 - `✓ ds" cs"' ysiw"` — surround: delete / change / add
 - `✓ i a A o O I` — insert (auto-indent)
 - `✓ p P` — paste after / before
 - `✓ r<c>` — replace char
-- `✓ J .` — join lines · repeat change
-- `✓ ~` — toggle case
+- `✓ J` — join lines
+- `✓ gJ` — join lines as they are, without a space
+- `✓ .` — repeat the last change (a count replaces its count)
+- `✓ ~` — toggle case and advance
+- `✓ R` — replace mode: type over the text
+- `✓ ctrl-a` — add to the number at or after the cursor
+- `✓ ctrl-x` — subtract from the number at or after the cursor
+- `✓ gp gP` — paste and leave the cursor after the text
+- `✓ ]p` — paste lines below at the current indent
+- `✓ [p` — paste lines above at the current indent
+- `✓ &` — repeat the last :s on this line, with its flags
+- `✓ g&` — repeat the last :s on every line, with its flags
 - `✓ S` — change line
 - `✓ u ctrl-r` — undo / redo (one unit per command)
 - `✓ "+y "+p "+P` — system clipboard: yank / paste after / before
@@ -90,8 +110,32 @@ Generated from the command table (`strop compat`).
 - `✓ gB` — select all occurrences in buffer
 - `✓ gv` — reselect last visual
 - `✓ ctrl-v` — visual block
-- `✓ v V` — visual / visual-line
-- `✓ d y c x > <` — operate on selection
+- `✓ v V` — visual / visual-line (in Visual: switch, or leave)
+- `✓ d x` — delete the selection
+- `✓ y` — yank the selection
+- `✓ c s` — change the selection
+- `✓ >` — indent the selected lines
+- `✓ <` — dedent the selected lines
+- `✓ U gU` — uppercase the selection
+- `✓ u gu` — lowercase the selection
+- `✓ ~ g~` — toggle the selection's case
+- `✓ g?` — rot13 the selection
+- `✓ !` — filter the selected lines through a shell command
+- `✓ D X` — delete the selected lines
+- `✓ Y` — yank the selected lines
+- `✓ C R` — change the selected lines
+- `✓ p` — put over the selection; the replaced text becomes the unnamed register
+- `✓ P` — put over the selection; registers stay as they were
+- `✓ J` — join the selected lines
+- `✓ gJ` — join the selected lines as they are
+- `✓ r<c>` — replace every selected character
+- `✓ I` — insert at the selection's start (block: on every row)
+- `✓ A` — append after the selection (block: on every row)
+- `✓ o O` — go to the selection's other end
+- `✓ *` — search forward for the selection
+- `✓ #` — search backward for the selection
+- `✓ ctrl-a` — add to the first number on each selected line
+- `✓ ctrl-x` — subtract from the first number on each selected line
 - `✓ ctrl-c` — toggle comments on selected lines
 - `✓ S<c>` — wrap selection in pair
 - `✓ i<a> a<a>` — objects select (vi[ works)
@@ -99,10 +143,12 @@ Generated from the command table (`strop compat`).
 
 ## Search
 
+- `✓ gn gN` — select the next / previous search match (cgn then . changes each)
 - `✓ / ?` — literal search forward / backward (live as you type or delete)
 - `✓ n` — next match
 - `✓ N` — previous match
 - `✓ * #` — word under cursor, forward / backward
+- `✓ g* g#` — word under cursor, also inside longer words
 - `✓ :noh` — clear the persistent search highlight
 
 ## Leader (space)
@@ -182,19 +228,70 @@ Generated from the command table (`strop compat`).
 
 ## Ex commands
 
-- `✓ :` — ex command line
-- `✓ :w :q :q! :wq :w {file} :trust` — write / quit (force) / write-quit / write-as
-- `✓ :[range]s/a/b/[g] :N :% :N,Md :N,My` — substitute (buffer-search grammar + live preview) / goto line / ranged delete+yank
-- `✓ :e` — edit file
-- `✓ :help` — help buffer (this text — / searches it)
+- `✓ :` — ex command line (from Visual it opens with '<,'>)
+- `✓ :N :N,M :. :$ :% :'a :'<,'> :/pat/ :?pat? :.+N :N;+M` — ranges: lines, marks, searches and offsets; :N alone goes to the line
+- `✓ :s/pat/new/[flags] :& :&& :~` — substitute with live preview (& \1 ~ \r \u \U in the replacement; flags g i I n c &) / repeat it
+- `✓ :g/pat/cmd :g!/pat/cmd :v/pat/cmd :norm {keys}` — run a command on matching (or the other) lines / type Normal keys on each line
+- `✓ :d {x} :y {x} :m {addr} :t {addr} :co {addr} :j :pu {x}` — delete / yank / move / copy / join / put lines (x: a register; a count may follow)
+- `✓ :> :< :sort :!cmd` — indent / unindent / sort lines (! reversed; u n i) / run a command, or with a range filter the lines through it
+- `✓ :k {a} :mark {a} :delm {a} :marks :reg {x} :di {x}` — set / delete marks; list marks and registers
+- `✓ :u :red :@: :@{x}` — undo / redo / repeat the last command line / run register x as commands
+- `✓ :b {n|name} :bn :bp :bN :bd {n} :ls :buffers :files` — go to a buffer by number or name fragment / next / previous / delete / list
+- `✓ :w :w {file} :up :wa` — write / write-as / write if modified / write every modified buffer
+- `✓ :q :q! :wq :x :exi :clo :on :trust` — quit (force) / write-quit / close this window / only this window / trust the project
+- `✓ :qa :qall :quita :wqa :xa` — quit all (fails on unsaved; bang discards) / write all and quit
+- `✓ :e :e {file} :ene :new :vne` — edit file / new unnamed buffer (here, split, vertical split)
+- `✓ :cd {dir|-} :pwd` — change the project root (Files, Search, terminals) / go back / show it
+- `✓ :help :mes :explain` — help buffer (this text — / searches it) / message history / why: workspaces, LSP, config
 - `✓ :theme` — choose a built-in interface palette
 - `✓ :jumps :symbols` — jumplist / document symbols picker
 - `✓ :format :rename` — format buffer / rename symbol: :rename NEW
 - `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
-- `✓ :qa :qall` — quit all (fails on unsaved; bang discards)
 - `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ :tab-size :indent-style :search-options` — source indentation and search visibility controls
-- `✓ :fs :browse :filter` — filesystem actions, namespace-aware browsing and folder filtering
-- `✓ :apply-change :cancel-change :save-change` — review: apply text or filesystem changes, cancel, or save changed text
+- `✓ :fs :browse :filter :remote :terminal-local` — filesystem actions, namespace-aware browsing, folder filtering, remote destinations, a local shell
+- `✓ :apply-change :cancel-change :save-change :undo-change` — review: apply text or filesystem changes, cancel, save changed text, or undo the last applied plan
+
+## Missing
+
+Neovim binds these; in strop the key does nothing. An operator on this list
+(`=`, `gq`, `gw`, `zf`) still takes its motion, so the motion's keys never run as
+commands.
+
+- Normal: `zfj` `zo` `zc` `za` `zR` `zM` `zj` `zk` `zd` — folds
+- Normal: `gt` `gT` — tab pages
+- Normal: `U` — undo every change on the line
+- Normal: `==` `=j` `=ip` — the reindent operator
+- Normal: `gqq` `gqip` `gwip` — reflow text to the text width
+- Normal: `dis` `das` — the sentence text objects
+- Normal: `q:` `q/` — the command-line window
+- Normal: `ga` `g8` — show the character under the cursor as a code
+- Normal: `gx` `gf` `gF` — open the URL or file name under the cursor
+- Normal: `gR` — virtual replace mode
+- Normal: `K` — look the word under the cursor up (hover is `space k`)
+- Normal: `]]` `[[` `][` `[]` `]m` `[m` — section and method motions
+- Normal: `z=` `zg` `]s` `[s` — spelling
+- Normal: `gm` `gM` `go` — middle of the line, byte offset
+- Normal: `zh` `zl` `zH` `zL` `ze` `zs` — horizontal scrolling
+- Normal: `do` `dp` — diff mode
+- Normal: `ctrl-w x` `ctrl-w r` `ctrl-w T` `ctrl-w H` `ctrl-w J` `ctrl-w K` `ctrl-w L` `ctrl-w +` `ctrl-w -` `ctrl-w _` `ctrl-w |` — move, rotate and resize windows (panes are always equal)
+- Visual: `=` `gq` `gw` `zf` — reindent, reflow and fold the selection
+- Insert: `ctrl-v` `ctrl-k` `ctrl-a` — insert a literal key, a digraph, the last inserted text
+- Ex: `:tabnew` `:tabnext` `:tabclose` `:fold` `:mksession` `:digraphs` — tab pages, folds, session files, digraphs
+
+## Reassigned
+
+Neovim binds these; strop uses the key for something else.
+
+- Normal: `space` — Neovim: move right. strop: the leader.
+- Normal: `Q` — Neovim: replay the last recorded register. strop: toggle a cursor here (`@@` replays).
+- Normal: `gd gD` — Neovim: go to the local or global declaration by search. strop: language-server definition and declaration.
+- Normal: `gI` — Neovim: insert in column 1. strop: language-server implementation.
+- Normal: `gr` — Neovim: replace with a virtual character. strop: language-server references.
+- Normal: `gs` — Neovim: sleep. strop: switch between source and header.
+- Normal: `ds cs ys` — Neovim: nothing (`s` is not a motion). strop: delete, change, add a surrounding pair.
+- Visual: `S` — Neovim: change the selected lines. strop: wrap the selection in a pair (`C` and `R` change lines).
+- Visual: `ctrl-c` — Neovim: leave Visual. strop: toggle comments on the selected lines (`Esc` leaves).
+- Insert: `ctrl-e ctrl-y` — Neovim: insert the character below or above. strop: dismiss or accept the completion menu.

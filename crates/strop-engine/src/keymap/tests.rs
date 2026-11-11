@@ -103,8 +103,10 @@ fn which_key_children() {
     assert_eq!(git.len(), 9); // l h b y o u s S p
     assert!(git.iter().any(|h| h.key == "u" && h.desc.contains("undo")));
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-    assert_eq!(children_of("g", Mode::Normal).len(), 16); // + gb gB g␣
-                                                          // visual mode: only the visual table feeds the card
+    // + gb gB g␣, the case operators (gU gu g~ g?), the g motions
+    // (g_ g0 g^ g$ gj gk gn gN), gp gP, gJ, g* g#, g&
+    assert_eq!(children_of("g", Mode::Normal).len(), 34);
+    // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
     assert_eq!(v.len(), 1);
     assert_eq!(v[0].key, "y");
@@ -254,6 +256,7 @@ fn every_dispatched_sequence_has_a_row() {
             }
         }
         let covered = find_row(&toks).is_some()
+            || find_visual_row(&toks).is_some()
             || BINDINGS.iter().any(|row| {
                 matches!(row.handler, Handler::Contextual)
                     && expand(row.keys)
@@ -339,6 +342,10 @@ fn live_rows_dispatch_through_the_table() {
             // never happen is the unknown-key marker
             let mut e = Editor::new(Buffer::from_text("fn f(x) {\n    let y = f(x);\n}\n"));
             e.set_head(14);
+            if matches!(b.handler, Handler::Visual(_)) {
+                // Visual's own rows dispatch on a selection
+                e.feed_text("v");
+            }
             e.feed_text(&keys);
             assert!(
                 !e.message.starts_with("not an editor command"),
@@ -364,4 +371,98 @@ fn uppercase_x_deletes_backward_instead_of_repeating_lowercase_x() {
     assert_eq!(forward.buf().text().to_string(), "ac\n");
     assert_eq!(forward.head(), 1);
     assert_eq!(forward.register(None).text, "b");
+}
+
+/// The keys of a table-notation sequence (`ctrl-w x`, `gqip`) as events.
+fn notation_keys(sequence: &str) -> Vec<strop_core::frontend_input::Key> {
+    use strop_core::frontend_input::Key;
+    let mut keys = Vec::new();
+    for token in sequence.split(' ') {
+        match token {
+            "ctrl-w" => keys.push(Key::CtrlW),
+            "ctrl-v" => keys.push(Key::CtrlV),
+            "ctrl-a" => keys.push(Key::CtrlA),
+            // a Ctrl chord strop has no key for never reaches the editor
+            "ctrl-k" => {}
+            text => keys.extend(text.chars().map(Key::Char)),
+        }
+    }
+    keys
+}
+
+/// 0095 §2.7: a Missing row does not dispatch. Feeding it changes
+/// neither the text nor the cursor's line nor the mode, opens nothing,
+/// and leaves no command half-typed. A row that starts to work fails
+/// here until it moves into the binding table.
+#[test]
+fn missing_rows_do_not_dispatch() {
+    use super::missing::{Where, MISSING};
+    use strop_core::frontend_input::Key;
+    let text = "fn f(x) {\n    let y = f(x);\n\n    one. two.\n}\n";
+    for row in MISSING {
+        for sequence in row.keys {
+            let mut e = Editor::new(Buffer::from_text(text));
+            e.set_head(14);
+            if row.place == Where::Ex {
+                e.feed_text(&format!("{sequence}\r"));
+                assert!(
+                    e.message.starts_with("not an editor command") || e.message.contains("unknown"),
+                    "{sequence}: {:?}",
+                    e.message
+                );
+            } else {
+                let (enter, mode) = match row.place {
+                    Where::Visual => ("v", Mode::Visual),
+                    Where::Insert => ("i", Mode::Insert),
+                    _ => ("", Mode::Normal),
+                };
+                e.feed_text(enter);
+                for key in notation_keys(sequence) {
+                    e.feed(key);
+                }
+                assert_eq!(e.mode, mode, "{sequence} changed the mode");
+                assert!(e.walker.is_ground(), "{sequence} left a command pending");
+                assert!(!e.pending.is_active(), "{sequence} opened a prompt");
+                e.feed(Key::Esc);
+            }
+            assert_eq!(
+                e.buf().text().to_string(),
+                text,
+                "{sequence} changed the text"
+            );
+            assert_eq!(e.buf().line_of(e.head()), 1, "{sequence} moved the cursor");
+            assert!(e.recording.is_none(), "{sequence} started a recording");
+        }
+    }
+}
+
+/// A Reassigned row names a key strop does bind.
+#[test]
+fn reassigned_rows_are_bound() {
+    use super::missing::{Where, REASSIGNED};
+    for row in REASSIGNED.iter().filter(|row| row.place != Where::Insert) {
+        for keys in row.keys.split(' ') {
+            let path: Vec<String> = if NAMED.contains(&keys) {
+                vec![keys.to_owned()]
+            } else {
+                keys.chars().map(|c| c.to_string()).collect()
+            };
+            let bound = match row.place {
+                Where::Visual => find_visual_row(&path).is_some() || any_visual_child(&path),
+                // `ds` / `cs` / `ys` are the grammar's, under an operator
+                _ => find_row(&path).is_some() || any_child(&path) || keys.ends_with('s'),
+            };
+            assert!(bound, "{keys} is listed as reassigned but is not bound");
+        }
+    }
+}
+
+/// `docs/vim-compat.md` is `strop compat`'s output, checked in.
+#[test]
+fn the_compatibility_page_is_the_generated_report() {
+    assert_eq!(
+        include_str!("../../../../docs/vim-compat.md"),
+        compat_report(),
+        "regenerate with: strop compat > docs/vim-compat.md"
+    );
 }

@@ -5,6 +5,7 @@
 
 use super::{Editor, Mode};
 use strop_core::frontend_input::Key;
+pub(crate) mod keys;
 pub(crate) mod replay;
 
 impl Editor {
@@ -37,6 +38,8 @@ impl Editor {
             self.insert_open = None;
         }
         self.mode = Mode::Insert;
+        self.insert_keys.origin = None;
+        self.insert_keys.replaced = None;
         self.recording_insert = Some(String::new());
         self.insert_replay = Some(Vec::new());
         if self.last_cmd_keys.is_empty()
@@ -56,8 +59,8 @@ impl Editor {
     }
 
     pub(crate) fn feed_insert(&mut self, key: Key) {
-        if self.insert_register {
-            self.insert_register = false;
+        if self.insert_keys.register {
+            self.insert_keys.register = false;
             return match key {
                 Key::Char('"') => self.insert_register(None),
                 Key::Char(name) => self.insert_register(Some(name)),
@@ -135,24 +138,39 @@ impl Editor {
         }
         if matches!(
             key,
-            Key::Char(_) | Key::Tab | Key::Backspace | Key::Left | Key::Right | Key::Up | Key::Down
+            Key::Char(_)
+                | Key::Tab
+                | Key::Backspace
+                | Key::Left
+                | Key::Right
+                | Key::Up
+                | Key::Down
+                | Key::CtrlW
+                | Key::CtrlU
+                | Key::CtrlT
+                | Key::CtrlD
         ) {
             self.record_insert_key(key);
         }
         // gi remembers the insert caret; Esc leaves the final position behind.
         self.last_insert_pos = Some(self.head());
+        if self.insert_keys.origin.is_none() {
+            self.insert_keys.origin = Some(self.head());
+        }
         match key {
             Key::CtrlC => self.feed_insert(Key::Esc),
-            Key::CtrlW
-            | Key::CtrlX
-            | Key::CtrlD
-            | Key::CtrlO
-            | Key::CtrlL
-            | Key::CtrlT
-            | Key::CtrlSpace => {
-                if key == Key::CtrlL {
-                    self.needs_repaint = true; // desync recovery
-                }
+            Key::CtrlW => crate::editor::insert::keys::insert_delete_back(self, keys::Back::Word),
+            Key::CtrlU => crate::editor::insert::keys::insert_delete_back(self, keys::Back::Line),
+            Key::CtrlT => crate::editor::insert::keys::insert_shift(self, true),
+            Key::CtrlD => crate::editor::insert::keys::insert_shift(self, false),
+            Key::CtrlO => crate::editor::insert::keys::insert_one_command(self),
+            Key::CtrlL => self.needs_repaint = true, // desync recovery
+            Key::CtrlX | Key::CtrlA | Key::CtrlSpace => {}
+            Key::Backspace if self.insert_keys.replaced.is_some() => {
+                crate::editor::insert::keys::replace_backspace(self)
+            }
+            Key::Char(c) if self.insert_keys.replaced.is_some() => {
+                crate::editor::insert::keys::replace_typed(self, c)
             }
             Key::Esc => {
                 let count = std::mem::replace(&mut self.insert_count, 1);
@@ -172,6 +190,8 @@ impl Editor {
                 }
                 self.last_insert_replay = self.insert_replay.take().unwrap_or_default();
                 self.mode = Mode::Normal;
+                self.insert_keys.replaced = None;
+                self.insert_keys.origin = None;
                 self.apply_pending_diagnostics();
                 self.set_head(self.head().saturating_sub(1));
                 let extras: Vec<strop_core::selection::Selection> = self
@@ -270,9 +290,8 @@ impl Editor {
                         .clamp_boundary(self.buf().line_start(target) + col),
                 );
             }
-            Key::CtrlR => self.insert_register = true,
-            Key::CtrlU
-            | Key::CtrlF
+            Key::CtrlR => self.insert_keys.register = true,
+            Key::CtrlF
             | Key::CtrlB
             | Key::CtrlCaret
             | Key::CtrlV

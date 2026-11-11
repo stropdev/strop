@@ -192,7 +192,7 @@ pub const CASES: &[Case] = &[
     ("global spelled out", WORDS, ":global/gamma/d<cr>"),
     ("g shift", WORDS, ":g/beta/><cr>"),
     // :norm
-    ("norm at the cursor", FIVE, "jl:norm x<cr>"),
+    ("norm at the cursor", FIVE, "j:norm dw<cr>"),
     ("norm range", FIVE, ":2,4norm Ax<cr>"),
     ("norm whole buffer", FIVE, ":%norm I- <cr>"),
     ("norm is one undo", FIVE, ":%norm Ax<cr>u"),
@@ -203,8 +203,8 @@ pub const CASES: &[Case] = &[
     ("normal spelled out with bang", FIVE, ":2normal! x<cr>"),
     ("norm with a count inside", FIVE, ":1norm 2dd<cr>"),
     // marks, undo, repeats
-    ("k sets a mark", FIVE, ":3ka<cr>:'ad<cr>"),
-    ("mark sets a mark", FIVE, ":4mark b<cr>:'b,$d<cr>"),
+    ("k sets a mark", FIVE, ":3ka<cr>'a"),
+    ("mark sets a mark", FIVE, ":4mark b<cr>gg'bx"),
     ("delmarks", FIVE, "jmagg:delm a<cr>:'ad<cr>"),
     ("undo and redo commands", FIVE, "dd:u<cr>:red<cr>"),
     ("repeat the last command line", FIVE, ":2d<cr>:@:<cr>"),

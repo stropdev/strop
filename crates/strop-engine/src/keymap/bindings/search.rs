@@ -32,7 +32,15 @@ pub(super) const ROWS: &[Binding] = &[
         sections: &["search"],
         live: true,
         id: "word-search",
-        handler: Handler::Leaf(|e, k| e.search_word_under_cursor_pub(k == '#')),
+        handler: Handler::Leaf(|e, k| e.search_word_under_cursor(k == '#', true)),
+    },
+    Binding {
+        keys: "g* g#",
+        desc: "word under cursor, also inside longer words",
+        sections: &["search"],
+        live: true,
+        id: "word-search-partial",
+        handler: Handler::Leaf(|e, k| e.search_word_under_cursor(k == '#', false)),
     },
     Binding {
         keys: ":noh",

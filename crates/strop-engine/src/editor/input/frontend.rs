@@ -94,6 +94,16 @@ fn editor_key(key: KeyEvent) -> Option<Key> {
         KeyCode::Char('v') if control => Key::CtrlV,
         KeyCode::Char('\x16') => Key::CtrlV,
         KeyCode::Char('w') if control => Key::CtrlW,
+        KeyCode::Char('h') if control => Key::Backspace,
+        KeyCode::Char('j') if control => Key::Enter,
+        KeyCode::Char('a') if control => Key::CtrlA,
+        KeyCode::Char('\x01') => Key::CtrlA,
+        // Any other Ctrl + letter means nothing here. It must not fall
+        // through as the bare letter (Ctrl-K typing `k`, Ctrl-G moving).
+        // AltGr arrives as Ctrl+Alt on some terminals: that one is text.
+        KeyCode::Char(ch) if control && !key.modifiers.alt && ch.is_ascii_lowercase() => {
+            return None
+        }
         // Enhanced keyboards may report lowercase + SHIFT without an
         // alternate shifted scalar; legacy frontends already report `G`.
         KeyCode::Char(ch) => Key::Char(if key.modifiers.shift && !control {

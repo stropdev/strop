@@ -100,8 +100,6 @@ pub enum Action {
     /// The grammar rejected a query at parse time — a typed error,
     /// never a silent literal reading of a regex the dialect lacks.
     QueryError(strop_grammar::QueryError),
-    /// Visual `S<c>`: the completing char, dispatched by the visual layer.
-    VisualSurround(char),
     /// Dead sequence: neither table nor grammar — the editor says so
     /// (the unknown-key marker is a contract, not silence).
     Invalid(String),
@@ -270,88 +268,79 @@ impl Walker {
         Action::EnterText { sigil, state }
     }
 
-    /// One visual-mode key: structural composition shares the same
-    /// typed state; `S<c>` is the visual-only surround absorber.
+    /// One visual-mode key. Visual's own rows (the table's `visual`
+    /// section) come first; counts, registers, the leader and the text
+    /// lines are the ordinary walk; everything else is a motion or a
+    /// text object for the grammar.
     pub fn feed_visual(&mut self, key: Key) -> Action {
         if key == Key::Esc {
             self.clear();
             return Action::Pending;
         }
-        if self.at_prefix(&["S"]) {
-            self.clear();
-            return match key {
-                Key::Char(c) => Action::VisualSurround(c),
-                _ => Action::Pending,
-            };
-        }
-        // The ordinary table remains the authority for leader namespaces.
-        if self.path.first().is_some_and(|token| token == "space") {
-            return self.feed(key);
-        }
-        // `"x` before a visual operator: the selector and its name are
-        // the ordinary walker's (the operator reads `operator_register`)
-        if self.state.register == Some('\0') {
+        // The ordinary table remains the authority for leader namespaces,
+        // and `"x` is the ordinary walker's selector.
+        if self.path.first().is_some_and(|token| token == "space")
+            || self.state.register == Some('\0')
+        {
             return self.feed(key);
         }
         if self.motion.is_empty() {
-            match key {
-                Key::Char('S') => {
-                    self.path.push("S".into());
-                    return Action::Pending;
+            if self.path.is_empty() {
+                match key {
+                    Key::Char('"' | ' ' | ':' | '/' | '?') => return self.feed(key),
+                    Key::Char(c)
+                        if c.is_ascii_digit() && (c != '0' || self.state.count1.is_some()) =>
+                    {
+                        return self.feed(key)
+                    }
+                    _ => {}
                 }
-                Key::Char('"') if self.path.is_empty() => return self.feed(key),
-                Key::Char(' ' | ':' | '/' | '?') => return self.feed(key),
-                Key::Char(c) if c.is_ascii_digit() => return self.feed(key),
-                _ => {}
             }
-        }
-        // Visual-section table rows (0049 §7: gb/gB) dispatch like the
-        // normal walker's leaves; the grammar keeps everything else. A
-        // path that fails the table replays into the grammar stream, so
-        // "gg" & friends parse whole.
-        if self.motion.is_empty() {
-            let token = key_token(key);
             let mut path = self.path.clone();
-            path.push(token);
-            if let Some(row) = keymap::find_row(&path) {
-                if row.sections.contains(&"visual")
-                    && matches!(row.handler, crate::keymap::Handler::Leaf(_))
-                {
-                    let key = path.last().and_then(|t| t.chars().last()).unwrap_or('\0');
-                    self.path.clear();
-                    self.state = ParserState::default();
-                    return Action::Row {
-                        row,
-                        count: None,
-                        register: None,
-                        arg: None,
-                        key,
-                    };
+            path.push(key_token(key));
+            if let Some(row) = keymap::find_visual_row(&path) {
+                let arg = path.last().and_then(|t| t.chars().last()).unwrap_or('\0');
+                match row.handler {
+                    Handler::Visual(_) | Handler::Leaf(_) => {
+                        let (count, register) = (self.state.count(), self.state.register);
+                        self.clear();
+                        return Action::Row {
+                            row,
+                            count,
+                            register,
+                            arg: Some(arg),
+                            key: arg,
+                        };
+                    }
+                    Handler::Prefix => {
+                        self.path = path;
+                        return Action::Pending;
+                    }
+                    // `i<a>` / `a<a>`: the grammar's text objects
+                    _ => {}
                 }
-            }
-            if keymap::any_child(&path) {
+            } else if keymap::any_visual_child(&path)
+                || (keymap::find_row(&path).is_none() && keymap::any_child(&path))
+            {
                 self.path = path;
                 return Action::Pending;
             }
-            // not a visual table row: replay the pending path into the
-            // grammar so the sequence parses as one motion
-            let pending = std::mem::take(&mut self.path);
-            for token in pending {
+            // not a Visual row: the pending path is motion text, so the
+            // sequence parses as one motion (`gg`, `iw`, `'a`)
+            for token in std::mem::take(&mut self.path) {
                 if token.chars().count() == 1 {
                     self.motion.push_str(&token);
-                } else if token == "space" {
-                    self.motion.push(' ');
                 }
             }
         }
-        // Visual i/a are grammar object prefixes, not insert rows;
-        // arrows speak hjkl at the key layer like everywhere else.
+        // arrows speak hjkl at the key layer like everywhere else
         let c = match key {
             Key::Char(c) => c,
             Key::Up => 'k',
             Key::Down => 'j',
             Key::Left => 'h',
             Key::Right => 'l',
+            Key::Enter => '\r',
             _ => {
                 self.clear();
                 return Action::Pending;
@@ -359,12 +348,13 @@ impl Walker {
         };
         self.motion.push(c);
         match strop_grammar::parse(&self.motion) {
-            strop_grammar::Parse::Incomplete => Action::Pending,
-            strop_grammar::Parse::Invalid => {
-                let keys = self.display();
-                self.clear();
-                Action::Invalid(keys)
+            // an operator Visual has no row for (`=`, `gq`, `zf`): it
+            // would wait for a motion that Visual never gives it
+            strop_grammar::Parse::Incomplete if Op::from_keys(&self.motion).is_some() => {
+                self.invalid()
             }
+            strop_grammar::Parse::Incomplete => Action::Pending,
+            strop_grammar::Parse::Invalid => self.invalid(),
             strop_grammar::Parse::QueryError(error) => {
                 self.clear();
                 Action::QueryError(error)
@@ -424,9 +414,12 @@ impl Walker {
             // an operator awaiting its motion can take a SEARCH as the
             // motion (d/foo⏎): the prompt opens carrying the typed
             // state — counts/register/operator survive the crossing
+            // (`g??` is the doubled rot13 operator, not a search)
             if self.motion.is_empty() {
-                if let Key::Char(sigil @ ('/' | '?')) = key {
-                    return self.enter_text(sigil);
+                match key {
+                    Key::Char('?') if self.state.op == Some(Op::Rot13) => {}
+                    Key::Char(sigil @ ('/' | '?')) => return self.enter_text(sigil),
+                    _ => {}
                 }
             }
             // after f/F/t/T the next char is the TARGET — digits are
@@ -444,6 +437,8 @@ impl Walker {
             let motion_char = match key {
                 Key::Char(c) => c.to_string(),
                 Key::Enter => "\r".into(),
+                // `d ctrl-v j`: the blockwise force, as the grammar spells it
+                Key::CtrlV => "\x16".into(),
                 _ => return self.invalid(),
             };
             let _ = token;
@@ -485,8 +480,7 @@ impl Walker {
                 Handler::Operator => {
                     // typed op-pending (0016): the operator is machine
                     // state; the motion collects as text for the grammar
-                    let c = path_str.chars().last().unwrap_or('\0');
-                    if let Some(op) = Op::from_key(c) {
+                    if let Some(op) = Op::from_keys(&path_str) {
                         self.state.op = Some(op);
                         self.path.clear();
                         self.motion.clear();
@@ -579,7 +573,10 @@ impl Walker {
                         key,
                     }
                 }
-                Handler::AbsorbRegister | Handler::Soon | Handler::Contextual => self.invalid(),
+                Handler::AbsorbRegister
+                | Handler::Soon
+                | Handler::Contextual
+                | Handler::Visual(_) => self.invalid(),
             }
         } else if keymap::any_child(&self.path) {
             Action::Pending
@@ -651,6 +648,7 @@ fn key_token(key: Key) -> String {
         Key::CtrlO => "ctrl-o".into(),
         Key::CtrlW => "ctrl-w".into(),
         Key::CtrlX => "ctrl-x".into(),
+        Key::CtrlA => "ctrl-a".into(),
         Key::CtrlU => "ctrl-u".into(),
         Key::CtrlF => "ctrl-f".into(),
         Key::CtrlB => "ctrl-b".into(),

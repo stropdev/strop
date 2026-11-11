@@ -16,14 +16,15 @@
 //! includes the sigil, so the standing sigil rule closes the prompt.
 //!
 //! Exclusions refuse with a message — an unsupported key in a field is
-// register WRITES (yank resolves — a dead target still refuses — but
-// a field stores nothing: it is a query, not a document), surround,
+// surround,
 // indent (`>`/`<` is meaningless on one line), replace-char `r`, marks,
 // macros, dot-repeat, and every other document-surface leaf the Walker
-// can complete (`gb`, …). Register READS are whole: insert-mode
+// can complete (`gb`, …). Registers are the editor's: insert-mode
 // `Ctrl-R {reg}` and normal-mode `p`/`P`/`"{reg}p` reply
 // `ReadRegister`, which the owning editor resolves through its one
-// register read path (plan 0092 §1).
+// register read path (plan 0092 §1); a yank, delete or change leaves
+// its text in `FieldMachine::take_write` for the owner to store by the
+// same rules a document's does (0095 §2.5).
 
 use strop_grammar::{self as grammar, Command, Motion, Op, Parse, Target};
 use strop_picker::LineEdit;
@@ -51,6 +52,18 @@ pub(crate) enum FieldReply {
 pub(crate) struct FieldMachine {
     walker: Walker,
     pub(crate) register: bool,
+    /// What the last operator yanked or removed, until the owner takes it.
+    write: Option<FieldWrite>,
+}
+
+/// Text a field's operator hands to the register file.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct FieldWrite {
+    /// The `"x` the command named.
+    pub(crate) register: Option<char>,
+    pub(crate) text: String,
+    /// A yank (`"0`), not a delete or change (`"-`).
+    pub(crate) yank: bool,
 }
 
 impl FieldMachine {
@@ -58,6 +71,12 @@ impl FieldMachine {
     pub(crate) fn clear(&mut self) {
         self.walker.clear();
         self.register = false;
+        self.write = None;
+    }
+
+    /// The text the last key yanked or removed, for the register file.
+    pub(crate) fn take_write(&mut self) -> Option<FieldWrite> {
+        self.write.take()
     }
 
     /// Nothing typed, nothing pending. The picker's j/k result walk
@@ -90,15 +109,14 @@ impl FieldMachine {
             Action::EnterText { .. } => {
                 FieldReply::Refused("an input field cannot open another prompt".into())
             }
-            Action::VisualSurround(_) => unreachable!("fields never drive the visual walker"),
             Action::Row {
                 row,
                 count,
                 register,
                 arg: _,
                 key,
-            } => Self::row(field, row, count, register, key),
-            Action::Grammar(command) => Self::apply(field, &command),
+            } => self.row(field, row, count, register, key),
+            Action::Grammar(command) => self.apply(field, &command),
         }
     }
 
@@ -106,6 +124,7 @@ impl FieldMachine {
     /// (`D` is `d$`), x/X and the insert entries are field-local; every
     /// other leaf/absorber is a document-surface command and refuses.
     fn row(
+        &mut self,
         field: &mut LineEdit,
         row: &'static crate::keymap::Binding,
         count: Option<usize>,
@@ -126,7 +145,7 @@ impl FieldMachine {
                     if register.is_some() {
                         command.register = register;
                     }
-                    Self::apply(field, &command)
+                    self.apply(field, &command)
                 }
                 Parse::QueryError(error) => FieldReply::Refused(error.to_string()),
                 Parse::Incomplete | Parse::Invalid => {
@@ -134,10 +153,6 @@ impl FieldMachine {
                 }
             },
             Handler::Leaf(_) => match row.id {
-                "char-delete" => {
-                    Self::delete_chars(field, count.unwrap_or(1), key == 'X');
-                    FieldReply::Consumed
-                }
                 // `p` lands at the caret, `P` one char before it; the
                 // text is the owning editor's register (`"ap` names it)
                 "paste" => {
@@ -171,34 +186,9 @@ impl FieldMachine {
         }
     }
 
-    /// x/X with a count: chars under / before the caret.
-    fn delete_chars(field: &mut LineEdit, count: usize, backward: bool) {
-        for _ in 0..count {
-            if backward {
-                if field.cursor() == 0 {
-                    break;
-                }
-                field.backspace();
-            } else {
-                let cursor = field.cursor();
-                if cursor >= field.text().len() {
-                    break;
-                }
-                let mut end = cursor + 1;
-                while end < field.text().len() && !field.text().is_char_boundary(end) {
-                    end += 1;
-                }
-                field.delete_range(cursor, end);
-            }
-        }
-    }
-
     /// A completed grammar command against the field's one-line buffer —
     /// the same `resolve`/`cursor_after` document editing consumes.
-    fn apply(field: &mut LineEdit, command: &Command) -> FieldReply {
-        if command.register.is_some() {
-            return FieldReply::Refused("an input field does not write registers".into());
-        }
+    fn apply(&mut self, field: &mut LineEdit, command: &Command) -> FieldReply {
         match &command.target {
             Target::SurroundDelete(_)
             | Target::SurroundChange { .. }
@@ -212,8 +202,17 @@ impl FieldMachine {
             }
             _ => {}
         }
-        if matches!(command.op, Some(Op::Indent | Op::Dedent)) {
-            return FieldReply::Refused("indent is not supported in a one-line field".into());
+        match command.op {
+            None | Some(Op::Delete | Op::Yank | Op::Change) => {}
+            Some(Op::Indent | Op::Dedent) => {
+                return FieldReply::Refused("indent is not supported in a one-line field".into());
+            }
+            Some(op) => {
+                return FieldReply::Refused(format!(
+                    "{} is not supported in an input field",
+                    op.name()
+                ));
+            }
         }
         let resolved = match grammar::resolve(field.buffer(), field.cursor(), command) {
             Ok(Some(resolved)) => resolved,
@@ -229,21 +228,22 @@ impl FieldMachine {
                     grammar::cursor_after(field.buffer(), field.cursor(), command, &resolved);
                 field.set_cursor(cursor);
             }
-            // Yank resolves (a dead target still refuses) but stores
-            // nothing: register writes are out of v1 — module docs.
-            Some(Op::Yank) => {}
-            Some(Op::Delete) => {
-                let start = resolved.range.start.get();
-                field.delete_range(start, resolved.range.end.get());
-                field.set_cursor(start);
+            Some(op @ (Op::Yank | Op::Delete | Op::Change)) => {
+                let (start, end) = (resolved.range.start.get(), resolved.range.end.get());
+                if end > start {
+                    self.write = Some(FieldWrite {
+                        register: command.register,
+                        text: field.text()[start..end].to_owned(),
+                        yank: op == Op::Yank,
+                    });
+                }
+                if op != Op::Yank {
+                    field.delete_range(start, end);
+                    field.set_cursor(start);
+                    field.normal = op != Op::Change;
+                }
             }
-            Some(Op::Change) => {
-                let start = resolved.range.start.get();
-                field.delete_range(start, resolved.range.end.get());
-                field.set_cursor(start);
-                field.normal = false;
-            }
-            Some(Op::Indent | Op::Dedent) => unreachable!("indent refuses above"),
+            Some(_) => unreachable!("other operators refuse above"),
         }
         FieldReply::Consumed
     }
@@ -316,8 +316,50 @@ mod tests {
         assert_eq!(field.text(), "ain");
         assert!(!field.normal, "s is cl: change enters insert");
         let field = drive("main", 0, "yw");
-        assert_eq!(field.text(), "main", "yank stores nothing in v1");
+        assert_eq!(field.text(), "main", "a yank changes nothing in the field");
         assert_eq!(field.cursor(), 0);
+    }
+
+    #[test]
+    fn operators_hand_their_text_to_the_register_file() {
+        let feed = |text: &str, keys: &str| {
+            let mut field = LineEdit::new(text);
+            field.normal = true;
+            field.set_cursor(0);
+            let mut machine = FieldMachine::default();
+            for c in keys.chars() {
+                machine.feed(&mut field, Key::Char(c));
+            }
+            (machine.take_write(), field.text().to_owned())
+        };
+        let write = |register, text: &str, yank| {
+            Some(FieldWrite {
+                register,
+                text: text.to_owned(),
+                yank,
+            })
+        };
+        assert_eq!(
+            feed("main one", "yw"),
+            (write(None, "main ", true), "main one".into())
+        );
+        assert_eq!(
+            feed("main one", "dw"),
+            (write(None, "main ", false), "one".into())
+        );
+        assert_eq!(
+            feed("main one", "\"ayiw"),
+            (write(Some('a'), "main", true), "main one".into())
+        );
+        assert_eq!(
+            feed("main one", "cw"),
+            (write(None, "main", false), " one".into())
+        );
+        assert_eq!(
+            feed("main one", "w"),
+            (None, "main one".into()),
+            "a motion writes nothing"
+        );
     }
 
     #[test]
@@ -335,7 +377,6 @@ mod tests {
             }
             message.unwrap_or_else(|| panic!("{keys} should refuse"))
         };
-        assert!(refused(&mut machine, &mut field, "\"ayw").contains("registers"));
         assert!(refused(&mut machine, &mut field, "ds\"").contains("surround"));
         assert!(refused(&mut machine, &mut field, ">w").contains("indent"));
         assert!(refused(&mut machine, &mut field, ":").contains("prompt"));
@@ -420,7 +461,7 @@ mod tests {
                     (t, resolved.range.start.get())
                 }
                 Some(Op::Yank) => (text.to_string(), cursor),
-                Some(Op::Indent | Op::Dedent) => unreachable!("refused in fields"),
+                Some(_) => unreachable!("refused in fields"),
             };
             assert_eq!(field.text(), want_text, "{keys} on {text:?}@{cursor}");
             assert_eq!(field.cursor(), want_cursor, "{keys} on {text:?}@{cursor}");

@@ -10,6 +10,11 @@ pub(crate) struct BlockInsertState {
     rows: Vec<usize>,
     column: DisplayColumn,
     pad: bool,
+    /// Each row gets the text after its own end (`$A`), not at `column`.
+    at_line_ends: bool,
+    /// Where `I` / `A` leave the cursor when the Insert ends: the
+    /// block's top-left cell.
+    home: Option<(usize, DisplayColumn)>,
 }
 struct RowPart {
     range: Option<Range>,
@@ -23,16 +28,61 @@ impl Editor {
             self.message = "readonly buffer".into();
             return;
         }
-        let head = self.head();
-        self.sels_mut().stretch_primary(head, head);
-        self.view_mut().desired_column = None;
-        self.mode = Mode::VisualBlock;
+        if self.mode == Mode::Normal {
+            self.view_mut().desired_column = None;
+        }
+        self.enter_visual_mode(Mode::VisualBlock);
+    }
+
+    /// The selection was extended with `$`: it reaches each line's end.
+    pub(crate) fn wants_line_end(&self) -> bool {
+        self.view()
+            .desired_column
+            .is_some_and(|column| column.get() >= usize::MAX / 2)
+    }
+
+    /// The selected part of each row of the block, top to bottom; rows
+    /// the block does not reach are left out.
+    pub(crate) fn block_row_ranges(&self) -> Vec<Range> {
+        let Some(rect) = self.block_rect() else {
+            return Vec::new();
+        };
+        (rect.first_line..=rect.last_line)
+            .filter_map(|line| {
+                if self.wants_line_end() {
+                    let start = self
+                        .row_part(line, rect.left_cell, rect.left_cell + 1)
+                        .range?;
+                    return Some(Range::charwise(start.start, self.buf().line_end(line)));
+                }
+                self.row_part(line, rect.left_cell, rect.right_cell + 1)
+                    .range
+            })
+            .collect()
+    }
+
+    /// `A` on a selection that reaches each line's end: Insert after
+    /// the end of every line from `first` to `last`.
+    pub(crate) fn block_append_at_ends(&mut self, first: usize, last: usize) {
+        let home = self
+            .block_rect()
+            .map_or(DisplayColumn::new(0), |rect| rect.left_cell);
+        self.mode = Mode::Insert;
+        self.set_head(self.buf().line_end(first));
+        self.block_insert_state = Some(BlockInsertState {
+            rows: (first + 1..=last).collect(),
+            column: DisplayColumn::new(0),
+            pad: false,
+            at_line_ends: true,
+            home: Some((first, home)),
+        });
+        self.enter_insert_from("<c-v>I");
     }
     pub fn block_rect_pub(&self) -> Option<BlockRect> {
         self.block_rect()
     }
 
-    fn cluster_cells(&self, byte: usize) -> (DisplayColumn, DisplayColumn) {
+    pub(crate) fn cluster_cells(&self, byte: usize) -> (DisplayColumn, DisplayColumn) {
         let line = self.buf().line_of(byte);
         let start = self.buf().line_start(line);
         let slice = self
@@ -130,7 +180,7 @@ impl Editor {
         }
     }
 
-    fn land_at_cell(&mut self, line: usize, column: DisplayColumn) {
+    pub(crate) fn land_at_cell(&mut self, line: usize, column: DisplayColumn) {
         let start = self.buf().line_start(line);
         let end = self.buf().line_end(line);
         let byte = RopeGraphemes::new(
@@ -213,6 +263,8 @@ impl Editor {
                 rows,
                 column: rect.left_cell,
                 pad: false,
+                at_line_ends: false,
+                home: None,
             });
             self.enter_insert_from("<c-v>c");
         }
@@ -296,6 +348,8 @@ impl Editor {
             rows,
             column,
             pad: right,
+            at_line_ends: false,
+            home: Some((rect.first_line, rect.left_cell)),
         });
         self.enter_insert_from("<c-v>I");
     }
@@ -314,6 +368,13 @@ impl Editor {
                 if line > self.buf().last_content_line() {
                     return None;
                 }
+                if state.at_line_ends {
+                    let end = self.buf().line_end(line);
+                    return Some(strop_core::Replacement::new(
+                        Range::charwise(end, end),
+                        typed.to_owned(),
+                    ));
+                }
                 self.insertion(line, state.column, typed, state.pad)
             })
             .collect();
@@ -326,6 +387,9 @@ impl Editor {
             },
         ) {
             self.message = error.to_string();
+        }
+        if let Some((line, column)) = state.home {
+            self.land_at_cell(line, column);
         }
     }
 }
