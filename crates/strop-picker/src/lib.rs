@@ -8,6 +8,8 @@ pub mod query;
 pub mod rank;
 pub use rank::{FilterRequest, Ranking, RankingEvent, RankingWorker, Row};
 mod line_edit;
+mod replacer;
+pub use replacer::{replace_span, Replacer};
 mod score;
 mod source;
 mod workset;
@@ -502,33 +504,6 @@ impl Picker {
     pub fn current(&self) -> Option<&Item> {
         self.rows.get(self.selected).map(|r| &self.items[r.item])
     }
-}
-
-/// The clamped, char-boundary-safe byte span of a match on its line.
-/// Row rendering and apply share this (0007 §4: preview cannot lie).
-pub fn replace_span(line_text: &str, col: usize, match_len: usize) -> (usize, usize) {
-    let mut start = col.saturating_sub(1).min(line_text.len());
-    while start > 0 && !line_text.is_char_boundary(start) {
-        start -= 1;
-    }
-    let mut end = start.saturating_add(match_len).min(line_text.len());
-    while end > start && !line_text.is_char_boundary(end) {
-        end -= 1;
-    }
-
-    (start, end)
-}
-
-/// The one replacement computation: `line_text` with the matched span
-/// swapped for `replacement`.
-pub fn replaced_line(line_text: &str, col: usize, match_len: usize, replacement: &str) -> String {
-    let (start, end) = replace_span(line_text, col, match_len);
-    format!(
-        "{}{}{}",
-        &line_text[..start],
-        replacement,
-        &line_text[end..]
-    )
 }
 
 #[cfg(test)]

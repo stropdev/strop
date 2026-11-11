@@ -69,8 +69,27 @@ impl<'a> BufferEdit<'a> {
         Self(document)
     }
     pub fn insert(&mut self, at: impl Into<ByteOffset>, text: &str) -> bool {
+        let at = at.into();
+        let document = self.0.document;
+        let write = match self
+            .0
+            .editor
+            .collection_admit(document, at.get(), at.get(), text)
+        {
+            Ok(write) => write,
+            Err(refusal) => {
+                self.0.editor.collection_refused(document);
+                self.0.editor.message = refusal.to_string();
+                return false;
+            }
+        };
         match self.0.buf.edit().insert(at, text) {
-            Ok(()) => true,
+            Ok(()) => {
+                if let Some(write) = write.filter(|_| !text.is_empty()) {
+                    self.0.editor.collection_written(document, write, text);
+                }
+                true
+            }
             Err(error) => {
                 self.0.editor.message = format!("edit failed: {error}");
                 false
@@ -78,8 +97,27 @@ impl<'a> BufferEdit<'a> {
         }
     }
     pub fn delete(&mut self, range: Range) -> String {
+        let document = self.0.document;
+        let write =
+            match self
+                .0
+                .editor
+                .collection_admit(document, range.start.get(), range.end.get(), "")
+            {
+                Ok(write) => write,
+                Err(refusal) => {
+                    self.0.editor.collection_refused(document);
+                    self.0.editor.message = refusal.to_string();
+                    return String::new();
+                }
+            };
         match self.0.buf.edit().delete(range) {
-            Ok(text) => text,
+            Ok(text) => {
+                if let Some(write) = write.filter(|_| !text.is_empty()) {
+                    self.0.editor.collection_written(document, write, "");
+                }
+                text
+            }
             Err(error) => {
                 self.0.editor.message = format!("edit failed: {error}");
                 String::new()

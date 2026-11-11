@@ -63,10 +63,8 @@ fn closing_a_source_removes_only_its_excerpts_and_keeps_the_view_usable() {
     assert!(!current_text(&editor).contains("alpha one"));
     assert!(current_text(&editor).contains("beta two"));
     editor.set_head(current_text(&editor).find("beta two").unwrap());
-    let before = current_text(&editor);
     editor.feed_text("rX");
-    assert!(editor.message.contains("read-only"));
-    assert_eq!(current_text(&editor), before);
+    assert!(current_text(&editor).contains("Xeta two"));
 }
 
 #[test]

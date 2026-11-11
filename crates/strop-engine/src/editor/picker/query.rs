@@ -35,6 +35,17 @@ impl Editor {
             SearchQuery::parse(glue.picker.input.text())
         });
         glue.query = Some(query.clone());
+        glue.replace_target = (kind == Kind::Search)
+            .then(|| {
+                strop_picker::query::ContentPlan::compile(&query)
+                    .ok()
+                    .flatten()
+            })
+            .flatten()
+            .and_then(|plan| match plan.replacement_target() {
+                strop_picker::query::ReplacementTarget::Single(regex) => Some(regex),
+                _ => None,
+            });
         glue.query_highlights = query.highlights.clone();
         let root = glue
             .search

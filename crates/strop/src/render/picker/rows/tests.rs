@@ -69,7 +69,15 @@ fn replace_rows_show_the_hit_and_its_delta() {
         "pub fn retry_request(attempt: usize) -> bool {",
     );
     let t = t();
-    let lines = search_rows(&t, &item, Some("dispatch_request"), false, 100, false, 4);
+    let lines = search_rows(
+        &t,
+        &item,
+        Some(&strop_picker::Replacer::new(None, "dispatch_request")),
+        false,
+        100,
+        false,
+        4,
+    );
     assert_eq!(lines.len(), 2, "one hit row and one delta row");
     let old = line_text(&lines[0]);
     assert!(old.contains("    5  "), "line number: {old:?}");
@@ -204,7 +212,15 @@ fn excluded_hits_strike_through_in_muted_not_failure_red() {
         "assert!(retry_request(1));",
     );
     let t = t();
-    let lines = search_rows(&t, &item, Some("dispatch_request"), true, 100, false, 4);
+    let lines = search_rows(
+        &t,
+        &item,
+        Some(&strop_picker::Replacer::new(None, "dispatch_request")),
+        true,
+        100,
+        false,
+        4,
+    );
     assert_eq!(
         lines.len(),
         2,
@@ -241,7 +257,15 @@ fn excluded_hits_strike_through_in_muted_not_failure_red() {
 fn replace_rows_selected_band_covers_the_logical_block() {
     let item = grep_item("a.rs", 1, 1, 3, "foo bar");
     let t = t();
-    for line in search_rows(&t, &item, Some("baz"), false, 40, true, 4) {
+    for line in search_rows(
+        &t,
+        &item,
+        Some(&strop_picker::Replacer::new(None, "baz")),
+        false,
+        40,
+        true,
+        4,
+    ) {
         assert_eq!(line.width(), 40, "the band pads to full width");
         assert!(
             line.spans.iter().all(|s| s.style.bg == Some(t.raised)),
@@ -254,7 +278,15 @@ fn replace_rows_selected_band_covers_the_logical_block() {
 #[test]
 fn replace_rows_empty_replacement_renders_the_deletion() {
     let item = grep_item("a.rs", 1, 1, 3, "foo bar");
-    let lines = search_rows(&t(), &item, Some(""), false, 60, false, 4);
+    let lines = search_rows(
+        &t(),
+        &item,
+        Some(&strop_picker::Replacer::new(None, "")),
+        false,
+        60,
+        false,
+        4,
+    );
     let new = line_text(&lines[1]);
     assert!(new.contains("+ "), "{new:?}");
     assert!(
@@ -397,7 +429,15 @@ fn source_rows_are_total_and_cell_bounded_at_degenerate_widths() {
     for width in 0..30 {
         for line in search_rows(&t, &item, None, false, width, true, 3)
             .into_iter()
-            .chain(search_rows(&t, &item, Some("界"), false, width, true, 3))
+            .chain(search_rows(
+                &t,
+                &item,
+                Some(&strop_picker::Replacer::new(None, "界")),
+                false,
+                width,
+                true,
+                3,
+            ))
         {
             assert!(line.width() <= width as usize, "width {width}: {line:?}");
         }

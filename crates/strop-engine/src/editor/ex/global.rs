@@ -224,6 +224,15 @@ pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
     }
 }
 
+/// One command of a batch (`:cdo`, `:cfdo`): it finishes before the
+/// batch moves on, so nothing in it defers to a worker, and whatever it
+/// changes in the current buffer is one undo step (0094 §3.1).
+pub(crate) fn run_ex_in_batch(editor: &mut Editor, command: &str) {
+    let compound = compound_begin(editor);
+    run_ex(editor, command);
+    compound_end(editor, compound);
+}
+
 /// `:[range]norm[al][!] {keys}`
 pub(crate) fn ex_normal_command(editor: &mut Editor, call: &ExCall<'_>) {
     if call.arg.is_empty() {

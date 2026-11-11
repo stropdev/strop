@@ -106,6 +106,14 @@ impl Editor {
         }
         let (command, argument) = argument.split_once(' ').unwrap_or((argument, ""));
         match command {
+            "apply" => {
+                self.review_apply_pub();
+                return Ok(());
+            }
+            "cancel" => {
+                self.review_cancel_pub();
+                return Ok(());
+            }
             "terminal" => {
                 if !argument.is_empty() || range.is_some() {
                     return Err(

@@ -32,22 +32,55 @@ fn file_editor() -> (tempfile::TempDir, Editor) {
     (dir, editor)
 }
 
+/// 0094 §3.4: on a source file the list is what can be done to the code.
+/// With no language server and nothing to recover there is no list at all,
+/// and never a filesystem verb.
 #[test]
-fn space_a_on_a_file_lists_its_actions_under_one_title() {
+fn space_a_on_a_source_file_offers_no_filesystem_rows() {
     let (_dir, mut editor) = file_editor();
     editor.feed_text(" a");
-    let glue = editor.picker.as_ref().expect("Space a opens the list");
+    assert!(
+        editor.picker.is_none(),
+        "nothing to list: {:?}",
+        editor.message()
+    );
+    assert!(!editor.message().is_empty(), "the reason is named");
+
+    // the language server's answer is the whole list
+    editor.open_actions(Vec::new(), true, "actions");
+    editor.deliver_code_actions(
+        vec![code("Import Thing"), code("Inline variable")],
+        strop_lsp::PositionEncoding::Utf16,
+    );
+    assert_eq!(titles(&editor), ["Import Thing", "Inline variable"]);
+}
+
+#[test]
+fn filesystem_rows_live_in_the_directory_buffer_and_under_fs() {
+    let (dir, mut editor) = file_editor();
+    editor.feed_text(":fs<cr>");
+    let glue = editor.picker.as_ref().expect(":fs opens its rows");
     assert_eq!(glue.picker.kind, Kind::Actions);
     assert_eq!(glue.picker.kind.title().trim(), "actions");
     let rows = titles(&editor);
     assert!(rows.iter().any(|row| row == "Rename"), "{rows:?}");
     assert!(
-        rows.iter().any(|row| row == "Copy resource URI"),
-        "{rows:?}"
-    );
-    assert!(
         !rows.iter().any(|row| row == "Refresh directory"),
         "directory rows need a directory: {rows:?}"
+    );
+    editor.close_picker();
+
+    editor
+        .browse_directory(&dir.path().display().to_string())
+        .unwrap();
+    editor.wait_io().unwrap();
+    assert!(editor.directory().is_some());
+    editor.feed_text(" a");
+    let rows = titles(&editor);
+    assert!(rows.iter().any(|row| row == "New file"), "{rows:?}");
+    assert!(
+        rows.iter().any(|row| row == "Refresh directory"),
+        "{rows:?}"
     );
 }
 

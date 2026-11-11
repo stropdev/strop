@@ -480,22 +480,42 @@ pub(crate) const COMMANDS: &[ExCommand] = &[
     own("symbols", "open the document symbols picker", |e, _| {
         e.lsp_document_symbols_pub()
     }),
-    own(
-        "undo-change",
-        "undo the last applied change plan",
-        |e, _| e.undo_last_change(),
+    command(
+        "copen",
+        4,
+        "show the quickfix list: the newest collection",
+        |e, _| e.quickfix_open(),
     ),
-    own(
-        "save-change",
-        "save files changed by the latest reviewed operation",
-        |e, _| e.save_changed_files_pub(),
+    command(
+        "cwindow",
+        2,
+        "show the quickfix list: the newest collection",
+        |e, _| e.quickfix_open(),
     ),
-    own("apply-change", "apply the prepared proposal", |e, _| {
-        e.review_apply_pub()
+    command("cnext", 2, "next quickfix hit (]q)", |e, _| {
+        e.quickfix_step(1)
     }),
-    own("cancel-change", "cancel the prepared proposal", |e, _| {
-        e.review_cancel_pub()
+    command("cprevious", 2, "previous quickfix hit ([q)", |e, _| {
+        e.quickfix_step(-1)
     }),
+    command("cNext", 2, "previous quickfix hit ([q)", |e, _| {
+        e.quickfix_step(-1)
+    }),
+    command("cc", 2, ":cc [N]: quickfix hit N", |e, c| {
+        e.quickfix_goto(c.arg)
+    }),
+    command(
+        "cdo",
+        3,
+        "run an ex command at every quickfix hit: :cdo s/a/b/g",
+        |e, c| e.quickfix_do(c.arg, false),
+    ),
+    command(
+        "cfdo",
+        3,
+        "run an ex command once per quickfix file: :cfdo w",
+        |e, c| e.quickfix_do(c.arg, true),
+    ),
     own(
         "select-next",
         "select the next occurrence of the word or selection",

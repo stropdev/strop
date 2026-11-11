@@ -260,6 +260,9 @@ impl Editor {
     pub(crate) fn feed_readonly(&mut self, key: Key) {
         if key == Key::Esc {
             self.cancel_remote_write(self.current());
+            if self.review.preparing.is_some() {
+                self.review_cancel_pub();
+            }
             self.cancel_directory_filter(self.current());
             self.walker.clear();
             return;
@@ -273,30 +276,19 @@ impl Editor {
         {
             let forward = self.walker.at_prefix(&["]"]);
             let n = self.walker.state.count().unwrap_or(1);
-            let collection = self.collections.contains_key(&self.current());
             self.walker.clear();
             for _ in 0..n {
-                if collection {
-                    self.collection_file_step(forward);
-                } else {
-                    self.commit_file_step(forward);
-                }
+                self.commit_file_step(forward);
             }
             return;
         }
         if !self.walker.is_ground() {
             return self.feed_command(key);
         }
-        if self.directory_key(key) {
+        if self.directory_key(key) || self.review_key(key) {
             return;
         }
         match key {
-            Key::Char('+') if self.collections.contains_key(&self.current()) => {
-                self.collection_context_step(true)
-            }
-            Key::Char('-') if self.collections.contains_key(&self.current()) => {
-                self.collection_context_step(false)
-            }
             Key::Char('q') => self.close_surface(),
             Key::CtrlL => self.needs_repaint = true,
             Key::CtrlO => self.jump_back(),

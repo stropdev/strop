@@ -164,6 +164,7 @@ pub(crate) fn parse_substitute(
         pattern,
         replacement,
         flags,
+        within: editor.collection_body_spans(editor.current()),
     })
 }
 

@@ -226,8 +226,9 @@ fn rename_applies_across_open_documents() {
         e.docs.get(second).unwrap().buf.text().to_string(),
         "omega there\n"
     );
-    // Grouped undo restores both buffers through their receipts.
-    e.feed_text(":undo-change\r");
+    // `u` in the review restores both buffers and both files.
+    e.wait_io().unwrap();
+    e.feed_text("u");
     assert_eq!(
         e.docs.get(second).unwrap().buf.text().to_string(),
         "alpha there\n"
@@ -303,7 +304,7 @@ fn stale_edit_replies_never_touch_the_buffer() {
 }
 
 #[test]
-fn grouped_undo_skips_buffers_edited_since_the_receipt() {
+fn review_undo_skips_buffers_edited_since_the_apply() {
     let dir = tempfile::tempdir().unwrap();
     let (mut e, first) = file_editor(&dir, "a.txt", "alpha here\n");
     let b_path = dir.path().join("b.txt");
@@ -325,11 +326,15 @@ fn grouped_undo_skips_buffers_edited_since_the_receipt() {
             ),
         ],
     }));
+    let review = e.current();
     e.review_apply_pub();
+    e.wait_io().unwrap();
     e.switch_to(second);
     e.feed_text("0rZ"); // edit b.txt after the rename
-    e.feed_text(":undo-change\r");
-    assert!(e.message.contains("skipped"), "{}", e.message);
+    e.switch_to(review);
+    e.feed_text("u");
+    assert!(e.message.contains("could not revert"), "{}", e.message);
+    assert!(e.message.contains("b.txt (edited since)"), "{}", e.message);
     assert_eq!(
         e.docs.get(second).unwrap().buf.text().to_string(),
         "Zmega there\n"

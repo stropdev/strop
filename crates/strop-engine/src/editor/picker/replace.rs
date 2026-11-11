@@ -166,13 +166,12 @@ mod tests {
         e.docs.get(document).unwrap().buf.text().to_string()
     }
 
-    /// Space R against a temp tree: one open buffer, one unopened
-    /// file. Enter must present one review covering both files without
-    /// mutating anything; apply writes dirty edits through the gateway
-    /// with a receipt and no saves; `:save-change` persists exactly
-    /// those two documents, identically for open and unopened targets.
+    /// Space R against a temp tree: one open buffer, one unopened file.
+    /// Enter in With presents one review covering both without changing
+    /// anything; Enter in the review changes both buffers and writes both
+    /// files, and only those; `u` puts buffers and files back.
     #[test]
-    fn replace_review_apply_and_save_change_flow() {
+    fn replace_is_two_steps_and_u_reverts_buffers_and_files() {
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
@@ -180,6 +179,12 @@ mod tests {
         std::fs::write(&b, "foo one\n").unwrap();
         let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
         let a_doc = e.open_fixture(&a).unwrap();
+        // an unrelated dirty file is never written by the review
+        let c = dir.path().join("c.txt");
+        std::fs::write(&c, "unrelated\n").unwrap();
+        let c_doc = e.open_fixture(&c).unwrap();
+        e.feed_text("Ihand edited \x1b");
+        e.switch_to(a_doc);
 
         e.feed_text(" Rfoo");
         e.wait_picker();
@@ -188,13 +193,13 @@ mod tests {
         e.feed_text("bar");
         e.accept_current_picker();
         // the unopened target loads through its owned job, then the
-        // review presents — nothing has mutated yet
+        // review presents — nothing has changed yet
         e.wait_io().unwrap();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+        assert_eq!(e.buf().name.as_deref(), Some("review: replace"));
         let review = e.current();
         let proposal = e.buf().text().to_string();
         assert!(
-            proposal.contains("strop change proposal 1: replace"),
+            proposal.starts_with("replace: 2 file(s) to change\nEnter applies and writes"),
             "{proposal}"
         );
         assert!(proposal.contains("-alpha foo"), "{proposal}");
@@ -202,7 +207,6 @@ mod tests {
         assert!(proposal.contains("-beta foo"), "{proposal}");
         assert!(proposal.contains("-foo one"), "{proposal}");
         assert!(proposal.contains("+bar one"), "{proposal}");
-        assert!(proposal.contains(":apply-change"), "{proposal}");
         assert_eq!(text_of(&e, a_doc), "alpha foo\nbeta foo\ngamma\n");
         let b_doc = e
             .docs
@@ -212,33 +216,10 @@ mod tests {
         assert_eq!(text_of(&e, b_doc), "foo one\n");
         assert!(!e.io_pending(), "the review schedules no saves");
 
-        e.review_apply_pub();
+        e.feed(strop_core::frontend_input::Key::Enter);
+        e.wait_io().unwrap();
         assert_eq!(text_of(&e, a_doc), "alpha bar\nbeta bar\ngamma\n");
         assert_eq!(text_of(&e, b_doc), "bar one\n");
-        assert!(e.docs.get(a_doc).unwrap().buf.is_dirty());
-        assert!(e.docs.get(b_doc).unwrap().buf.is_dirty());
-        // apply ≠ save: both buffers dirty, both files untouched on disk
-        assert!(!e.io_pending(), "apply schedules no saves");
-        assert_eq!(
-            std::fs::read_to_string(&a).unwrap(),
-            "alpha foo\nbeta foo\ngamma\n"
-        );
-        assert_eq!(std::fs::read_to_string(&b).unwrap(), "foo one\n");
-        let receipt = text_of(&e, review);
-        assert!(receipt.contains("— APPLIED"), "{receipt}");
-        assert!(receipt.contains("a.txt"), "{receipt}");
-        assert!(receipt.contains("b.txt"), "{receipt}");
-
-        // explicit persistence: open and unopened targets save
-        // identically through the per-document contract — and ONLY
-        // those targets: an unrelated dirty file is left alone
-        let c = dir.path().join("c.txt");
-        std::fs::write(&c, "unrelated\n").unwrap();
-        let c_doc = e.open_fixture(&c).unwrap();
-        e.feed_text("Ihand edited \x1b");
-        assert!(e.docs.get(c_doc).unwrap().buf.is_dirty());
-        e.save_changed_files_pub();
-        e.wait_io().unwrap();
         assert_eq!(
             std::fs::read_to_string(&a).unwrap(),
             "alpha bar\nbeta bar\ngamma\n"
@@ -246,17 +227,73 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&b).unwrap(), "bar one\n");
         assert!(!e.docs.get(a_doc).unwrap().buf.is_dirty());
         assert!(!e.docs.get(b_doc).unwrap().buf.is_dirty());
-        assert_eq!(
-            std::fs::read_to_string(&c).unwrap(),
-            "unrelated\n",
-            ":save-change saves exactly the change-plan documents"
-        );
+        assert_eq!(std::fs::read_to_string(&c).unwrap(), "unrelated\n");
         assert!(e.docs.get(c_doc).unwrap().buf.is_dirty());
+        assert_eq!(e.message, "replace: wrote 2 file(s)");
+        let applied = text_of(&e, review);
+        assert!(
+            applied.starts_with("replace: changed and wrote 2 file(s)\nu reverts"),
+            "{applied}"
+        );
 
-        // the receipt anchors grouped undo of the applied group
-        e.feed_text(":undo-change\r");
+        e.feed_text("u");
+        e.wait_io().unwrap();
         assert_eq!(text_of(&e, a_doc), "alpha foo\nbeta foo\ngamma\n");
         assert_eq!(text_of(&e, b_doc), "foo one\n");
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            "alpha foo\nbeta foo\ngamma\n"
+        );
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "foo one\n");
+        assert!(!e.docs.get(a_doc).unwrap().buf.is_dirty());
+        assert!(!e.docs.get(b_doc).unwrap().buf.is_dirty());
+    }
+
+    /// A `regex:` term with groups expands `$1` and `\1` in With, per hit.
+    #[test]
+    fn regex_captures_expand_in_with() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        std::fs::write(&a, "get_alpha()\nget_beta()\ncost $1\n").unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+        let a_doc = e.open_fixture(&a).unwrap();
+        e.open_search(true);
+        e.paste_bracketed("regex:\"get_(\\w+)\"");
+        e.wait_picker();
+        assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 2);
+        e.feed(strop_core::frontend_input::Key::Tab);
+        e.paste_bracketed("fetch_$1_\\1");
+        e.accept_current_picker();
+        e.wait_io().unwrap();
+        let proposal = e.buf().text().to_string();
+        assert!(proposal.contains("+fetch_alpha_alpha()"), "{proposal}");
+        e.review_apply_pub();
+        assert_eq!(
+            text_of(&e, a_doc),
+            "fetch_alpha_alpha()\nfetch_beta_beta()\ncost $1\n"
+        );
+    }
+
+    /// The regex toggle (`Alt-R`, 0093 §3.7) makes the bare term a
+    /// pattern, and its groups expand in With as a `regex:` term's do.
+    #[test]
+    fn the_regex_toggle_gives_with_its_captures() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        std::fs::write(&a, "get_alpha()\nget_beta()\n").unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+        let a_doc = e.open_fixture(&a).unwrap();
+        e.open_search(true);
+        e.feed(strop_core::frontend_input::Key::Alt('r'));
+        e.paste_bracketed("get_(\\w+)");
+        e.wait_picker();
+        assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 2);
+        e.feed(strop_core::frontend_input::Key::Tab);
+        e.paste_bracketed("fetch_$1");
+        e.accept_current_picker();
+        e.wait_io().unwrap();
+        e.review_apply_pub();
+        assert_eq!(text_of(&e, a_doc), "fetch_alpha()\nfetch_beta()\n");
     }
 
     /// Dirty open buffers win over disk (0051 §6 R04): a hit whose
@@ -283,7 +320,7 @@ mod tests {
         e.feed_text("bar");
         e.accept_current_picker();
         e.wait_io().unwrap();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+        assert_eq!(e.buf().name.as_deref(), Some("review: replace"));
         let proposal = e.buf().text().to_string();
         assert!(proposal.contains("+beta bar"), "{proposal}");
         e.review_apply_pub();
@@ -312,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_open_is_named_in_review_and_receipt() {
+    fn failed_open_is_named_in_the_review() {
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
@@ -330,7 +367,7 @@ mod tests {
         std::fs::create_dir(&b).unwrap();
         e.accept_current_picker();
         e.wait_io().unwrap();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+        assert_eq!(e.buf().name.as_deref(), Some("review: replace"));
         let review = e.current();
         let proposal = e.buf().text().to_string();
         assert!(
@@ -339,9 +376,9 @@ mod tests {
         );
         e.review_apply_pub();
         assert_eq!(text_of(&e, a_doc), "alpha bar\n");
-        let receipt = text_of(&e, review);
-        assert!(receipt.contains("refused: "), "{receipt}");
-        assert!(receipt.contains("b.txt"), "{receipt}");
+        let after = text_of(&e, review);
+        assert!(after.contains("refused targets:"), "{after}");
+        assert!(after.contains("b.txt"), "{after}");
     }
 
     #[test]
@@ -357,7 +394,7 @@ mod tests {
         e.feed_text("bar");
         e.accept_current_picker();
         e.wait_io().unwrap();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+        assert_eq!(e.buf().name.as_deref(), Some("review: replace"));
         // the source moves after the review was prepared
         e.switch_to(a_doc);
         e.feed_text("Ichanged \x1b");
@@ -367,20 +404,20 @@ mod tests {
             "changed alpha foo\n",
             "a moved target is refused, never recomputed"
         );
-        let receipt = e
+        let review = e
             .docs
             .iter()
             .find_map(|(id, doc)| {
-                (doc.buf.name.as_deref() == Some("change proposal 1")).then_some(id)
+                (doc.buf.name.as_deref() == Some("review: replace")).then_some(id)
             })
             .unwrap();
-        let receipt = text_of(&e, receipt);
-        assert!(receipt.contains("refused: "), "{receipt}");
+        let after = text_of(&e, review);
+        assert!(after.contains("refused targets:"), "{after}");
         assert!(
-            receipt.contains("a.txt"),
-            "the stale target is named: {receipt}"
+            after.contains("a.txt"),
+            "the stale target is named: {after}"
         );
-        assert!(receipt.contains("edited since the proposal"), "{receipt}");
+        assert!(after.contains("edited since the review"), "{after}");
     }
 
     #[test]
@@ -396,8 +433,8 @@ mod tests {
         e.feed_text("bar");
         e.accept_current_picker();
         e.wait_io().unwrap();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
-        e.review_cancel_pub();
+        assert_eq!(e.buf().name.as_deref(), Some("review: replace"));
+        e.feed_text("q");
         assert_eq!(text_of(&e, a_doc), "alpha foo\n");
         assert!(!e.docs.get(a_doc).unwrap().buf.is_dirty());
         e.wait_picker();
@@ -486,7 +523,7 @@ mod tests {
         e.feed_text("blade");
         e.accept_current_picker();
         e.wait_io().unwrap();
-        assert_eq!(e.buf().name.as_deref(), Some("change proposal 1"));
+        assert_eq!(e.buf().name.as_deref(), Some("review: replace"));
         let proposal = e.buf().text().to_string();
         assert!(proposal.contains("-sword shield"), "{proposal}");
         assert!(proposal.contains("+blade shield"), "{proposal}");

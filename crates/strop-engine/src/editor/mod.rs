@@ -241,7 +241,7 @@ pub struct Editor {
     /// Applied change plans and their receipts (0043); grouped undo reads it.
     pub(crate) changes: changes::ChangeState,
     pub(crate) review: changes::review::ReviewState,
-    /// Open read-only source-backed collections by their buffer document (0044/0081).
+    /// Open source-backed collections by their buffer document (0044/0094).
     pub(crate) collections: HashMap<strop_core::id::DocumentId, collections::Collection>,
     /// A build waiting on background source loads (0044 v2).
     pub(crate) collection_build: Option<collections::CollectionBuild>,
@@ -716,6 +716,7 @@ pub fn state_json(editor: &Editor) -> String {
         // the lifecycle registers the differential harness diffs (0092)
         "registers": lifecycle_registers,
         "dirty": editor.buf().is_dirty(),
+        "dirty_buffers": editor.docs.iter().filter(|(_, doc)| doc.buf.is_dirty()).count(),
         "terminal":editor.terminal_status(editor.current()),
         "completion": editor.completion_snapshot(true),
     })

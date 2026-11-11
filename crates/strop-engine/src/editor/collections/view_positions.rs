@@ -81,6 +81,7 @@ impl Editor {
         doc.buf.clear_changes();
         doc.buf.mark_clean();
         collection.revision = doc.buf.revision();
+        collection.mapped = collection.revision;
         let title_end = doc.buf.line_start(1);
         let length = doc.buf.len_bytes();
         let map = |position| previous.map(position, &next, title_end).min(length);

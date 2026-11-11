@@ -168,8 +168,8 @@ pub const REASSIGNED: &[Reassigned] = &[
     reassigned(
         Where::Normal,
         "gr",
-        "replace with a virtual character",
-        "language-server references",
+        "replace with a virtual character (`gr{char}`)",
+        "only the prefix of the language-server keys `grr` `grn` `gra` `gri`",
     ),
     reassigned(
         Where::Normal,
