@@ -129,9 +129,10 @@ theme = "vellum"
 `--theme` wins over the config file, and the config file over the built-in
 default. `:theme` changes the running editor only; it does not rewrite the
 config. `:theme` with a name strop does not have keeps the current theme
-and lists the six names. A config file that names an unknown theme is not
-used at all: strop starts with its default settings and shows a warning
-with the six names.
+and lists the six names. A config file that names an unknown theme keeps
+the default theme and shows a warning with the six names; every other
+setting in the file still applies. The same goes for any key strop does
+not know or any value it cannot use: that one key is skipped and named.
 
 Syntax, pickers, previews, diffs, diagnostics, help and the status line all
 follow the theme. Open terminals switch to the new theme's default colours;

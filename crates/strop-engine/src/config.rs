@@ -291,12 +291,28 @@ impl Config {
             }
         };
         match Self::parse(&text) {
-            Ok((mut config, keys)) => {
+            Ok((mut config, keys, rejected)) => {
                 config.provenance = Provenance {
                     user_path: Some(path.to_path_buf()),
                     user_keys: keys,
                 };
-                (config, None)
+                let message = (!rejected.is_empty()).then(|| {
+                    format!(
+                        "config {}: {} — the default is used for {}; every other setting applies",
+                        path.display(),
+                        rejected
+                            .iter()
+                            .map(|(_, error)| error.as_str())
+                            .collect::<Vec<_>>()
+                            .join("; "),
+                        rejected
+                            .iter()
+                            .map(|(key, _)| key.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                });
+                (config, message)
             }
             Err(e) => (
                 Self::default(),
@@ -304,22 +320,43 @@ impl Config {
             ),
         }
     }
-    /// actually set — provenance names a knob's winning layer only when
-    /// the layer named the key (0056 AR14).
-    fn parse(text: &str) -> Result<(Self, std::collections::BTreeSet<String>), String> {
+
+    /// Parse one layer. A TOML syntax error rejects the layer; a key
+    /// that is unknown or holds a bad value is dropped on its own (its
+    /// default stays) and returned with the reason, so one typo in a
+    /// theme name never discards every other setting. The key set is
+    /// what the layer actually set — provenance names a knob's winning
+    /// layer only when the layer named the key (0056 AR14).
+    fn parse(text: &str) -> Result<ParsedLayer, String> {
         let table = toml::from_str::<toml::Table>(text).map_err(|e| e.to_string())?;
-        let mut keys: std::collections::BTreeSet<String> = table.keys().cloned().collect();
-        if let Some(completion) = table.get("completion").and_then(toml::Value::as_table) {
+        let accepts = |table: &toml::Table| {
+            toml::Value::Table(table.clone())
+                .try_into::<Config>()
+                .map_err(|e| e.to_string())
+                .and_then(Config::validated)
+        };
+        let mut kept = toml::Table::new();
+        let mut rejected = Vec::new();
+        for (key, value) in table {
+            let mut trial = kept.clone();
+            trial.insert(key.clone(), value.clone());
+            match accepts(&trial) {
+                Ok(_) => {
+                    kept.insert(key, value);
+                }
+                Err(error) => rejected.push((key, error.trim().to_string())),
+            }
+        }
+        let config = accepts(&kept)?;
+        let mut keys: std::collections::BTreeSet<String> = kept.keys().cloned().collect();
+        if let Some(completion) = kept.get("completion").and_then(toml::Value::as_table) {
             for key in ["enabled", "auto_popup"] {
                 if completion.contains_key(key) {
                     keys.insert(format!("completion.{key}"));
                 }
             }
         }
-        let config = toml::from_str::<Config>(text)
-            .map_err(|e| e.to_string())
-            .and_then(Config::validated)?;
-        Ok((config, keys))
+        Ok((config, keys, rejected))
     }
 
     /// `tab_size` outside the supported range (0051 R08): refused
@@ -343,6 +380,14 @@ impl Config {
         }
     }
 }
+
+/// One parsed layer: the config, the keys it set, and the keys it named
+/// but could not use, each with the reason.
+type ParsedLayer = (
+    Config,
+    std::collections::BTreeSet<String>,
+    Vec<(String, String)>,
+);
 
 fn config_path() -> Option<std::path::PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -401,7 +446,10 @@ mod tests {
             manual.knob_layer("completion.enabled"),
             ConfigLayer::Default
         );
-        assert!(Config::parse("[completion]\nenabled = \"false\"\n").is_err());
+        let (_, keys, rejected) = Config::parse("[completion]\nenabled = \"false\"\n").unwrap();
+        assert!(!keys.contains("completion.enabled"));
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].0, "completion");
     }
 
     #[test]
@@ -426,12 +474,33 @@ mod tests {
     }
 
     #[test]
-    fn malformed_layer_sets_no_provenance() {
-        assert!(Config::parse("tab_size = \"oops\"").is_err());
+    fn a_bad_value_is_dropped_on_its_own() {
+        for source in ["tab_size = \"oops\"", "tab_size = 99"] {
+            let (config, keys, rejected) = Config::parse(source).unwrap();
+            assert_eq!(config.tab_size, Config::default().tab_size, "{source}");
+            assert!(!keys.contains("tab_size"), "{source}");
+            assert_eq!(rejected.len(), 1, "{source}");
+            assert_eq!(rejected[0].0, "tab_size", "{source}");
+        }
         assert!(
-            Config::parse("tab_size = 99").is_err(),
-            "validated() still gates"
+            Config::parse("tab_size = ").is_err(),
+            "a syntax error still rejects the layer"
         );
+    }
+
+    #[test]
+    fn an_unknown_theme_keeps_every_other_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "theme = \"nope\"\ntab_size = 8\n").unwrap();
+        let (config, error) = Config::load_from(&path);
+        let error = error.expect("the bad key is reported");
+        assert!(error.contains("theme"), "{error}");
+        assert!(error.contains("every other setting applies"), "{error}");
+        assert_eq!(config.tab_size, 8);
+        assert_eq!(config.theme.name(), Config::default().theme.name());
+        assert_eq!(config.knob_layer("tab_size"), ConfigLayer::User);
+        assert_eq!(config.knob_layer("theme"), ConfigLayer::Default);
     }
 
     #[test]
@@ -469,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_config_keys_are_named_and_rejected() {
+    fn unknown_config_keys_are_named_and_dropped() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         for (source, unknown_key) in [
@@ -478,14 +547,12 @@ mod tests {
         ] {
             std::fs::write(&path, source).unwrap();
             let (config, error) = Config::load_from(&path);
-            let error = error.unwrap_or_else(|| {
-                panic!("unknown key {unknown_key:?} must reject the config layer")
-            });
+            let error =
+                error.unwrap_or_else(|| panic!("unknown key {unknown_key:?} must be reported"));
             assert!(error.contains(unknown_key), "{error}");
-            assert!(error.contains("using defaults"), "{error}");
+            assert!(error.contains("the default is used"), "{error}");
             assert_eq!(config.tab_size, Config::default().tab_size);
             assert!(config.completion.auto_popup);
-            assert!(config.user_layer_path().is_none());
         }
     }
 
