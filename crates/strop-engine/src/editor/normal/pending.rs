@@ -13,15 +13,47 @@ use crate::editor::{input::ParserState, Editor, Mode};
 use strop_core::frontend_input::Key;
 
 impl Editor {
-    /// A text line opened (`: / ? |`) with the typed entry state that
-    /// survived the crossing — counts, register, operator.
-    pub(crate) fn begin_text_line(&mut self, sigil: char, state: ParserState) {
+    /// Open the `:` line with `body` already typed (`!{motion}`).
+    pub(crate) fn open_ex_line(&mut self, body: &str) {
         self.cancel_pending();
         let origin = SearchOrigin {
             pane_index: self.active_pane,
             pane: self.view().clone(),
             revision: self.buf().revision(),
         };
+        self.pending
+            .open(TextPrompt::with_body(PromptContext::Ex(origin), body));
+    }
+
+    /// A text line opened (`: / ? |`) with the typed entry state that
+    /// survived the crossing — counts, register, operator.
+    pub(crate) fn begin_text_line(&mut self, sigil: char, state: ParserState) {
+        self.cancel_pending();
+        // Vim: `:` ends Visual mode. The selection stays behind as the
+        // marks `'<` and `'>` (`feed_visual` recorded it on this key), and the
+        // line opens with that range typed.
+        let from_visual = sigil == ':'
+            && matches!(
+                self.mode,
+                Mode::Visual | Mode::VisualLine | Mode::VisualBlock
+            );
+        if from_visual {
+            let selection = self.sels().primary();
+            self.mode = Mode::Normal;
+            // Vim leaves the cursor at the selection's start.
+            let start = selection.anchor.min(selection.head);
+            self.sels_mut().stretch_primary(start, start);
+        }
+        let origin = SearchOrigin {
+            pane_index: self.active_pane,
+            pane: self.view().clone(),
+            revision: self.buf().revision(),
+        };
+        if from_visual {
+            self.pending
+                .open(TextPrompt::with_body(PromptContext::Ex(origin), "'<,'>"));
+            return;
+        }
         let context = match sigil {
             ':' => PromptContext::Ex(origin),
             '/' | '?' => PromptContext::Search {
@@ -112,13 +144,17 @@ impl Editor {
             self.message = "input cancelled: document or pane changed".into();
             return;
         }
-        match self.pending.reduce(event) {
+        let effect = self.pending.reduce(event);
+        if let Some(write) = self.pending.take_register_write() {
+            self.store_field_write(write);
+        }
+        match effect {
             PendingEffect::ReadRegister(name) => {
                 self.paste_from(name, super::super::registers::PasteDestination::Prompt);
             }
             PendingEffect::None | PendingEffect::ModeChanged => {}
             PendingEffect::Edited => self.incsearch_jump(),
-            PendingEffect::CompleteEx => self.ex_tab_complete(),
+            PendingEffect::CompleteEx => crate::editor::ex::ex_tab_complete(self),
             PendingEffect::Repaint => self.needs_repaint = true,
             PendingEffect::Rejected(error) => self.message = error,
             PendingEffect::Aborted(prompt) => {
@@ -135,8 +171,11 @@ impl Editor {
         }
         match prompt.context() {
             PromptContext::Ex(_) => {
-                // vim's `":` keeps the last line that had any text
-                if !prompt.body().is_empty() {
+                // vim's `":` keeps the last line that had any text; a
+                // repeat (`:@:`) is not itself the line to repeat
+                let repeat = crate::editor::ex::split_command(prompt.body())
+                    .is_some_and(|(command, _, _)| command.name == "@");
+                if !prompt.body().is_empty() && !repeat {
                     self.registers.command_line = Some(prompt.body().to_owned());
                 }
                 self.run_ex(prompt.body())
@@ -214,6 +253,7 @@ impl Editor {
             count: state.count(),
             target: grammar::Target::Motion(target),
             // Execution records the typed command for dot repeat.
+            force: None,
             keys: String::new(),
         }))
     }

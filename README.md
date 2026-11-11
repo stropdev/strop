@@ -10,9 +10,10 @@
 
 ![strop demo](demos/demo.gif)
 
-**strop** is a modal text editor written in Rust. It uses Vim's commands —
-a tested subset that is still growing; [docs/vim-compat.md](docs/vim-compat.md)
-lists what is there. There are no plugins to install: finding files, searching
+**strop** is a modal text editor written in Rust. Its keys are Vim's, checked
+against Neovim key for key by a test suite of about four thousand key
+sequences; [docs/vim-compat.md](docs/vim-compat.md) lists what is there and,
+at the end, what is still missing. There are no plugins to install: finding files, searching
 and replacing across a project, git blame and history, and language servers
 come with the binary.
 

@@ -29,6 +29,7 @@ pub use diagnostics::DocumentDiagnostics;
 mod dive;
 mod document;
 pub mod events;
+pub(crate) mod ex;
 mod explain;
 pub mod feedback;
 pub(crate) mod field;
@@ -37,7 +38,7 @@ pub mod git_memory;
 mod help;
 mod indent;
 mod input;
-mod insert;
+pub(crate) mod insert;
 pub mod io;
 mod jumps;
 mod lsp;
@@ -71,7 +72,7 @@ mod theme;
 pub mod transact;
 mod undo;
 pub mod view;
-mod visual;
+pub(crate) mod visual;
 mod workspaces;
 
 pub use collections::{CollectionRow, CollectionRowInfo};
@@ -91,12 +92,12 @@ pub use picker::{
 pub use registers::{ClipboardKey, ClipboardResult, Register, RegisterError};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 
-pub use lsp::attach::{AttachDecision, AttachRecord};
-pub use lsp::{LspPhase, LspServer, LspStatus};
-pub use normal::{
+pub use ex::{
     PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
     SubstitutionPreview,
 };
+pub use lsp::attach::{AttachDecision, AttachRecord};
+pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
 pub use remote::RemoteEvent;
@@ -203,7 +204,7 @@ pub struct Editor {
     pub(crate) feedback: feedback::FeedbackStore,
     pub(crate) should_quit: bool,
     /// Last visual range for `gv` (recorded per visual-mode key).
-    pub(crate) last_visual: Option<(usize, usize)>,
+    pub(crate) last_visual: Option<visual::LastVisual>,
     /// Where the last insert session was for `gi`.
     pub(crate) last_insert_pos: Option<usize>,
     /// g;/g, walk: (index, history depth it was taken at) — a new
@@ -339,7 +340,8 @@ pub struct Editor {
     pub(crate) last_insert: Option<String>,
     /// Insert Ctrl-R waits for one register name; the resulting text is
     /// replayed verbatim, not as document keys.
-    pub(crate) insert_register: bool,
+    /// What the Insert keys beyond typing remember (`insert/keys.rs`).
+    pub(crate) insert_keys: insert::keys::InsertKeys,
     pub(crate) recording_insert: Option<String>,
     pub(crate) insert_replay: Option<Vec<insert::replay::InsertStep>>,
     pub(crate) last_insert_replay: Vec<insert::replay::InsertStep>,
@@ -482,7 +484,7 @@ impl Editor {
             last_cmd_keys: String::new(),
             last_insert: None,
             recording_insert: None,
-            insert_register: false,
+            insert_keys: insert::keys::InsertKeys::default(),
             insert_replay: None,
             last_insert_replay: Vec::new(),
             insert_count: 1,
@@ -618,7 +620,8 @@ impl Editor {
         // the machine; everything else records BEFORE it runs, so
         // replay is exactly the live stream
         if let Some(reg) = self.recording {
-            let at_ground = self.walker.is_ground() && !self.pending.is_active();
+            let at_ground =
+                self.walker.is_ground() && !self.pending.is_active() && self.mode != Mode::Insert;
             if at_ground && key == Key::Char('q') {
                 self.recording = None;
                 self.macro_recorded(reg);
@@ -630,6 +633,7 @@ impl Editor {
             }
         }
         self.dispatch_owned(key);
+        crate::editor::insert::keys::resume_insert(self);
     }
 
     /// True when a modal input field sits in normal mode (picker field
@@ -654,52 +658,6 @@ impl Editor {
     /// open — resolved eagerly, so reads never rescan).
     pub(crate) fn cur_indent(&self) -> document::Indent {
         self.indentation_at(self.current(), self.head())
-    }
-
-    // ---- shared helpers -------------------------------------------------
-
-    /// `m{a}`: set mark a at the cursor.
-    pub(crate) fn set_mark(&mut self, mark: char) {
-        self.marks.insert(mark, (self.current(), self.head()));
-        self.message = format!("mark {mark} set");
-    }
-
-    /// (name, 1-based line, trimmed line text) per set mark, name-sorted —
-    /// the which-key mark cards' live rows (0047 §3).
-    pub fn mark_rows(&self) -> Vec<(char, usize, String)> {
-        let mut rows: Vec<_> = self
-            .marks
-            .iter()
-            .filter_map(|(name, (document, offset))| {
-                let doc = self.docs.get(*document)?;
-                let line = doc.buf.line_of(*offset);
-                let text: String = doc.buf.line_text(line).trim().chars().take(48).collect();
-                Some((*name, line + 1, text))
-            })
-            .collect();
-        rows.sort_by_key(|row| row.0);
-        rows
-    }
-
-    /// `'{a}`: jump to mark a (switches buffer if the mark lives there).
-    pub(crate) fn jump_mark(&mut self, mark: char) {
-        match self.marks.get(&mark).copied() {
-            Some((buf, offset)) if self.docs.get(buf).is_some() => {
-                self.push_jump();
-                if buf != self.current() {
-                    self.switch_to(buf);
-                    self.discover_git();
-                }
-                self.set_head(
-                    self.buf()
-                        .clamp_boundary(offset.min(self.buf().len_bytes())),
-                );
-                self.clamp_cursor();
-                self.place_jump_target();
-            }
-            Some(_) => self.message = format!("mark {mark} is no longer available"),
-            None => self.message = format!("mark {mark} not set"),
-        }
     }
 }
 

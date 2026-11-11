@@ -145,3 +145,25 @@ fn a_crashed_server_restarts_within_its_budget_and_says_so() {
     assert!(e.lsp_state.restarts.is_empty());
     assert!(e.message.contains("failed — :explain"), "{}", e.message);
 }
+
+#[test]
+fn cd_moves_the_project_whose_server_owns_outside_files() {
+    // The "outside the project" test reads the root at each use: after
+    // `:cd` the old project's server no longer claims the library file,
+    // and a server rooted in the new project does.
+    let (mut e, _origin, library) = library_editor();
+    assert!(served_by(&e, library).is_some());
+    crate::editor::ex::change_directory(&mut e, PathBuf::from("/elsewhere"));
+    assert_eq!(e.cwd, PathBuf::from("/elsewhere"));
+    assert_eq!(served_by(&e, library), None);
+    e.lsp_state.attach.attached.push(super::attach::Attachment {
+        language: "rust".into(),
+        root: PathBuf::from("/elsewhere/crate"),
+        server: ServerId::new(9),
+        target: strop_workspace::Filesystem::Local,
+    });
+    assert_eq!(
+        served_by(&e, library),
+        Some((ServerId::new(9), PathBuf::from("/elsewhere/crate")))
+    );
+}

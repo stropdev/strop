@@ -11,6 +11,11 @@ impl Editor {
     /// `feed` before the machine sees it — the toggle key never
     /// records itself).
     pub(crate) fn macro_toggle(&mut self, reg: char) {
+        if !(reg.is_ascii_alphanumeric() || reg == '"') {
+            // (`q:` and `q/` are Vim's command-line window, not registers)
+            self.message = format!("q{reg}: not a register to record into");
+            return;
+        }
         self.recording = Some(reg);
         self.macros.insert(reg, Vec::new());
         self.message = format!("recording @{reg}");
@@ -86,6 +91,7 @@ const CONTROL_KEYS: &[(Key, char)] = &[
     (Key::Enter, '\r'),
     (Key::Tab, '\t'),
     (Key::CtrlSpace, '\0'),
+    (Key::CtrlA, '\x01'),
     (Key::CtrlB, '\x02'),
     (Key::CtrlC, '\x03'),
     (Key::CtrlD, '\x04'),

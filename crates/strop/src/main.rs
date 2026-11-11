@@ -299,12 +299,12 @@ fn print_help() {
     out.push_str(&paint(
         "1",
         &format!(
-            "strop {} — see the cut before you make it",
+            "strop {} — Vim's keys. Nothing to configure.",
             env!("CARGO_PKG_VERSION")
         ),
     ));
-    out.push_str("\n\nThe modal terminal editor: vim's grammar, a live preview for every\n");
-    out.push_str("cut, and one query language across every picker.\n");
+    out.push_str("\n\nA modal terminal editor in one binary: Vim's keys, with file finding,\n");
+    out.push_str("project search and replace, git and language servers built in.\n");
     section(&mut out, &paint("1", "Usage:"));
     usage(
         &mut out,

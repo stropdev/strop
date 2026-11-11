@@ -391,7 +391,7 @@ mod tests {
 
         editor.feed_text("x");
         let grid = draw_ex(&editor, 14);
-        assert!(row_text(&grid, 3).contains("invalid · unsupported substitute flags"));
+        assert!(row_text(&grid, 3).contains("invalid · trailing characters: x"));
         assert!(!row_text(&grid, 4).contains("+omega"));
         assert_eq!(editor.buf().text().to_string(), original);
     }

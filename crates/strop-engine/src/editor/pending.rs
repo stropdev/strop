@@ -61,6 +61,13 @@ impl TextPrompt {
         }
     }
 
+    /// A prompt that opens with text already typed (`:'<,'>` from Visual).
+    pub(crate) fn with_body(context: PromptContext, body: &str) -> Self {
+        let mut prompt = Self::new(context);
+        prompt.line.insert_str(body);
+        prompt
+    }
+
     pub(crate) fn sigil(&self) -> char {
         match &self.context {
             PromptContext::Ex(_) => ':',
@@ -128,6 +135,8 @@ impl TextPrompt {
 pub struct PendingInput {
     active: Option<TextPrompt>,
     machine: super::field::FieldMachine,
+    /// What the `:` line remembers between commands.
+    pub(crate) ex: super::ex::ExState,
 }
 
 /// One input event for the open prompt.
@@ -188,6 +197,11 @@ impl PendingInput {
     /// The open prompt's sigil (`: / ? |`); None when closed.
     pub(crate) fn sigil(&self) -> Option<char> {
         self.prompt().map(TextPrompt::sigil)
+    }
+
+    /// What the prompt's last operator yanked or removed, once.
+    pub(crate) fn take_register_write(&mut self) -> Option<super::field::FieldWrite> {
+        self.machine.take_write()
     }
 
     /// Open a prompt. Opening while another is active is a caller bug:

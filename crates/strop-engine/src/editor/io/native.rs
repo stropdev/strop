@@ -24,6 +24,12 @@ pub enum Operation {
     SshHost {
         pending: super::super::permalink::PendingPermalink,
     },
+    /// `:cd`: resolve the directory on disk. The root changes when the
+    /// answer lands, never on the input path.
+    Directory {
+        #[serde(with = "strop_core::path_serde")]
+        path: PathBuf,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NativeKey {
@@ -37,6 +43,8 @@ pub enum NativeResult {
     BrowserRequested,
     /// OpenSSH's effective hostname for the alias in the request.
     SshHost(String),
+    /// The canonical directory `:cd` named.
+    Directory(#[serde(with = "strop_core::path_serde")] PathBuf),
 }
 
 impl Editor {
@@ -79,6 +87,10 @@ impl Editor {
         self.request_native(Operation::SshHost { pending });
     }
 
+    pub(crate) fn request_directory(&mut self, path: PathBuf) {
+        self.request_native(Operation::Directory { path });
+    }
+
     fn request_native(&mut self, operation: Operation) {
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
@@ -100,6 +112,7 @@ impl Editor {
             Operation::Trust { .. } => "saving trust".into(),
             Operation::Browser { .. } => "opening browser".into(),
             Operation::SshHost { pending } => format!("resolving ssh host {}", pending.host),
+            Operation::Directory { path } => format!("cd {}", path.display()),
         };
         match self.tape.request("io.native", &ticket) {
             Ok(false) => return,
@@ -140,6 +153,18 @@ impl Editor {
                         }
                     }
                     Operation::Browser { url } => launch_browser(&url),
+                    Operation::Directory { path } => match std::fs::canonicalize(&path) {
+                        Ok(directory) if directory.is_dir() => {
+                            Outcome::Success(NativeResult::Directory(directory))
+                        }
+                        Ok(_) => Outcome::failed(
+                            FailureKind::InvalidInput,
+                            format!("{} is not a directory", path.display()),
+                        ),
+                        Err(error) => {
+                            Outcome::failed(FailureKind::Io, format!("{}: {error}", path.display()))
+                        }
+                    },
                     Operation::SshHost { pending } => {
                         let Some(strop_git::permalink::SelectedRemote::Alias(remote)) =
                             strop_git::permalink::pick_remote(&pending.remotes)
@@ -204,6 +229,9 @@ impl Editor {
                 if let Operation::SshHost { pending } = key.operation {
                     self.complete_ssh_permalink(pending, hostname);
                 }
+            }
+            Outcome::Success(NativeResult::Directory(directory)) => {
+                crate::editor::ex::change_directory(self, directory)
             }
             Outcome::Failed { failure, .. } => self.message = failure.message,
             Outcome::Cancelled(_) => {}

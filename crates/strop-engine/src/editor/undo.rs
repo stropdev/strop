@@ -130,7 +130,15 @@ impl Editor {
         let result = self.buf_mut().undo();
         match result {
             Ok(Some(moved)) => {
-                self.set_head(moved.start.get());
+                // Lines undone off the end leave the cursor on the last
+                // line, never on the phantom past a trailing newline.
+                let last = self.buf().line_start(self.buf().last_content_line());
+                let start = moved.start.get();
+                self.set_head(if start >= self.buf().len_bytes() {
+                    last.min(start)
+                } else {
+                    start
+                });
                 self.reland_extras();
                 self.clamp_cursor();
                 self.flash(Range::charwise(self.head(), self.head()));

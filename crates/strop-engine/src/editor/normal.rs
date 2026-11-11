@@ -1,108 +1,21 @@
 //! Normal mode (0016): the machine walks keys to typed actions; this
 //! module dispatches them. Siblings by responsibility: `execute` (the
 //! operator engine + editing entries), `search`, `preview`, `pending`
-//! (the prompt effects), `ex` (the `:` line), `motions`.
+//! (the prompt effects), `motions`. The `:` line is `editor/ex/`.
 
-mod ex;
+pub(crate) mod bind;
+pub(crate) mod edits;
 mod execute;
 mod motions;
+pub(crate) mod operators;
 mod pending;
 mod preview;
 mod search;
-pub(crate) mod substitute;
-
-pub use substitute::{
-    PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
-    SubstitutionPreview,
-};
 
 use strop_grammar::{self as grammar, Parse};
 
 use super::Editor;
 use strop_core::frontend_input::Key;
-
-/// The ex vocabulary (completion + `run_ex` dispatch reads the same
-/// list — one table, no drift).
-pub(crate) const EX_COMMANDS: &[(&str, &str)] = &[
-    ("theme", "choose a built-in interface palette"),
-    ("terminal", "interactive shell in the selected namespace"),
-    ("term", "interactive shell (alias of :terminal)"),
-    (
-        "terminal-local",
-        "explicit local shell even from an SSH context",
-    ),
-    ("bd", "delete the buffer (a running terminal refuses)"),
-    ("bd!", "delete the buffer; a running terminal is stopped"),
-    ("r", ":r !cmd inserts the command's output below the cursor"),
-    ("w", "write"),
-    ("w!", "write, force (file changed on disk)"),
-    ("wq!", "write forced + quit"),
-    ("q", "quit"),
-    ("q!", "quit, force"),
-    ("wq", "write + quit"),
-    ("e", "edit file"),
-    ("e!", "edit file, force"),
-    ("vs", "split vertical"),
-    ("vsplit", "split vertical"),
-    ("sp", "split horizontal"),
-    ("split", "split horizontal"),
-    ("help", "help buffer"),
-    ("h", "help buffer"),
-    ("jumps", "open the jumplist picker"),
-    ("!", "run shell command"),
-    ("view", "open readonly"),
-    ("set", "readonly option: ro/noro"),
-    ("noh", "clear the persistent search highlight"),
-    ("browse", "browse remote directory: :browse [URI]"),
-    ("filter", "filter remote directory by literal filename"),
-    (
-        "remote",
-        "choose remote destination; root/home/connect/disconnect/clear/list",
-    ),
-    ("trust", "authorize the pending endpoint/project command"),
-    (
-        "pwd",
-        "show the pinned project root (Files, Search, terminals)",
-    ),
-    (
-        "explain",
-        "why: workspaces, LSP readiness/failures, effective config",
-    ),
-    ("messages", "message history: the last 50 echo-row messages"),
-    ("format", "format the buffer through the language server"),
-    ("rename", "rename the symbol under the cursor: :rename NEW"),
-    ("symbols", "open the document symbols picker"),
-    ("undo-change", "undo the last applied change plan"),
-    (
-        "save-change",
-        "save files changed by the latest reviewed operation",
-    ),
-    ("apply-change", "apply the prepared proposal"),
-    ("cancel-change", "cancel the prepared proposal"),
-    (
-        "select-next",
-        "select the next occurrence of the word or selection",
-    ),
-    ("select-all", "select all occurrences in buffer"),
-    ("select-skip", "skip the next occurrence candidate"),
-    ("select-pop", "drop the last-added occurrence"),
-    ("search-options", "choose hidden and ignored search policy"),
-    ("tab-size", "choose indentation width: N or auto"),
-    (
-        "indent-style",
-        "choose indentation style: spaces, tabs or auto",
-    ),
-    (
-        "collection",
-        "source, expand or contract the excerpt at the caret",
-    ),
-    (
-        "recover",
-        "draft recovery: list, restore N, discard N, consent remote|off",
-    ),
-    ("qa", "quit all (fails on unsaved; :qa! discards)"),
-    ("qall", "quit all (fails on unsaved; :qall! discards)"),
-];
 
 impl Editor {
     pub(crate) fn feed_normal(&mut self, key: Key) {
@@ -143,9 +56,6 @@ impl Editor {
                 arg,
                 key,
             } => self.dispatch_row(row, count, register, arg, key),
-            super::input::Action::VisualSurround(_) => {
-                unreachable!("normal Walker cannot emit visual actions")
-            }
         }
     }
 
@@ -164,6 +74,9 @@ impl Editor {
     /// the Walker all land here.
     pub(crate) fn dispatch_grammar(&mut self, command: &grammar::Command) {
         match command.op {
+            None if matches!(command.target, grammar::Target::Match { .. }) => {
+                self.select_match(command)
+            }
             None => self.move_cursor(command),
             Some(grammar::Op::Yank) if self.buf().readonly => self.yank_only(command),
             Some(_) if self.buf().readonly => self.refuse_readonly(),
@@ -208,6 +121,7 @@ impl Editor {
                                 | "view-place"
                                 | "visible-jumps"
                                 | "scroll-pages"
+                                | "scroll-lines"
                                 | "enter"
                                 | "collection-source"
                                 | "collection-file-next"
@@ -244,7 +158,8 @@ impl Editor {
                 Handler::AbsorbChar(
                     crate::keymap::AbsorbKind::Find
                     | crate::keymap::AbsorbKind::MarkSet
-                    | crate::keymap::AbsorbKind::MarkJump,
+                    | crate::keymap::AbsorbKind::MarkJump
+                    | crate::keymap::AbsorbKind::MarkLine,
                 ) => true,
                 _ => false,
             };
@@ -264,7 +179,25 @@ impl Editor {
                         f(self, last);
                     }
                     "paste" => self.paste_named(register, n, last == 'P'),
+                    "paste-after" => {
+                        crate::editor::normal::edits::paste_and_pass(self, register, n, last == 'P')
+                    }
+                    "paste-indent-after" => {
+                        crate::editor::normal::edits::paste_indented(self, register, n, false)
+                    }
+                    "paste-indent-before" => {
+                        crate::editor::normal::edits::paste_indented(self, register, n, true)
+                    }
+                    "join" => crate::editor::normal::edits::join_lines(self, count, true),
+                    "join-raw" => crate::editor::normal::edits::join_lines(self, count, false),
+                    "repeat" => self.dot_repeat(count),
+                    "toggle-case" => crate::editor::normal::edits::toggle_case(self, n),
+                    "number-add" => crate::editor::normal::edits::add_to_number(self, n as i64),
+                    "number-subtract" => {
+                        crate::editor::normal::edits::add_to_number(self, -(n as i64))
+                    }
                     "scroll-pages" => self.scroll_counted(last, n),
+                    "scroll-lines" => self.scroll_lines(n, last == 'e'),
                     // Space y: the clipboard yank is typed operator
                     // state in the Walker — `2 yw` yanks two words to
                     // `+`, no synthetic grammar text (R7)
@@ -296,10 +229,12 @@ impl Editor {
                 match kind {
                     AbsorbKind::Replace => self.replace_char_n(c, n),
                     AbsorbKind::MarkSet => self.set_mark(c),
-                    AbsorbKind::MarkJump => self.jump_mark(c),
+                    AbsorbKind::MarkJump => self.jump_mark(c, true),
+                    AbsorbKind::MarkLine => self.jump_mark(c, false),
                     AbsorbKind::Find => {} // grammar resolved f<c> in the machine
                     AbsorbKind::MacroRecord => self.macro_toggle(c),
                     AbsorbKind::MacroPlay if c == '@' => self.macro_again(n),
+                    AbsorbKind::MacroPlay if c == ':' => self.repeat_command_line(n),
                     AbsorbKind::MacroPlay => self.macro_play(c, n),
                 }
             }
@@ -309,6 +244,7 @@ impl Editor {
             | Handler::ObjectPrefix
             | Handler::TextLine
             | Handler::AbsorbRegister
+            | Handler::Visual(_)
             | Handler::Soon
             | Handler::Contextual => {}
         }
@@ -322,23 +258,12 @@ impl Editor {
     pub(crate) fn jump_hunk_pub(&mut self, forward: bool) {
         self.jump_hunk(forward);
     }
-    pub(crate) fn search_word_under_cursor_pub(&mut self, backward: bool) {
-        self.search_word_under_cursor(backward);
-    }
     pub(crate) fn repeat_find_pub(&mut self, reverse: bool) {
         self.repeat_find(reverse);
     }
     /// "p P" row: the completing key picks before/after.
     pub(crate) fn paste_named_pub(&mut self, name: Option<char>, count: usize, before: bool) {
         self.paste_named(name, count, before);
-    }
-    /// "J ." row: the completing key picks the command.
-    pub(crate) fn join_or_repeat(&mut self, key: char) {
-        if key == 'J' {
-            self.join_lines_pub();
-        } else {
-            self.dot_repeat_pub();
-        }
     }
     /// "i a A o O I" row: insert entries by key.
     pub(crate) fn insert_entry_pub(&mut self, key: char) {
@@ -357,6 +282,10 @@ impl Editor {
     }
     /// "v V" row.
     pub(crate) fn enter_visual_pub(&mut self, key: char) {
-        self.enter_visual(key == 'V');
+        self.enter_visual_mode(if key == 'V' {
+            super::Mode::VisualLine
+        } else {
+            super::Mode::Visual
+        });
     }
 }

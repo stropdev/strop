@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.59.0 — 2026-11-11
+
+### Fixed
+
+- **Keys do what they do in Neovim** (plans/0095): the differential test suite grew from 95 key sequences to about 4,070 — every operator with every motion and text object, with and without a count, in Normal, in Visual and repeated with `.` — and strop now agrees with Neovim on all but 18 of them, each listed with its reason.
+- **`dw` on the last word of a line** no longer joins the next line, **`d}`** no longer takes the blank line it stops on, and `d}` in the last paragraph deletes forward instead of backward. A motion that stops in column 1 leaves the line break alone, as in Vim.
+- **Counts mean what they mean in Vim**: `3J` joins three lines (not four), `2D` deletes to the end of the next line, `3x` and `5~` are one command with one register write, `3.` repeats the last change with that count.
+- **A motion that cannot move cancels its operator**: `dk` on the first line, `dj` on the last and `2dd` on the last line do nothing instead of deleting the line.
+- **`w` `b` `e` `ge` stop on empty lines**, and `}` `{` treat only empty lines as paragraph breaks, as Vim does.
+- **`j` and `k` keep their column** through shorter lines, `$` then `j` stays at the line's end, and `dd`, `>>` and `G` leave the cursor in its column instead of column 1.
+- **`cw` on blanks** changes the blanks, not the next word. **`da"`** takes the blanks after the closing quote. **`di{`** on a block that spans lines takes its whole lines.
+- **Dot-repeat of a command that failed** no longer repeats the one before it, and a repeated change that finds no target no longer types its text anyway.
+- **A macro recorded with `q` in Insert mode** no longer stops at the first `q` typed as text.
+- **`Ctrl-E`, `Ctrl-Y` and other Ctrl chords no longer act as their letter** in Normal mode (`Ctrl-Y` started a yank, `Ctrl-K` typed `k`). `Ctrl-E` / `Ctrl-Y` scroll one line; a chord with no meaning is ignored.
+- **A range that runs past the last line** on the `:` line is refused instead of being silently clamped.
+- **`u` after undoing lines added at the end of the file** leaves the cursor on the last line, not below it.
+- **`:s` leaves the cursor on the last line it changed**, not the last line of the range.
+- **Marks**: `'a` goes to the line's first non-blank and `` `a `` to the exact place (both went to the exact place); a mark on a deleted line is gone instead of pointing at the line that took its place.
+
+### Changed
+
+- **`Y` yanks to the end of the line** (`y$`), as in Neovim. It yanked the whole line.
+- **The `:s` replacement is Vim's**: `&` and `\1`–`\9` insert the match and its groups, `~` the previous replacement, `\r` a line break, `\u` `\U` `\l` `\L` change case. It was literal text before. The live preview shows the expanded result.
+- **`:` from Visual mode opens with `'<,'>`**, applies to the selected lines and ends Visual mode, as in Vim. It opened empty and acted on the cursor line.
+- **After `:s`, its pattern is the search pattern** for `n` and the highlight.
+- **`v` in Visual leaves it**; `V` or `Ctrl-V` switches the kind of selection and keeps it. They used to restart the selection.
+- **Visual `I` and `A`** insert where Vim's do; on a block extended with `$`, `A` appends at the end of every line.
+- **Fields write registers**: `yw`, `dw` and `"ayiw` in the Normal mode of a picker or prompt field fill the registers as they do in a document.
+- **`=`, `gq`, `gw` and `zf` take their motion and say they are not supported**, so typing `gqip` no longer runs `ip` as commands.
+- **`strop compat` and docs/vim-compat.md end with what is missing**: the keys Neovim binds that strop does not, and the ones it uses for something else.
+- **The tagline is "Vim's keys. Nothing to configure."** on the welcome card, in `--help`, the installer and the package description.
+
+### Added
+
+- **Text objects**: `ip` `ap` (paragraph), `it` `at` (XML/HTML element), `ib` `iB`, `gn` (the next search match; `cgn` then `.`). A count takes more (`d2aw`, `2i(`), and in Visual an object extends the selection (`viwiw`, `vipip`, `vi(i(`).
+- **Operators**: `gU` `gu` `g~` (case), `g?` (rot13), `gc` (toggle line comments, as in Neovim 0.10+) and `!` (filter lines through a shell command), with their doubled forms (`gUU`, `g??`, `gcc`, `!!`), and `v` / `V` between an operator and its motion (`dvj`, `dVw`).
+- **Motions**: `-` `+`, `(` `)`, `[(` `[{` `])` `]}`, `g_`, `g0` `g^` `g$`, `gj` `gk`, `N%`; and under an operator `'a` `` `a `` (marks, including `'<` `'>` `''` `'.`), `H` `M` `L`, `;` `,` and `n` `N`.
+- **Normal**: `R` (type over text; Backspace gives the old text back), `Ctrl-A` / `Ctrl-X` (add to a number: decimal, hex, binary), `gJ`, `gp` `gP`, `]p` `[p`, `&` `g&` (repeat the last `:s`), `@:` (repeat the last `:` line), `g*` `g#`, `` ` ` `` and `''` (back to where the last jump left from), `ZQ`.
+- **Visual**: `p` and `P` (put over the selection — `p` leaves the replaced text in the unnamed register, `P` leaves the registers alone), `U` `u` `~`, `J` `gJ`, `r`, `I` `A` on any selection, `o`, `*` `#`, `D` `X` `Y` `C` `R`, `Ctrl-A` / `Ctrl-X`, `!`, and every operator on a block.
+- **Insert**: `Ctrl-W` (delete the word back), `Ctrl-U` (delete what was typed on the line), `Ctrl-O` (one Normal command), `Ctrl-T` / `Ctrl-D` (indent, dedent), `Ctrl-H`.
+- **Registers**: `"#` (the alternate file's name).
+- **The `:` line takes Vim's ranges**: line numbers, `.`, `$`, `%`, marks, `/pattern/` and `?pattern?`, with `+N` / `-N` offsets, joined by `,` or `;`.
+- **`:g/pattern/command`**, `:v` and `:g!` run a command on every matching (or non-matching) line, and **`:norm keys`** types Normal-mode keys on each line of a range; each is one undo step.
+- **`:m`, `:t` / `:co`, `:d` and `:y` with a register and a count, `:pu`, `:j`, `:>` / `:<`, `:sort`** (`!`, `u`, `n`, `i`), and `:{range}!cmd` to filter lines through a shell command.
+- **`:s` flags** `i`, `I`, `n`, `e`, `&` and `c`, which asks at each match (`y`, `n`, `a`, `l`, `q`); `:&`, `:&&` and `:~` repeat the last substitute.
+- **Buffers**: `:b` by number or name, `:bn`, `:bp`, `:bd N`, and `:ls`, `:reg` and `:marks` as read-only listings.
+- **`:wa`, `:wqa` / `:xa`, `:x`, `:up`**, `:enew`, `:new`, `:vnew`, `:close`, `:only`, `:k` / `:mark`, `:delm`, `:u`, `:red`.
+- **`:cd DIR`** changes the project root (`:cd -` goes back). Files, Search, new terminals, buffer names, the session and the draft-recovery file follow it.
+- **Vim's abbreviations work on the command line** (`:norm`, `:bn`, `:wqa`, `:noh`, …), and Tab completes from the same list.
+
 ## 0.58.0 — 2026-11-11
 
 ### Fixed

@@ -1,7 +1,7 @@
 //! One CPU owner for expensive pure grammar resolution. No thread per key and
 //! no join on the editor thread; a frozen rope is the complete read input.
 use super::{Operation, ResolutionData, ResolutionEvent, ResolutionKey};
-use crate::editor::normal::substitute;
+use crate::editor::ex::substitute;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc,

@@ -3,7 +3,7 @@
 //! the same revision/cursor/command-stamped pure resolver result.
 mod indentation;
 mod worker;
-use super::normal::substitute::{self, SubstituteSpec, SubstitutionPlan};
+use super::ex::substitute::{self, SubstituteSpec, SubstitutionPlan};
 use super::structural_indent::{self, Batch as IndentRequest, Edit as IndentEdit, Trigger};
 use super::Editor;
 use std::collections::VecDeque;
@@ -616,7 +616,7 @@ impl Editor {
                 }
                 if let Operation::Substitute(spec) = &key.operation {
                     if pending.purpose == ResolutionPurpose::Execute {
-                        editor.execute_prepared_substitution(spec.clone());
+                        substitute::execute_prepared_substitution(editor, spec.clone());
                     }
                     return;
                 }
@@ -630,7 +630,7 @@ impl Editor {
                     ResolutionPurpose::Preview => {}
                     ResolutionPurpose::VisualObject => editor.select_visual_object(command),
                     ResolutionPurpose::RepeatSearch(invert) => editor.repeat_search(invert),
-                    ResolutionPurpose::DotRepeat => editor.dot_repeat_pub(),
+                    ResolutionPurpose::DotRepeat => editor.dot_repeat(None),
                     ResolutionPurpose::Indentation => {}
                 }
             });

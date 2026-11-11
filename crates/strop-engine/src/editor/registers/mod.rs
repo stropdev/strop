@@ -140,6 +140,15 @@ impl Editor {
                     .as_ref()
                     .map(|path| path.to_string_lossy().into_owned()),
             ),
+            // the alternate file: the buffer `Ctrl-^` would go to
+            Some('#') => computed(
+                self.mru
+                    .iter()
+                    .filter(|id| **id != self.current())
+                    .find_map(|id| self.docs.get(*id))
+                    .and_then(|doc| doc.buf.path.as_ref())
+                    .map(|path| path.to_string_lossy().into_owned()),
+            ),
             name => self
                 .registers
                 .get(name)
@@ -197,6 +206,20 @@ impl Editor {
         // `"a` now holds (vim executes register content)
         if let Some(name) = name.filter(char::is_ascii_alphabetic) {
             self.macros.remove(&name.to_ascii_lowercase());
+        }
+    }
+
+    /// A picker or prompt field yanked or removed text: it goes to the
+    /// register file by the rules a document's does (0095 §2.5).
+    pub(crate) fn store_field_write(&mut self, write: crate::editor::field::FieldWrite) {
+        if !self.register_writable(write.register) {
+            return;
+        }
+        let text = Register::characterwise(write.text);
+        if write.yank {
+            self.yank_register(write.register, text);
+        } else {
+            self.delete_register(write.register, text, false);
         }
     }
 
@@ -395,6 +418,9 @@ pub(crate) fn reg_one_motion(target: &strop_grammar::Target) -> bool {
                 | Motion::SearchBackward(_)
                 | Motion::ParagraphForward
                 | Motion::ParagraphBackward
+                | Motion::SentenceForward
+                | Motion::SentenceBackward
+                | Motion::Mark { exact: true, .. }
         )
     )
 }

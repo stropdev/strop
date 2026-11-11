@@ -492,3 +492,74 @@ fn a_suppressed_tape_never_launches_recovery_natively() {
         "the request was recorded, never launched"
     );
 }
+
+/// The labels of the drafts in `root`'s checkpoint.
+fn drafts_in(fixture: &Fixture, root: &std::path::Path) -> Vec<String> {
+    store::load(&store::checkpoint_path(&fixture.state, root))
+        .unwrap()
+        .map(|stored| {
+            stored
+                .header
+                .records
+                .iter()
+                .map(|record| record.origin.label())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn cd_moves_this_sessions_drafts_to_the_new_projects_checkpoint() {
+    let fixture = fixture();
+    let other = fixture.cwd.parent().unwrap().join("other");
+    std::fs::create_dir(&other).unwrap();
+    let file = fixture.write("a.txt", "alpha\n");
+    let mut editor = fixture.editor();
+    editor.open_fixture(&file).unwrap();
+    editor.feed_text("x");
+    settle(&mut editor);
+    assert_eq!(drafts_in(&fixture, &fixture.cwd).len(), 1);
+
+    crate::editor::ex::change_directory(&mut editor, other.clone());
+    settle(&mut editor);
+    assert_eq!(editor.cwd, other);
+    // a later session in the old project is not offered text that went
+    // on living here
+    assert!(drafts_in(&fixture, &fixture.cwd).is_empty());
+    let moved = drafts_in(&fixture, &other);
+    assert_eq!(moved.len(), 1, "{moved:?}");
+    assert!(moved[0].ends_with("a.txt"), "{moved:?}");
+    // saving retires the draft from the checkpoint the session now owns
+    editor.feed_text(":w<cr>");
+    settle(&mut editor);
+    assert!(drafts_in(&fixture, &other).is_empty());
+}
+
+#[test]
+fn cd_keeps_the_drafts_an_earlier_session_left_in_the_new_project() {
+    let fixture = fixture();
+    let other = fixture.cwd.parent().unwrap().join("other");
+    std::fs::create_dir(&other).unwrap();
+    std::fs::write(other.join("left.txt"), "left\n").unwrap();
+    // An earlier session crashed in `other` with an unsaved draft.
+    let mut earlier = Editor::new_in(Buffer::from_text(""), other.clone());
+    earlier.state_dir = Some(fixture.state.clone());
+    earlier.open_fixture(&other.join("left.txt")).unwrap();
+    earlier.feed_text("x");
+    settle(&mut earlier);
+    drop(earlier);
+    assert_eq!(drafts_in(&fixture, &other).len(), 1);
+
+    let file = fixture.write("a.txt", "alpha\n");
+    let mut editor = fixture.editor();
+    editor.open_fixture(&file).unwrap();
+    editor.feed_text("x");
+    settle(&mut editor);
+    crate::editor::ex::change_directory(&mut editor, other.clone());
+    settle(&mut editor);
+    let mut drafts = drafts_in(&fixture, &other);
+    drafts.sort();
+    assert_eq!(drafts.len(), 2, "{drafts:?}");
+    assert!(drafts.iter().any(|label| label.ends_with("left.txt")));
+    assert!(drafts.iter().any(|label| label.ends_with("a.txt")));
+}

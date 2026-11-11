@@ -177,8 +177,8 @@ fn alias_verbs() {
     e.feed_text("0wD"); // delete from 'edge' to EOL
     assert_eq!(text(&e), "let \n");
     let mut e = editor_with("let x = 1;\n");
-    e.feed_text("0wY"); // yy
-    assert_eq!(e.register(None).text, "let x = 1;\n");
+    e.feed_text("0wY"); // y$, as in Neovim
+    assert_eq!(e.register(None).text, "x = 1;");
     let mut e = editor_with("abc\n");
     e.feed_text("sZ"); // cl + insert Z
     e.feed(strop_core::frontend_input::Key::Esc);

@@ -37,7 +37,7 @@ pub(crate) struct WriteState {
 }
 
 impl WriteState {
-    pub(super) fn pending(&self) -> bool {
+    pub(crate) fn pending(&self) -> bool {
         !self.pending.is_empty()
     }
 

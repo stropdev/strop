@@ -1,5 +1,5 @@
-//! The grammar footer: what the pending keys will do (0001 §4 "see the
-//! cut before you make it"). Precedence is unchanged from the 0.15
+//! The grammar footer: what the pending keys will do (0001 §4).
+//! Precedence is unchanged from the 0.15
 //! modeline: a live preview (or its query error) beats the free pending
 //! line, which beats the walker's structural state. Messages are not
 //! grammar state and never appear here (see `render/echo.rs`).

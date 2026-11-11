@@ -63,7 +63,7 @@ fn cell(name: char) -> Result<Cell, RegisterError> {
         'A'..='Z' => Ok(Cell::Named(name as usize - 'A' as usize)),
         '-' => Ok(Cell::Small),
         '+' | '*' => Ok(Cell::Clipboard),
-        '.' | ':' | '/' | '%' => Err(RegisterError::ReadOnly(name)),
+        '.' | ':' | '/' | '%' | '#' => Err(RegisterError::ReadOnly(name)),
         other => Err(RegisterError::Invalid(other)),
     }
 }
@@ -186,6 +186,21 @@ impl Register {
             self.shape == RegisterShape::Linewise || more.shape == RegisterShape::Linewise;
         if linewise {
             self.shape = RegisterShape::Linewise;
+        } else if let RegisterShape::Blockwise { width } = self.shape {
+            // a block stays a block; its rows pad to the widest row of
+            // either part when it is put
+            let more_width = match more.shape {
+                RegisterShape::Blockwise { width } => width.get(),
+                _ => more
+                    .text
+                    .lines()
+                    .map(|line| line.chars().count())
+                    .max()
+                    .unwrap_or(0),
+            };
+            self.shape = RegisterShape::Blockwise {
+                width: strop_core::id::DisplayColumn::new(width.get().max(more_width)),
+            };
         }
         if self.shape != RegisterShape::Characterwise && !self.text.ends_with('\n') {
             self.text.push('\n');
@@ -201,6 +216,20 @@ impl Register {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appending_to_a_block_keeps_a_block_as_wide_as_its_widest_part() {
+        let cols = strop_core::id::DisplayColumn::new;
+        let mut block = Register::blockwise("ab\ncd".to_owned(), cols(2));
+        block.append(&Register::blockwise("efgh\nijkl".to_owned(), cols(4)));
+        assert_eq!(block.text, "ab\ncd\nefgh\nijkl");
+        assert_eq!(block.shape, RegisterShape::Blockwise { width: cols(4) });
+
+        let mut block = Register::blockwise("ab\ncd".to_owned(), cols(2));
+        block.append(&Register::characterwise("xyz".to_owned()));
+        assert_eq!(block.text, "ab\ncd\nxyz");
+        assert_eq!(block.shape, RegisterShape::Blockwise { width: cols(3) });
+    }
 
     fn text(store: &RegisterStore, name: char) -> String {
         store.get(Some(name)).unwrap().text.clone()
@@ -309,7 +338,7 @@ mod tests {
         assert_eq!(text(&store, '"'), "keep");
         assert_eq!(text(&store, '1'), "");
         assert_eq!(text(&store, '_'), "");
-        for name in ['.', ':', '/', '%'] {
+        for name in ['.', ':', '/', '%', '#'] {
             assert_eq!(
                 store.write(Some(name), Register::characterwise("x"), Origin::Yank),
                 Err(RegisterError::ReadOnly(name))

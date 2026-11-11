@@ -24,7 +24,13 @@ fn the_command_card_paints_over_the_welcome_card() {
         rows.join("\n")
     );
     for row in rows.iter().filter(|row| row.contains("terminal")) {
-        for welcome in ["╭", "╰", "see the cut", "keybindings", "everything"] {
+        for welcome in [
+            "╭",
+            "╰",
+            "Nothing to configure",
+            "keybindings",
+            "everything",
+        ] {
             assert!(
                 !row.contains(welcome),
                 "welcome card over the command card: {row:?}"

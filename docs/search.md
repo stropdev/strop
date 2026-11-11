@@ -72,16 +72,26 @@ counted resolver.
 
 ## Ex substitution
 
-`:[range]s/pattern/replacement/g` uses the same bounded Vim-magic pattern
-grammar as buffer search. While composing, Strop shows the actual removed and
+`:[range]s/pattern/replacement/[flags]` uses the same bounded Vim-magic
+pattern grammar and case rule as buffer search. While composing, Strop shows the actual removed and
 inserted lines, substitution count, scope and offscreen extent; Enter applies
 that displayed plan as one undo unit. Invalid or incomplete input replaces the
 previous preview rather than executing it, large plans resolve off the input
 path, and Esc cancellation leaves bytes, registers and undo history untouched.
 
-Replacement text is literal: `&`, `$1` and `\1` have no capture meaning. An
-escaped delimiter inserts that delimiter and `\\` inserts one backslash; other
-backslashes are preserved. This is separate from Search's literal With field.
+The replacement is Vim's: `&` (or `\0`) is the match and `\1`–`\9` its
+groups, `~` the previous replacement, `\r` a line break, `\t` a tab, and
+`\u` `\l` `\U` `\L` … `\E` change the case of what follows; `\&`, `\~`,
+`\\` and an escaped delimiter are themselves. The preview shows the expanded
+text. This is separate from Search's literal With field.
+
+Flags: `g` every match on a line, `i` / `I` ignore / match case, `n` count
+the matches without changing anything, `e` no complaint when nothing
+matches, `&` the previous substitute's flags, and `c` to be asked at each
+match — `y` replaces it, `n` skips it, `a` replaces all the rest, `l` this
+one and stop, `q` or Esc stop. A count after the flags (`:s/a/b/g 3`) covers
+that many lines. `:s` or `:&` alone repeats the last substitute on the
+cursor line, `:&&` with its flags, `:~` with the last search pattern.
 
 ## The Search workspace
 

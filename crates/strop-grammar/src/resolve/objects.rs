@@ -1,7 +1,226 @@
-//! Text objects: bracket/quote pair scans, inner word, the surround
-//! table — nesting-aware, cursor-on-delimiter counts as inside (vim).
+//! Text objects: bracket blocks, quotes, tags, paragraphs and the
+//! surround table — nesting-aware, cursor-on-delimiter counts as inside
+//! (vim). Each object answers with an `Extent` in Vim's own terms (a
+//! start, an end position and how the end counts), so the range rules in
+//! `resolve` read objects and motions the same way.
 
 use strop_core::Buffer;
+
+use super::walk::{Step, Walk};
+use super::{blocks, tags, words, Kind};
+use crate::types::Object;
+
+/// What a text object covers: `end` is a cursor position, read by `kind`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Extent {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) kind: Kind,
+}
+
+/// Resolve a text object at `cursor`. `selection` is a Visual selection
+/// of more than one character, as `(anchor, head)`: word, paragraph and
+/// bracket objects extend it, and a word object then answers in that
+/// order (`start` is the anchor, `end` the new head).
+pub(crate) fn extent(
+    buf: &Buffer,
+    cursor: usize,
+    selection: Option<(usize, usize)>,
+    object: Object,
+    inner: bool,
+    count: usize,
+) -> Option<Extent> {
+    let extending = selection.filter(|(anchor, head)| anchor != head);
+    match object {
+        Object::Word | Object::BigWord => {
+            let big = object == Object::BigWord;
+            let word = words::object(buf, cursor, extending, count, !inner, big)?;
+            Some(Extent {
+                start: word.start,
+                end: word.end,
+                kind: if word.inclusive {
+                    Kind::Inclusive
+                } else {
+                    Kind::Exclusive
+                },
+            })
+        }
+        Object::Paragraph => {
+            if let Some((anchor, head)) = extending {
+                if buf.line_of(anchor) != buf.line_of(head) {
+                    let line = blocks::paragraph_extend(buf, anchor, head, count, !inner)?;
+                    return Some(Extent {
+                        start: anchor,
+                        end: buf.line_start(line),
+                        kind: Kind::Linewise,
+                    });
+                }
+            }
+            let (first, last) = blocks::paragraph_object(buf, cursor, count, !inner)?;
+            Some(Extent {
+                start: buf.line_start(first),
+                end: buf.line_start(last),
+                kind: Kind::Linewise,
+            })
+        }
+        Object::Quote(quote) => {
+            let (open, close) = quote_pair(buf, cursor, quote)?;
+            let line_end = buf.line_end(buf.line_of(open));
+            let blank = |at: usize| matches!(buf.byte(at), b' ' | b'\t');
+            let (mut start, mut end) = (open, close + 1);
+            if inner && count < 2 {
+                (start, end) = (open + 1, close);
+            } else if !inner {
+                if end < line_end && blank(end) {
+                    while end < line_end && blank(end) {
+                        end += 1;
+                    }
+                } else {
+                    let line_start = buf.line_start(buf.line_of(open));
+                    while start > line_start && blank(start - 1) {
+                        start -= 1;
+                    }
+                }
+            }
+            Some(Extent {
+                start,
+                end,
+                kind: Kind::Exclusive,
+            })
+        }
+        Object::Bracket { open, close } => {
+            block(buf, cursor, selection, count, !inner, open, close)
+        }
+        Object::Tag => {
+            let element = tags::element(buf, cursor, count)?;
+            let exclusive = |start, end| Extent {
+                start,
+                end,
+                kind: Kind::Exclusive,
+            };
+            if !inner {
+                return Some(exclusive(element.open.0, element.close.1));
+            }
+            let (start, end) = (element.open.1, element.close.0);
+            if start == end {
+                return Some(exclusive(start, end));
+            }
+            let mut last = Walk::new(buf, end);
+            last.dec();
+            Some(Extent {
+                start,
+                end: last.pos,
+                kind: Kind::Inclusive,
+            })
+        }
+    }
+}
+
+/// `i(` / `a(` and friends with a count (Vim's `current_block`): the
+/// count-th enclosing pair. Inner leaves out the brackets, and — when
+/// the closing bracket has only indent before it — that indent and the
+/// line break, which is what makes `di{` take whole lines.
+fn block(
+    buf: &Buffer,
+    cursor: usize,
+    selection: Option<(usize, usize)>,
+    count: usize,
+    around: bool,
+    open: char,
+    close: char,
+) -> Option<Extent> {
+    let (open, close) = (open as u8, close as u8);
+    let extending = selection.filter(|(anchor, head)| anchor != head);
+    let (low, high) = extending.map_or((cursor, cursor), |(a, h)| (a.min(h), a.max(h)));
+    let mut from = Walk::new(buf, low);
+    if extending.is_none() {
+        if open == b'{' {
+            while from.in_indent(1) {
+                if from.inc() != Step::Char {
+                    break;
+                }
+            }
+        }
+        if from.ch() == Some(char::from(open)) {
+            from.inc();
+        }
+    }
+    let mut at = from.pos;
+    let mut start = None;
+    // Not inside a block: the next one that opens after the cursor
+    // (Vim searches forward for the opening bracket, skipping closers).
+    let enclosed = blocks::unmatched(buf, at, open, close, false, 1).is_some();
+    for _ in 0..count {
+        let found = if enclosed {
+            blocks::unmatched(buf, at, open, close, false, 1)
+        } else {
+            blocks::unmatched(buf, at, close, open, true, 1)
+        };
+        // fewer blocks than the count: Vim selects nothing
+        let found = found?;
+        at = found;
+        start = Some(found);
+    }
+    let mut start = start?;
+    let mut end = blocks::unmatched(buf, start, open, close, true, 1)?;
+    if around {
+        return Some(Extent {
+            start,
+            end,
+            kind: Kind::Inclusive,
+        });
+    }
+    loop {
+        let mut first = Walk::new(buf, start);
+        first.incl();
+        let mut last = Walk::new(buf, end);
+        let mut line_start = last.col() == 0;
+        last.decl();
+        while last.in_indent(1) {
+            line_start = true;
+            if last.decl() != Step::Char {
+                break;
+            }
+        }
+        // A selection that already covers this block's inside grows to
+        // the next block out.
+        if selection.is_some() && first.pos >= low && last.pos <= high && first.pos != last.pos {
+            let mut outer = Walk::new(buf, low);
+            outer.decl();
+            start = blocks::unmatched(buf, outer.pos, open, close, false, 1)?;
+            end = blocks::unmatched(buf, start, open, close, true, 1)?;
+            continue;
+        }
+        if selection.is_some() {
+            if first.pos > last.pos {
+                // nothing between the brackets: Visual selects nothing
+                return None;
+            }
+            if line_start && !last.at_end() {
+                last.inc();
+            }
+            return Some(Extent {
+                start: first.pos,
+                end: last.pos,
+                kind: Kind::Inclusive,
+            });
+        }
+        let (end, kind) = if line_start {
+            last.incl();
+            (last.pos, Kind::Exclusive)
+        } else if first.pos <= last.pos {
+            (last.pos, Kind::Inclusive)
+        } else {
+            // nothing between the brackets
+            (first.pos, Kind::Exclusive)
+        };
+        return Some(Extent {
+            start: first.pos,
+            end,
+            kind,
+        });
+    }
+}
 
 /// % — matching pair. On a bracket: its mate. Else: first bracket on the
 /// line right of cursor, then its mate (vim semantics).
@@ -94,119 +313,6 @@ pub(crate) fn quote_pair(buf: &Buffer, pos: usize, q: char) -> Option<(usize, us
     Some((open, close))
 }
 
-/// Object classes: blank / word / punct (a WORD object merges the last
-/// two). Chars classify as a whole — continuation bytes inherit their
-/// char's class, so run boundaries always land on char edges.
-const BLANK: u8 = 0;
-const WORD: u8 = 1;
-const PUNCT: u8 = 2;
-
-fn object_class(buf: &Buffer, pos: usize, big: bool) -> u8 {
-    let b = buf.byte(pos);
-    let character = if b.is_ascii() {
-        b as char
-    } else {
-        buf.text().char(buf.text().byte_to_char(pos))
-    };
-    if character.is_whitespace() {
-        return BLANK;
-    }
-    if big || super::is_keyword(character) {
-        WORD
-    } else {
-        PUNCT
-    }
-}
-
-/// iw/aw/iW/aW — vim's current_word, count one, outside Visual mode:
-///
-/// - inner: the run under the cursor of its own class (a blank run is
-///   itself a selectable object; word and punct runs are distinct).
-/// - around a word/punct run: plus the trailing blank run on the line;
-///   with none, plus the leading blank run — never indent (a blank run
-///   starting at column 0 stays).
-/// - around a blank run: plus the following word/punct run, across line
-///   breaks; no following run refuses the whole command (vim's FAIL).
-pub(crate) fn word_object(
-    buf: &Buffer,
-    pos: usize,
-    big: bool,
-    inner: bool,
-) -> Option<(usize, usize)> {
-    let n = buf.len_bytes();
-    if pos >= n {
-        return None;
-    }
-    let class = object_class(buf, pos, big);
-    let mut s = pos;
-    while s > 0 && object_class(buf, s - 1, big) == class {
-        s -= 1;
-    }
-    let mut e = pos + 1;
-    while e < n && object_class(buf, e, big) == class {
-        e += 1;
-    }
-    if inner {
-        return Some((s, e));
-    }
-    if class == BLANK {
-        let mut end = e;
-        while end < n && object_class(buf, end, big) == BLANK {
-            end += 1;
-        }
-        if end >= n {
-            return None; // trailing blank run with nothing after: vim FAILs
-        }
-        let word = object_class(buf, end, big);
-        while end < n && object_class(buf, end, big) == word {
-            end += 1;
-        }
-        return Some((s, end));
-    }
-    let mut trail = e;
-    while trail < n && buf.byte(trail) != b'\n' && object_class(buf, trail, big) == BLANK {
-        trail += 1;
-    }
-    if trail > e {
-        return Some((s, trail));
-    }
-    if s > 0 && buf.byte(s - 1) != b'\n' && object_class(buf, s - 1, big) == BLANK {
-        let mut lead = s;
-        while lead > 0 && buf.byte(lead - 1) != b'\n' && object_class(buf, lead - 1, big) == BLANK {
-            lead -= 1;
-        }
-        if lead > 0 && buf.byte(lead - 1) != b'\n' {
-            return Some((lead, e));
-        }
-    }
-    Some((s, e))
-}
-
-/// The occurrence-selection seed (0049 §7): the word or punctuation
-/// run under `pos` by vim's small-word classes — `gb` selects exactly
-/// what `iw` classifies, and a caret on whitespace seeds nothing.
-pub fn word_run(buf: &Buffer, pos: usize) -> Option<(usize, usize)> {
-    let n = buf.len_bytes();
-    if pos >= n {
-        return None;
-    }
-    let class = object_class(buf, pos, false);
-    if class == BLANK {
-        return None;
-    }
-    let mut start = pos;
-    while start > 0 && object_class(buf, start - 1, false) == class {
-        start -= 1;
-    }
-    let mut end = pos + 1;
-    while end < n && object_class(buf, end, false) == class {
-        end += 1;
-    }
-    Some((start, end))
-}
-
-/// Search forward for `pat` (prototype: plain substring; 0001 §2.5's
-/// transpiled regex lands with the real search layer).
 /// Map a surround char to its pair (sandwich aliases b/B/r/a).
 pub(crate) fn surround_pair(ch: char) -> Option<(char, char)> {
     Some(match ch {

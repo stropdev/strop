@@ -123,6 +123,17 @@ impl WorkspaceRegistry {
         self.arena.get(id)
     }
 
+    /// Drop one exact selected root (`:cd` leaves the old project): files
+    /// under it stop resolving to it. Other roots are untouched.
+    pub fn retire_root(&mut self, root: ResourceLocation) {
+        let Ok(key) = WorkspaceKey::new(root) else {
+            return;
+        };
+        if let Some(id) = self.by_root.remove(&key) {
+            self.arena.remove(id);
+        }
+    }
+
     /// A disconnect ends every project incarnation on that endpoint. If one
     /// counter is exhausted only that exact binding is retired; reconnect binds
     /// a fresh generational ID without disturbing sibling projects.

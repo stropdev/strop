@@ -55,7 +55,7 @@ fn workspace() -> tempfile::TempDir {
     .unwrap();
     std::fs::write(
         root.path().join("README.md"),
-        "# strop\n\nsee the cut before you make it.\n",
+        "# strop\n\nA modal text editor with Vim's keys.\n",
     )
     .unwrap();
     root
@@ -178,6 +178,15 @@ fn recovery_offer() {
         editor.fixture_recovery_draft(&path, "//! a draft\n");
         editor.open_fixture(&path).unwrap();
         assert!(editor.recovery_offer().is_some());
+        settle_analysis()
+    });
+}
+
+/// 0095 §4: `:` from Visual opens with the selection's range typed.
+#[test]
+fn ex_line_from_visual() {
+    each("ex-visual", |editor| {
+        editor.feed_text("7jVjjj:");
         settle_analysis()
     });
 }

@@ -383,3 +383,34 @@ fn trust_rejects_unusable_native_paths() {
             || !is_trusted(Some(&state), &bad).unwrap()
     );
 }
+
+#[test]
+fn cd_saves_the_session_under_the_new_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let (one, two) = (dir.path().join("one"), dir.path().join("two"));
+    std::fs::create_dir(&one).unwrap();
+    std::fs::create_dir(&two).unwrap();
+    std::fs::write(one.join("a.rs"), "fn a() {}\n").unwrap();
+    let state = dir.path().join("state");
+    let mut e = Editor::new_in(Buffer::open(one.join("a.rs")).unwrap(), one.clone());
+    e.state_dir = Some(state.clone());
+    let old = session_path(Some(&state), &one).unwrap();
+    let new = session_path(Some(&state), &two).unwrap();
+    assert_eq!(capture_save(&e).unwrap().path, old);
+
+    crate::editor::ex::change_directory(&mut e, two.clone());
+    e.wait_io().unwrap();
+    assert_eq!(capture_save(&e).unwrap().path, new);
+    // both projects have a session on disk: the old one as it was left,
+    // the new one from the moment the root moved
+    assert!(old.exists());
+    assert!(new.exists());
+    // and a session started in the new root finds the buffer
+    let mut restarted = Editor::new_in(Buffer::from_text(""), two);
+    restarted.state_dir = Some(state);
+    assert!(restore(&mut restarted).unwrap());
+    assert_eq!(
+        restarted.buf().path.as_deref(),
+        Some(one.join("a.rs").as_path())
+    );
+}

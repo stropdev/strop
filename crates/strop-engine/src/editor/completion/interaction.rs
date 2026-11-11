@@ -25,7 +25,11 @@ impl Editor {
                 self.input_owner(),
                 InputOwner::Document | InputOwner::HoverCard | InputOwner::BlameCard
             );
-        if document_insert {
+        // Normal and Visual in a document: Ctrl-E / Ctrl-Y scroll.
+        let document_keys = self.mode != Mode::Insert
+            && matches!(self.input_owner(), InputOwner::Document)
+            && matches!(key, Key::CtrlE | Key::CtrlY);
+        if document_insert || document_keys {
             return key;
         }
         // Preserve the pre-completion field/normal-mode normalization. Physical

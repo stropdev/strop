@@ -130,8 +130,10 @@ and starts one scoped reattach; repeat the request after it is ready.
 
 ## The project root
 
-The project is the directory strop was launched in, and it stays there:
-`:pwd` shows it. Files (`Space f`), Search (`Space /`) and new terminals are
+The project is the directory strop was launched in, and it stays there
+until you move it: `:pwd` shows it, `:cd DIR` changes it (`:cd -` goes
+back, `:cd` alone goes home). The session and draft-recovery files, buffer
+names and the file watcher follow the new root. Files (`Space f`), Search (`Space /`) and new terminals are
 scoped to it whichever file has focus. Following go-to-definition into the
 Rust standard library, a cargo registry crate or a system header does not
 re-root anything — that file opens read-only, and the project's language
@@ -140,15 +142,95 @@ on it; no second server is started in the library's directory). Browsing a
 directory deliberately (`:browse DIR`) scopes Files and Search to that
 directory while it has focus.
 
+## Vim's keys
+
+Neovim with no configuration is the specification: where Neovim's default
+differs from Vim's, strop follows Neovim (`Y` is `y$`, `gc` comments, Visual
+`*` searches the selection, `&` keeps the substitute's flags). `Space ?` lists every key;
+[vim-compat.md](vim-compat.md) is the same list, and ends with what Neovim
+binds that strop does not (**Missing**) or uses differently (**Reassigned**).
+
+- **Operators** take any motion or text object, a count and a register, and
+  repeat with `.`: `d` `y` `c` `>` `<`, the case operators `gU` `gu` `g~`,
+  `g?` (rot13), `gc` (toggle line comments), and `!`, which opens the `:` line with the lines as its range
+  so the command you type filters them. Doubled, an operator takes whole
+  lines (`dd`, `gUU`, `g??`). `v`, `V` or `Ctrl-V` between an operator and
+  its motion forces characterwise, linewise or blockwise (`dvj`, `dVw`).
+- **Motions**: `h j k l`, `w b e ge` and their WORD forms, `0 ^ $ g_ |`,
+  `gg G`, `N%`, `- +`, `{ }`, `( )`, `%`, `[( [{ ]) ]}`, `f F t T ; ,`,
+  `/ ? n N * # g* g#`, `H M L`, and marks: `'a` (the line) and `` `a `` (the
+  exact place), including `'<` `'>` (the last selection), `''` (where the
+  last jump left from), `'.` and `'^`. Marks move with the text; a mark on a
+  deleted line is gone. `j` and `k` keep the column through shorter lines.
+- **Text objects**: `iw aw iW aW`, `ip ap`, `i( a(` (also `ib`), `i[ a[`,
+  `i{ a{` (also `iB`), `i< a<`, the quotes, `it at` (an XML/HTML element),
+  and `gn` (the next search match — `cgn` then `.` changes them one at a
+  time). A count takes more of them (`d2aw`, `2i(`). In Visual an object
+  extends the selection (`viwiw`, `vipip`, `vi(i(`).
+- **Normal**: `x X D C Y s S`, `J` and `gJ` (a count joins that many lines),
+  `~`, `r`, `R` (type over; Backspace gives the old text back), `Ctrl-A` and
+  `Ctrl-X` (add to the number at or after the cursor: decimal, `0x`, `0b`),
+  `p P gp gP ]p [p`, `&` and `g&` (the last `:s` again), `@:` (the last `:`
+  line again), `q` and `@` macros, `Ctrl-E` / `Ctrl-Y` (scroll one line),
+  `ZZ` `ZQ`.
+- **Visual** (`v`, `V`, `Ctrl-V`; the same key leaves, another switches):
+  every operator, `U u ~` for case, `J gJ`, `r`, `p` and `P` (see
+  Registers), `I` and `A`, `o`, `*` and `#`, `D X Y C R` on whole lines,
+  `Ctrl-A` / `Ctrl-X`, and `:` with the selection as its range.
+- **Insert**: `Ctrl-W` (delete the word before the cursor), `Ctrl-U`
+  (delete what was typed on the line), `Ctrl-T` / `Ctrl-D` (indent, dedent),
+  `Ctrl-O` (one Normal command), `Ctrl-R {register}`, `Ctrl-H`.
+- **Not yet**: folds, tab pages, the `=`, `gq` and `gw` operators, `U`,
+  search offsets (`/pat/e`). `=`, `gq`, `gw` and `zf` still take their
+  motion, so typing `gqip` never runs `ip` as commands; they then say they
+  are not supported.
+
+## The command line
+
+`:` takes Vim's ranges and Vim's names. A range is line numbers, `.`, `$`,
+`%`, marks (`'a`, and `'<,'>` — which `:` typed from Visual mode fills in),
+`/pattern/` and `?pattern?`, each with `+N` / `-N` offsets, joined by `,` or
+`;`. A reversed range or one past the last line is refused with a message.
+Commands take their Vim abbreviations (`:s`, `:g`, `:norm`, `:d`, `:m`,
+`:t`, `:bn`, `:wqa` …) and `!` where Vim does.
+
+- **Lines**: `:d [x] [count]`, `:y [x] [count]`, `:m {address}`,
+  `:t {address}` (`:co`), `:j[!]`, `:pu[!] [x]`, `:>` / `:<` (`:>>` twice),
+  `:sort[!] [u][n][i]`, and `:{range}!cmd` to filter lines through a shell
+  command.
+- **Many lines at once**: `:g/pattern/cmd` runs a command on every matching
+  line (`:g!` and `:v` on the others); `:[range]norm keys` types Normal-mode
+  keys on each line. Each is one undo step.
+- **Substitute**: see [search.md](search.md#ex-substitution).
+- **Buffers**: `:b N` or `:b name` (a fragment that matches one buffer),
+  `:bn`, `:bp`, `:bd [N]`; `:ls`, `:reg [names]` and `:marks` open their
+  listing as a read-only buffer.
+- **Files**: `:w`, `:up` (only if modified), `:wa` (every modified file; it
+  says how many, and names the count of modified buffers that have no file
+  name), `:wq`, `:x`, `:wqa` / `:xa`, `:e`, `:enew`, `:new`, `:vnew`,
+  `:close`, `:only`.
+- `:@:` repeats the last command line.
+
+Not there: `|` between commands, `:g` without a command (print), the `c`
+flag of `:s` inside `:g` or `:norm`, `:set` beyond `ro`, `:r file`, and
+`:sort` by pattern or by hex / octal / float.
+
 ## Registers
 
 One register file serves every text input. `y` fills `"0`; a delete or change
 of a line or more shifts `"1`–`"9`, a smaller one fills `"-`; `"a`–`"z` are
-named (`"A` appends), `"_` discards, `". ": "/ "%` are the last insert, last
-`:` line, last search and file name. `p`/`P` read them in Normal mode, and
+named (`"A` appends), `"_` discards, `". ": "/ "% "#` are the last insert, last
+`:` line, last search, file name and alternate file name. `p`/`P` read them in
+Normal mode, and
 `Ctrl-R {register}` inserts one in Insert mode, on the `:` and `/` lines, and
 in every picker field — Files, Search's Find and With, symbols, buffers.
-`Ctrl-R "` is the last yank or delete.
+`Ctrl-R "` is the last yank or delete. `y`, `d` and `c` in a field's Normal
+mode write the registers as they do in a document.
+
+In Visual mode `p` puts the register over the selection and the text it
+replaced becomes the unnamed register, so the two are swapped; `P` does the
+same put and leaves every register as it was, so it can be repeated on the
+next selection.
 
 A plain yank is also a copy: `y` (with no register) puts the text on the
 system clipboard as well, so the terminal's own paste (Ctrl-Shift-V, or Ctrl-V

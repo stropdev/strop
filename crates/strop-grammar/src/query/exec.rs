@@ -242,6 +242,18 @@ impl<'a> Matcher<'a> {
         prog: &Program,
         start: usize,
     ) -> Result<Option<(usize, usize)>, QueryError> {
+        self.find_at_saving(prog, start, &mut Vec::new())
+    }
+
+    /// `find_at`, leaving the winning attempt's save slots in `slots`
+    /// (0 = `\zs`, 1 = `\ze`, then two per capture group; `UNSET` for a
+    /// group that did not take part).
+    fn find_at_saving(
+        &self,
+        prog: &Program,
+        start: usize,
+        slots: &mut Vec<usize>,
+    ) -> Result<Option<(usize, usize)>, QueryError> {
         if self.query.cancelled() {
             return Err(QueryError::Cancelled);
         }
@@ -368,8 +380,10 @@ impl<'a> Matcher<'a> {
                             // match at the same position (`a\{-}` takes
                             // one char, `^$` still matches); keep going
                             empty_fallback = Some((rep_start, rep_end));
+                            slots.clone_from(&saves);
                             break;
                         }
+                        slots.clone_from(&saves);
                         return Ok(Some((rep_start, rep_end)));
                     }
                 }
@@ -410,15 +424,37 @@ pub(crate) fn visit_matches(
     prog: &Program,
     mut visit: impl FnMut(SearchMatch) -> std::ops::ControlFlow<()>,
 ) -> Result<(), QueryError> {
+    visit_captures(m, prog, |hit, _| visit(hit))
+}
+
+/// `visit_matches`, handing each match its capture groups: `groups[n - 1]`
+/// is `\n`, `None` when that group took no part in the match.
+pub(crate) fn visit_captures(
+    m: &Matcher<'_>,
+    prog: &Program,
+    mut visit: impl FnMut(SearchMatch, &[Option<SearchMatch>]) -> std::ops::ControlFlow<()>,
+) -> Result<(), QueryError> {
     let mut at = 0usize;
+    let mut slots = Vec::new();
+    let mut groups = Vec::new();
     while at <= m.len() {
-        match m.find_at(prog, at)? {
+        match m.find_at_saving(prog, at, &mut slots)? {
             Some((start, end)) => {
+                groups.clear();
+                for [from, to] in slots.as_chunks::<2>().0.iter().skip(1) {
+                    groups.push((*from != UNSET && *to != UNSET).then(|| SearchMatch {
+                        start: ByteOffset::new(*from),
+                        end: ByteOffset::new(*to),
+                    }));
+                }
                 if (start < m.len() || start < end)
-                    && visit(SearchMatch {
-                        start: ByteOffset::new(start),
-                        end: ByteOffset::new(end),
-                    })
+                    && visit(
+                        SearchMatch {
+                            start: ByteOffset::new(start),
+                            end: ByteOffset::new(end),
+                        },
+                        &groups,
+                    )
                     .is_break()
                 {
                     return Ok(());

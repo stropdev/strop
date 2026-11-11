@@ -105,7 +105,7 @@ impl Editor {
             }
             Key::CtrlL => self.needs_repaint = true,
             Key::CtrlT if search => self.toggle_search_replacement(),
-            Key::CtrlW | Key::CtrlT => {}
+            Key::CtrlW | Key::CtrlT | Key::CtrlA => {}
             Key::CtrlU | Key::CtrlF | Key::CtrlB | Key::CtrlV | Key::CtrlCaret | Key::CtrlC => {}
             Key::CtrlY | Key::CtrlE => {}
             Key::Up | Key::CtrlP => glue.picker.move_by(-1),
@@ -132,6 +132,13 @@ impl Editor {
                         replace && glue.picker.field == strop_picker::Field::Replace;
                     let before = glue.picker.active_field().revision();
                     let reply = glue.field_keys.feed(glue.picker.active_field(), key);
+                    let write = glue.field_keys.take_write();
+                    if let Some(write) = write {
+                        self.store_field_write(write);
+                    }
+                    let Some(glue) = self.picker.as_mut() else {
+                        return;
+                    };
                     match reply {
                         super::super::field::FieldReply::Consumed => {
                             if glue.picker.active_field().revision() != before {
