@@ -47,6 +47,7 @@
 
 ### Fixed
 
+- **A mistake in `config.toml` costs only that setting**: an unknown theme name, an unknown key or a value strop cannot use is skipped and named in the warning, and every other setting in the file applies. It used to throw away the whole file.
 - **Enter in the finder could open the wrong file** when you typed quickly in a large project: the selection drifted down the list as more files loaded. The selection now stays on the top result until you move it.
 
 ## 0.59.0 — 2026-11-11
