@@ -1725,6 +1725,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strop-core",
+ "strop-fs",
  "strop-remote",
  "strop-syntax",
  "strop-workspace",

@@ -13,6 +13,7 @@ imbl = { version = "7", features = ["serde"] }
 parking_lot = "0.12"
 strop-core = { path = "../strop-core", version = "0.61.0" }
 strop-workspace = { path = "../strop-workspace", version = "0.61.0" }
+strop-fs = { path = "../strop-fs", version = "0.61.0" }
 strop-remote = { path = "../strop-remote", version = "0.61.0" }
 strop-syntax = { path = "../strop-syntax", version = "0.61.0" }
 serde = { version = "1", features = ["derive", "rc"] }
