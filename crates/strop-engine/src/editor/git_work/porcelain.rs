@@ -29,7 +29,7 @@ use crate::editor::picker::PickerGlue;
 use crate::editor::{trace, Editor};
 
 /// The pinned branch-picker row; the typed filter text is the new name.
-const CREATE_ROW: &str = "create a branch from the typed name";
+const CREATE_ROW: &str = "new branch from the typed name";
 
 /// Hooks lint and test; a commit may honestly take minutes.
 const PORCELAIN_DEADLINE: Duration = Duration::from_secs(600);
@@ -79,7 +79,7 @@ impl Editor {
     }
 
     /// The document is the commit message being edited.
-    pub(crate) fn is_commit_message(&self, document: DocumentId) -> bool {
+    pub fn is_commit_message(&self, document: DocumentId) -> bool {
         self.git_work
             .commit
             .as_ref()
@@ -128,7 +128,8 @@ impl Editor {
                     return Outcome::Cancelled(CancelReason::Superseded);
                 }
                 let written = repo_or_unavailable(&workdir).and_then(|repo| {
-                    repo.write_commit_template(amend)
+                    super::working_tree(&repo)
+                        .and_then(|tree| repo.write_commit_template(&tree, amend))
                         .map_err(|error| git_failure("commit", error))
                 });
                 match written {

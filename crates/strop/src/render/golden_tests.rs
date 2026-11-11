@@ -10,8 +10,8 @@ use strop_core::Buffer;
 use super::golden::assert_golden;
 use crate::editor::Editor;
 
-const SIZES: [(u16, u16); 2] = [(140, 40), (80, 24)];
-const THEMES: [ThemeId; 2] = [ThemeId::Hone, ThemeId::Vellum];
+pub(super) const SIZES: [(u16, u16); 2] = [(140, 40), (80, 24)];
+pub(super) const THEMES: [ThemeId; 2] = [ThemeId::Hone, ThemeId::Vellum];
 
 const SOURCE: &[&str] = &[
     "//! The modeline: one quiet row at the bottom edge.",
@@ -73,9 +73,9 @@ fn editor(root: &tempfile::TempDir, theme: ThemeId) -> Editor {
 
 /// How a scene lets admitted work (syntax analysis, previews) settle
 /// between the first paint and the recorded one.
-type Settle = Box<dyn FnMut(&mut Editor)>;
+pub(super) type Settle = Box<dyn FnMut(&mut Editor)>;
 
-fn settle_analysis() -> Settle {
+pub(super) fn settle_analysis() -> Settle {
     Box::new(|editor| editor.wait_analysis())
 }
 
@@ -88,7 +88,7 @@ fn settle_picker() -> Settle {
     })
 }
 
-fn frame(
+pub(super) fn frame(
     editor: &mut Editor,
     settle: &mut Settle,
     (columns, rows): (u16, u16),

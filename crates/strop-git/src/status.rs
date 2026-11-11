@@ -432,12 +432,15 @@ impl Repo {
         Ok(rows.into_iter().map(|(branch, _)| branch).collect())
     }
 
-    /// Write `<gitdir>/COMMIT_EDITMSG`: an empty first line (HEAD's
-    /// message when amending), then `#` lines naming the branch and
-    /// what the commit will hold. Refuses when nothing is staged and
-    /// this is not an amend.
-    pub fn write_commit_template(&self, amend: bool) -> Result<PathBuf, GitError> {
-        let tree = self.status()?;
+    /// Write `<gitdir>/COMMIT_EDITMSG` for `tree` (a status the caller
+    /// just took): an empty first line (HEAD's message when amending),
+    /// then `#` lines naming the branch and what the commit will hold.
+    /// Refuses when nothing is staged and this is not an amend.
+    pub fn write_commit_template(
+        &self,
+        tree: &WorkingTree,
+        amend: bool,
+    ) -> Result<PathBuf, GitError> {
         let staged: Vec<&StatusEntry> = tree.section(Section::Staged).collect();
         if staged.is_empty() && !amend {
             return Err(GitError::NothingStaged);

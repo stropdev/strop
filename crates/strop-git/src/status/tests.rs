@@ -327,13 +327,15 @@ fn commit_template_lists_what_is_staged() {
     let (dir, repo) = fixture();
     let root = dir.path();
     assert_eq!(
-        repo.write_commit_template(false),
+        repo.write_commit_template(&repo.status().unwrap(), false),
         Err(GitError::NothingStaged)
     );
     std::fs::write(root.join("a.rs"), "changed\n").unwrap();
     std::fs::write(root.join("loose.txt"), "x\n").unwrap();
     git(root, &["add", "a.rs"]);
-    let path = repo.write_commit_template(false).unwrap();
+    let path = repo
+        .write_commit_template(&repo.status().unwrap(), false)
+        .unwrap();
     assert_eq!(path, repo.git_dir().join("COMMIT_EDITMSG"));
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("\n\n# "), "{text}");
@@ -342,7 +344,10 @@ fn commit_template_lists_what_is_staged() {
     assert!(text.contains("# Not in this commit: 0 unstaged, 1 untracked.\n"));
     // amend starts from the last message and needs nothing staged
     git(root, &["reset", "-q"]);
-    let text = std::fs::read_to_string(repo.write_commit_template(true).unwrap()).unwrap();
+    let path = repo
+        .write_commit_template(&repo.status().unwrap(), true)
+        .unwrap();
+    let text = std::fs::read_to_string(path).unwrap();
     assert!(text.starts_with("init\n\n# "), "{text}");
     assert!(text.contains("# Amending the last commit.\n"));
 }

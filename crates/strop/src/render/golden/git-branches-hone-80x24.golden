@@ -1,0 +1,49 @@
+   1 line 1                                                                     
+   2 line 2                                                                     
+   3 line 3                                                                     
+   4 line 4                                                                     
+   5 l╭ branches ──────────────────────────────────────────────────── 6 ╮       
+   6 l│ ❯ ▏                                                             │       
+   7 l│                                                                 │       
+   8 l│ ▌ main — current                                                │       
+   9 l│   feature/status-buffer                                         │       
+  10 l│   fix/blame-gutter                                              │       
+  11 l│   origin/fix/blame-gutter                                       │       
+  12 l│   origin/main                                                   │       
+  13 l│   new branch from the typed name                                │       
+  14 l│                                                                 │       
+  15 l│                                                                 │       
+  16 l│                                                                 │       
+  17 l│                                                                 │       
+  18 l│                                                                 │       
+  19 l│                                                                 │       
+  20 l╰  enter  switch   ↑↓  move   esc  close ─────────────────────────╯       
+~                                                                               
+~                                                                               
+~                                                                               
+BRANCHES  main  src/lib.rs                                               1:1  5%
+
+  0: 1:#464b54/#17191f+b 4:#73572f/#17191f 5:#72716f/#17191f 1:#715146/#17191f 68:#17191f/#17191f 1:reset/reset
+  1: 1:#464b54/#15171c+b 4:#464b54/#15171c 5:#72716f/#15171c 1:#715146/#15171c 68:reset/#15171c 1:reset/reset
+  2: 1:#464b54/#15171c+b 4:#464b54/#15171c 5:#72716f/#15171c 1:#715146/#15171c 68:reset/#15171c 1:reset/reset
+  3: 1:#464b54/#15171c+b 4:#464b54/#15171c 5:#72716f/#15171c 1:#715146/#15171c 68:reset/#15171c 1:reset/reset
+  4: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 10:#e6e1d6/#1c1f25+b 56:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  5: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#1c1f25 61:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  6: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  7: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 1:reset/#23272f 14:#e6e1d6/#23272f 18:reset/#23272f 30:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  8: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 21:#a8adb8/#1c1f25 41:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+  9: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 16:#a8adb8/#1c1f25 46:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 10: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 23:#a8adb8/#1c1f25 39:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 11: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 11:#a8adb8/#1c1f25 51:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 12: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 3:reset/#1c1f25 30:#a8adb8/#1c1f25 32:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 13: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 14: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 15: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 16: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 17: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 18: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 1:#858c9a/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 19: 1:#464b54/#15171c+b 4:#464b54/#15171c 1:#72716f/#15171c 2:#858c9a/#1c1f25 7:#e8a848/#23272f+b 9:#858c9a/#1c1f25 4:#e8a848/#23272f+b 7:#858c9a/#1c1f25 5:#e8a848/#23272f+b 33:#858c9a/#1c1f25 6:reset/#15171c 1:reset/reset
+ 20: 1:#2c303a/#15171c 78:reset/#15171c 1:reset/reset
+ 21: 1:#2c303a/#15171c 78:reset/#15171c 1:reset/reset
+ 22: 1:#2c303a/#15171c 78:reset/#15171c 1:reset/reset
+ 23: 8:#14161b/#4b644d+b 2:reset/#17191f 4:#464b54/#17191f 2:reset/#17191f 4:#565961/#17191f 6:#72716f/#17191f 47:reset/#17191f 7:#464b54/#17191f

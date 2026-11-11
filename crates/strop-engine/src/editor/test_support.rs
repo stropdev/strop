@@ -355,14 +355,22 @@ pub mod git {
 
     /// Settle every working-tree job: status snapshots, mutations, the
     /// commit template and the `git` CLI runs, with the IO they start.
+    /// These spawn the real `git` (a commit runs hooks): the budget is
+    /// a minute, so a loaded machine is slow rather than red.
     pub fn settle_work(e: &mut Editor) {
-        settle(e, |e| !e.git_work.pending() && !e.io_pending());
+        settle_within(std::time::Duration::from_secs(60), e, |e| {
+            !e.git_work.pending() && !e.io_pending()
+        });
     }
 
     /// Drain async work until `done` or the deadline (real threads need
     /// real pumping — the event loop's shape).
     pub fn settle(e: &mut Editor, done: impl Fn(&Editor) -> bool) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        settle_within(std::time::Duration::from_secs(5), e, done);
+    }
+
+    fn settle_within(budget: std::time::Duration, e: &mut Editor, done: impl Fn(&Editor) -> bool) {
+        let deadline = std::time::Instant::now() + budget;
         while !done(e) {
             if e.io_pending() {
                 e.wait_io().unwrap();

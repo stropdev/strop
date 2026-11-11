@@ -279,3 +279,48 @@ fn a_remote_repository_refuses_in_one_sentence() {
         assert!(e.picker.is_none());
     }
 }
+
+/// The editor keeps a lock file beside every open file. Those are its
+/// own: never listed, never staged by a section heading, never counted
+/// in the commit summary.
+#[test]
+fn the_editor_s_own_lock_files_are_not_changes() {
+    let (dir, mut e) = work_fixture();
+    dirty(dir.path());
+    let lock = format!(".strop-lock-{}", "a".repeat(64));
+    std::fs::write(dir.path().join(&lock), "").unwrap();
+    std::fs::write(dir.path().join("src").join(&lock), "").unwrap();
+    key(&mut e, " gg");
+    assert!(!text(&e).contains(".strop-lock"), "{}", text(&e));
+    assert!(text(&e).contains("Untracked (1)\n? scratch.txt\n"));
+    goto(&mut e, "Untracked (1)");
+    key(&mut e, "s");
+    assert_eq!(e.message, "staged scratch.txt");
+    key(&mut e, "cc");
+    assert!(text(&e).contains("# Not in this commit: 2 unstaged, 0 untracked.\n"));
+}
+
+/// 0003 §5.7: every key this release adds renders in `?`.
+#[test]
+fn every_new_key_renders_in_help() {
+    let (_dir, mut e) = work_fixture();
+    e.feed_text(" ?");
+    let help = text(&e);
+    for row in [
+        "status: changed files",
+        "commit (:wq commits, :q! aborts)",
+        "branches: switch / create",
+        "blame gutter / card",
+        "hunk: stage",
+        "hunk: unstage",
+        "hunk: discard",
+        "status: stage / unstage / toggle the file, hunk or section",
+        "status: show / hide the file's diff",
+        "status: discard (y confirms)",
+        "status: commit / amend",
+        "status: open the file at the cursor",
+        "status: next / prev hunk",
+    ] {
+        assert!(help.contains(row), "help is missing {row:?}:\n{help}");
+    }
+}
