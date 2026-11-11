@@ -23,7 +23,7 @@ pub(crate) struct RowDecoration {
     pub(crate) row_bg: Option<Color>,
 }
 
-/// Decorate row `line_idx` of a CommitLog or ChangedFiles surface.
+/// Decorate row `line_idx` of a CommitLog, ChangedFiles or Status surface.
 /// `cursor_row` adds the quiet current-row band. Returns None for
 /// rows that render as normal text.
 pub(crate) fn surface_list_row(
@@ -67,7 +67,8 @@ pub(crate) fn surface_list_row(
                 })
             }
         },
-        _ => None,
+        Surface::Status { view, .. } => super::status::status_row(t, view, line_idx, cursor_row),
+        Surface::Diff { .. } => None,
     }
 }
 

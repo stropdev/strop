@@ -196,19 +196,47 @@ impl Editor {
         if git_touched {
             self.cancel_hunk_owner();
         }
+        // any change under the root may be a change to the tree's status
+        self.refresh_status_buffers();
         if let Some(source) = self.picker_source.as_ref() {
             source.invalidate(&self.cwd, &picker_paths, false);
+        }
+    }
+
+    /// The editor's own git verbs rewrote these files (a discard): each
+    /// open buffer on one gets what a watcher hint would give it — a
+    /// guarded reload when clean, external-change state when dirty. A
+    /// directory covers everything under it.
+    pub(crate) fn files_rewritten(&mut self, paths: &[PathBuf]) {
+        let open: Vec<(DocumentId, bool)> = self
+            .docs
+            .iter()
+            .filter(|(_, document)| {
+                matches!(document.source, DocumentSource::File)
+                    && document.buf.path.as_ref().is_some_and(|path| {
+                        paths.iter().any(|rewritten| path.starts_with(rewritten))
+                    })
+            })
+            .map(|(id, document)| (id, document.buf.is_dirty()))
+            .collect();
+        for (id, dirty) in open {
+            if dirty {
+                self.notify_mark_external(id);
+            } else {
+                self.request_notify_reload(id);
+            }
         }
     }
 
     /// A conservative rescan obligation (overflow, queue bound, root
     /// replacement, lease loss): invalidate the whole affected baseline
     /// and reobserve before freshness is claimed again.
-    fn notify_rescan(&mut self) {
+    pub(crate) fn notify_rescan(&mut self) {
         if let Some(source) = self.picker_source.as_ref() {
             source.invalidate(&self.cwd, &[], true);
         }
         self.cancel_hunk_owner();
+        self.refresh_status_buffers();
         let documents: Vec<DocumentId> = self.docs.iter().map(|(id, _)| id).collect();
         for id in documents {
             let source_matches = {

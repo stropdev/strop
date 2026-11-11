@@ -56,7 +56,7 @@ pub enum Surface {
     /// the rendered layout — a stats row, then per hunk a `@@` header
     /// row and unprefixed content rows — so motions, `/` and yank see
     /// exactly what's on screen. `origin` names the working buffer a
-    /// hunk preview belongs to, so `Space g u`/`g s` act on the file;
+    /// hunk preview belongs to, so `Space g X`/`g s` act on the file;
     /// `commit` carries the commit's other files when this delta came
     /// from the dive chain (the sidebar + `]f`/`[f`, 0011 §4).
     Diff {
@@ -67,6 +67,13 @@ pub enum Surface {
         /// tuicr-style: Tab moves focus between the file sidebar and
         /// the diff content (j/k step files when the sidebar has focus).
         sidebar_focus: bool,
+        return_to: Option<JumpRecord>,
+    },
+    /// The working tree's changed files (0096): sections of file rows
+    /// with optional inline diffs. The text and the typed rows are
+    /// rebuilt together from each status snapshot.
+    Status {
+        view: crate::editor::git_work::StatusView,
         return_to: Option<JumpRecord>,
     },
 }
@@ -94,7 +101,8 @@ impl Surface {
         match self {
             Surface::CommitLog { return_to, .. }
             | Surface::ChangedFiles { return_to, .. }
-            | Surface::Diff { return_to, .. } => return_to.as_ref(),
+            | Surface::Diff { return_to, .. }
+            | Surface::Status { return_to, .. } => return_to.as_ref(),
         }
     }
 
@@ -102,7 +110,8 @@ impl Surface {
         match self {
             Surface::CommitLog { return_to, .. }
             | Surface::ChangedFiles { return_to, .. }
-            | Surface::Diff { return_to, .. } => return_to,
+            | Surface::Diff { return_to, .. }
+            | Surface::Status { return_to, .. } => return_to,
         }
     }
 }

@@ -159,7 +159,13 @@ impl Editor {
         match ev {
             AppEvent::Input(input) => self.handle_frontend_input(input),
             AppEvent::TerminalUpdate(session) => self.handle_terminal_update(session),
-            AppEvent::Focus(focused) => self.terminal_focus_changed(focused),
+            AppEvent::Focus(focused) => {
+                self.terminal_focus_changed(focused);
+                if focused {
+                    // git may have run in another window meanwhile
+                    self.refresh_status_buffers();
+                }
+            }
             AppEvent::EditorKey(key) => self.feed(key),
             AppEvent::Resize { .. } => {} // the loop redraws after every event
             AppEvent::Paste(text) => {
@@ -284,8 +290,7 @@ impl Editor {
             || !self.log_requests.is_empty()
             || !self.dive_requests.is_empty()
             || self.card_request.is_some()
-            || self.git_mutation.is_some()
-            || !self.git_mutations.is_empty()
+            || self.git_work.pending()
             || self
                 .blame_gutters
                 .values()
@@ -315,7 +320,7 @@ impl Editor {
         self.analysis.stop();
         self.stop_completion();
         self.resolution.stop();
-        self.git_mutations.clear();
+        self.git_work.mutations.clear();
         self.request_session_save();
         self.recovery_on_finish();
         let cancel: Vec<_> = self

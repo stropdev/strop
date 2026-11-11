@@ -124,7 +124,9 @@ impl Editor {
 
     /// `:q` closes the pane; the last pane's close is document close.
     pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
-        if self.panes.len() > 1 {
+        // closing the commit message is what commits (or aborts): the
+        // buffer goes, not only the pane showing it
+        if self.panes.len() > 1 && !self.is_commit_message(self.current()) {
             self.cancel_pending();
             self.panes.remove(self.active_pane);
             self.active_pane = self.active_pane.min(self.panes.len() - 1);

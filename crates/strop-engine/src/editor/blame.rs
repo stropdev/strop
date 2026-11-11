@@ -18,7 +18,7 @@ use super::git_memory::{BlameGutter, BlameKey, CardKey, GitJob};
 use super::Editor;
 
 impl Editor {
-    /// `Space g b`: on a file buffer (local, or a remote buffer with a
+    /// `Space g B`: on a file buffer (local, or a remote buffer with a
     /// complete window), toggle the blame gutter; anywhere else (or as
     /// feedback while the gutter loads) the single-line card (0011 §3).
     pub(crate) fn toggle_blame_gutter(&mut self) {
@@ -158,7 +158,7 @@ impl Editor {
         (gutter.revision == buf.revision() && gutter.lines.len() == content_lines).then_some(gutter)
     }
 
-    /// `Space g b` fallback / surface blame: the card for the cursor
+    /// `Space g B` fallback / surface blame: the card for the cursor
     /// line. One card request at a time — a new request supersedes (and
     /// cancels) the old one. The card speaks file line numbers: a
     /// partial remote window refuses rather than blaming the wrong

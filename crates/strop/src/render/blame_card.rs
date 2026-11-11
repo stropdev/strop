@@ -1,4 +1,4 @@
-//! Blame card (`Space g b`): the commit card for the cursor line.
+//! Blame card (`Space g B`): the commit card for the cursor line.
 //! Enter dives into the commit browser; anything else dismisses.
 
 use ratatui::layout::Rect;

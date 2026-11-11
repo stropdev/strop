@@ -34,6 +34,7 @@ pub mod feedback;
 pub(crate) mod field;
 mod git;
 pub mod git_memory;
+pub mod git_work;
 mod help;
 mod indent;
 mod input;
@@ -82,6 +83,7 @@ pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
+pub use git_work::{StatusRow, StatusView};
 pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
 pub use panes::{LayoutDir, Pane};
 pub use picker::{
@@ -176,8 +178,7 @@ pub struct Editor {
     pub(crate) card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
     pub(crate) dive_requests:
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,
-    pub(crate) git_mutations: std::collections::VecDeque<git_memory::GitMutation>,
-    pub(crate) git_mutation: Option<strop_core::worker::Ticket<git_memory::MutationKey>>,
+    pub(crate) git_work: git_work::GitWork,
     pub(crate) mode: Mode,
     pub(crate) pending: pending::PendingInput,
     /// The input walker (0008 stage 2): typed parser state for
@@ -442,8 +443,7 @@ impl Editor {
             log_requests: HashMap::new(),
             card_request: None,
             dive_requests: HashMap::new(),
-            git_mutations: std::collections::VecDeque::new(),
-            git_mutation: None,
+            git_work: git_work::GitWork::default(),
             shell_requests: HashMap::new(),
             shell_focus: None,
             mru: vec![current],
