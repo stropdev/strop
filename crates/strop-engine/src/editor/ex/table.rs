@@ -552,7 +552,7 @@ pub(crate) const COMMANDS: &[ExCommand] = &[
     ),
     own(
         "recover",
-        "draft recovery: list, restore N, discard N, consent remote|off",
+        "recover unsaved text after a crash: list, restore N, discard N",
         |e, c| e.run_recovery_ex(c.arg),
     ),
 ];

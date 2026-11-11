@@ -14,9 +14,9 @@
   14    g_ g0 g^ g$ gj gk             last non-blank; line start, first non-bla 
   15    gn gN                         select the next / previous search match ( 
   16    0 $ G %                       line/file/pair jumps                      
-  17    g<space>                      collection: open full source at caret     
+  17    g<space>                      collection: open the file at this line    
   18    gg                            top of file                               
-  19    enter                         line down, first non-blank (blame gutter: 
+  19    enter                         line down, first non-blank (blame: open t 
   20    tab                           jump list forward (ctrl-i)                
   21    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)     
   22    ctrl-e ctrl-y                 scroll the window one line down / up      
@@ -39,7 +39,7 @@
  13: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
  14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
  15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 22:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
- 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 39:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 40:#e6e1d6/#15171c 3:reset/#15171c 1:reset/reset
  17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 13:#e6e1d6/#15171c 30:reset/#15171c 1:reset/reset
  18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
  19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 28:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset

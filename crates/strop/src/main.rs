@@ -320,19 +320,22 @@ fn print_help() {
                 "open a file, directory, or an empty buffer (the default)",
             ),
             ("remote", "open an ssh:// file or directory for editing"),
-            ("headless", "run the scripted driver over a file"),
+            (
+                "headless",
+                "run a script of keys against a file, with no screen",
+            ),
             (
                 "replay",
-                "replay a session trace (--script extracts a driver script)",
+                "show a recorded session again (--script prints its keys)",
             ),
             (
                 "export",
-                "export a trace's metadata (privacy-safe, not replayable)",
+                "strip a recording down to event types, safe to share",
             ),
             ("config", "show the config file and its current values"),
             ("update", "self-update (--check only checks)"),
-            ("bench", "run the performance-gate scenarios"),
-            ("compat", "dump the vim-compatibility table"),
+            ("bench", "run the built-in speed tests"),
+            ("compat", "print the list of Vim keys strop supports"),
             ("help", "print this help"),
         ],
     );
@@ -344,20 +347,17 @@ fn print_help() {
             ("+LINE", "initial line for FILE (or use FILE:LINE)"),
             (
                 "    --theme NAME",
-                "session-start palette; :theme lists and switches live",
+                "colour theme for this run; :theme lists and switches",
             ),
             ("    --remote URL", "shorthand for `strop remote URL`"),
-            (
-                "    --script PATH",
-                "headless driver script (same as `headless`)",
-            ),
+            ("    --script PATH", "same as `strop headless PATH`"),
             (
                 "    --log[=PATH]",
-                "record a session trace (STROP_LOG works too)",
+                "record this session for a bug report (or STROP_LOG)",
             ),
             (
                 "    --log-content",
-                "include file text in the trace (sensitive)",
+                "include file text in the recording (sensitive)",
             ),
             (
                 "    --log-terminal-content",

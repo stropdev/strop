@@ -164,7 +164,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "enter",
-        desc: "dive into the line's commit (blame gutter)",
+        desc: "open the commit that last changed this line (blame)",
         sections: &["git"],
         live: true,
         id: "surface-dive",
@@ -172,7 +172,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "q",
-        desc: "close surface (readonly buffers)",
+        desc: "close this view (read-only buffers)",
         sections: &["git"],
         live: true,
         id: "surface-close",

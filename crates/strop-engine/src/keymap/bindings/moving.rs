@@ -108,7 +108,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "g<space>",
-        desc: "collection: open full source at caret",
+        desc: "collection: open the file at this line",
         sections: &["moving"],
         live: true,
         id: "collection-source",
@@ -124,7 +124,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "enter",
-        desc: "line down, first non-blank (blame gutter: dive)",
+        desc: "line down, first non-blank (blame: open the line's commit)",
         sections: &["moving"],
         live: true,
         id: "enter",

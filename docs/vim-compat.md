@@ -1,7 +1,7 @@
 # Vim compatibility
 
 Generated from the command table (`strop compat`).
-`✓` ships exactly; `(soon)` is a planned slot. What Neovim binds and strop
+`✓` works today; `(soon)` is planned. What Neovim binds and strop
 does not is listed at the end, under Missing and Reassigned.
 
 ## Moving
@@ -19,9 +19,9 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ g_ g0 g^ g$ gj gk` — last non-blank; line start, first non-blank, end; line down / up
 - `✓ gn gN` — select the next / previous search match (cgn then . changes each)
 - `✓ 0 $ G %` — line/file/pair jumps
-- `✓ g<space>` — collection: open full source at caret
+- `✓ g<space>` — collection: open the file at this line
 - `✓ gg` — top of file
-- `✓ enter` — line down, first non-blank (blame gutter: dive)
+- `✓ enter` — line down, first non-blank (blame: open the line's commit)
 - `✓ tab` — jump list forward (ctrl-i)
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-e ctrl-y` — scroll the window one line down / up
@@ -159,13 +159,13 @@ does not is listed at the end, under Missing and Reassigned.
 ## Leader (space)
 
 - `✓ space |` — pipe line/selection through shell (:! runs)
-- `✓ space e` — reveal source in its Directory buffer
+- `✓ space e` — show this file in its directory
 - `✓ space f` — file finder
 - `✓ space o` — open remote destination
 - `✓ space t` — terminal in a split below (TERMINAL mode)
 - `✓ space T` — terminal in this pane (= :terminal)
 - `✓ space b` — buffers (MRU)
-- `✓ space /` — Search workspace (resume investigation)
+- `✓ space /` — Search the project (or return to it)
 - `✓ space R` — Search with replacement
 - `✓ space ?` — help buffer
 - `✓ space y` — yank motion → system clipboard
@@ -215,8 +215,8 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ enter` — status: open the file at the cursor
 - `✓ ]c [c` — status: next / prev hunk
 - `✓ ]f [f` — next / prev file in commit diff
-- `✓ enter` — dive into the line's commit (blame gutter)
-- `✓ q` — close surface (readonly buffers)
+- `✓ enter` — open the commit that last changed this line (blame)
+- `✓ q` — close this view (read-only buffers)
 
 ## Pickers
 
@@ -230,7 +230,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ctrl-d` — Search: exclude/include file
 - `✓ ctrl-r` — input field: insert register {reg} (" is the last yank/delete)
 - `✓ ctrl-t` — Search: toggle replacement
-- `✓ enter` — Search Find: open source; With: prepare review
+- `✓ enter` — Search: open the result; in With: open the review
 - `✓ ctrl-o` — Search: collect included matches
 
 ## Terminal
@@ -263,12 +263,12 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :theme` — choose a built-in interface palette
 - `✓ :jumps :symbols` — jumplist / document symbols picker
 - `✓ :format :rename` — format buffer / rename symbol: :rename NEW
-- `✓ :recover` — draft recovery: list, restore N, discard N, consent remote|off
+- `✓ :recover` — recover unsaved text after a crash: list, restore N, discard N
 - `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
-- `✓ :tab-size :indent-style` — source indentation controls
-- `✓ :fs :browse :filter :remote :terminal-local` — filesystem actions, namespace-aware browsing, folder filtering, remote destinations, a local shell
+- `✓ :tab-size :indent-style` — indent width and tabs or spaces for this file
+- `✓ :fs :browse :filter :remote :terminal-local` — file operations, browse a directory (local or ssh://), filter its listing, SSH hosts, a local shell
 - `✓ :copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo` — quickfix: show the list, visit hits, run a command at each hit or file
 
 ## Missing

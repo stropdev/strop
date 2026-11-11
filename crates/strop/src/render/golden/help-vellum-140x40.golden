@@ -14,9 +14,9 @@
   14    g_ g0 g^ g$ gj gk             last non-blank; line start, first non-blank, end; line down / up                                      
   15    gn gN                         select the next / previous search match (cgn then . changes each)                                     
   16    0 $ G %                       line/file/pair jumps                                                                                  
-  17    g<space>                      collection: open full source at caret                                                                 
+  17    g<space>                      collection: open the file at this line                                                                
   18    gg                            top of file                                                                                           
-  19    enter                         line down, first non-blank (blame gutter: dive)                                                       
+  19    enter                         line down, first non-blank (blame: open the line's commit)                                            
   20    tab                           jump list forward (ctrl-i)                                                                            
   21    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)                                                                 
   22    ctrl-e ctrl-y                 scroll the window one line down / up                                                                  
@@ -55,9 +55,9 @@
  13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 66:#262a30/#f6f2e9 37:reset/#f6f2e9 1:reset/reset
  14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 67:#262a30/#f6f2e9 36:reset/#f6f2e9 1:reset/reset
  15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
- 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 40:#262a30/#f6f2e9 63:reset/#f6f2e9 1:reset/reset
  17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 13:#262a30/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
- 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 49:#262a30/#f6f2e9 54:reset/#f6f2e9 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 60:#262a30/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
  19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 28:#262a30/#f6f2e9 75:reset/#f6f2e9 1:reset/reset
  20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
  21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset

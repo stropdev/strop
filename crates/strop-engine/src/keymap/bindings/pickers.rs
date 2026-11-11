@@ -84,7 +84,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "enter",
-        desc: "Search Find: open source; With: prepare review",
+        desc: "Search: open the result; in With: open the review",
         sections: &["pickers"],
         live: true,
         id: "search-accept",
