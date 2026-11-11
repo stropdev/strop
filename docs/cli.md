@@ -1,15 +1,17 @@
-# The strop CLI
+# The strop command line
 
-One binary, subcommands for the occasional jobs, flags for everything else.
-`strop --help` prints the same reference live (styled when stdout is a
-terminal, plain when piped).
+`strop FILE` opens a file. This page lists the other commands and the
+options. `strop --help` prints the same list (in colour on a terminal,
+plain when piped).
 
 ```text
-Usage: strop [OPTIONS] [FILE[:LINE] | DIR | ssh://URL]
+Usage: strop [OPTIONS] [FILE[:LINE] | DIR | ssh://URL | -]
 ```
 
-With no subcommand, strop opens the file, directory, or empty buffer —
-the common case stays `strop file.rs`.
+With no command, strop opens the file or directory, or an empty buffer.
+`strop` alone in a project brings back the files you had open there (see
+[Sessions](editor.md#sessions)). `strop -` reads standard input
+([Reading stdin](editor.md#reading-stdin)).
 
 ## Commands
 
@@ -17,14 +19,17 @@ the common case stays `strop file.rs`.
 | --- | --- |
 | `strop edit [FILE]` | open a file, directory, or an empty buffer (the default) |
 | `strop remote URL` | open an `ssh://` file or directory for editing |
-| `strop headless SCRIPT [FILE]` | run the scripted driver over a file |
-| `strop replay TRACE` | replay a session trace (`--script` extracts a driver script) |
-| `strop export TRACE` | export a trace's metadata (privacy-safe, not replayable) |
+| `strop headless SCRIPT [FILE]` | run a script of keys against a file, with no screen |
+| `strop replay LOG` | show a recorded session again (`--script` prints its keys as a script) |
+| `strop export LOG` | strip a recording down to event types, safe to share |
 | `strop config` | show the config file and its current values |
-| `strop update` | self-update (`--check` only checks) |
-| `strop bench [SCENARIO]` | run the performance-gate scenarios |
-| `strop compat` | dump the vim-compatibility table |
+| `strop update` | update strop itself (`--check` only checks) |
+| `strop bench [SCENARIO]` | run the built-in speed tests |
+| `strop compat` | print the list of Vim keys strop supports |
 | `strop help` | print help |
+
+Scripts, recordings and replay are described in
+[scripting.md](scripting.md).
 
 ## Options
 
@@ -32,13 +37,16 @@ the common case stays `strop file.rs`.
 | --- | --- |
 | `-R`, `--readonly` | open read-only |
 | `+LINE` | initial line for FILE (or use `FILE:LINE`) |
-| `--theme NAME` | session-start palette (see [Themes](editor.md#themes)) |
-| `--remote URL` | shorthand for `strop remote URL` |
-| `--script PATH` | headless driver script (same as `headless`) |
-| `--log[=PATH]` | record a session trace (`STROP_LOG` works too) |
-| `--log-content` | include file text in the trace (sensitive) |
-| `--log-terminal-content` | also terminal keys and output |
+| `--theme NAME` | colour theme for this run (see [Themes](editor.md#themes)) |
+| `--remote URL` | same as `strop remote URL` |
+| `--script PATH` | same as `strop headless PATH` |
+| `--log[=PATH]` | record this session to a file, for a bug report (`STROP_LOG=PATH` works too; without PATH the file is `strop-log.jsonl`) |
+| `--log-content` | include file text in the recording (sensitive) |
+| `--log-terminal-content` | also what you type and see in terminals |
 | `-h`, `--help` / `-V`, `--version` | help and version |
+
+Older spellings still work: `--log-file PATH` for `--log=PATH`, and
+`--headless SCRIPT` for `--script SCRIPT`.
 
 ## Remote locations
 
@@ -46,13 +54,13 @@ the common case stays `strop file.rs`.
 ssh://[user@]host[:port]/absolute/path[:LINE]
 ```
 
-`strop --remote "ssh://tnawara@123.space:4343/etc/app.conf:120"` and
-`strop remote ssh://tnawara@123.space:4343/etc/app.conf:120` are the same
-command. A connected host is editable; `-R` opens read-only. To read a
-growing log, pipe it in: `ssh devbox tail -f /var/log/app.log | strop -`.
-The full remote contract lives in [remote.md](remote.md).
+`strop --remote "ssh://user@devbox:2222/etc/app.conf:120"` and
+`strop remote ssh://user@devbox:2222/etc/app.conf:120` are the same
+command. Once connected you can edit and save; `-R` opens read-only. To
+read a growing log, pipe it in: `ssh devbox tail -f /var/log/app.log | strop -`.
+Details are in [remote.md](remote.md).
 
 ## Exit codes
 
-`0` on success, nonzero with a one-line `strop: …` explanation on stderr
-otherwise.
+`0` on success. Otherwise nonzero, with a one-line `strop: …` explanation
+on stderr.

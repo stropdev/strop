@@ -1,10 +1,8 @@
-# Search and the query language
+# Search and filters
 
-One bounded qualifier grammar is shared by every picker surface: file find
-(`Space f`), content search (`Space /`), replace (`Space R`), document
-symbols, workspace symbols (`Space S`) and the jump list menu (`ctrl-o`
-history, `Space j`). Qualifiers, highlighting, suggestions and errors behave
-identically everywhere — what you learn in one field works in all of them.
+The same filters work in every search field: Files (`Space f`), Search
+(`Space /`), Replace (`Space R`), document symbols (`Space s`), workspace
+symbols (`Space S`) and the jump list (`Space j`). Learn them once.
 
 ## Finding files (`Space f`)
 
@@ -42,12 +40,13 @@ word · ignored files shown` — and the row disappears when everything is back
 to default. A qualifier typed in the query (`case:`, `hidden:`, `ignored:`,
 `regex:`) wins over a toggle.
 
-## The grammar
+## The filters
 
 **Case is smart everywhere:** an all-lowercase query matches either case;
-one capital letter makes case count. Bare file queries are fuzzy; content
-queries are literal unless you press `Alt-R` or write `regex:`. Use
-`case:sensitive` or `case:ignore` to decide outright:
+one capital letter makes case count. In Files, plain words are matched
+fuzzily. In Search, plain words are searched for exactly as typed, unless
+you press `Alt-R` or write `regex:`. Use `case:sensitive` or `case:ignore`
+to decide outright:
 
 ```text
 language:rust
@@ -58,63 +57,66 @@ hidden:exclude ignored:include text:"-test.rs"
 kind:function parse AND NOT wrap
 ```
 
-- `language:NAME` — file language (the names `Space ?` lists under
-  Languages, e.g. `rust`, `cpp`, `python`).
-- `path:SUBSTRING` — substring of the workspace-relative path (no leading `/`);
-  case follows the query's case mode.
-- `fpath:SUBSEQUENCE` — fuzzy scope over the full workspace-relative path;
-  use `fpath:modules/jweb/ parser` to scope the directory while ranking
-  `parser`. `-fpath:` excludes matches.
-- `glob:PATTERN` — glob over the workspace-relative path.
-- `hidden:` / `ignored:` — visibility overrides for this query.
-- `case:sensitive|ignore|insensitive|smart` — case mode for file, path, symbol
-  and content matching. The default is `smart`: each content atom is
-  sensitive only when it contains a capital. `insensitive` aliases `ignore`.
-- `kind:` — on symbol surfaces, the declaration's classification
-  (`kind:function`, `kind:struct`, …).
-- `AND` / `OR` / `NOT` and parentheses — Boolean expressions; juxtaposition
-  is an implicit AND.
+- `language:NAME` — the file's language (the names `Space ?` lists under
+  LSP servers, e.g. `rust`, `cpp`, `python`).
+- `path:TEXT` — text that appears in the file's path inside the project
+  (no leading `/`).
+- `fpath:TEXT` — the same, matched fuzzily; use `fpath:modules/jweb/ parser`
+  to stay in a directory while looking for `parser`.
+- `glob:PATTERN` — a glob over the path inside the project.
+- `hidden:include|exclude` / `ignored:include|exclude` — include or exclude
+  hidden files and ignored files for this query.
+- `case:sensitive|ignore|smart` — how case is matched, in file names, paths,
+  symbols and text. The default is `smart`: a term is case-sensitive only
+  when it has a capital in it. `case:insensitive` means `case:ignore`.
+- `kind:` — in the symbol pickers, what the symbol is (`kind:function`,
+  `kind:struct`, …).
+- `text:"..."` — text to search for exactly, even if it looks like a
+  filter. `regex:"..."` — a regular expression.
+- A `-` in front excludes: `-path:generated/`, `-language:json`.
+- `AND` / `OR` / `NOT` and parentheses combine terms. A filter next to
+  text means both. In Search, plain words next to each other are one
+  phrase: `request id` finds exactly that text.
 
-`Ctrl-Space` in any query field offers parser-driven suggestions from the
-caret's position; `:help query` explains quoting, supported languages,
-errors and examples. Old `-t`/`-g` UI flags are ordinary text now.
+`Ctrl-Space` in any search field suggests what can come next at the
+cursor. `:help query language` covers quoting, errors and examples.
 
-## What each qualifier narrows
+## Where the filters apply
 
-- **File find** narrows the walk; **search/replace** narrows admission per
-  line.
-- **Document symbols and the jump list** are retained lists: the same
-  qualifiers re-filter their rows locally as you type. The jump list contains
-  origins left by jump commands, with a synthetic row for the current position;
-  it is navigation history, not an undo list. On the jump list,
-  `language:cpp path:tests` keeps only jumps inside C++ files under
-  `tests/`; content atoms match the destination line's text. Evidence a
-  row cannot decide (a scratch buffer with no path) admits — overfetch,
-  never a silent drop.
-- Operator-free content never enters admission; the local fuzzy ranker
-  narrows it.
+- In **Files** the filters decide which files are listed.
+- In **Search** and **Replace** they decide which files are searched.
+- In **document symbols** and the **jump list** they filter the rows
+  already in the list, as you type, and plain words rank the rows by fuzzy
+  match. On the jump list, `language:cpp path:tests` keeps the jumps inside
+  C++ files under `tests/`.
+- A row a filter cannot judge is kept, not hidden. A buffer with no file
+  has no path, so `path:` keeps it.
+
+The jump list holds the places you jumped from, plus a row for where you
+are now. It is a history of places, not of edits.
 
 ## Buffer search
 
-Buffer `/` and `?` search is smart-case, like the pickers: `/edge` finds
+`/` and `?` in a buffer are smart-case, like the pickers: `/edge` finds
 `Edge` and `edge`, `/Edge` finds only `Edge`. Start the query with
-`case:sensitive` or `case:ignore` (alias `case:insensitive`) to decide
-outright; Vim's `\C` and `\c` do the same, including in `n`/`N` and
-highlights. `*` and `#` match the word under the cursor in either case. The dialect is bounded
-Vim-magic (and `\v` very magic): collections, groups, alternation,
-repetition and backreferences; unsupported constructs report an error
-instead of becoming literals. Search previews and Enter use the same
-counted resolver.
+`case:sensitive` or `case:ignore` to decide outright; Vim's `\C` and `\c`
+do the same, including for `n`/`N` and the highlight. `*` and `#` match the
+word under the cursor in either case. Patterns use Vim's default syntax,
+and `\v`: `[...]`, groups, `\|`, repetition and backreferences. Anything
+not supported gives an error; it is never searched for as plain text. The
+match shown while you type is the one Enter goes to, with a count as well.
 
-## Ex substitution
+## Substitute: `:s`
 
-`:[range]s/pattern/replacement/[flags]` uses the same bounded Vim-magic
-pattern grammar and case rule as buffer search. While composing, Strop shows the actual removed and
-inserted lines, substitution count, scope and offscreen extent; a long line
-is cut to a window on its change, the same window for the removed and the
-added row. Enter applies that displayed plan as one undo unit. Invalid or incomplete input replaces the
-previous preview rather than executing it, large plans resolve off the input
-path, and Esc cancellation leaves bytes, registers and undo history untouched.
+`:[range]s/pattern/replacement/[flags]` takes the same patterns as buffer
+search, with the same case rule. While you type the command, strop shows
+the lines it would remove and the lines it would add, how many replacements
+there are, and how many of them are off screen. A long line is cut to the
+part that changes, the same part in the removed and the added row. Enter
+makes exactly the change shown, and one `u` undoes it. A pattern that is
+not finished or not valid changes nothing. On a big file the preview is
+worked out in the background and typing stays quick. Esc cancels and
+leaves the text, the registers and the undo history as they were.
 
 The replacement is Vim's: `&` (or `\0`) is the match and `\1`–`\9` its
 groups, `~` the previous replacement, `\r` a line break, `\t` a tab, and
@@ -130,44 +132,50 @@ one and stop, `q` or Esc stop. A count after the flags (`:s/a/b/g 3`) covers
 that many lines. `:s` or `:&` alone repeats the last substitute on the
 cursor line, `:&&` with its flags, `:~` with the last search pattern.
 
-## The Search workspace
+## Search across the project
 
-`Space /` opens or resumes one large Search workspace; `Space R` resumes
-the same investigation with the replacement field visible. Local
-enumeration and content matching run entirely in Rust using the
-`ignore`/`grep` crate family — `rg` is not required on your machine.
+`Space /` opens Search, or brings it back as you left it. `Space R` does
+the same with the With (replacement) field showing. Search is built in: you
+do not need `rg` on your own machine. It follows your `.gitignore` rules
+the way `rg` does.
 
-- **Ctrl-T** toggles the With field without restarting the search or losing
-  either field's text, caret, mode, selection or workset. Enter in **Find**
-  opens the selected source; Enter in **With** prepares the review. Tab
-  switches fields when With is visible.
+- **Ctrl-T** shows or hides the With field. The search keeps running, both
+  fields keep their text and cursor, and the hits you excluded stay
+  excluded. Enter in **Find** opens the selected result; Enter in **With**
+  opens the review. Tab switches fields when With is showing.
 - **Ctrl-R {register}** inserts a register into Find or With, exactly as in
   insert mode and on the `:` / `/` lines: `Ctrl-R "` is the last yank or
   delete, `Ctrl-R 0` the last yank, `Ctrl-R a` a named register, `Ctrl-R +`
   the system clipboard.
-- **Ctrl-X** toggles one match; **Ctrl-D** masks/restores its file.
-  Excluded hits stay visible.
-- **Ctrl-O** collects exactly the included matches into a collection (below).
-- Filter-only file finding lists eligible files; content search needs an
-  expression. Unignored dotfiles are included by default; `.git` metadata
-  is excluded. `Alt-H` and `Alt-I` in the field turn hidden and ignored
-  files on and off.
+- **Ctrl-X** excludes one hit, or includes it again; **Ctrl-D** does the
+  same for its whole file. Excluded hits stay visible.
+- **Ctrl-O** puts the included hits into a collection (below).
+- With only filters typed (`language:rust path:src/`), Files lists the
+  files they match; Search asks for the text to look for. Dotfiles are
+  searched unless your ignore rules skip them. The `.git` directory never
+  is. `Alt-H` and `Alt-I` in the field turn hidden and ignored files on
+  and off.
 
-Opening a source hides Search; `Space /` returns to the retained
-investigation. Re-entry refreshes through owned work in its captured
-namespace/root even if focus or cwd changed. In a Directory buffer,
-`:fs search` or **Space a → Search here** captures that directory without
-changing cwd.
+Opening a result hides Search. `Space /` brings it back with your query
+and results. It searches again in the directory (and on the host) it was
+first opened for, even if you are now in a file somewhere else. In a
+directory listing, `:fs search` or **Space a → Search here** searches only
+that directory. The project root stays where it is.
+
+A search stops with an error when it passes 100,000 files, or meets a line
+longer than 1 MiB or with more than 4,096 hits in it. Past 100,000 result
+rows it keeps what it has and says so. It never shows part of the results
+as if they were all of them.
 
 ## Collections: edit every hit in one buffer
 
 **Ctrl-O** in search results, references (`grr`) or diagnostics (`Space d`)
 opens a collection: one card per file, each hit with two lines of context,
-source syntax and source line numbers. It is an ordinary editing buffer
-whose text is the files' text:
+highlighted like the file and with the file's line numbers. It is an
+ordinary buffer. What you edit in it is edited in the files:
 
 - Edit inside an excerpt with any command — `cw`, `dd`, `o`, `.`, a macro,
-  visual mode, `:s`. The edit is made in the source buffer in the same
+  visual mode, `:s`. The edit is made in the file's buffer in the same
   keystroke; open the file and it is already there. Edits made in the file
   appear in the collection the same way.
 - `:w` writes every changed file the collection shows. `:wq` does that and
@@ -178,7 +186,7 @@ whose text is the files' text:
 - Card borders, the `⋮ N source lines omitted` rows and the title are not
   text. An edit that would touch one, or join the last line of an excerpt
   with the border under it, is refused and changes nothing.
-- `+` / `-` widen and narrow the excerpt under the caret; `]e` / `[e` step
+- `+` / `-` widen and narrow the excerpt under the cursor; `]e` / `[e` step
   between excerpts and `]f` / `[f` between files; `g<Space>` (or Enter on a
   card's top border) opens the file at that line, and `Ctrl-O` comes back.
 - `:%s/old/new/g` in a collection substitutes inside the excerpts only,
@@ -231,8 +239,8 @@ Unsaved text in an open buffer wins over the file on disk. A file that
 changed between the search and the review, or between the review and
 `Enter`, is refused by name and left untouched; so is a read-only one. A
 file that could not be written stays changed in its buffer, unsaved, and is
-named in the heading. An all-excluded, incomplete or failed search cannot
-become a whole-project operation.
+named in the heading. A search with every hit excluded, or
+one that failed or has not finished, cannot be replaced.
 
 **With** is literal unless the term is a regular expression with groups
 (`regex:`, or a bare term with `Alt-R` on). Then `$1`,
@@ -244,8 +252,9 @@ Find  regex:"get_(\w+)\(\)"
 With  fetch_$1()
 ```
 
-A query with several positive terms is a fine search and an ambiguous
-replace; With asks for exactly one.
+Replace needs exactly one thing to look for. A query that joins several
+terms with `AND` or `OR` can be searched but not replaced; With says so.
+Plain words such as `request id` are one phrase, and replace fine.
 
 ## Rename
 
@@ -256,15 +265,11 @@ that touches one buffer is applied at once (and `u` there undoes it). One
 that touches several opens the same review as a project replace: `Enter`
 applies and writes, `u` reverts.
 
-## SSH scopes
+## Searching on an SSH host
 
-Search here uses the same query fields, inclusion decisions and source
-previews as local Search, on explicitly scoped SSH directories: `rg` runs
-on the host over its connection, and a host without `rg` refuses search
-without a fallback. Collections work there too. **Replace (With and its review) is unavailable in SSH scopes**.
-
-Source enumeration is limited to 100,000 selected paths or 16 MiB of names;
-rg records to 1 MiB and 4,096 submatches; decoded batches to 4 MiB; a
-request publishes at most 100,000 rows or 64 MiB of owned row data. Limits
-and malformed output produce a visible failure, never a silently complete
-partial result.
+Search works the same in a directory on an SSH host: the same fields, the
+same include and exclude keys, the same previews, the same limits. It runs
+`rg` on the host. If the host has no `rg`, Search says so and does not run.
+A search on a host that takes longer than two minutes is stopped.
+Collections work there. Replace does not, yet: `Space R`, `Ctrl-T` and the
+With field say so.

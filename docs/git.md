@@ -1,6 +1,6 @@
 # Git
 
-Everything git lives under `Space g`. Each surface is an ordinary read-only
+Everything git is under `Space g`. Each git view is an ordinary read-only
 buffer: motions, `/`, yank and counts work, `q` closes it.
 
 | key | does |
@@ -10,7 +10,7 @@ buffer: motions, `/`, yank and counts work, `q` closes it.
 | `Space g b` | branches: switch or create |
 | `Space g l` | log |
 | `Space g h` | history of this file (in visual mode: of the selected lines) |
-| `Space g B` | blame gutter (a card for one line when the gutter can not show) |
+| `Space g B` | blame: who last changed each line, in the gutter; again to hide it |
 | `Space g s` `Space g u` `Space g X` | stage, unstage, discard the hunk under the cursor |
 | `Space g p` | preview the hunk under the cursor |
 | `Space g y` `Space g o` | copy / open a permalink to the line or selection |
@@ -63,12 +63,13 @@ section.
   throws away two layers of work. A buffer open on a discarded file reloads.
 - **Conflicts** get their own section at the top. Resolve the file, then `s`
   on its row marks it resolved.
-- The buffer follows the tree: it refreshes after every stage, unstage,
-  discard and commit, when files change on disk, when the terminal window
-  regains focus, and when you press `Space g g` again. The cursor stays on
+- The list keeps itself up to date: it refreshes after every stage,
+  unstage, discard and commit, when files change on disk, when the terminal
+  window regains focus, and when you press `Space g g` again. The cursor stays on
   the same file or hunk.
 - Renames show as a deleted file and an added file.
-- The lock files strop keeps beside open files are never listed.
+- The [lock files](filesystem.md#lock-files) strop leaves beside files it
+  saved are never listed.
 
 ## Commit — `Space g c`, or `cc` in the status buffer
 
@@ -105,7 +106,7 @@ changes are kept and marked as changed on disk.
 
 ## Hunks in a file
 
-The gutter marks changed lines against the index. `]c` / `[c` move between
+The gutter marks the lines that differ from what is staged. `]c` / `[c` move between
 hunks, `Space g p` previews one, `Space g s` stages it, `Space g u` unstages
 the staged hunk under the cursor, and `Space g X` discards it in the buffer
 (an ordinary edit: `u` undoes it). Staging reads the file on disk, so save
@@ -118,11 +119,15 @@ first.
   sidebar (`tab` moves focus, `]f` / `[f` step through files).
 - `Space g h` is the log of the current file; from a visual selection, the
   history of those lines.
-- `Space g B` shows who last changed each line. `enter` on a line opens the
-  log at that commit.
+- `Space g B` shows who last changed each line, in the gutter; press it
+  again to hide it. `enter` on a line opens the log at that commit. The
+  gutter hides while the buffer has edits made after blame ran. In a
+  read-only buffer (a file opened with `-R`, a git view) there is no
+  gutter; a card shows the blame for the current line instead.
 
 ## SSH projects
 
-Signs, log, blame, history and diffs work on a remote project
-([remote.md](remote.md)). Status, commit and the branch picker need a local
-repository for now; on a remote project they say so and do nothing.
+On an SSH host ([remote.md](remote.md)) the gutter marks, log, blame,
+history and diffs work. Status, commit and the branch picker do not work
+there yet; they say so and do nothing. Staging and discarding hunks do not
+work there either.
