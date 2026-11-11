@@ -730,6 +730,19 @@ while True:
     assert!(e.lsp_state.attach.pending.is_empty());
     assert_eq!(e.lsp_servers.len(), 1);
 
+    // The server logs `external-open` when it handles the didOpen, which
+    // may land after the editor's side is already settled: wait for the
+    // server, not the editor.
+    let count = |line: &str| {
+        std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .filter(|logged| *logged == line)
+            .count()
+    };
+    pump_until(&mut e, "the replacement to log the library open", |_| {
+        count("external-open") >= 2
+    });
     let log = std::fs::read_to_string(log).unwrap();
     assert_eq!(log.lines().filter(|line| *line == "start").count(), 2);
     assert_eq!(
