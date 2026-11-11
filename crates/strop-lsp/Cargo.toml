@@ -6,9 +6,9 @@ license.workspace = true
 description = "strop lsp: async-lsp client, server registry, diagnostics store"
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.60.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.60.0" }
-strop-trace = { path = "../strop-trace", version = "0.60.0" }
+strop-core = { path = "../strop-core", version = "0.61.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.61.0" }
+strop-trace = { path = "../strop-trace", version = "0.61.0" }
 async-lsp = "0.2"
 tokio = { version = "1", features = ["rt", "io-util", "time", "sync", "process"] }
 tokio-util = { version = "0.7", features = ["compat"] }
