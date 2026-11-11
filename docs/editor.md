@@ -157,7 +157,10 @@ hidden.
 
 strop starts the language server for a file's language when that server is
 installed; `Space ?` lists which server each language uses. The status line
-shows `LSP!` when a server failed and `LSP?` when one was refused. A long
+shows `LSP!` when a server failed and `LSP?` when one could not start: it
+is not installed (the message names it and says how to install it, e.g.
+`lsp: rust-analyzer not found on PATH — rustup component add
+rust-analyzer`), or the project has not been trusted yet. A long
 error from the server never pushes the mode or the position off the line.
 `:explain` opens the full story in a read-only buffer: which server, which
 project, and why it failed. When a server recovers, its failure message
@@ -176,7 +179,7 @@ start it. Repeat the command when the server is ready.
 A project can name its own language-server command in
 `.strop/languages.toml`. strop does not run a command that comes from a
 project until you allow that project: the message reads
-`lsp: NAME refused — :trust to allow`, and `:explain` shows the command.
+`lsp: NAME needs :trust for this project`, and `:explain` shows the command.
 `:trust` allows the current project, and the server starts. The answer is
 remembered on this machine (under `$XDG_STATE_HOME/strop`, normally
 `~/.local/state/strop`). Servers from strop's built-in list and from your

@@ -219,7 +219,8 @@ of `:s` cannot ask in the middle of a batch and is refused there.
 
 Replace is two steps.
 
-1. `Space R`, type the term, `Tab`, type the replacement. Every hit shows a
+1. `Space R`, type the term, `Tab`, type the replacement. (If Search already
+   holds a term, `Space R` keeps it and starts in **With**.) Every hit shows a
    `-`/`+` pair that follows your typing; `Ctrl-X` and `Ctrl-D` exclude a hit
    or a file. `Enter` in **With** opens the review: the exact diff, nothing
    changed yet.
