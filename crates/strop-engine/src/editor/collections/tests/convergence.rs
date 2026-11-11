@@ -40,6 +40,8 @@ const EDITS: &[&str] = &[
     "dd",
     "yyp",
     "ccwhole<esc>",
+    "dw",
+    "cwword<esc>",
 ];
 
 const FILES: usize = 3;

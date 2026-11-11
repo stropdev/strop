@@ -179,7 +179,15 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| e.rename_prompt()),
     },
     Binding {
-        keys: "gI",
+        keys: "gra",
+        desc: "actions here, as space a (code actions; Neovim's key)",
+        sections: &["moving"],
+        live: true,
+        id: "code-actions-key",
+        handler: Handler::Leaf(|e, _| e.context_actions()),
+    },
+    Binding {
+        keys: "gri gI",
         desc: "implementation (LSP)",
         sections: &["moving"],
         live: true,

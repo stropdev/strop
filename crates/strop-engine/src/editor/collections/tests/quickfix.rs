@@ -128,3 +128,39 @@ fn cdo_needs_a_command_and_does_not_nest() {
     e.feed_text(":cdo cdo s/a/b/<cr>");
     assert!(e.message.contains("does not nest"), "{}", e.message);
 }
+
+/// `:cdo` runs whatever the `:` line runs (0095 §2.6): `:norm` types
+/// Normal-mode keys at each hit, `:d` deletes each hit line, and one
+/// `u` in a file takes back one hit's command.
+#[test]
+fn cdo_runs_normal_keys_and_line_commands_at_every_hit() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut e, paths) = many(dir.path());
+    let list = e.current();
+    e.feed_text(":cdo norm A;<cr>");
+    assert_eq!(e.current(), list, "focus returns to where it was");
+    assert_eq!(e.mode, crate::editor::Mode::Normal);
+    assert!(
+        e.message.contains("ran at 6 hit(s) in 3 file(s)"),
+        "{}",
+        e.message
+    );
+    for path in &paths {
+        let text = text_at(&e, path);
+        assert!(text.starts_with("old top;\nkeep\n"), "{text:.20}");
+        assert!(text.ends_with("old end old;\n"));
+    }
+    assert!(e.buf().text().to_string().contains("old top;"));
+
+    e.feed_text(":cc 1<cr>u");
+    let text = text_at(&e, &paths[0]);
+    assert!(text.ends_with("old end old\n"), "u undid the newest hit");
+    assert!(text.starts_with("old top;\n"), "and only that one");
+
+    e.feed_text(":cdo d<cr>");
+    for path in &paths {
+        let text = text_at(&e, path);
+        assert!(text.starts_with("keep\n"), "{text:.20}");
+        assert!(!text.contains("old"));
+    }
+}

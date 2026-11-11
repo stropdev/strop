@@ -78,8 +78,10 @@ diagnostics collects the included hits. The collection buffer is writable:
 - `:cdo s/…/…/` plans inline whatever the buffer size: it is a batch the user
   asked for, bounded by the list, and a deferred plan would race the next
   entry.
-- `:cdo norm …` needs `:norm`, which belongs to the keys track. `:cdo` runs
-  whatever `run_ex` accepts, so it gains `norm` the day that lands.
+- `:cdo` runs whatever the `:` line's command table runs (0095 §2.6), so
+  `:cdo norm A;`, `:cdo d` and `:cdo g/…/…` work. Each entry's command is a
+  compound command in 0095's sense (`ex::run_ex_in_batch`): it resolves
+  inline and is one undo step in its source.
 
 Decision moved into the kernel: `strop_kernel::excerpt::source_edit` decides
 whether a view edit is admitted and where it lands in the source. Theorems
@@ -126,8 +128,10 @@ A literal term keeps With literal.
 rename touching one buffer applies directly and flashes; one touching several
 opens the same review, with the same `Enter`/`u`. `grn` needs `gr` to be a
 prefix, so references move from `gr` to `grr`: Neovim 0.11's own pair
-(`:help grr`, `:help grn`). The keys track owns the rest of that family
-(`gra`, `gri`).
+(`:help grr`, `:help grn`). The rest of that family maps onto actions that
+exist: `gra` is `Space a`, `gri` is implementation (`gI` stays; it is on
+0095's Reassigned list). Plain `gr{char}` is not bound and the Reassigned
+list says so.
 
 ### 3.4 `Space a`
 
@@ -139,9 +143,11 @@ The `operations`, `verify` and `undo` rows live under `:fs` only.
 
 Each removed/added pair is windowed on its first differing column, with `…`
 where text is cut. The card never grows past the row above the statusline and
-is skipped when fewer than three rows remain. `:s` is case-sensitive unless
-the pattern says otherwise (`\c`, `case:insensitive`); the general case
-semantics stay with the keys track, this is the three-line default.
+is skipped when fewer than three rows remain. `:s` has `/`'s case policy
+(0095 §2.6), which 0093 §3.7 makes smart case: an all-lowercase pattern
+matches either case, `\c` / `\C` and the `i` / `I` flags decide outright.
+(This track first forced `:s` case-sensitive by appending `\C`; that was
+dropped when the three tracks met, so that one compiler has one policy.)
 
 ## 4. Tests
 
@@ -161,9 +167,9 @@ semantics stay with the keys track, this is the three-line default.
   on a source with a diagnostic, the `:s` card at 90×24 and 90×8.
 
 The convergence test compares edits that mean the same thing at a caret in
-the view and in the source. It leaves out `dw` and `cw`: at the end of a line
-strop's `dw`, and `cw` on an empty line, reach into the next line (a fidelity
-bug for the keys track), which in a view is the border and is refused.
+the view and in the source. `dw` and `cw` are among them since 0095 fixed
+their end-of-line behaviour (they used to reach into the next line, which in
+a view is the border and is refused).
 
 Found on the way and fixed here because the test could not pass without it:
 `cc` planted a second cursor stacked on the first, which survived the insert
@@ -178,14 +184,12 @@ session and `u` and then edited a second place.
 - The undo tree (`Space u`) of a collection: restoring an arbitrary revision
   there is written through as a plain edit, not as source history moves.
 
-- `:cdo norm` (keys track owns `:norm`).
 - A collection's history surviving foreign edits to its sources. It needs the
   history's offsets mapped through system edits and a way to tell whose step
   a source's newest one is.
-- Captures in `:s`. The buffer-search engine is the keys track's; the With
-  field uses the `regex` crate and could ship now.
+- One replacement grammar. `:s` has Vim's (`&`, `\1`, `\u`…, 0095 §2.6) over
+  the buffer-search engine's captures; With has `$1` / `${name}` / `\1` over
+  the `regex` crate's (`strop_picker::Replacer`). They overlap only in `\1`,
+  and run on different engines, so both stay.
 - Remote (SSH) replace stays unavailable; collections over SSH are editable
   like any other since they write to buffers.
-- `:s` case semantics beyond the default (`'ignorecase'`, `'smartcase'`, the
-  `i`/`I` flags) belong to the keys track; here `:s` appends the grammar's
-  own `\C` unless the pattern already names a case.

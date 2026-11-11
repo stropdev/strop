@@ -15,7 +15,7 @@ pub(super) struct Work {
     pub source_ropes: Vec<ropey::Rope>,
 }
 enum Message {
-    Resolve(Work),
+    Resolve(Box<Work>),
     Edits(strop_core::id::DocumentId, Vec<strop_core::Change>),
 }
 pub(super) struct ResolutionWorker {
@@ -35,7 +35,7 @@ impl ResolutionWorker {
                             indentation.edits(document, &changes);
                             continue;
                         }
-                        Message::Resolve(work) => work,
+                        Message::Resolve(work) => *work,
                     };
                     let outcome = if work.cancel.load(Ordering::Acquire) {
                         Outcome::Cancelled(CancelReason::Superseded)
@@ -155,9 +155,9 @@ impl ResolutionWorker {
     }
     pub fn resolve(&self, work: Work) -> Result<(), Box<Work>> {
         self.sender
-            .send(Message::Resolve(work))
+            .send(Message::Resolve(Box::new(work)))
             .map_err(|error| match error.0 {
-                Message::Resolve(work) => Box::new(work),
+                Message::Resolve(work) => work,
                 Message::Edits(..) => unreachable!(),
             })
     }

@@ -166,6 +166,7 @@ impl Editor {
                                 | "document-symbols"
                                 | "diagnostics"
                                 | "code-actions"
+                                | "code-actions-key"
                                 | "jumplist-picker"
                                 | "undo-tree"
                         )

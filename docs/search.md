@@ -198,12 +198,14 @@ The newest collection is the quickfix list, under the names Vim gave it:
 
 ```vim
 :cdo s/open_picker/open_the_picker/
+:cdo norm A;
 :cfdo w
 ```
 
-`:cdo` and `:cfdo` return to where you were. Each command finishes before
-the next starts, and the files stay open and undoable. `:cdo norm …` waits
-for `:norm`.
+`:cdo` and `:cfdo` run whatever the `:` line runs — `:s`, `:norm`, `:d`,
+`:g` — and return to where you were. Each command finishes before the next
+starts and is one undo step in its file; the files stay open. The `c` flag
+of `:s` cannot ask in the middle of a batch and is refused there.
 
 ## Replace across files
 
@@ -232,7 +234,8 @@ file that could not be written stays changed in its buffer, unsaved, and is
 named in the heading. An all-excluded, incomplete or failed search cannot
 become a whole-project operation.
 
-**With** is literal unless the term is a `regex:` with groups. Then `$1`,
+**With** is literal unless the term is a regular expression with groups
+(`regex:`, or a bare term with `Alt-R` on). Then `$1`,
 `${name}` and `\1` are that hit's own groups, `$0` the whole hit, `$$` a
 dollar sign:
 
@@ -246,7 +249,9 @@ replace; With asks for exactly one.
 
 ## Rename
 
-`grn` opens `:rename` with the name under the cursor, ready to edit. A rename
+`grn` opens `:rename` with the name under the cursor, ready to edit (`grr`,
+`grn`, `gra` and `gri` are Neovim's language-server keys: references, rename,
+actions, implementation). A rename
 that touches one buffer is applied at once (and `u` there undoes it). One
 that touches several opens the same review as a project replace: `Enter`
 applies and writes, `u` reverts.

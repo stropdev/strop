@@ -12,10 +12,10 @@
 - **References and other location lists are readable**: each row is `path:line` followed by the text on that line, with the path relative to your project, instead of a clipped absolute path.
 - **`:e` completes the path you typed**: `:e src/ma<Tab>` becomes `:e src/main.rs`, not a long `file:///…` address.
 - **Search hits are editable in place.** `Ctrl-O` in search results, references or diagnostics opens a collection; edit inside any excerpt with any command and the change is in the file's buffer in the same keystroke. `:w` writes every changed file it shows, `u` undoes what you changed through it (in the files too). Card borders and the "lines omitted" rows are not text and refuse edits. (plans/0094)
-- **Quickfix commands.** The newest collection is the quickfix list: `:copen` shows it, `]q` / `[q` (`:cnext` / `:cprev`, `:cc N`) visit its hits, `:cdo {cmd}` runs an ex command at every hit and `:cfdo {cmd}` once per file — `:cdo s/old/new/`, then `:cfdo w`. `:%s/old/new/g` inside a collection substitutes in the excerpts only.
+- **Quickfix commands.** The newest collection is the quickfix list: `:copen` shows it, `]q` / `[q` (`:cnext` / `:cprev`, `:cc N`) visit its hits, `:cdo {cmd}` runs an ex command at every hit and `:cfdo {cmd}` once per file — `:cdo s/old/new/` or `:cdo norm A;`, then `:cfdo w`. `:%s/old/new/g` inside a collection substitutes in the excerpts only.
 - **Replace across files is two steps.** `Space R`, type, `Enter` shows the diff; `Enter` again changes every file and writes it. `u` in that review puts the buffers and the files back and names any file it could not revert; `q` cancels.
-- **Captures in replace.** When the term is a `regex:` with groups, `$1`, `${name}` and `\1` in With expand per hit, in the live `-`/`+` rows and in the result alike.
-- **Rename.** `grn` prompts with the current name. A rename in one buffer applies at once; one across several files opens the same review as replace. References move from `gr` to `grr`, as in Neovim 0.11.
+- **Captures in replace.** When the term is a regular expression with groups (`regex:`, or `Alt-R`), `$1`, `${name}` and `\1` in With expand per hit, in the live `-`/`+` rows and in the result alike.
+- **Rename.** `grn` prompts with the current name. A rename in one buffer applies at once; one across several files opens the same review as replace. References move from `gr` to `grr`, and `gra` (actions) and `gri` (implementation) join them: the four language-server keys of Neovim 0.11.
 - **`Space a` on a file lists code actions only.** The filesystem verbs are in the Directory buffer's `Space a` and under `:fs`.
 - **Filesystem reviews are applied with `Enter` or `:fs apply`** and cancelled with `q` or `:fs cancel`.
 

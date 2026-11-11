@@ -274,6 +274,28 @@ mod tests {
         );
     }
 
+    /// The regex toggle (`Alt-R`, 0093 §3.7) makes the bare term a
+    /// pattern, and its groups expand in With as a `regex:` term's do.
+    #[test]
+    fn the_regex_toggle_gives_with_its_captures() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        std::fs::write(&a, "get_alpha()\nget_beta()\n").unwrap();
+        let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
+        let a_doc = e.open_fixture(&a).unwrap();
+        e.open_search(true);
+        e.feed(strop_core::frontend_input::Key::Alt('r'));
+        e.paste_bracketed("get_(\\w+)");
+        e.wait_picker();
+        assert_eq!(e.picker.as_ref().unwrap().picker.items.len(), 2);
+        e.feed(strop_core::frontend_input::Key::Tab);
+        e.paste_bracketed("fetch_$1");
+        e.accept_current_picker();
+        e.wait_io().unwrap();
+        e.review_apply_pub();
+        assert_eq!(text_of(&e, a_doc), "fetch_alpha()\nfetch_beta()\n");
+    }
+
     /// Dirty open buffers win over disk (0051 §6 R04): a hit whose
     /// witness fails against the live buffer text is named stale at
     /// the review — the plan follows the buffer, not the disk file.

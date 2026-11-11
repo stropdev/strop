@@ -207,20 +207,21 @@ fn cdo_changes_every_hit_and_cfdo_writes() {
     }
 }
 
-/// 0091 B2/B6 on the real binary: `:s` is case-sensitive, and an 8-row
+/// 0091 B2/B6 on the real binary: `\C` in a `:s` pattern makes case count
+/// (an all-lowercase pattern alone is smart case, 0093 §3.7), and an 8-row
 /// terminal draws the command line instead of panicking.
 #[test]
-fn substitute_is_case_sensitive_and_survives_a_tiny_terminal() {
+fn substitute_matches_case_when_asked_and_survives_a_tiny_terminal() {
     let directory = tempfile::tempdir().unwrap();
     let root = &directory.path().join("project");
     std::fs::create_dir(root).unwrap();
     std::fs::write(root.join("graph.rs"), "struct Edge;\nlet edge = Edge;\n").unwrap();
     let output = run(
         root,
-        "resize 90 8\nkeys :%s/edge/rim/g\nframe\nkeys <cr>\nsettle\nkeys :w<cr>\nsettle\nstate\n",
+        "resize 90 8\nkeys :%s/edge\\C/rim/g\nframe\nkeys <cr>\nsettle\nkeys :w<cr>\nsettle\nstate\n",
         "graph.rs",
     );
     let frame = output.split("─── frame ").nth(1).unwrap();
-    assert!(frame.contains("%s/edge/rim/g"), "{frame}");
+    assert!(frame.contains("%s/edge\\C/rim/g"), "{frame}");
     assert_eq!(read(root, "graph.rs"), "struct Edge;\nlet rim = Edge;\n");
 }

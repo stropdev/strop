@@ -17,7 +17,7 @@
   17 ││                                                                 │       
   18 ││                                                                 │       
   19 ││                                                                 │       
-  20 }╰  enter  open   ↑↓  move   esc  close ───────────────────────────╯       
+  20 }╰  enter  open   ↑↓  move   ctrl-r "  paste yank   esc  close ────╯       
 ~                                                                               
 ~                                                                               
 ~                                                                               
@@ -42,7 +42,7 @@
  16: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 1:#656d7b/#fdfbf6 65:reset/#fdfbf6 1:#656d7b/#fdfbf6 6:reset/#f6f2e9 1:reset/reset
  17: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 1:#656d7b/#fdfbf6 65:reset/#fdfbf6 1:#656d7b/#fdfbf6 6:reset/#f6f2e9 1:reset/reset
  18: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 1:#656d7b/#fdfbf6 65:reset/#fdfbf6 1:#656d7b/#fdfbf6 6:reset/#f6f2e9 1:reset/reset
- 19: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 4:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 35:#656d7b/#fdfbf6 6:reset/#f6f2e9 1:reset/reset
+ 19: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 4:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 10:#8a510f/#e5dfd0+b 13:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 12:#656d7b/#fdfbf6 6:reset/#f6f2e9 1:reset/reset
  20: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset

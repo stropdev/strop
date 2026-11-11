@@ -8,7 +8,7 @@
 /// Fields of `pub struct Editor` in `editor/mod.rs`. Lower it, never raise it.
 const EDITOR_FIELDS: usize = 111;
 /// Inherent `impl Editor` blocks across the crate. Lower it, never raise it.
-const EDITOR_IMPL_BLOCKS: usize = 155;
+const EDITOR_IMPL_BLOCKS: usize = 154;
 
 /// Removes `//` comments (doc comments included) so commented-out or
 /// documented text never counts. The struct body holds no string literals.

@@ -27,8 +27,9 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ctrl-e ctrl-y` — scroll the window one line down / up
 - `✓ ctrl-^` — alternate buffer
 - `✓ grr` — references (LSP)
-- `✓ grn` — rename (LSP), prompting with the current name
-- `✓ gI` — implementation (LSP)
+- `✓ grn` — rename the symbol under the cursor (prompts with its name)
+- `✓ gra` — actions here, as space a (code actions; Neovim's key)
+- `✓ gri gI` — implementation (LSP)
 - `✓ gy` — type definition (LSP)
 - `✓ gD` — declaration (LSP)
 - `✓ ]d` — next diagnostic
@@ -36,6 +37,8 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ gd` — goto definition (LSP)
 - `✓ gs` — switch source/header (clangd)
 - `✓ f<c> F<c> t<c> T<c>` — find/till char (candidates light up)
+- `✓ ]q` — next quickfix hit
+- `✓ [q` — previous quickfix hit
 - `✓ ]f` — next file card (collections)
 - `✓ [f` — previous file card (collections)
 - `✓ ]e` — next excerpt (collections; +/- context)
@@ -170,7 +173,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ space P` — paste clipboard before
 - `✓ space d` — diagnostics picker
 - `✓ space k` — hover docs
-- `✓ space a` — actions here (fixes, code, files)
+- `✓ space a` — actions here (fixes and code; files in a directory)
 - `✓ space s` — document symbols picker
 - `✓ space S` — workspace symbols picker
 - `✓ space j` — jumplist picker
@@ -257,7 +260,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ :tab-size :indent-style` — source indentation controls
 - `✓ :fs :browse :filter :remote :terminal-local` — filesystem actions, namespace-aware browsing, folder filtering, remote destinations, a local shell
-- `✓ :apply-change :cancel-change :save-change :undo-change` — review: apply text or filesystem changes, cancel, save changed text, or undo the last applied plan
+- `✓ :copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo` — quickfix: show the list, visit hits, run a command at each hit or file
 
 ## Missing
 
@@ -294,7 +297,7 @@ Neovim binds these; strop uses the key for something else.
 - Normal: `Q` — Neovim: replay the last recorded register. strop: toggle a cursor here (`@@` replays).
 - Normal: `gd gD` — Neovim: go to the local or global declaration by search. strop: language-server definition and declaration.
 - Normal: `gI` — Neovim: insert in column 1. strop: language-server implementation.
-- Normal: `gr` — Neovim: replace with a virtual character. strop: language-server references.
+- Normal: `gr` — Neovim: replace with a virtual character (`gr{char}`). strop: only the prefix of the language-server keys `grr` `grn` `gra` `gri`.
 - Normal: `gs` — Neovim: sleep. strop: switch between source and header.
 - Normal: `ds cs ys` — Neovim: nothing (`s` is not a motion). strop: delete, change, add a surrounding pair.
 - Visual: `S` — Neovim: change the selected lines. strop: wrap the selection in a pair (`C` and `R` change lines).

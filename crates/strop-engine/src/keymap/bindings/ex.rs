@@ -133,7 +133,7 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
-        keys: ":copen :cnext :cprev :cc :cdo :cfdo",
+        keys: ":copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo",
         desc: "quickfix: show the list, visit hits, run a command at each hit or file",
         sections: &["ex"],
         live: true,
