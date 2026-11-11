@@ -47,6 +47,7 @@ pub(crate) fn git_failure(op: &str, error: GitError) -> Failure {
             format!("{op}: path outside the repository workdir"),
         ),
         GitError::Native(message) => Failure::new(FailureKind::Exit, format!("{op}: {message}")),
+        GitError::NothingStaged => Failure::new(FailureKind::InvalidInput, error.to_string()),
     }
 }
 
