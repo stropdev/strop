@@ -1,4 +1,4 @@
-▌ commit c1b9c8ba0e ──────────────────────────────────────────────────────────────── 3 files  +4 -2                                                                                                     
+─ commit c1b9c8ba0e ──────────────────────────────────────────────────────────────── 3 files  +4 -2                                                                                                     
   crates/strop-engine/src/editor/collections/tests/a_very_long_module_name_for_projection.rs  +1 -0                                                                                                     
   logo.bin                                                                                    +0 -0                                                                                                     
   src/lib.rs                                                                                  +3 -2                                                                                                     
@@ -49,7 +49,7 @@
 ~                                                                                                                                                                                                       
   NORMAL    @c1b9c8ba  git files [RO]                                                                                                                                                         25%  1:1  
 
-  0: 1:#8a510f/#efeadf 1:reset/#efeadf 7:#656d7b/#efeadf 10:#262a30/#efeadf+b 66:#656d7b/#efeadf 7:#4b525c/#efeadf 2:#262a30/#efeadf 2:#3f7a3a/#efeadf 1:#262a30/#efeadf 2:#b8323f/#efeadf 100:#efeadf/#efeadf 1:reset/reset
+  0: 1:#656d7b/#efeadf 1:reset/#efeadf 7:#656d7b/#efeadf 10:#262a30/#efeadf+b 66:#656d7b/#efeadf 7:#4b525c/#efeadf 2:#262a30/#efeadf 2:#3f7a3a/#efeadf 1:#262a30/#efeadf 2:#b8323f/#efeadf 100:#efeadf/#efeadf 1:reset/reset
   1: 2:reset/#f6f2e9 49:#4b525c/#f6f2e9 43:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 100:reset/#f6f2e9 1:reset/reset
   2: 2:reset/#f6f2e9 92:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 100:reset/#f6f2e9 1:reset/reset
   3: 2:reset/#f6f2e9 4:#4b525c/#f6f2e9 88:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 100:reset/#f6f2e9 1:reset/reset

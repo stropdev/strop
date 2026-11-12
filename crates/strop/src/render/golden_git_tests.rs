@@ -24,7 +24,7 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 /// One staged new file, two modified files and one untracked file.
-fn change(root: &Path) {
+pub(super) fn change(root: &Path) {
     let lines: String = (1..=20)
         .map(|n| match n {
             2 => "line two\n".to_string(),
@@ -40,7 +40,7 @@ fn change(root: &Path) {
     git(root, &["add", "docs/git.md"]);
 }
 
-fn keys(editor: &mut Editor, text: &str) {
+pub(super) fn keys(editor: &mut Editor, text: &str) {
     editor.feed_text(text);
     settle_work(editor);
 }
@@ -62,7 +62,7 @@ fn each(name: &str, scene: impl Fn(&Path, &mut Editor) -> Settle) {
 
 /// A committed binary file, then changed: the status shows it and its
 /// expansion is a note, not a diff.
-fn change_binary(root: &Path) {
+pub(super) fn change_binary(root: &Path) {
     std::fs::write(root.join("logo.bin"), [0u8, 1, 2, 3, 0, 255]).unwrap();
     git(root, &["add", "logo.bin"]);
     git(root, &["commit", "-qm", "logo"]);

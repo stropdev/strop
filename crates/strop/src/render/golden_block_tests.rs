@@ -117,9 +117,17 @@ pub(super) fn history() -> (tempfile::TempDir, Editor) {
 }
 
 pub(super) fn each(name: &str, scene: impl Fn(&Path, &mut Editor) -> Settle) {
+    each_in(name, history, scene);
+}
+
+fn each_in(
+    name: &str,
+    fixture: fn() -> (tempfile::TempDir, Editor),
+    scene: impl Fn(&Path, &mut Editor) -> Settle,
+) {
     for theme in THEMES {
         for size in SIZES {
-            let (root, mut editor) = history();
+            let (root, mut editor) = fixture();
             editor.set_theme(theme);
             let mut settle = scene(root.path(), &mut editor);
             let grid = frame(&mut editor, &mut settle, size);
@@ -249,6 +257,55 @@ fn hunk_preview() {
         pump_hunks(editor);
         editor.feed_text(" gp");
         settle_dives(editor);
+        settle_analysis()
+    });
+}
+
+/// The collection's long path of §1 (97 cells).
+pub(super) const COLLECTION_PATH: &str =
+    "crates/strop-engine/src/editor/collections/tests/a_very_long_module_name_for_projection_updates.rs";
+
+/// `token` lines among `value` lines: a hit on the first and on the last
+/// line, three on adjacent lines, two on every hit line.
+fn tokens(lines: usize, hits: &[usize]) -> String {
+    source(lines, |n| {
+        hits.contains(&n)
+            .then(|| format!("    let token_{n} = parse_token(input, {n});\n"))
+    })
+}
+
+/// §1's scene: a 97-cell path with hits on its first and last lines and
+/// on adjacent lines, a second file, and a read-only third.
+pub(super) fn collection_workspace() -> (tempfile::TempDir, Editor) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let long = root.join(COLLECTION_PATH);
+    std::fs::create_dir_all(long.parent().unwrap()).unwrap();
+    std::fs::write(&long, tokens(60, &[1, 3, 20, 21, 22, 40, 58, 60])).unwrap();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/b.rs"), tokens(12, &[6])).unwrap();
+    let readonly = root.join("src/long.rs");
+    std::fs::write(&readonly, tokens(8, &[4])).unwrap();
+    let mut permissions = std::fs::metadata(&readonly).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&readonly, permissions).unwrap();
+    let mut editor = Editor::new_in(strop_core::Buffer::from_text(""), root.to_path_buf());
+    editor.open_fixture(&root.join("src/b.rs")).unwrap();
+    editor.wait_analysis();
+    (dir, editor)
+}
+
+/// `Ctrl-O` on a search for `token`, then `]f`: the cursor on the second
+/// file's heading.
+#[test]
+fn collection_blocks() {
+    each_in("collection-blocks", collection_workspace, |_, editor| {
+        editor.open_search(false);
+        editor.paste_bracketed("token");
+        editor.wait_picker();
+        editor.feed(strop_core::frontend_input::Key::CtrlO);
+        editor.wait_io().unwrap();
+        editor.feed_text("]f");
         settle_analysis()
     });
 }

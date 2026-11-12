@@ -106,11 +106,8 @@ pub(crate) fn painted(
                     fact,
                     focus: heading::Focus::Here,
                 };
-                let mut painted = Painted::heading(t, &heading, text_block);
-                if cursor {
-                    painted.gutter = gutter::list(t, Sign::Cursor);
-                }
-                painted
+                // the rule stays on the cursor row (see diff/status.rs)
+                Painted::heading(t, &heading, text_block)
             } else {
                 Painted {
                     gutter: gutter::list(t, sign),

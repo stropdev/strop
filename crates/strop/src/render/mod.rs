@@ -16,6 +16,8 @@ use crate::editor::{Editor, Mode};
 
 mod blame_card;
 mod block;
+#[cfg(test)]
+mod block_frame_tests;
 mod buffer;
 pub(crate) mod card;
 mod clip;

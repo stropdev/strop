@@ -127,13 +127,16 @@ One noun for a place the search found: **hit**. One name for the buffer:
 - Stepping: `hit 2 of 4: src/a.rs:11`; at the ends `last hit` / `first hit`.
 - Nothing collected yet: `nothing collected yet — Ctrl-O in search results, references or diagnostics collects them`.
 - Nothing to collect: `nothing to collect — every hit is excluded` / `nothing to collect — the list is empty`.
-- A card's top border: `╭─ src/a.rs ── 3 hits` (then ` · modified` /
-  ` · read-only` as before). (C10)
-- A gap: `⋮ 4 lines not shown`.
+- A file's heading row holds its path, `src/a.rs`; the rule, `3 hits` and
+  the `●` / `[RO]` marks are drawn (amended by 0100 §3.8, which replaced
+  the card's `╭─ src/a.rs ── 3 hits` and ` · modified` / ` · read-only`).
+  (C10)
+- A gap: `4 lines not shown` (0100 draws the `⋮` in the gutter).
 
 ### 3.5 What does not change
 
-Edits, `:w`, `u`, `:cdo`, `:cfdo`, `:cc N`, the card look, the kernel's
+Edits, `:w`, `u`, `:cdo`, `:cfdo`, `:cc N`, the card look (since redrawn
+as blocks by 0100), the kernel's
 `excerpt::source_edit` and its proofs. No kernel code moves.
 
 ## 4. Rejected

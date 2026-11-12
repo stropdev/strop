@@ -170,15 +170,36 @@ as if they were all of them.
 ## Collections: edit every hit in one buffer
 
 **Ctrl-O** in search results, references (`grr`) or diagnostics (`Space d`)
-opens a collection: one card per file, each hit with two lines of context,
+opens a collection: one block per file, each hit with two lines of context,
 highlighted like the file and with the file's line numbers. The cursor is
 on the hit that was selected in the list. If the search is still running,
 Ctrl-O waits for it and then collects; any other key takes that back.
 
+```text
+     search token — 27 hits in 4 files
+
+──── src/a.rs ───────────────────────────────────────────────────────── 10 hits
+   1     let token_1 = parse_token(input, 1);
+   2     let value_2 = compute(2);
+   ⋮ 12 lines not shown
+  15     let token_15 = parse_token(input, 15);
+
+──── src/b.rs ● ──────────────────────────────────────────────────────── 2 hits
+   6     let token_6 = parse_token(input, 6);
+```
+
 The first row says what was collected, for example
 `search open_picker — 12 hits in 4 files`, and the buffer is named
-`collection: search open_picker`. Collecting the same search again brings
-that collection up to date; a different search gets its own.
+`collection: search open_picker`. Each file starts with a rule that names
+it and counts its hits; `●` marks a file with unsaved changes and `[RO]` one
+that cannot be written. A band marks the lines left out between two hits of
+one file. One empty row separates two files. Collecting the same search
+again brings that collection up to date; a different search gets its own.
+
+The buffer holds words only: a file's row holds its path, a band's row
+`12 lines not shown`. The rules, counts and marks are drawn around them, so
+`yy` on a file's row yanks its path and a yank across a collection carries
+no drawing characters.
 
 ### Moving
 
@@ -198,7 +219,7 @@ A count works: `3]q` is three hits on.
 A collection is an ordinary buffer. What you edit in it is edited in the
 files:
 
-- Edit inside a card with any command — `cw`, `dd`, `o`, `.`, a macro,
+- Edit inside a file's lines with any command — `cw`, `dd`, `o`, `.`, a macro,
   visual mode, `:s`. The edit is made in the file's buffer in the same
   keystroke; open the file and it is already there. Edits made in the file
   appear in the collection the same way.
@@ -207,10 +228,10 @@ files:
 - `u` and `Ctrl-R` undo and redo what you changed through the collection,
   in the files too. Editing one of its files somewhere else starts the
   collection's history over; that file's own `u` still works.
-- Card borders, the `⋮ N lines not shown` rows and the title are not text.
-  An edit that would touch one, or join the last line of a card with the
-  border under it, is refused and changes nothing.
-- `:%s/old/new/g` in a collection substitutes inside the cards only, with
+- A file's row, the `N lines not shown` rows, the empty rows and the title
+  are not the files' text. An edit that would touch one, or join the last
+  line of a file with the row under it, is refused and changes nothing.
+- `:%s/old/new/g` in a collection substitutes inside the files' lines only, with
   the usual live preview.
 
 ### One command at every hit

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **One look for the collection and the git buffers** (plans/0100). A file, a status section or a commit now starts with a rule across the pane that names it, with its count or `+N -M` at the right edge. One empty row separates two of them. A jump inside one — the lines a collection leaves out, a diff's `@@` row — is a band, with `⋮` where the line numbers jump. The cards with corners and no sides are gone.
+- **The collection's rows hold words only.** A file's row holds its path and a gap's row `12 lines not shown`; the rule, the hit count and the marks are drawn. `yy` on a file's row yanks its path, and a yank across a collection carries no box-drawing characters. A modified file is marked `●` and a read-only one `[RO]`, as in the status line, instead of `· modified` and `· read-only`. The cursor line is painted in a collection as in a file.
+- **Status, log, file history and a commit's files have no line numbers**: their rows are entries, not lines. The cursor row is marked with `▌` and a band, as in a directory listing. Section rows hold `Staged` and the count is drawn beside the rule.
+- **An expanded diff in the status buffer reads like the diff view**: the changed text on a quiet tint, the changed part of a line emphasised, and a `│` down the rows that belong to the file. `M` is drawn in the change colour, no longer the same grey as `?`.
+- **The log has one accent**: the sha is grey instead of amber on every row, and the graph lanes no longer use the accent colour. A row too long for the pane ends in `…`.
+- **A file's history is named for the file**: `git log · src/lib.rs`.
+- **A commit's files sit beside their counts**: the list is one block as wide as its content, headed by the commit with its number of files and lines, so `+N -M` is next to each name at any width. The empty row under the heading is gone.
+- **The diff and hunk views start with the file's rule** and `+N -M`; a file with no line changes, such as a binary file, says so instead of `+0 -0`. The hunk preview (`Space g p`) is named for its file instead of "hunk", and has the file's syntax colours.
+- **The commit message shows its two common mistakes**: past column 72 the subject turns the warning colour, and so does a second line that is not empty. The subject is bold, and `#` lines are italic like every other comment.
+- **Search's file headings and the collection's are drawn by the same code.** In a narrow search list a long directory is now cut from the left before the rule beside the name goes.
+
 ## 0.63.0 — 2026-11-12
 
 ### Changed

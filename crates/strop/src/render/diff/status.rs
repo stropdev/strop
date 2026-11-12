@@ -101,11 +101,9 @@ pub(crate) fn painted<'a>(
                     heading::Focus::Elsewhere
                 },
             };
-            let mut painted = Painted::heading(t, &heading, text_cells);
-            if cursor {
-                painted.gutter = gutter::list(t, Sign::Cursor);
-            }
-            painted
+            // a heading keeps its rule on the cursor row: the band says
+            // where the cursor is, the rule where the block starts
+            Painted::heading(t, &heading, text_cells)
         }
         StatusRow::File(index) => {
             let entry = view.entry(index)?;
