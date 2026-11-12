@@ -23,6 +23,7 @@ mod status;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use routing::document_symbol_items;
 pub use status::{LspPhase, LspStatus};
 
 pub struct LspServer {
@@ -209,7 +210,7 @@ impl Editor {
     }
     /// `Space s` — the current document's symbols as a picker (0047 §1).
     pub(crate) fn lsp_document_symbols(&mut self) {
-        self.lsp_request(strop_lsp::RequestKind::DocumentSymbols);
+        super::symbols::open(self);
     }
     /// Whether a language server serves `document` now: `Space a` asks it
     /// for code actions only then, and stays quiet otherwise.

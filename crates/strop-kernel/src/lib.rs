@@ -12,6 +12,7 @@
 
 extern crate alloc;
 
+pub mod cache;
 pub mod editmap;
 pub mod excerpt;
 pub mod generation;

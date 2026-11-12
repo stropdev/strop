@@ -15,8 +15,19 @@ open Lean Elab Command
 /-- Lean's standard axioms. -/
 def allowedAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 
-/-- The headline claims (plans/0086 §4, ring 0; plans/0094 §3.1). -/
+/-- The headline claims (plans/0086 §4, ring 0; plans/0094 §3.1; plans/0099 §3.1). -/
 def claims : List Name := [
+  ``Strop.Kernel.find_spec,
+  ``Strop.Kernel.retire_spec,
+  ``Strop.Kernel.find_after_retire,
+  ``Strop.Kernel.touch_spec,
+  ``Strop.Kernel.victim_spec,
+  ``Strop.Kernel.place_spec,
+  ``Strop.Kernel.total_cost_le,
+  ``Strop.Kernel.placed_bounded,
+  ``Strop.Kernel.placed_entries,
+  ``Strop.Kernel.find_after_place,
+  ``Strop.Kernel.place_evicts_oldest,
   ``Strop.Kernel.map_position_spec,
   ``Strop.Kernel.mapSpec_monotone,
   ``Strop.Kernel.mapSpec_in_bounds,

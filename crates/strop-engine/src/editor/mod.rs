@@ -14,6 +14,7 @@ pub mod contract_probes;
 pub mod trace;
 
 pub(crate) mod analysis;
+pub(crate) mod cache;
 mod changes;
 pub use changes::review::ReviewRow;
 pub use dispatch::InputOwner;
@@ -66,6 +67,7 @@ mod remote_completion;
 mod shell;
 mod snippet;
 mod structural_indent;
+pub(crate) mod symbols;
 pub(crate) mod terminal;
 pub use terminal::TerminalDocument;
 mod presentation;

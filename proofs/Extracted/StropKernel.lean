@@ -20,6 +20,317 @@ set_option maxRecDepth 2048
 
 namespace strop_kernel
 
+/-- [strop_kernel::cache::Slot]
+    Source: 'crates/strop-kernel/src/cache.rs', lines 30:0-37:1
+    Visibility: public -/
+structure cache.Slot where
+  live : Bool
+  subject : Std.U64
+  producer : Std.U64
+  version : Std.U64
+  cost : Std.Usize
+  used : Std.U64
+
+/-- [strop_kernel::cache::{impl core::clone::Clone for strop_kernel::cache::Slot}::clone]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:9-29:14
+    Visibility: public -/
+def cache.Slot.Insts.CoreCloneClone.clone
+  (self : cache.Slot) : Result cache.Slot := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::cache::{impl core::clone::Clone for strop_kernel::cache::Slot}]
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:9-29:14 -/
+@[reducible]
+def cache.Slot.Insts.CoreCloneClone : core.clone.Clone cache.Slot := {
+  clone := cache.Slot.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::cache::{impl core::marker::Copy for strop_kernel::cache::Slot}]
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:16-29:20 -/
+@[reducible]
+def cache.Slot.Insts.CoreMarkerCopy : core.marker.Copy cache.Slot := {
+  cloneInst := cache.Slot.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [strop_kernel::cache::{impl core::marker::StructuralPartialEq for strop_kernel::cache::Slot}]
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:22-29:31 -/
+@[reducible]
+def cache.Slot.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq cache.Slot := {
+}
+
+/-- [strop_kernel::cache::{impl core::cmp::PartialEq<strop_kernel::cache::Slot> for strop_kernel::cache::Slot}::eq]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:22-29:31
+    Visibility: public -/
+def cache.Slot.Insts.CoreCmpPartialEqSlot.eq
+  (self : cache.Slot) (other : cache.Slot) : Result Bool := do
+  if self.live = other.live
+  then
+    if self.subject = other.subject
+    then
+      if self.producer = other.producer
+      then
+        if self.version = other.version
+        then
+          if self.used = other.used
+          then ok (self.cost = other.cost)
+          else ok false
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [strop_kernel::cache::{impl core::cmp::PartialEq<strop_kernel::cache::Slot> for strop_kernel::cache::Slot}]
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:22-29:31 -/
+@[reducible]
+def cache.Slot.Insts.CoreCmpPartialEqSlot : core.cmp.PartialEq cache.Slot
+  cache.Slot := {
+  eq := cache.Slot.Insts.CoreCmpPartialEqSlot.eq
+}
+
+/-- [strop_kernel::cache::{impl core::cmp::Eq for strop_kernel::cache::Slot}::assert_fields_are_eq]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:33-29:35
+    Visibility: public -/
+def cache.Slot.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : cache.Slot) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [strop_kernel::cache::{impl core::cmp::Eq for strop_kernel::cache::Slot}]
+    Source: 'crates/strop-kernel/src/cache.rs', lines 29:33-29:35 -/
+@[reducible]
+def cache.Slot.Insts.CoreCmpEq : core.cmp.Eq cache.Slot := {
+  partialEqInst := cache.Slot.Insts.CoreCmpPartialEqSlot
+  assert_fields_are_eq := cache.Slot.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [strop_kernel::cache::vacant]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 40:0-49:1
+    Visibility: public -/
+def cache.vacant : Result cache.Slot := do
+  ok
+    {
+      live := false,
+      subject := 0#u64,
+      producer := 0#u64,
+      version := 0#u64,
+      cost := 0#usize,
+      used := 0#u64
+    }
+
+/-- [strop_kernel::cache::holds]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 53:0-55:1
+    Visibility: public -/
+def cache.holds
+  (slot : cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (version : Std.U64) :
+  Result Bool
+  := do
+  if slot.live
+  then
+    if slot.subject = subject
+    then
+      if slot.producer = producer
+      then ok (slot.version = version)
+      else ok false
+    else ok false
+  else ok false
+
+/-- [strop_kernel::cache::find]: loop body 0:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 60:4-67:1
+    Visibility: public -/
+@[rust_loop_body]
+def cache.find_loop.body
+  (slots : Slice cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (version : Std.U64) (k : Std.Usize) :
+  Result (ControlFlow Std.Usize (Option Std.Usize))
+  := do
+  let i := Slice.len slots
+  if k < i
+  then
+    let s ← Slice.index_usize slots k
+    let b ← cache.holds s subject producer version
+    if b
+    then ok (done (some k))
+    else let k1 ← k + 1#usize
+         ok (cont k1)
+  else ok (done none)
+
+/-- [strop_kernel::cache::find]: loop 0:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 60:4-67:1
+    Visibility: public -/
+@[rust_loop]
+def cache.find_loop
+  (slots : Slice cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (version : Std.U64) (k : Std.Usize) :
+  Result (Option Std.Usize)
+  := do
+  loop
+    (fun k1 => cache.find_loop.body slots subject producer version k1)
+    k
+
+/-- [strop_kernel::cache::find]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 58:0-67:1
+    Visibility: public -/
+@[reducible]
+def cache.find
+  (slots : Slice cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (version : Std.U64) :
+  Result (Option Std.Usize)
+  := do
+  cache.find_loop slots subject producer version 0#usize
+
+/-- [strop_kernel::cache::touch]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 70:0-76:1
+    Visibility: public -/
+def cache.touch
+  (slots : Slice cache.Slot) (index : Std.Usize) (now : Std.U64) :
+  Result (Slice cache.Slot)
+  := do
+  let i := Slice.len slots
+  if index < i
+  then
+    let slot ← Slice.index_usize slots index
+    Slice.update slots index { slot with used := now }
+  else ok slots
+
+/-- [strop_kernel::cache::selects]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 80:0-88:1
+    Visibility: public -/
+def cache.selects
+  (slot : cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (by_subject : Bool) (by_producer : Bool) :
+  Result Bool
+  := do
+  if by_subject
+  then
+    if slot.subject = subject
+    then if by_producer
+         then ok (slot.producer = producer)
+         else ok true
+    else ok false
+  else if by_producer
+       then ok (slot.producer = producer)
+       else ok true
+
+/-- [strop_kernel::cache::retire]: loop body 0:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 99:4-106:5
+    Visibility: public -/
+@[rust_loop_body]
+def cache.retire_loop.body
+  (subject : Std.U64) (producer : Std.U64) (by_subject : Bool)
+  (by_producer : Bool) (slots : Slice cache.Slot) (k : Std.Usize) :
+  Result (ControlFlow ((Slice cache.Slot) × Std.Usize) (Slice cache.Slot))
+  := do
+  let i := Slice.len slots
+  if k < i
+  then
+    let slot ← Slice.index_usize slots k
+    let b ← cache.selects slot subject producer by_subject by_producer
+    if b
+    then
+      let s ← Slice.update slots k { slot with live := false }
+      let k1 ← k + 1#usize
+      ok (cont (s, k1))
+    else let k1 ← k + 1#usize
+         ok (cont (slots, k1))
+  else ok (done slots)
+
+/-- [strop_kernel::cache::retire]: loop 0:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 99:4-106:5
+    Visibility: public -/
+@[rust_loop]
+def cache.retire_loop
+  (slots : Slice cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (by_subject : Bool) (by_producer : Bool) (k : Std.Usize) :
+  Result (Slice cache.Slot)
+  := do
+  loop
+    (fun (slots1, k1) => cache.retire_loop.body subject producer by_subject
+      by_producer slots1 k1)
+    (slots, k)
+
+/-- [strop_kernel::cache::retire]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 91:0-107:1
+    Visibility: public -/
+@[reducible]
+def cache.retire
+  (slots : Slice cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (by_subject : Bool) (by_producer : Bool) :
+  Result (Slice cache.Slot)
+  := do
+  cache.retire_loop slots subject producer by_subject by_producer 0#usize
+
+/-- [strop_kernel::cache::victim]: loop body 0:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 115:4-127:1
+    Visibility: public -/
+@[rust_loop_body]
+def cache.victim_loop.body
+  (slots : Slice cache.Slot) (best : Std.Usize) (oldest : Std.U64)
+  (k : Std.Usize) :
+  Result (ControlFlow (Std.Usize × Std.U64 × Std.Usize) Std.Usize)
+  := do
+  let i := Slice.len slots
+  if k < i
+  then
+    let slot ← Slice.index_usize slots k
+    if slot.live
+    then
+      let i1 := Slice.len slots
+      let (best1, oldest1) ←
+        if best = i1
+        then ok (k, slot.used)
+        else
+          if slot.used < oldest
+          then ok (k, slot.used)
+          else ok (best, oldest)
+      let k1 ← k + 1#usize
+      ok (cont (best1, oldest1, k1))
+    else ok (done k)
+  else ok (done best)
+
+/-- [strop_kernel::cache::victim]: loop 0:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 115:4-127:1
+    Visibility: public -/
+@[rust_loop]
+def cache.victim_loop
+  (slots : Slice cache.Slot) (best : Std.Usize) (oldest : Std.U64)
+  (k : Std.Usize) :
+  Result Std.Usize
+  := do
+  loop
+    (fun (best1, oldest1, k1) => cache.victim_loop.body slots best1 oldest1 k1)
+    (best, oldest, k)
+
+/-- [strop_kernel::cache::victim]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 111:0-127:1
+    Visibility: public -/
+def cache.victim (slots : Slice cache.Slot) : Result Std.Usize := do
+  let best := Slice.len slots
+  cache.victim_loop slots best 0#u64 0#usize
+
+/-- [strop_kernel::cache::place]:
+    Source: 'crates/strop-kernel/src/cache.rs', lines 132:0-158:1
+    Visibility: public -/
+def cache.place
+  (slots : Slice cache.Slot) (subject : Std.U64) (producer : Std.U64)
+  (version : Std.U64) (cost : Std.Usize) (limit : Std.Usize) (now : Std.U64) :
+  Result ((Option Std.Usize) × (Slice cache.Slot))
+  := do
+  if cost > limit
+  then ok (none, slots)
+  else
+    let slots1 ← cache.retire slots subject producer true true
+    let «at» ← cache.victim slots1
+    let i := Slice.len slots1
+    if «at» >= i
+    then ok (none, slots1)
+    else
+      let slots2 ←
+        Slice.update slots1 «at»
+          ({ live := true, subject, producer, version, cost, used := now } :
+          cache.Slot)
+      ok (some «at», slots2)
+
 /-- [strop_kernel::editmap::map_position]:
     Source: 'crates/strop-kernel/src/editmap.rs', lines 23:0-31:1
     Visibility: public -/
@@ -163,9 +474,11 @@ def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal :
 /-- Trait implementation: [strop_kernel::editmap::{impl core::cmp::Eq for strop_kernel::editmap::BatchRefusal}]
     Source: 'crates/strop-kernel/src/editmap.rs', lines 49:40-49:42 -/
 @[reducible]
-def editmap.BatchRefusal.Insts.CoreCmpEq : core.cmp.Eq editmap.BatchRefusal
-  := {
+impl_def editmap.BatchRefusal.Insts.CoreCmpEq : core.cmp.Eq
+  editmap.BatchRefusal := {
   partialEqInst := editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal
+  assert_fields_are_eq := core.cmp.Eq.assert_fields_are_eq.default
+    editmap.BatchRefusal.Insts.CoreCmpEq
 }
 
 /-- [strop_kernel::editmap::validate_batch]: loop body 0:

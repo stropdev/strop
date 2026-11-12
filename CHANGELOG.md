@@ -15,6 +15,8 @@
 - **The key card no longer sits on the status line**: one empty row parts them. Its `+N more` line starts under the keys.
 - **Inside the `:` card everything lines up**: what you type, the completion names, the substitution summary and the changed lines start in one column, with `-` and `+` under the `:`. A summary too long for the card ends in `…`.
 - **The status line no longer repeats the `:s` summary** that the card already shows; the branch and diagnostics keep their place while you type a substitution.
+- **`Space s` opens at once** (plans/0099): the current file's symbols are fetched when you open it and after each finished edit, and kept until the text changes. A second press asks nobody, and the list opens in the same moment as the key. Rows from before an edit are never shown: if the new list is not ready the picker waits for it rather than showing old line numbers.
+- **Symbols without a language server**: in Rust, Python, C, C++ and Lua files that no server serves — none installed, or still starting — `Space s` lists the declarations from the syntax tree, and says so. It used to answer only "no language server".
 
 ### Added
 

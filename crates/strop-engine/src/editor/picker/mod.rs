@@ -129,7 +129,7 @@ pub struct PickerGlue {
     /// `textDocument/documentSymbol` carries no query, so Boolean and
     /// `kind:` narrowing re-filters these candidates locally as the
     /// picker's query changes.
-    pub(crate) symbols_candidates: Vec<strop_lsp::ProtoSymbol>,
+    pub(crate) symbols_candidates: std::sync::Arc<Vec<strop_lsp::ProtoSymbol>>,
     /// `Space a`: the typed owners behind the rows.
     pub(crate) actions: Option<super::actions::ActionOwner>,
 }
@@ -172,7 +172,7 @@ impl PickerGlue {
             indent_target: None,
             search: None,
             preview_witness: None,
-            symbols_candidates: Vec::new(),
+            symbols_candidates: Default::default(),
             wsymbols_generation: 0,
             actions: None,
         }

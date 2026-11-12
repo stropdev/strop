@@ -21,6 +21,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0095](0095-the-keys.md) | Neovim's keys: the grammar's missing operators, motions and text objects, Vim's range rules, one operator engine for Normal and Visual, a Visual key table, the `:` line with ranges and abbreviations, a generated differential corpus (≥ 600 cases) and a Missing list in `strop compat`. Adopts 0091 §2 and 0092 §3; amends 0001 §5.10, 0016, 0003 §5.7 |
 | [0097](0097-collect.md) | the collect flow: `Ctrl-O` waits for the search and lands on the selected hit; `]q` / `[q` step hits in the collection, `Enter` opens the file; collections named for their search; amends 0094 §3.1 |
 | [0098](0098-modeline-design.md) | the modeline: one spacing scale, a 10-cell chip, a pending-keys slot, fixed-width position fields, one keep-order table for truncation, card margins and the `:` card's single text column. Amends 0088 §2 and 0032 |
+| [0099](0099-caching.md) | caching: one proved core (`strop_kernel::cache`), validity by exact (subject, producer, version), builds that never block; document symbols kept per revision and fetched ahead of the key, with a syntax outline where no server serves the file. Git history designed, deferred. Amends 0047 §1 (a symbols list is revision-exact, never a snapshot) |
 
 ## Proposed — not implemented
 

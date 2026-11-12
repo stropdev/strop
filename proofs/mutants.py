@@ -34,6 +34,46 @@ class Mutant:
 
 
 MUTANTS = (
+    # an entry computed for another version of its subject is never served
+    Mutant("cache-version-ignored", "cache.rs",
+           "    slot.live && slot.subject == subject && slot.producer == producer && slot.version == version\n",
+           "    slot.live && slot.subject == subject && slot.producer == producer\n",
+           ("Strop.Kernel.holds_spec",)),
+    # a retired slot is never served
+    Mutant("cache-dead-served", "cache.rs",
+           "    slot.live && slot.subject == subject && slot.producer == producer && slot.version == version\n",
+           "    slot.subject == subject && slot.producer == producer && slot.version == version\n",
+           ("Strop.Kernel.holds_spec",)),
+    # an invalidation by subject and producer covers only slots matching both
+    Mutant("cache-retire-overreach", "cache.rs",
+           "    (!by_subject || slot.subject == subject) && (!by_producer || slot.producer == producer)\n",
+           "    (!by_subject || slot.subject == subject) || (!by_producer || slot.producer == producer)\n",
+           ("Strop.Kernel.selects_spec",)),
+    # a covered slot is dead after the invalidation
+    Mutant("cache-retire-keeps-live", "cache.rs",
+           "            slot.live = false;\n",
+           "            slot.live = true;\n",
+           ("Strop.Kernel.retire_loop_spec",)),
+    # a use changes the tick and nothing else: it must not revive a dead slot
+    Mutant("cache-touch-revives", "cache.rs",
+           "        slot.used = now;\n",
+           "        slot.used = now;\n        slot.live = true;\n",
+           ("Strop.Kernel.touch_spec",)),
+    # with no dead slot the least recently used entry goes, not the most recent
+    Mutant("cache-evicts-newest", "cache.rs",
+           "        if best == slots.len() || slot.used < oldest {",
+           "        if best == slots.len() || slot.used > oldest {",
+           ("Strop.Kernel.victim_loop_spec",)),
+    # a value over the limit is refused: the cost bound is the memory bound
+    Mutant("cache-cost-unbounded", "cache.rs",
+           "    if cost > limit {\n        return None;\n    }\n",
+           "",
+           ("Strop.Kernel.place_spec",)),
+    # a refresh retires the pair's previous entry before storing the new one
+    Mutant("cache-place-keeps-previous", "cache.rs",
+           "    retire(slots, subject, producer, true, true);\n",
+           "",
+           ("Strop.Kernel.place_spec",)),
     # right affinity: an anchor exactly at the old end moves with the text after it
     Mutant("map-left-affinity", "editmap.rs",
            "    } else if position >= old_end {",
