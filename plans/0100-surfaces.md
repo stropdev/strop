@@ -964,3 +964,10 @@ These are taste. The plan takes the first option in each.
    yanked row is `sha subject`; or in the buffer text as columns.
 8. **The 72-column warning** in the commit message: on, or leave the buffer
    alone.
+
+### Decided (maintainer, 2026-11-12)
+
+1 drop the numbers; 2 band; 3 the rule runs full width; 7 author and age
+render-only at the right (step B — the typed log rows of §7 are in scope
+for 0.64). The rest take the plan's first option: 4 the path alone, 5 keep
+the rail, 6 sha grey with coloured lanes, 8 the 72-column warning on.

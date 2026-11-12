@@ -29,6 +29,8 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 |---|---|
 | [0060](0060-debugger-workflow-and-architecture.md) | debugger workflow; supersedes the 0019 sketch |
 | [0100](0100-surfaces.md) | one look for the collection and the git buffers: a block is a ruled heading, its rows and one empty row; a jump inside a block is a band; the buffer holds words and the renderer draws lines. Investigation, mock-ups and build steps; would amend 0097 §3.4, 0096 §2.1 and 0010 §4 |
+||||||| 476f9d9
+| [0101](0101-history-and-limits.md) | investigation and work order, nothing implemented: a private commit-graph and streamed rows for the log and file history (no row cache, the user's repository untouched); the LSP reply bound restated as a decode-memory budget, an over-budget reply failing one request instead of the server, `UNASKED_LINES` deleted; collections close the files they loaded that were never shown or edited. No kernel change. Would amend 0099 §4.2 and §8, 0097 §6, 0094 §5 |
 
 ## Retired or superseded
 
