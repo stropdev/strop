@@ -169,7 +169,11 @@ pub(super) async fn run(
     });
     let result = {
         let mut run = std::pin::pin!(mainloop.run_buffered(
-            Observed::new(BoundedFrames::new(stdout), &label, Direction::Rx).compat(),
+            // The trace observes what the server sent; the guard then
+            // decides what the decoder may see.
+            BoundedFrames::new(Observed::new(stdout, &label, Direction::Rx))
+                .reporting(dropped(&launch.tx, launch.id, &launch.name))
+                .compat(),
             Observed::new(
                 FramedWriter::new(stdin, launch.outbound.clone()),
                 &label,
@@ -206,6 +210,23 @@ pub(super) async fn run(
     let stderr = String::from_utf8_lossy(&tail.lock()).trim().to_string();
     let error = result.err().map(|error| error.to_string());
     launch.fail(launch.exit_reason(status, &stderr, error));
+}
+
+/// The editor is told once that a notification too large to decode was
+/// dropped; the connection goes on.
+pub(super) fn dropped(
+    tx: &Sender<LspEvent>,
+    server: ServerId,
+    name: &str,
+) -> impl FnMut(usize) + Send + 'static {
+    let (tx, name) = (tx.clone(), name.to_owned());
+    move |tokens| {
+        let _ = tx.send(LspEvent::NotificationDropped {
+            server,
+            name: name.clone(),
+            tokens,
+        });
+    }
 }
 
 /// Wait out the grace after stdin EOF, then kill. `None` only when the

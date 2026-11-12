@@ -202,6 +202,14 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
             LspEvent::ServerMessage { server, name, text } => {
                 json!({"service":"lsp","result":"message","server":server,"name":name,"bytes":text.len()})
             }
+            LspEvent::NotificationDropped {
+                server,
+                name,
+                tokens,
+            } => json!({
+                "service":"lsp","result":"notification-dropped","server":server,
+                "name":name,"tokens":tokens,
+            }),
             LspEvent::Diagnostics { context, diags, .. } => json!({
                 "service":"lsp","result":"diagnostics","context":context,"count":diags.len(),
             }),

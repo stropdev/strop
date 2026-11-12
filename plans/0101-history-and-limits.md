@@ -1,7 +1,8 @@
 # 0101 — History on huge repositories, the LSP reply bound, and collections that close what they opened
 
-- Status: **in force** (2026-11-12). Parts A and C landed as §7 orders;
-  §11 is the record, with the measured after-numbers and the departures.
+- Status: **in force** (2026-11-12). All three parts landed as §7 orders;
+  §4.4 (part B) and §11 (parts A and C) are the record, with the measured
+  after-numbers and the departures.
 - Source: the three follow-ups 0.63 left — [0099](0099-caching.md) §4.2 (git
   history) and §8 (the `documentSymbol` reply bound and its `UNASKED_LINES`
   stopgap), and [0097](0097-collect.md) §6 / [0094](0094-change.md) §5 (the
@@ -317,6 +318,32 @@ reply answered as an error instead of dropping the connection.**
 - **Keeping the pass-through reader and only changing the bound.** Then
   deleting `UNASKED_LINES` would let a background request kill the server on
   a 100,000-line file, on every revision.
+
+### 4.4 Implementation record (Part B, landed)
+
+- `strop-lsp/src/client/frame_limits/{mod,scan,tests}.rs`: the frame
+  assembler and its scanner. The trace (`trace_io::Observed`) now sits
+  *inside* the guard, so it records the bytes the server sent, not the error
+  that stands for an over-budget reply.
+- **One departure: `DECODE_BYTES_PER_TOKEN` is 408, not 384**, so the limit
+  is 1,315,860 tokens. §4.1's table was taken with `preserve_order`; the
+  shipped binary does not have it (only `tree-sitter`'s build script enables
+  it, and build-dependency features do not reach the target under resolver
+  2), so a `Value` object is a `BTreeMap`. On that decoder the worst shape is
+  `[{"a":0},…]` at 371 B per token, not `[[0],…]` at 344; 371 with a tenth of
+  margin is 408. `tests/decode_cost.rs` measures, per token: symbols 187,
+  semantic tokens 99, `[[0],…]` 224, `[{"a":[0]},…]` 350, `[{"a":0},…]` 371,
+  `[0,…]` 160, `[[[]],…]` 149, `{"k":0,…}` 149. 20,000 symbols peak at
+  167 MB and fit; 40,000 do not.
+- The dropped notification reaches the editor as
+  `LspEvent::NotificationDropped` (once per connection) and reads
+  `lsp: <server>: a notification too large to decode (over 512 MiB) was
+  ignored`.
+- The engine test of §5.2 that a huge buffer is asked ahead of the key needs
+  a live client, which engine unit tests do not have; it is a binary journey
+  instead (`crates/strop/tests/symbols.rs`, a Python fixture server that
+  answers 40,000 symbols first and one after): one `initialize`, the
+  background ask, the press's ask, and the press's list on screen.
 
 ## 5. Tests (the contract)
 

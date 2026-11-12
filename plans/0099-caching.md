@@ -56,6 +56,9 @@ Two things the measurements showed that were not expected:
   raising or streaming it is its own change (§8). Until then a server is not
   asked *unasked* about a buffer of more than 5,000 lines (§4.1): a
   background request must never be what costs the user their server.
+  *Fixed by [0101](0101-history-and-limits.md) §4: the bound is a 512 MiB
+  decode budget, an over-budget reply fails only its request, and the
+  5,000-line stopgap is gone.*
 
 ## 2. What is cached, and what is not
 
@@ -195,10 +198,9 @@ was added to `Editor`.
   starts one — a `documentSymbol` request, or an extraction on the outline
   thread from a frozen rope. So symbols are fetched when a file is opened, when
   its server becomes ready, when the buffer is switched and when an edit is
-  finished — not once per typed character.
-  A server is not asked unasked about a buffer of more than 5,000 lines (§1:
-  an oversized reply drops the connection); such a file's list is kept from
-  the first press on.
+  finished — not once per typed character. A buffer of any length is asked
+  about (0101 §4.2: a reply too large to decode fails that one request; the
+  5,000-line stopgap this plan shipped with is gone).
 - **`Space s`.** A kept list opens the picker in the same turn of the event
   loop, with no request. A build already running for exactly this document,
   revision and source is adopted: the picker opens when it lands. Otherwise
@@ -333,8 +335,8 @@ the recorded-action path, where the after-event work runs.
 ## 8. Deferred
 
 - ~~Git history (§4.2)~~ — fixed without a cache by 0101 §2.
-- The `documentSymbol` reply bound that restarts the server on huge files
-  (§1). When it is fixed, `UNASKED_LINES` in `editor/symbols/mod.rs` goes.
+- ~~The `documentSymbol` reply bound that restarts the server on huge files
+  (§1).~~ Done in 0101 §4: `UNASKED_LINES` is deleted.
 - A persistent path index for the finder (0093 §9), if a real tree misses its
   budget.
 - Symbols for remote (SSH) documents use the same store and the same rule;
