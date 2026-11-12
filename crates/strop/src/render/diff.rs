@@ -10,7 +10,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::editor::{DiffRow, Surface};
-use strop_git::{DiffLine, LineOrigin};
+use strop_git::LineOrigin;
 
 use super::style::Tokens;
 
@@ -49,46 +49,6 @@ pub(crate) fn emphasis_span(surface: Option<&Surface>, row: usize) -> Option<(us
         return None;
     };
     hunks.emphasis(row)
-}
-
-/// The diff gutter for one content row: origin marker + both sides'
-/// numbers, right-aligned, absent side blank (never `0`). The cursor
-/// row's numbers light up like the standard gutter's do.
-pub(crate) fn diff_gutter(
-    t: &Tokens,
-    line: &DiffLine,
-    is_cursor_row: bool,
-    digits: usize,
-) -> Vec<Span<'static>> {
-    // the sign column keeps one vocabulary (rule 5): `▎` in the origin
-    // colour; the cursor row lights its numbers in the accent instead
-    let (marker, color) = match line.origin {
-        LineOrigin::Addition => ("▎", t.diff_add),
-        LineOrigin::Deletion => ("▎", t.diff_del),
-        LineOrigin::Context => (" ", t.muted),
-    };
-    let number = |n: Option<usize>| {
-        let style = if is_cursor_row {
-            Style::default().fg(t.accent)
-        } else {
-            Style::default().fg(t.muted)
-        };
-        let text = match n {
-            Some(n) => format!("{:>width$}", n, width = digits),
-            None => " ".repeat(digits),
-        };
-        Span::styled(text, style)
-    };
-    vec![
-        Span::styled(
-            marker,
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ),
-        number(line.old_lineno),
-        Span::styled(" ", Style::default()),
-        number(line.new_lineno),
-        Span::styled(" ", Style::default()),
-    ]
 }
 
 /// Stats and hunk-header rows: a quiet band, label/stats left, nothing

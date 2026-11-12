@@ -161,7 +161,7 @@ pub(super) fn render_pane(
         .as_ref()
         .map_or(0, |(tree, _, _)| tree.outer_width());
     let blame = editor.blame_gutter_for(view.doc);
-    let number_width = editor.number_gutter_width(view.doc);
+    let (gutter_kind, number_width) = editor.gutter(view.doc);
     let inset = sidebar_w
         + blame.map_or(0, |_| strop_engine::editor::prepare::BLAME_GUTTER_WIDTH)
         + number_width;
@@ -280,15 +280,42 @@ pub(super) fn render_pane(
                 style.decorations = decorated.spans;
             }
             Some(crate::editor::DiffRow::Line(dl)) => {
-                left.extend(diff::diff_gutter(
+                left.extend(crate::render::block::gutter::pair(
                     t,
                     dl,
                     line_idx == cur_line,
-                    diff_digits(surface),
+                    number_width,
                 ));
                 style.diff_line = Some(dl);
                 style.emphasis = diff::emphasis_span(surface, line_idx);
                 style.row_bg = diff::origin_bg(t, dl.origin);
+            }
+            None if gutter_kind == strop_engine::editor::prepare::Gutter::List => {
+                // the list gutter (0100 §3.5): no numbers; the cursor row
+                // is marked in the sign column, the directory buffer's idiom
+                use crate::render::block::gutter::Sign;
+                // rows nested under an expanded status file carry the rail
+                let nested = matches!(
+                    surface,
+                    Some(crate::editor::Surface::Status { view, .. })
+                        if view.row(line_idx).is_some_and(|row| {
+                            !matches!(row, crate::editor::StatusRow::File(_)) && row.entry().is_some()
+                        })
+                );
+                let sign = if view.overlays && line_idx == cur_line {
+                    Sign::Cursor
+                } else if nested {
+                    Sign::Rail
+                } else {
+                    Sign::Blank
+                };
+                left.extend(crate::render::block::gutter::list(t, sign));
+                if let Some(row) =
+                    diff::surface_list_row(t, surface, line_idx, width, line_idx == cur_line)
+                {
+                    style.decorations = row.spans;
+                    style.row_bg = row.row_bg;
+                }
             }
             None => {
                 let num_style = if line_idx == cur_line {
@@ -454,15 +481,6 @@ pub(super) fn render_pane(
     }
 }
 
-/// Digits per side for a Diff surface's number columns.
-fn diff_digits(surface: Option<&crate::editor::Surface>) -> usize {
-    let width = strop_engine::editor::prepare::gutter_width(surface);
-    if width == crate::render::buffer::GUTTER as usize {
-        3
-    } else {
-        (width - 3) / 2
-    }
-}
 /// The sign column: diagnostics win over git signs (merged gutter,
 /// 0009), and only the pane's own buffer shows them.
 fn gutter_mark(

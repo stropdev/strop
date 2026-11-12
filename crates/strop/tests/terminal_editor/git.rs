@@ -77,8 +77,8 @@ fn edit_two_files_stage_a_file_and_a_hunk_then_commit() {
     tui.send(b" gg");
     let listed = tui.until(|screen| {
         screen.contains("Unstaged (2)")
-            && numbered_line(screen, "M a.txt")
-            && numbered_line(screen, "M b.txt")
+            && list_row(screen, "M a.txt")
+            && list_row(screen, "M b.txt")
     });
     assert!(
         !listed.contains(".strop-lock") && !listed.contains("Untracked"),
@@ -87,14 +87,14 @@ fn edit_two_files_stage_a_file_and_a_hunk_then_commit() {
 
     // one hunk of a.txt: expand, step onto the first hunk, stage it
     tui.send(b"=");
-    tui.until(|screen| numbered_line(screen, "+top") && numbered_line(screen, "+bottom"));
+    tui.until(|screen| list_row(screen, "+top") && list_row(screen, "+bottom"));
     tui.send(b"]c");
     tui.send(b"s");
     tui.until(|screen| screen.contains("hunk staged") && screen.contains("Staged (1)"));
 
     // all of b.txt: its row in the unstaged list, then s
     tui.send(b"G");
-    tui.until(|screen| numbered_line(screen, "M b.txt"));
+    tui.until(|screen| list_row(screen, "M b.txt"));
     tui.send(b"s");
     tui.until(|screen| screen.contains("staged b.txt") && screen.contains("Staged (2)"));
 

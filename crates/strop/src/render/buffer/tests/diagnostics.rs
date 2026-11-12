@@ -55,7 +55,7 @@ fn diagnostics_use_gutter_and_eol_without_underlining_source_cells() {
         .expect("cursor-line diagnostic note");
     assert_eq!(note.fg, crate::render::tokens().dim(error));
 
-    let gutter = crate::render::buffer::GUTTER;
+    let gutter = strop_engine::editor::prepare::STANDARD_GUTTER as u16;
     let source: String = (gutter..gutter + 10)
         .map(|x| buffer[(x, 0)].symbol())
         .collect();

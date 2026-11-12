@@ -1,28 +1,28 @@
-   1 Head: main                                                                                                                             
-   2                                                                                                                                        
-   3 Staged (1)                                                                                                                             
-   4 A docs/git.md                                                                                                                          
-   5                                                                                                                                        
-   6 Unstaged (2)                                                                                                                           
-   7 M notes.md                                                                                                                             
-   8 M src/lib.rs                                                                                                                           
-   9 @@ -1,5 +1,5 @@                                                                                                                        
-  10  line 1                                                                                                                                
-  11 -line 2                                                                                                                                
-  12 +line two                                                                                                                              
-  13  line 3                                                                                                                                
-  14  line 4                                                                                                                                
-  15  line 5                                                                                                                                
-  16 @@ -16,5 +16,5 @@                                                                                                                      
-  17  line 16                                                                                                                               
-  18  line 17                                                                                                                               
-  19  line 18                                                                                                                               
-  20 -line 19                                                                                                                               
-  21 +line nineteen                                                                                                                         
-  22  line 20                                                                                                                               
-  23                                                                                                                                        
-  24 Untracked (1)                                                                                                                          
-  25 ? scratch.txt                                                                                                                          
+  Head: main                                                                                                                                
+                                                                                                                                            
+  Staged (1)                                                                                                                                
+  A docs/git.md                                                                                                                             
+                                                                                                                                            
+  Unstaged (2)                                                                                                                              
+  M notes.md                                                                                                                                
+  M src/lib.rs                                                                                                                              
+▌ @@ -1,5 +1,5 @@                                                                                                                           
+│  line 1                                                                                                                                   
+│ -line 2                                                                                                                                   
+│ +line two                                                                                                                                 
+│  line 3                                                                                                                                   
+│  line 4                                                                                                                                   
+│  line 5                                                                                                                                   
+│ @@ -16,5 +16,5 @@                                                                                                                         
+│  line 16                                                                                                                                  
+│  line 17                                                                                                                                  
+│  line 18                                                                                                                                  
+│ -line 19                                                                                                                                  
+│ +line nineteen                                                                                                                            
+│  line 20                                                                                                                                  
+                                                                                                                                            
+  Untracked (1)                                                                                                                             
+  ? scratch.txt                                                                                                                             
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
@@ -39,31 +39,31 @@
 ~                                                                                                                                           
   NORMAL    main  git status [RO]                                                                                                36%   9:1  
 
-  0: 1:#656d7b/#f6f2e9+b 10:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 124:reset/#f6f2e9 1:reset/reset
-  1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
-  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 6:#262a30/#f6f2e9+b 4:#656d7b/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#3f7a3a/#f6f2e9 5:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 121:reset/#f6f2e9 1:reset/reset
-  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
-  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9+b 4:#656d7b/#f6f2e9 122:reset/#f6f2e9 1:reset/reset
-  6: 1:#656d7b/#f6f2e9+b 6:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
-  7: 1:#656d7b/#f6f2e9+b 6:#656d7b/#f6f2e9 4:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 122:reset/#f6f2e9 1:reset/reset
-  8: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 3:#656d7b/#efeadf 4:#b8323f/#efeadf 1:#656d7b/#efeadf 4:#3f7a3a/#efeadf 3:#656d7b/#efeadf 119:#efeadf/#efeadf 1:reset/reset
-  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
- 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#b8323f/#f3dcd8 127:#f3dcd8/#f3dcd8 1:reset/reset
- 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#3f7a3a/#dfeadb 125:#dfeadb/#dfeadb 1:reset/reset
- 12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
- 13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
- 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
- 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#656d7b/#fdfbf6 5:#b8323f/#fdfbf6 1:#656d7b/#fdfbf6 5:#3f7a3a/#fdfbf6 3:#656d7b/#fdfbf6 117:#fdfbf6/#fdfbf6 1:reset/reset
- 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 126:reset/#f6f2e9 1:reset/reset
- 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 126:reset/#f6f2e9 1:reset/reset
- 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 126:reset/#f6f2e9 1:reset/reset
- 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#b8323f/#f3dcd8 126:#f3dcd8/#f3dcd8 1:reset/reset
- 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 14:#3f7a3a/#dfeadb 120:#dfeadb/#dfeadb 1:reset/reset
- 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 126:reset/#f6f2e9 1:reset/reset
- 22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
- 23: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9+b 4:#656d7b/#f6f2e9 121:reset/#f6f2e9 1:reset/reset
- 24: 1:#656d7b/#f6f2e9+b 6:#656d7b/#f6f2e9 11:#262a30/#f6f2e9 121:reset/#f6f2e9 1:reset/reset
+  0: 2:reset/#f6f2e9 6:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 127:reset/#f6f2e9 1:reset/reset
+  1: 139:reset/#f6f2e9 1:reset/reset
+  2: 2:reset/#f6f2e9 6:#262a30/#f6f2e9+b 4:#656d7b/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
+  3: 2:reset/#f6f2e9 2:#3f7a3a/#f6f2e9 5:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
+  4: 139:reset/#f6f2e9 1:reset/reset
+  5: 2:reset/#f6f2e9 8:#262a30/#f6f2e9+b 4:#656d7b/#f6f2e9 125:reset/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 2:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
+  7: 2:reset/#f6f2e9 2:#656d7b/#f6f2e9 4:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 125:reset/#f6f2e9 1:reset/reset
+  8: 1:#8a510f/#efeadf 1:reset/#efeadf 3:#656d7b/#efeadf 4:#b8323f/#efeadf 1:#656d7b/#efeadf 4:#3f7a3a/#efeadf 3:#656d7b/#efeadf 122:#efeadf/#efeadf 1:reset/reset
+  9: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#262a30/#f6f2e9 130:reset/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#b8323f/#f3dcd8 130:#f3dcd8/#f3dcd8 1:reset/reset
+ 11: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 9:#3f7a3a/#dfeadb 128:#dfeadb/#dfeadb 1:reset/reset
+ 12: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#262a30/#f6f2e9 130:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#262a30/#f6f2e9 130:reset/#f6f2e9 1:reset/reset
+ 14: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#262a30/#f6f2e9 130:reset/#f6f2e9 1:reset/reset
+ 15: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#fdfbf6 5:#b8323f/#fdfbf6 1:#656d7b/#fdfbf6 5:#3f7a3a/#fdfbf6 3:#656d7b/#fdfbf6 120:#fdfbf6/#fdfbf6 1:reset/reset
+ 16: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9 129:reset/#f6f2e9 1:reset/reset
+ 17: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9 129:reset/#f6f2e9 1:reset/reset
+ 18: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9 129:reset/#f6f2e9 1:reset/reset
+ 19: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 8:#b8323f/#f3dcd8 129:#f3dcd8/#f3dcd8 1:reset/reset
+ 20: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 14:#3f7a3a/#dfeadb 123:#dfeadb/#dfeadb 1:reset/reset
+ 21: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9 129:reset/#f6f2e9 1:reset/reset
+ 22: 139:reset/#f6f2e9 1:reset/reset
+ 23: 2:reset/#f6f2e9 9:#262a30/#f6f2e9+b 4:#656d7b/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
+ 24: 2:reset/#f6f2e9 2:#656d7b/#f6f2e9 11:#262a30/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
  25: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  26: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  27: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset

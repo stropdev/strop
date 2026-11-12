@@ -37,10 +37,6 @@ mod scrollbar;
 use content::{content_spans, fixed_spans};
 use rows::render_pane;
 
-/// Width of the standard gutter: sign column + 3-digit number + space
-/// (engine-owned; preparation clamps against the same constant).
-pub(crate) const GUTTER: u16 = strop_engine::editor::prepare::STANDARD_GUTTER as u16;
-
 /// Invariant guard: every pane row is written out to the pane's full
 /// width. ratatui's Paragraph clears the cells its lines don't touch
 /// today, but a renderer relying on that is one widget swap away from

@@ -360,6 +360,13 @@ impl Drop for Tui {
 }
 /// 0064 §1: every pane reserves its last column for the scrollbar
 /// track (`│`/`▮`/`▎`), so full-row comparisons ignore that cell.
+/// A row of a list surface (status, log, files: 0100 §3.5): no line
+/// numbers, only a sign column — the cursor's `▌` or a nested row's `│`.
+pub(crate) fn list_row(screen: &str, expected: &str) -> bool {
+    screen
+        .lines()
+        .any(|row| strip_track(row).trim_start_matches(['▌', '│']).trim_start() == expected)
+}
 pub(crate) fn strip_track(row: &str) -> &str {
     let trimmed = row.trim();
     trimmed
