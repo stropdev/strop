@@ -28,6 +28,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | Plan | Note |
 |---|---|
 | [0060](0060-debugger-workflow-and-architecture.md) | debugger workflow; supersedes the 0019 sketch |
+| [0100](0100-surfaces.md) | one look for the collection and the git buffers: a block is a ruled heading, its rows and one empty row; a jump inside a block is a band; the buffer holds words and the renderer draws lines. Investigation, mock-ups and build steps; would amend 0097 §3.4, 0096 §2.1 and 0010 §4 |
 
 ## Retired or superseded
 
