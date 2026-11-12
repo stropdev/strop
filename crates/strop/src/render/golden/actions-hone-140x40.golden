@@ -37,7 +37,7 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- PICKER   src/render/statusline.rs                                                                                              ▲1  9:1  45%
+  PICKER    src/render/statusline.rs                                                                                        ▲1   45%   9:1  
 
   0: 1:#464b54/#15171c+b 4:#464b54/#15171c 51:#454a52/#15171c+i 83:reset/#15171c 1:reset/reset
   1: 1:#464b54/#15171c+b 4:#464b54/#15171c 3:#454a52/#15171c+i 131:reset/#15171c 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#2c303a/#15171c 138:reset/#15171c 1:reset/reset
  37: 1:#2c303a/#15171c 138:reset/#15171c 1:reset/reset
  38: 1:#2c303a/#15171c 138:reset/#15171c 1:reset/reset
- 39: 8:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 94:reset/#17191f 2:#6c5737/#17191f 2:reset/#17191f 8:#464b54/#17191f
+ 39: 10:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 88:reset/#17191f 2:#6c5737/#17191f 2:reset/#17191f 4:#464b54/#17191f 2:reset/#17191f 6:#565961/#17191f

@@ -21,7 +21,7 @@
   21 +line nineteen                                                             
   22  line 20                                                                   
   23                                                                            
- NORMAL   main  git status [RO]                                         9:1  36%
+  NORMAL    main  git status [RO]                                    36%   9:1  
 
   0: 1:#656d7b/#f6f2e9+b 10:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 64:reset/#f6f2e9 1:#656d7b/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
@@ -46,4 +46,4 @@
  20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 14:#3f7a3a/#dfeadb 60:#dfeadb/#dfeadb 1:reset/reset
  21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 66:reset/#f6f2e9 1:reset/reset
  22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
- 23: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 10:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 41:reset/#fdfbf6 8:#656d7b/#fdfbf6
+ 23: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 10:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 35:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

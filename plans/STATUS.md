@@ -19,6 +19,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0090](0090-one-editor.md) | containers cut, nvim terminal model, remote over plain SSH behind an ergonomics gate (0.55–0.56) |
 | [0092](0092-registers-and-pinned-project.md) | one register file with Neovim's rules and one read path for every text input; project root pinned at launch; library files owned by the project's server; crashed servers restart within a budget. Amends 0074 (field registers), 0053 (Search toggle is `ctrl-t`), 0049 §4.6 |
 | [0095](0095-the-keys.md) | Neovim's keys: the grammar's missing operators, motions and text objects, Vim's range rules, one operator engine for Normal and Visual, a Visual key table, the `:` line with ranges and abbreviations, a generated differential corpus (≥ 600 cases) and a Missing list in `strop compat`. Adopts 0091 §2 and 0092 §3; amends 0001 §5.10, 0016, 0003 §5.7 |
+| [0098](0098-modeline-design.md) | the modeline: one spacing scale, a 10-cell chip, a pending-keys slot, fixed-width position fields, one keep-order table for truncation, card margins and the `:` card's single text column. Amends 0088 §2 and 0032 |
 
 ## Proposed — not implemented
 

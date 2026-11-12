@@ -37,7 +37,7 @@
   37    ]f                            next file card (collections)                                                                          
   38    [f                            previous file card (collections)                                                                      
   39    ]e                            next excerpt (collections; +/- context)                                                               
- NORMAL   help [RO]                                                                                                                  1:1  0%
+  NORMAL    help [RO]                                                                                                            0%    1:1  
 
   0: 1:#858c9a/#15171c+b 4:#e8a848/#15171c 12:#e6e1d6/#15171c+b 28:#858c9a/#15171c 94:reset/#15171c 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:#858c9a/#15171c
@@ -78,4 +78,4 @@
  36: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 30:#e6e1d6/#15171c 73:reset/#15171c 1:reset/reset
  37: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 34:#e6e1d6/#15171c 69:reset/#15171c 1:reset/reset
  38: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 41:#e6e1d6/#15171c 62:reset/#15171c 1:reset/reset
- 39: 8:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 114:reset/#1c1f25 7:#858c9a/#1c1f25
+ 39: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 106:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25

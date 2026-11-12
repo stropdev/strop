@@ -21,7 +21,7 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
-BRANCHES  main  src/lib.rs                                               1:1  5%
+ BRANCHES   main  src/lib.rs                                          5%   1:1  
 
   0: 1:#b4b6b7/#f2eee4+b 4:#c5a986/#f2eee4 5:#989795/#f2eee4 1:#cda68f/#f2eee4 68:#f2eee4/#f2eee4 1:reset/reset
   1: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 5:#989795/#f6f2e9 1:#cda68f/#f6f2e9 68:reset/#f6f2e9 1:reset/reset
@@ -46,4 +46,4 @@ BRANCHES  main  src/lib.rs                                               1:1  5%
  20: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 23: 8:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 4:#a8a9a9/#f8f5ee 6:#989795/#f8f5ee 47:reset/#f8f5ee 7:#b4b6b7/#f8f5ee
+ 23: 10:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 4:#a8a9a9/#f8f5ee 6:#989795/#f8f5ee 40:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 6:#a8a9a9/#f8f5ee

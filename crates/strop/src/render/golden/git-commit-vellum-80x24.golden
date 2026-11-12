@@ -21,7 +21,7 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
- INSERT   main  .git/COMMIT_EDITMSG ●                                  1:28  10%
+  INSERT    main  .git/COMMIT_EDITMSG ●                              10%   1:28 
 
   0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 27:#262a30/#efeadf 47:#efeadf/#efeadf 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 23: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 14:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 34:reset/#fdfbf6 9:#656d7b/#fdfbf6
+ 23: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 14:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 29:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

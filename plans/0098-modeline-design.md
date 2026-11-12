@@ -194,40 +194,40 @@ percentage beside it. The pending keys are the accent (rule 2, unchanged).
 ### 3.3 What gives way: shrink before drop
 
 Each part of the row has a *floor* (the fewest cells worth showing) and a
-*natural* width. Layout is two passes over two tables — data, not a chain of
-`if`s:
+*natural* width. Layout is one pass over one table — data, not a chain of
+`if`s. In table order, each part takes what it wants from the cells still free:
+its natural width if that fits, less if it must, and nothing if not even its
+floor and separator fit.
 
-1. **Keep.** In keep order, a part is shown if its floor and its separator
-   fit in what is left.
-2. **Grow.** What is left after every floor is handed out in grow order, each
-   part taking up to its natural width.
-
-| Keep order (first = last to leave) | Floor |
+| Order (first = last to leave) | Floor |
 |---|---|
 | chip | 10 |
 | `line:col` | whole |
 | service badge (`LSP!`) | whole |
-| filename with `●`, `[RO]`, `N×` | 4 cells of name + marks |
+| filename with `●`, `[RO]`, `N×` — up to two thirds of the free cells | 4 cells of name + marks |
 | pending keys | 3 |
+| filename again: the rest it wants | |
 | `ssh:host` | 4 |
 | `REC` | whole |
-| terminal attention, hints | whole badges; the first hint |
+| terminal attention | whole badges |
+| terminal hints | the first hint; whole chords only (rule 10) |
 | diagnostics | whole |
 | search count | whole |
 | indent | whole |
-| branch | 8 cells of name + marks |
 | percentage | whole |
+| branch | 8 cells of name + marks |
 | directory | 4 |
+| the pending slot's padding | 0 |
 
-Grow order: filename (to two thirds of the spare cells, so a huge name cannot
-starve the footer), pending footer, filename again, `ssh:host`, hints (whole
-chords, rule 10), branch, directory, then the pending slot's padding.
-
-So the directory still yields first and the filename last, but a long branch
-now shortens to `feature/…` before it disappears, a part that was dropped
-comes back as soon as its floor fits, and typing a key takes only the cells the
-key needs (M5). When not even chip, position and badge fit, the row is the bare
-`chip · line:col` of 0032, with the safety marks inside the chip.
+So the part lowest in the table shrinks first, shrinks to its floor before it
+is dropped, and is dropped before the part above it loses a cell. The directory
+still yields first and the filename last, as in 0032; what changes is that a
+long branch shortens to `feature/…` before it disappears, a small part is shown
+whenever its floor fits (a dropped part comes back as soon as there is room),
+and typing a key takes only the cells the key needs (M5). The filename stops at
+two thirds on its first turn so a huge name cannot starve the footer. When not
+even chip, position and badge fit, the row is the bare `chip · line:col` of
+0032, with the safety marks inside the chip.
 
 ### 3.4 The cards
 
@@ -266,14 +266,15 @@ key needs (M5). When not even chip, position and badge fit, the row is the bare
 
 ## 5. Test contract
 
-- Golden frames (`render/golden/`) for the row in six states — Normal with
-  branch, diagnostics and a long path; a pending operator with a count; the
-  leader with its card; macro recording; `:w` with completions; a search count —
-  at 48, 80, 120 and 200 columns, plus the existing 140×40 and 80×24 scenes.
-- The allocator, as a pure function: never hands out more cells than the row
-  has; never gives a part less than its floor or more than its natural width;
-  a part is absent only if its floor did not fit; widening the row never
-  shrinks a part that was shown.
+- Golden frames (`render/golden/modeline-*`) for the row and the cards beside
+  it in six states — Normal; a register, count and operator pending; the leader
+  with its card; macro recording; `:w` with completions; a search count — each
+  with a long branch, a long path and diagnostics, at 48, 80, 120 and 200
+  columns, plus the existing 140×40 and 80×24 scenes.
+- The allocator, as a pure function: every cell of the row is accounted for;
+  no part gets less than its floor or more than its natural width; the lowest
+  part shrinks, then leaves, before the next gives up a cell; narrowing the row,
+  parts leave from the bottom of the table.
 - The chip is 10 cells with padding either side in every mode.
 - Typing `d`, `2`, `i` leaves the first key's column unchanged; on a row with
   spare cells nothing else on the row moves.

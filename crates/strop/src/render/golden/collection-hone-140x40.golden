@@ -37,7 +37,7 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- NORMAL   collection: search ●                                                                                                     5:14  20%
+  NORMAL    collection: search ●                                                                                                 20%   5:14 
 
   0: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 44:#e6e1d6/#15171c 90:reset/#15171c 1:reset/reset
   1: 1:#858c9a/#15171c+b 7:#858c9a/#15171c 14:#e6e1d6/#15171c+b 117:#858c9a/#15171c 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
  37: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
  38: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
- 39: 8:#15171c/#e8a848+b 2:reset/#1c1f25 18:#e6e1d6/#1c1f25 2:#d9a85a/#1c1f25 101:reset/#1c1f25 9:#858c9a/#1c1f25
+ 39: 10:#15171c/#e8a848+b 2:reset/#1c1f25 18:#e6e1d6/#1c1f25 2:#d9a85a/#1c1f25 96:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25
