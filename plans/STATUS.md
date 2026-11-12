@@ -28,6 +28,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | Plan | Note |
 |---|---|
 | [0060](0060-debugger-workflow-and-architecture.md) | debugger workflow; supersedes the 0019 sketch |
+| [0101](0101-history-and-limits.md) | investigation and work order, nothing implemented: a private commit-graph and streamed rows for the log and file history (no row cache, the user's repository untouched); the LSP reply bound restated as a decode-memory budget, an over-budget reply failing one request instead of the server, `UNASKED_LINES` deleted; collections close the files they loaded that were never shown or edited. No kernel change. Would amend 0099 §4.2 and §8, 0097 §6, 0094 §5 |
 
 ## Retired or superseded
 
