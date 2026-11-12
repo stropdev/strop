@@ -178,9 +178,11 @@ session and `u` and then edited a second place.
 ## 5. Deferred
 
 - Closing the buffers a replace loaded once its review closes (0091 §4.3's
-  "36 buffers open"). `close_buffer` closes the buffer in view and resets
-  the cursor of the one it lands on; closing others needs a close that does
-  neither, which is a document-lifecycle change of its own.
+  "36 buffers open"). The close that moves no cursor now exists
+  (`Editor::release_document`, [0101](0101-history-and-limits.md) §6.2) and
+  collections use it for the files they loaded; the replace review does
+  not yet — every file a replace loads is edited by it, and 0101 §6.4 keeps
+  edited files open for their undo history.
 - The undo tree (`Space u`) of a collection: restoring an arbitrary revision
   there is written through as a plain edit, not as source history moves.
 

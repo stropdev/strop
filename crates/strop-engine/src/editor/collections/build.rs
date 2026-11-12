@@ -28,7 +28,9 @@ fn label(kind: strop_picker::Kind, query: &str) -> String {
 }
 
 impl Editor {
-    fn collection_sources(&self) -> HashMap<strop_workspace::ResourceLocation, DocumentId> {
+    pub(super) fn collection_sources(
+        &self,
+    ) -> HashMap<strop_workspace::ResourceLocation, DocumentId> {
         let mut sources = HashMap::new();
         for (id, document) in self.docs.iter() {
             if matches!(
@@ -179,7 +181,11 @@ impl Editor {
             self.build_collection(build);
             return;
         }
-        self.collection_build = Some(build);
+        let abandoned = self.collection_build.replace(build).is_some();
+        if abandoned {
+            // What the abandoned build loaded and this one does not use.
+            crate::editor::collections::loans::release_unheld(self);
+        }
         self.message = format!("collecting: opening {}…", super::counted(waiting, "file"));
         for target in to_load {
             self.request_target(
@@ -214,7 +220,14 @@ impl Editor {
         }
     }
 
+    /// Assemble a build, then let go of whatever it (or a build it
+    /// replaced) loaded and no longer uses (0101 §6.1).
     fn build_collection(&mut self, build: CollectionBuild) {
+        self.assemble_collection(build);
+        crate::editor::collections::loans::release_unheld(self);
+    }
+
+    fn assemble_collection(&mut self, build: CollectionBuild) {
         let take_focus = build.focus_on_ready
             && self
                 .panes
@@ -400,6 +413,13 @@ impl Editor {
             collection.cursor = Some(landing);
         }
         if take_focus {
+            if self.current() != id {
+                // `:q` hands the cursor back to where `Ctrl-O` was pressed.
+                let origin = self.jump_record();
+                if let Some(document) = self.docs.get_mut(id) {
+                    document.set_return_point(origin);
+                }
+            }
             self.drop_stale_scratch(id);
             self.push_jump();
             self.switch_to(id);

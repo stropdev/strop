@@ -417,14 +417,15 @@ pub mod git {
         }
     }
 
-    /// Settle discovery, then the open log surface's rows.
+    /// Settle discovery, then the open log surface's rows — every page,
+    /// up to the read's end.
     pub fn pump(e: &mut Editor) {
         settle(e, |e| e.git.is_some());
         settle(e, |e| {
             matches!(
                 e.surface(),
                 Some(Surface::CommitLog { rows, .. }) if !rows.is_empty()
-            )
+            ) && !e.log_requests.contains_key(&e.current())
         });
     }
 

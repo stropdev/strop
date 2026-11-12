@@ -376,3 +376,36 @@ fn staging_an_untracked_file_from_its_diff_adds_the_file() {
     assert_eq!(e.message, "staged scratch.txt");
     assert!(porcelain(dir.path()).contains("A  scratch.txt\n"));
 }
+
+/// Every file row's `+N -M` is in the snapshot (0100 §7), the same
+/// lines its expanded diff shows; a binary file says so instead.
+#[test]
+fn the_snapshot_counts_each_files_lines() {
+    let (dir, mut e) = work_fixture();
+    dirty(dir.path());
+    std::fs::write(dir.path().join("logo.bin"), b"\0\x01\x02").unwrap();
+    git(dir.path(), &["add", "logo.bin"]);
+    key(&mut e, " gg");
+    let view = e.status_view().expect("a status buffer");
+    let stat = |rel: &str| {
+        let index = view
+            .tree
+            .entries
+            .iter()
+            .position(|entry| entry.rel == Path::new(rel))
+            .unwrap_or_else(|| panic!("no entry {rel}"));
+        view.stat(index)
+            .unwrap_or_else(|| panic!("no count for {rel}"))
+    };
+    let lines = |added, deleted| strop_git::LineStat {
+        added,
+        deleted,
+        binary: false,
+    };
+    assert_eq!(stat("src/lib.rs"), lines(2, 2), "two lines changed");
+    assert_eq!(stat("notes.md"), lines(1, 0));
+    assert_eq!(stat("scratch.txt"), lines(1, 0), "untracked: all added");
+    assert!(stat("logo.bin").binary);
+    // the buffer text is what it was
+    assert!(text(&e).contains("A logo.bin\n"), "{}", text(&e));
+}

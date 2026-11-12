@@ -37,6 +37,15 @@ impl Editor {
                     trace::services::rejected("lsp", "failure for an unowned server");
                 }
             }
+            LspEvent::NotificationDropped { server, name, .. } => {
+                if self.lsp_servers.iter().any(|s| s.id == server) {
+                    self.message = format!(
+                        "lsp: {name}: a notification too large to decode (over 512 MiB) was ignored"
+                    );
+                } else {
+                    trace::services::rejected("lsp", "dropped notice for an unowned server");
+                }
+            }
             LspEvent::ServerMessage { server, name, text } => {
                 if self.lsp_servers.iter().any(|s| s.id == server) {
                     self.message = format!("lsp: {name}: {text}");

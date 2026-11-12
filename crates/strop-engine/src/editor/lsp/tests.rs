@@ -297,6 +297,38 @@ fn server_message_reaches_the_modeline_from_its_owner() {
 }
 
 #[test]
+fn a_dropped_notification_is_said_for_its_owner_only() {
+    let mut e = editor("a\n");
+    let server = ServerId::new(6);
+    e.lsp_servers.push(LspServer {
+        id: server,
+        name: "pyright".into(),
+        language: "python".into(),
+        root: PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
+        client: None,
+        rx: std::sync::mpsc::channel().1,
+        ready: true,
+    });
+    e.handle_lsp_event(LspEvent::NotificationDropped {
+        server,
+        name: "pyright".into(),
+        tokens: 2_000_000,
+    });
+    assert_eq!(
+        e.message,
+        "lsp: pyright: a notification too large to decode (over 512 MiB) was ignored"
+    );
+    e.message = "later state".into();
+    e.handle_lsp_event(LspEvent::NotificationDropped {
+        server: ServerId::new(99),
+        name: "ghost".into(),
+        tokens: 2_000_000,
+    });
+    assert_eq!(e.message, "later state");
+}
+
+#[test]
 fn resolved_diag_round_trips_serde() {
     let diag = ResolvedDiag {
         line: LineIndex::new(2),

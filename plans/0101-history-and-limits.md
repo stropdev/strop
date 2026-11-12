@@ -1,7 +1,8 @@
 # 0101 — History on huge repositories, the LSP reply bound, and collections that close what they opened
 
-- Status: **proposed** (2026-11-12). Investigation and recommendation only:
-  nothing here is implemented. §7 is the work order for whoever executes it.
+- Status: **in force** (2026-11-12). All three parts landed as §7 orders;
+  §4.4 (part B) and §11 (parts A and C) are the record, with the measured
+  after-numbers and the departures.
 - Source: the three follow-ups 0.63 left — [0099](0099-caching.md) §4.2 (git
   history) and §8 (the `documentSymbol` reply bound and its `UNASKED_LINES`
   stopgap), and [0097](0097-collect.md) §6 / [0094](0094-change.md) §5 (the
@@ -317,6 +318,32 @@ reply answered as an error instead of dropping the connection.**
 - **Keeping the pass-through reader and only changing the bound.** Then
   deleting `UNASKED_LINES` would let a background request kill the server on
   a 100,000-line file, on every revision.
+
+### 4.4 Implementation record (Part B, landed)
+
+- `strop-lsp/src/client/frame_limits/{mod,scan,tests}.rs`: the frame
+  assembler and its scanner. The trace (`trace_io::Observed`) now sits
+  *inside* the guard, so it records the bytes the server sent, not the error
+  that stands for an over-budget reply.
+- **One departure: `DECODE_BYTES_PER_TOKEN` is 408, not 384**, so the limit
+  is 1,315,860 tokens. §4.1's table was taken with `preserve_order`; the
+  shipped binary does not have it (only `tree-sitter`'s build script enables
+  it, and build-dependency features do not reach the target under resolver
+  2), so a `Value` object is a `BTreeMap`. On that decoder the worst shape is
+  `[{"a":0},…]` at 371 B per token, not `[[0],…]` at 344; 371 with a tenth of
+  margin is 408. `tests/decode_cost.rs` measures, per token: symbols 187,
+  semantic tokens 99, `[[0],…]` 224, `[{"a":[0]},…]` 350, `[{"a":0},…]` 371,
+  `[0,…]` 160, `[[[]],…]` 149, `{"k":0,…}` 149. 20,000 symbols peak at
+  167 MB and fit; 40,000 do not.
+- The dropped notification reaches the editor as
+  `LspEvent::NotificationDropped` (once per connection) and reads
+  `lsp: <server>: a notification too large to decode (over 512 MiB) was
+  ignored`.
+- The engine test of §5.2 that a huge buffer is asked ahead of the key needs
+  a live client, which engine unit tests do not have; it is a binary journey
+  instead (`crates/strop/tests/symbols.rs`, a Python fixture server that
+  answers 40,000 symbols first and one after): one `initialize`, the
+  background ask, the press's ask, and the press's list on screen.
 
 ## 5. Tests (the contract)
 
@@ -648,3 +675,71 @@ slow press (over 100 ms), never at open; 3 a file edited and saved only
 through a collection stays open (its undo history); 4 the decode budget is
 512 MiB. 5: the log's typed rows (0100 §7) and streaming land together in
 0.64; the job side owns the fetch, 0100 owns the drawing.
+
+## 11. Implementation record (parts A and C)
+
+Release build, same machine and repositories as §1; the planner's scripts.
+
+| Flow | Before (§1.3) | After |
+|---|---|---|
+| `Space g l`, big, first press / later | 424–436 ms | 481 ms (no graph yet: builds one) / 7.3–9.1 ms |
+| `Space g l`, bigm, first / later | 448–495 ms | 620 ms / 6.6–8.5 ms |
+| `Space g h`, big, first / later, to the last row | 869–914 ms | 889–940 ms / 219–280 ms |
+| `Space g h`, bigm, first / later | 880–895 ms | 912 ms / 215–229 ms |
+
+`strop --bench history` (150,000 commits, a merge every 50): log with a
+graph p95 4.9 ms (budget 50); file history first rows p95 33.5 ms (budget
+60) and complete 213–225 ms; first press without a graph 447 ms (log) and
+886 ms (file); the build, both steps, 2.9 s. The planner's repositories are
+byte-for-byte untouched after the runs (`objects/info/` stays empty).
+
+What landed where:
+
+- `strop-git`: `log.rs` (typed `LogRow`/`LogCommit`, the incremental
+  `LogRecords`, `read_history` streaming over `GitExec::stream_records`);
+  `graph.rs` (the private graph: key, `owns_graph`, two-step `build` by
+  scratch and rename, `evict`, `for_history`); `memory.rs` keeps blame and
+  gains `show_commit` (`CommitSummary`, `ChangedFile` with `FileStatus`,
+  `old_path`, `binary`), parsed from `--raw --numstat -z` in `numstat.rs`;
+  `status.rs` gains `LineStat` and `FileDelta::stat`.
+- Engine: `git_memory/history.rs` (open, pages, completion — out of
+  `mod.rs` and `jobs.rs`), `git_memory/graph/` (the trigger: `GraphState`
+  inside `GitWork`, no new `Editor` field); `GitJob::{LogPage, Graph}`;
+  `log_requests` entries carry the revision the next page expects.
+  `collections/loans.rs`, `document/close.rs` (part C).
+- `strop --bench history`, run by `release-local.sh qualify`.
+
+Departures and choices where the plan left room:
+
+- **Data for 0100 §7 rides along.** Log rows are typed (graph, sha, short
+  sha, refs, subject, author, author time) and the row text is derived from
+  those fields, so the buffer reads exactly as before. To keep it exact the
+  row also carries git's own `%ar` wording, used only for that text; a
+  renderer words the age from the timestamp. The commit file list carries
+  the commit's subject, body, author and time
+  (`Surface::ChangedFiles::commit`) and per file the status letter, the old
+  path of a rename or copy, and a binary flag. The status snapshot carries
+  each entry's `+N -M` and binary flag (`StatusView::stat`), from two
+  whole-tree diffs (HEAD→index, index→worktree with untracked files as
+  added). They follow the snapshot as a second message of the same job
+  (`GitJob::StatusSnapshot`, then the completion with the counts): on a
+  status of 2,000 changed files counting takes about 180 ms, and the list
+  is on screen at 6 ms as before rather than waiting for it (the first
+  version counted per entry inside the snapshot: 900 ms). The status list has no rename
+  detection (libgit2's default, and 0100 §4.2 draws a rename as `D` and
+  `A`), so a status entry has no old path.
+- The commit's message is a second `git show -s` run rather than one run
+  with the message and the records: the two outputs have no separator a
+  message can not contain.
+- Pages: the first goes when 50 rows are in or 30 ms have passed since the
+  read started, whichever is first; later pages every 30 ms. A file history
+  of 75 commits therefore shows its rows at about 33 ms, not git's 6 ms.
+- The build is one job running both steps, each installed by rename as it
+  finishes; it counts as pending work for the headless `settle` and the
+  quit path (which cancels it), never for a key.
+- `:q` on a collection returns the cursor to where `Ctrl-O` was pressed
+  (the collection carries a return point, like any temporary surface):
+  §5.3's first test asks for it and the landing used to be the most
+  recently used buffer.
+- A loaned file that was edited loses its loan at the next sweep, so the
+  message about unsaved files is said once, by the close that leaves them.

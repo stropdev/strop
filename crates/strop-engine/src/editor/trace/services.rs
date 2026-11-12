@@ -44,10 +44,17 @@ pub fn git(job: &GitJob) {
         GitJob::Context(value) => completion("git", "context", value),
         GitJob::Hunks(value) => completion("git", "hunks", value),
         GitJob::Mutation(value) => completion("git", "mutation", value),
+        GitJob::LogPage(ticket, rows) => {
+            json!({"service":"git","result":"log-page","ticket":ticket,"rows":rows.len()})
+        }
         GitJob::Log(value) => completion("git", "log", value),
+        GitJob::Graph(value) => completion("git", "graph", value),
         GitJob::Gutter(value) => completion("git", "gutter", value),
         GitJob::Card(value) => completion("git", "blame_card", value),
         GitJob::Dive(value) => completion("git", "dive", value),
+        GitJob::StatusSnapshot(ticket, data) => {
+            json!({"service":"git","result":"status-snapshot","ticket":ticket,"entries":data.tree.entries.len()})
+        }
         GitJob::Status(value) => completion("git", "status", value),
         GitJob::CommitDraft(value) => completion("git", "commit_draft", value),
         GitJob::Porcelain(value) => completion("git", "porcelain", value),
@@ -198,6 +205,14 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
             LspEvent::ServerMessage { server, name, text } => {
                 json!({"service":"lsp","result":"message","server":server,"name":name,"bytes":text.len()})
             }
+            LspEvent::NotificationDropped {
+                server,
+                name,
+                tokens,
+            } => json!({
+                "service":"lsp","result":"notification-dropped","server":server,
+                "name":name,"tokens":tokens,
+            }),
             LspEvent::Diagnostics { context, diags, .. } => json!({
                 "service":"lsp","result":"diagnostics","context":context,"count":diags.len(),
             }),

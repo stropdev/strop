@@ -125,6 +125,7 @@ mod tests {
             path: path.into(),
             added: 1,
             deleted: 0,
+            ..Default::default()
         }
     }
 
@@ -155,6 +156,7 @@ mod tests {
             path: "漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字.rs".into(),
             added: 1,
             deleted: 0,
+            ..Default::default()
         }];
         let sidebar = Sidebar::build(&files);
         for row in 0..sidebar.rows().len() + 3 {
@@ -184,11 +186,13 @@ mod tests {
                 path: a.clone(),
                 added: 1,
                 deleted: 0,
+                ..Default::default()
             },
             ChangedFile {
                 path: b.clone(),
                 added: 1,
                 deleted: 0,
+                ..Default::default()
             },
         ];
         let sidebar = Sidebar::build(&files);

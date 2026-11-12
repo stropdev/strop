@@ -177,8 +177,7 @@ pub struct Editor {
     pub(crate) git_discovery: strop_core::worker::Load<git_memory::ContextKey>,
     pub(crate) hunk_load: strop_core::worker::Load<git_memory::HunkKey>,
     pub(crate) hunks_untracked: bool,
-    pub(crate) log_requests:
-        HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::LogKey>>,
+    pub(crate) log_requests: HashMap<strop_core::id::DocumentId, git_memory::LogRequest>,
     pub(crate) card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
     pub(crate) dive_requests:
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,

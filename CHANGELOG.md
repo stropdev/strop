@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The log and a file's history are fast on huge repositories** (plans/0101). The first `Space g l` or `Space g h` that takes more than a tenth of a second has strop write a commit-graph for that repository in the background; after that the log opens in about 10 ms on 150,000 commits instead of half a second, and a file's history shows its first rows at once and the rest as git finds them. The file lives in strop's state directory (`~/.local/state/strop/graphs/`); your repository is not touched.
+- **Closing a collection closes the files it opened that you never looked at** (plans/0101). Files you opened from it, edited through it, or had open before stay; a file with unsaved changes is never closed, and the message says how many stayed for that reason. `:q` on a collection now returns the cursor to where you pressed `Ctrl-O`.
+
+### Fixed
+
+- **A huge symbol list no longer restarts the language server** (plans/0101). A reply too large to read now fails only the request that asked for it, and the server keeps running; before, `Space s` on a file with more than about 6,000 symbols dropped the connection and restarted the server. Lists of up to 20,000 symbols are read and kept, and very long files get their symbols fetched ahead of the key like any other.
+
 ## 0.63.0 — 2026-11-12
 
 ### Changed

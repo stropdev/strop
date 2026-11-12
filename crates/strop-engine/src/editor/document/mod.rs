@@ -11,6 +11,7 @@ pub use indentation::{detect_indent, Detection, Indent, IndentOverride, IndentSo
 mod directory;
 pub use directory::Directory;
 pub use remote::RemoteDocument;
+mod close;
 mod snapshot;
 
 pub use super::jumps::JumpRecord;
@@ -41,6 +42,11 @@ pub struct Document {
     /// untouched, the save path's disk-baseline check keeps its refusal,
     /// and only a fresh observation (guarded reload, save) clears this.
     pub external_change: bool,
+    /// Loaded in the background by a collection build (0101 §6.1): the
+    /// buffer revision at load. Cleared for good once the document is on
+    /// screen after an event, or once it is edited; while it stands and
+    /// nothing holds the document, the collection's close releases it.
+    pub(crate) loan: Option<strop_core::id::BufferRevision>,
 }
 
 impl Document {
@@ -79,6 +85,7 @@ impl Document {
             detection,
             source: DocumentSource::File,
             external_change: false,
+            loan: None,
         }
     }
 
@@ -93,6 +100,7 @@ impl Document {
             detection,
             source: DocumentSource::Scratch,
             external_change: false,
+            loan: None,
         }
     }
 
@@ -109,6 +117,7 @@ impl Document {
                 content: surface,
             })),
             external_change: false,
+            loan: None,
             indent_override: IndentOverride::default(),
             detection: None,
         }
@@ -128,6 +137,7 @@ impl Document {
             detection: None,
             source: DocumentSource::Output { return_to: None },
             external_change: false,
+            loan: None,
         }
     }
 
@@ -295,46 +305,6 @@ impl Editor {
             .expect("test document")
     }
 
-    /// vim's [No Name] rule: the untouched initial scratch buffer is
-    /// replaced by the first real thing you open. `replacement` is the
-    /// document taking over (0023 §1): panes on the scratch rebind to
-    /// it FIRST — the drop used to strand them (the :vs crash probe).
-    pub(crate) fn drop_stale_scratch(&mut self, replacement: strop_core::id::DocumentId) {
-        // find the pristine scratch (pathless, untouched) wherever it is
-        // — the replacement exists by now, so len() is no longer the
-        // signal (0023: it must fire AFTER the insert so panes can rebind)
-        let scratch = self.docs.iter().find_map(|(id, d)| {
-            let b = &d.buf;
-            (b.path.is_none()
-                && !b.is_dirty()
-                && b.len_bytes() == 0
-                && b.name.is_none()
-                && id != replacement)
-                .then_some(id)
-        });
-        let Some(scratch) = scratch else {
-            return;
-        };
-        if self
-            .pending
-            .prompt()
-            .is_some_and(|prompt| prompt.origin().pane.doc == scratch)
-        {
-            self.cancel_pending();
-        }
-        for pane in &mut self.panes {
-            if pane.doc == scratch {
-                pane.doc = replacement;
-            }
-        }
-        self.lsp_close_document(scratch);
-        self.docs.remove(scratch);
-        self.mru.retain(|&x| x != scratch);
-        if self.view().doc == scratch {
-            self.view_mut().doc = replacement;
-        }
-    }
-
     /// The active document (derived: the active view's document).
     #[inline]
     pub fn current(&self) -> strop_core::id::DocumentId {
@@ -443,127 +413,6 @@ impl Editor {
         self.view().view_top
     }
 
-    /// Close the current document; quits when the last one closes.
-    /// Returns false when unsaved changes block the close. Generational
-    /// ids mean no reindexing anywhere (0014 wave 2).
-    pub fn close_buffer(&mut self, force: bool) -> bool {
-        self.remember_directory_view();
-        // `:q` on a running terminal hides it (Neovim: the job keeps
-        // running, `Space b` returns to it); `:bd!` is the kill (0090 §4).
-        // Only the last buffer refuses, and `:q!` there stops and quits.
-        if self
-            .terminal_phase(self.current())
-            .is_some_and(strop_terminal::model::Phase::live)
-        {
-            if let Some(next) = self
-                .mru
-                .iter()
-                .copied()
-                .find(|id| *id != self.current() && self.docs.get(*id).is_some())
-            {
-                self.switch_to(next);
-                self.mode = super::Mode::Normal;
-                self.message = "terminal hidden and still running; Space b returns to it".into();
-                return true;
-            }
-            if force {
-                self.stop_all_terminals();
-                self.should_quit = true;
-                return true;
-            }
-            self.message = "terminal is running — :q! stops it and quits, :bd! kills it".into();
-            return false;
-        }
-        if !force && self.docs.len() == 1 && self.filesystem.unconfirmed() > 0 {
-            self.message =
-                "filesystem outcomes are unconfirmed; :fs verify before quitting, or :q! to force"
-                    .into();
-            return false;
-        }
-        // A collection's dirty bit is presentation state (0049 §5): the
-        // sources hold the real unsaved edits — the view always closes.
-        let view_only = self.collections.contains_key(&self.current());
-        if self.buf().is_dirty() && !force && !view_only {
-            self.message = "unsaved changes — :q! to force".into();
-            return false;
-        }
-        self.cancel_pending();
-        self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
-        if self.docs.len() == 1 {
-            self.request_session_save();
-        }
-        let closed = self.current();
-        self.forget_terminal_document(closed);
-        let mut affected_collections = Vec::new();
-        for (id, collection) in &mut self.collections {
-            let before = collection.excerpts.len();
-            collection
-                .excerpts
-                .retain(|excerpt| excerpt.source != closed);
-            if collection.excerpts.len() != before {
-                affected_collections.push(*id);
-            }
-        }
-        self.drop_remote_write(closed);
-        self.analysis
-            .forget(super::analysis::AnalysisTarget::Document(closed));
-        self.cancel_directory_filter(closed);
-        self.lsp_close_document(closed);
-        self.shell_document_closed(closed);
-        self.revoke_git_requests_for(closed);
-        self.blame_gutters.remove(&closed);
-        self.collections.remove(&closed);
-        let review = self.review.forget(closed);
-        self.filesystem_forget_view(closed);
-        let return_to = self
-            .docs
-            .remove(closed)
-            .and_then(|document| document.return_point().cloned());
-        if self.docs.is_empty() {
-            self.collection_build = None;
-            self.panes.clear();
-            self.active_pane = 0;
-            self.should_quit = true;
-        } else {
-            self.mru.retain(|&x| x != closed);
-            self.generation += 1; // document set changed: old jobs are stale (0011 §2)
-            let next = self.mru.first().copied().unwrap_or_else(|| {
-                self.docs
-                    .iter()
-                    .next()
-                    .map(|(id, _)| id)
-                    .expect("docs non-empty")
-            });
-            for pane in &mut self.panes {
-                if pane.doc == closed {
-                    pane.doc = next;
-                    pane.sels = Default::default();
-                    pane.view_top = 0;
-                    pane.hscroll = strop_core::id::DisplayColumn::new(0);
-                    pane.desired_column = None;
-                }
-            }
-            self.switch_to(next);
-            self.set_head(0);
-            self.view_mut().view_top = 0;
-            self.view_mut().hscroll = strop_core::id::DisplayColumn::new(0);
-            // a closing surface hands the cursor and view back to the
-            // document it opened from — by id, no index math (0011 §1)
-            if let Some(ret) = return_to.filter(|ret| self.docs.get(ret.document).is_some()) {
-                self.jump_to(ret);
-            } else if self.doc(next).directory_metadata_ref().is_some() {
-                self.restore_directory_view(next);
-            }
-        }
-        for collection in affected_collections {
-            self.collection_render_view(collection);
-        }
-        self.lsp_retire_workspace_servers();
-        if let Some(review) = review.filter(|_| !self.should_quit) {
-            self.review_closed(review);
-        }
-        true
-    }
     /// `:bd` / `:bd!`: delete the document, not just a pane. A running
     /// terminal refuses without `!`; with it the child is stopped and the
     /// buffer goes (Neovim's E89 and `:bd!`, 0090 §4).

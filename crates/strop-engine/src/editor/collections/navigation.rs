@@ -18,9 +18,7 @@ impl Editor {
             .find(|excerpt| excerpt.view_line == line)
             .map(|excerpt| (excerpt.source, excerpt.start))
     }
-}
 
-impl Editor {
     /// `]f` / `[f` in a collection: next / previous file card (0049 §5's
     /// excerpt navigation through the command registry).
     pub fn collection_file_step_pub(&mut self, forward: bool) {

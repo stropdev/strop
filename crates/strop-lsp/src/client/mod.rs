@@ -22,6 +22,9 @@ mod tests;
 mod trace_io;
 mod wire;
 
+pub use frame_limits::{
+    structure_tokens, DECODE_BYTES_PER_TOKEN, MAX_DECODE_BYTES, MAX_DECODE_TOKENS,
+};
 pub use spawn::SpawnError;
 
 /// Clones share one connection, its wire queue and runtime thread.

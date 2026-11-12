@@ -55,7 +55,7 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let target = match self.surface() {
             Some(Surface::CommitLog { rows, .. }) => {
-                let Some(sha) = rows.get(line).and_then(|r| r.sha.clone()) else {
+                let Some(sha) = rows.get(line).and_then(|r| r.sha()).map(str::to_string) else {
                     return;
                 };
                 DiveTarget::CommitFiles { sha }
@@ -190,11 +190,11 @@ impl Editor {
                                 );
                             }
                         };
-                        match strop_git::memory::show_stat(&exec, &cancel, sha) {
-                            Ok(files) => Outcome::Success(DiveData::Files(PreparedFiles::new(
-                                sha.clone(),
-                                files,
-                            ))),
+                        match strop_git::memory::show_commit(&exec, &cancel, sha) {
+                            Ok(detail) => Outcome::Success(DiveData::Files(
+                                PreparedFiles::new(sha.clone(), detail.files),
+                                Box::new(detail.summary),
+                            )),
                             Err(message) => {
                                 Outcome::failed(strop_core::worker::FailureKind::Exit, message)
                             }

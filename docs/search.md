@@ -213,6 +213,15 @@ files:
 - `:%s/old/new/g` in a collection substitutes inside the cards only, with
   the usual live preview.
 
+### Closing
+
+`:q` closes the collection and returns the cursor to where you pressed
+`Ctrl-O`. The files the collection had to open for you close with it,
+unless you looked at one (`Enter`, `]q` from a file, `:e`, the finder), or
+changed one: a changed file stays open so that its `u` still works, and
+one with unsaved changes is never closed — the message says how many.
+A file that was open before you collected is never closed by it.
+
 ### One command at every hit
 
 Vim's quickfix commands work on the collection you are in, or the one you

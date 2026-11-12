@@ -125,6 +125,26 @@ first.
   read-only buffer (a file opened with `-R`, a git view) there is no
   gutter; a card shows the blame for the current line instead.
 
+### Large repositories
+
+Without a commit-graph file, `git log --graph` reads every commit before it
+shows the first: about half a second on 150,000 commits, and twice that
+for one file's history. The first time the log or a file's history takes
+longer than a tenth of a second, strop writes a commit-graph for that
+repository in the background, and every later log is fast — about 10 ms,
+with a file's history showing its first rows within tens of milliseconds
+and the rest as git finds them.
+
+The file goes in strop's own state directory,
+`$XDG_STATE_HOME/strop/graphs/` (`~/.local/state/strop/graphs/` when that
+is not set). Your repository is not modified: nothing is written into
+`.git`, no lock is taken. It is used only for the log and file history;
+git checks it against the repository, so an out-of-date one never changes
+what the log shows. strop keeps graphs for the 16 repositories used most
+recently. A repository with a commit-graph of its own (`git gc` writes
+one) gets none from strop. Setting `GIT_ALTERNATE_OBJECT_DIRECTORIES`
+yourself turns this off.
+
 ## SSH projects
 
 On an SSH host ([remote.md](remote.md)) the gutter marks, log, blame,

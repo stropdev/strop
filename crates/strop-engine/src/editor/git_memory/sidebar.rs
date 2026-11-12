@@ -141,6 +141,7 @@ mod tests {
             path: path.into(),
             added: 1,
             deleted: 0,
+            ..Default::default()
         }
     }
 
@@ -191,6 +192,7 @@ mod tests {
             path: "漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字.rs".into(),
             added: 1,
             deleted: 0,
+            ..Default::default()
         }];
         let sidebar = Sidebar::build(&files);
         assert_eq!(sidebar.width(), SIDEBAR_MAX);
