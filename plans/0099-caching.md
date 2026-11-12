@@ -342,8 +342,8 @@ one second apart while the server indexes:
 
 | `Space s` | Before | After |
 |---|---|---|
-| 806-line file, every press after the first | 3.5–22 ms, one request each | 2.0–2.3 ms, no request |
-| 15,400-line file, every press after the first | 60–66 ms, one request each | 3.6–4.4 ms, no request (the first press at a revision is the request: over 5,000 lines nothing is asked unasked) |
+| 806-line file, every press after the first | 3.5–22 ms, one request each | 2.0–2.6 ms, no request; the list was fetched when the server became ready |
+| 15,400-line file, every press after the first | 60–66 ms, one request each | 3.7–3.9 ms, no request. The first press at a revision is the one request, as before (over 5,000 lines nothing is asked unasked) |
 | Rust file with no server | a message | outline built in 34–37 ms at open; then 2 ms |
 | the press straight after an edit | as above | waits for the one build the edit started (27–60 ms), then shows the new rows |
 

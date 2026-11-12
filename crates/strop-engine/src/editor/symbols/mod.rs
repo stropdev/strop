@@ -250,14 +250,20 @@ pub(crate) fn open(editor: &mut Editor) {
             show(editor, producer, symbols);
             return;
         }
+        // Adopt the background build that is this very request. A build a
+        // press is already waiting for is not adopted twice: pressing
+        // again asks again, as it always did.
         if let Some(build) = editor.analysis.symbols.store.building_mut() {
-            if (build.document, build.revision, build.producer) == (document, revision, producer) {
+            if !build.open
+                && (build.document, build.revision, build.producer)
+                    == (document, revision, producer)
+            {
                 build.open = true;
                 return;
             }
         }
     }
-    // A user request never queues behind a background build.
+    // A user request never queues behind a build.
     editor.analysis.symbols.cancel_outline();
     editor.analysis.symbols.store.abandon();
     match source {

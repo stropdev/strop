@@ -485,3 +485,29 @@ fn a_server_is_not_asked_unasked_about_a_huge_buffer() {
     );
     assert_eq!(super::unasked(None, 1), None);
 }
+
+#[test]
+fn pressing_again_while_waiting_asks_again() {
+    let (release, gate) = mpsc::channel::<()>();
+    let mut e = editor("lib.rs", SOURCE);
+    let mut extractors = HashMap::new();
+    e.analysis.symbols = SymbolState::with_extract(Box::new(move |work| {
+        gate.recv().ok();
+        super::outline::extract(&mut extractors, work)
+    }));
+    turn(&mut e, Key::Esc);
+    let background = e.analysis.symbols.store.building().unwrap().id;
+    open(&mut e);
+    assert_eq!(
+        e.analysis.symbols.store.building().unwrap().id,
+        background,
+        "the first press adopts the build already running"
+    );
+    open(&mut e);
+    let asked = e.analysis.symbols.store.building().unwrap().id;
+    assert_ne!(asked, background, "the second press is a new request");
+    release.send(()).unwrap();
+    release.send(()).unwrap();
+    e.wait_analysis();
+    assert_eq!(rows(&e).unwrap().len(), 2);
+}

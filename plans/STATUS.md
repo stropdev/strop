@@ -19,6 +19,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0090](0090-one-editor.md) | containers cut, nvim terminal model, remote over plain SSH behind an ergonomics gate (0.55–0.56) |
 | [0092](0092-registers-and-pinned-project.md) | one register file with Neovim's rules and one read path for every text input; project root pinned at launch; library files owned by the project's server; crashed servers restart within a budget. Amends 0074 (field registers), 0053 (Search toggle is `ctrl-t`), 0049 §4.6 |
 | [0095](0095-the-keys.md) | Neovim's keys: the grammar's missing operators, motions and text objects, Vim's range rules, one operator engine for Normal and Visual, a Visual key table, the `:` line with ranges and abbreviations, a generated differential corpus (≥ 600 cases) and a Missing list in `strop compat`. Adopts 0091 §2 and 0092 §3; amends 0001 §5.10, 0016, 0003 §5.7 |
+| [0099](0099-caching.md) | caching: one proved core (`strop_kernel::cache`), validity by exact (subject, producer, version), builds that never block; document symbols kept per revision and fetched ahead of the key, with a syntax outline where no server serves the file. Git history designed, deferred. Amends 0047 §1 (a symbols list is revision-exact, never a snapshot) |
 
 ## Proposed — not implemented
 
