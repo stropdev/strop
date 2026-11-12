@@ -60,14 +60,26 @@ fn each(name: &str, scene: impl Fn(&Path, &mut Editor) -> Settle) {
     }
 }
 
-/// `Space g g` with one file's diff expanded and the cursor in a hunk.
+/// A committed binary file, then changed: the status shows it and its
+/// expansion is a note, not a diff.
+fn change_binary(root: &Path) {
+    std::fs::write(root.join("logo.bin"), [0u8, 1, 2, 3, 0, 255]).unwrap();
+    git(root, &["add", "logo.bin"]);
+    git(root, &["commit", "-qm", "logo"]);
+    std::fs::write(root.join("logo.bin"), [0u8, 9, 9, 9, 0, 255, 7]).unwrap();
+}
+
+/// `Space g g` with two files expanded — one of them binary — and the
+/// cursor in the second hunk (0100 §9).
 #[test]
 fn status_buffer() {
     each("git-status", |root, editor| {
+        change_binary(root);
         change(root);
         keys(editor, " gg");
-        keys(editor, "4j=");
-        keys(editor, "]c");
+        keys(editor, "3j=");
+        keys(editor, "3j=");
+        keys(editor, "]c]c");
         settle_analysis()
     });
 }

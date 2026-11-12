@@ -367,6 +367,15 @@ pub(crate) fn list_row(screen: &str, expected: &str) -> bool {
         .lines()
         .any(|row| strip_track(row).trim_start_matches(['▌', '│']).trim_start() == expected)
 }
+/// A ruled heading (0100 §3.2): `─ Name ──────── fact`.
+pub(crate) fn heading_row(screen: &str, name: &str, fact: &str) -> bool {
+    screen.lines().any(|row| {
+        let row = strip_track(row);
+        row.starts_with('─')
+            && row.contains(&format!(" {name} ─"))
+            && row.ends_with(&format!("─ {fact}"))
+    })
+}
 pub(crate) fn strip_track(row: &str) -> &str {
     let trimmed = row.trim();
     trimmed

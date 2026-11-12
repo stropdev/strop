@@ -12,13 +12,15 @@ use ratatui::text::Span;
 
 use crate::render::style::Tokens;
 
+pub(crate) mod diff_line;
 pub(crate) mod gutter;
 pub(crate) mod heading;
 
 /// One painted block row. `text` begins with the buffer row's own bytes
 /// (a clipped heading name excepted, 0100 §3.8); anything after them is
 /// render-only — padding, a leader, a fact.
-pub(crate) struct Painted {
+#[derive(Default)]
+pub(crate) struct Painted<'a> {
     pub gutter: Vec<Span<'static>>,
     pub text: Vec<Span<'static>>,
     /// The row's background across the text column (a break's band, the
@@ -27,9 +29,12 @@ pub(crate) struct Painted {
     /// Laid out against the pane, not the line: headings, breaks and
     /// titles ignore the pane's sideways scroll.
     pub fixed: bool,
+    /// A changed line: its origin drives the inks, and the changed byte
+    /// range (in the row's own bytes) is emphasised over the tint.
+    pub line: Option<(&'a strop_git::DiffLine, Option<(usize, usize)>)>,
 }
 
-impl Painted {
+impl Painted<'_> {
     /// A row with no gutter mark and plain text.
     pub(crate) fn blank(gutter_cells: usize) -> Self {
         Self {
@@ -37,6 +42,7 @@ impl Painted {
             text: Vec::new(),
             row_bg: None,
             fixed: false,
+            ..Default::default()
         }
     }
 
@@ -48,6 +54,7 @@ impl Painted {
             text: drawn.text,
             row_bg: None,
             fixed: true,
+            ..Default::default()
         }
     }
 
@@ -71,6 +78,7 @@ impl Painted {
             text: heading::clip_spans(label, text_cells),
             row_bg: Some(t.surface),
             fixed: true,
+            ..Default::default()
         }
     }
 
@@ -81,6 +89,7 @@ impl Painted {
             text: heading::clip_spans(text, text_cells),
             row_bg: None,
             fixed: true,
+            ..Default::default()
         }
     }
 }

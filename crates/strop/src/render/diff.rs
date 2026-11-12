@@ -6,11 +6,10 @@
 //! in `diff/list`; the blame column and commit file sidebar in
 //! `diff/margins` (0011/0032).
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::editor::{DiffRow, Surface};
-use strop_git::LineOrigin;
 
 use super::style::Tokens;
 
@@ -20,25 +19,7 @@ mod status;
 
 pub(crate) use list::{surface_list_row, RowDecoration};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};
-
-pub(crate) fn origin_fg(t: &Tokens, origin: LineOrigin) -> Color {
-    match origin {
-        LineOrigin::Addition => t.diff_add,
-        LineOrigin::Deletion => t.diff_del,
-        LineOrigin::Context => t.text,
-    }
-}
-
-/// Quiet full-row backgrounds for add/del rows — a visible scan signal
-/// that doesn't shout (tuicr's two-tier idea: quiet under content, loud
-/// markers); context rows stay on the base plane.
-pub(crate) fn origin_bg(t: &Tokens, origin: LineOrigin) -> Option<Color> {
-    match origin {
-        LineOrigin::Addition => Some(t.diff_add_bg),
-        LineOrigin::Deletion => Some(t.diff_del_bg),
-        LineOrigin::Context => None,
-    }
-}
+pub(crate) use status::painted as status_painted;
 
 /// Intra-line emphasis (delta-style): the byte range within this row's
 /// text that actually changed, paired against the opposite-side row at
@@ -75,72 +56,11 @@ pub(crate) fn structural_row(t: &Tokens, surface: &Surface, row: usize) -> Line<
         (Surface::Diff { .. }, _) => surface
             .diff_row(row)
             .and_then(|row| match row {
-                DiffRow::HunkHeader(hunk) => Some(hunk_header_spans(t, hunk)),
+                DiffRow::HunkHeader(hunk) => Some(super::block::diff_line::hunk_header(t, hunk)),
                 _ => None,
             })
             .map(|spans| Line::from(spans).style(Style::default().bg(t.surface)))
             .unwrap_or_default(),
         _ => Line::default(),
-    }
-}
-
-/// The hunk-header band: `@@` quiet, the old side in the deletion
-/// color, the new side in the addition color — the range reads
-/// structurally without shouting. The spans concatenate to exactly
-/// `Hunk::header()`, the string the buffer row holds.
-fn hunk_header_spans(t: &Tokens, hunk: &strop_git::Hunk) -> Vec<Span<'static>> {
-    vec![
-        Span::styled("@@ ", Style::default().fg(t.muted)),
-        Span::styled(
-            format!("-{},{}", hunk.old_start, hunk.old_count),
-            Style::default().fg(t.diff_del),
-        ),
-        Span::styled(" ", Style::default().fg(t.muted)),
-        Span::styled(
-            format!("+{},{}", hunk.new_start, hunk.new_count),
-            Style::default().fg(t.diff_add),
-        ),
-        Span::styled(" @@", Style::default().fg(t.muted)),
-    ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hunk_header_spans_keep_the_buffer_rows_bytes() {
-        let hunk = strop_git::Hunk {
-            kind: strop_git::HunkKind::Change,
-            new_start: 41,
-            new_count: 7,
-            old_start: 40,
-            old_count: 6,
-            lines: Vec::new(),
-        };
-        let t = Tokens::new(strop_core::theme::ThemeId::Hone);
-        let spans = hunk_header_spans(&t, &hunk);
-        let joined: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        // the buffer row IS Hunk::header(): byte equality keeps the
-        // caret, search and yank aligned with what is on screen
-        assert_eq!(joined, hunk.header());
-        assert_eq!(
-            spans
-                .iter()
-                .find(|s| s.content == "-40,6")
-                .unwrap()
-                .style
-                .fg,
-            Some(t.diff_del)
-        );
-        assert_eq!(
-            spans
-                .iter()
-                .find(|s| s.content == "+41,7")
-                .unwrap()
-                .style
-                .fg,
-            Some(t.diff_add)
-        );
     }
 }

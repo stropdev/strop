@@ -13,6 +13,7 @@ mod sidebar;
 pub use file_list::PreparedFiles;
 pub(crate) use hunk_set::HunkSet;
 pub(crate) use jobs::{git_failure, repo_host, repo_or_unavailable};
+pub(crate) use presentation::line_emphasis;
 pub use presentation::PreparedDiff;
 pub use sidebar::{Sidebar, SidebarRow};
 mod types;

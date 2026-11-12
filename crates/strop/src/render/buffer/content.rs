@@ -73,7 +73,7 @@ pub(super) fn content_spans(
             syn_idx += 1;
         }
         if let Some(line) = style.diff_line {
-            cell = cell.fg(diff::origin_fg(t, line.origin));
+            cell = cell.fg(crate::render::block::diff_line::origin_fg(t, line.origin));
         }
         if is_source && syn_idx < style.syn_spans.len() && style.syn_spans[syn_idx].start <= pos {
             cell = cell.patch(t.syntax(&style.syn_spans[syn_idx]));

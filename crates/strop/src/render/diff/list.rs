@@ -67,7 +67,7 @@ pub(crate) fn surface_list_row(
                 })
             }
         },
-        Surface::Status { view, .. } => super::status::status_row(t, view, line_idx, cursor_row),
+        Surface::Status { .. } => None,
         Surface::Diff { .. } => None,
     }
 }

@@ -111,7 +111,7 @@ pub(super) fn painted(
     text: ropey::RopeSlice<'_>,
     sign: Span<'static>,
     (gutter_cells, text_cells): (usize, usize),
-) -> crate::render::block::Painted {
+) -> crate::render::block::Painted<'static> {
     use crate::editor::CollectionRow;
     use crate::render::block::{self, gutter, heading, Painted};
     let cursor = view.overlays && editor.doc(view.doc).buf.line_of(view.cursor) == line;
@@ -170,9 +170,7 @@ pub(super) fn painted(
                 cursor,
                 gutter_cells,
             ),
-            text: Vec::new(),
-            row_bg: None,
-            fixed: false,
+            ..Default::default()
         },
     };
     if cursor {

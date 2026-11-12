@@ -145,9 +145,11 @@ pub(crate) fn layout(sizes: &Sizes, cells: usize) -> Grants {
     }
 }
 
-/// What the heading names: a file (drawn in the file-name idiom).
+/// What the heading names: a file (drawn in the file-name idiom) or any
+/// other words, as styled spans (cut at the end).
 pub(crate) enum Name<'a> {
     Path(&'a Label),
+    Words(Vec<Span<'static>>),
 }
 
 /// How the heading reads against the cursor (0088 rule 3).
@@ -244,6 +246,17 @@ impl Heading<'_> {
                     dir.to_owned(),
                     vec![Span::styled(leaf.to_owned(), style)],
                 )
+            }
+            Name::Words(spans) => {
+                let mut spans = spans.clone();
+                if self.focus == Focus::Elsewhere {
+                    for span in &mut spans {
+                        if span.style.fg == Some(t.text) {
+                            span.style = span.style.fg(t.secondary);
+                        }
+                    }
+                }
+                (None, String::new(), spans)
             }
         }
     }

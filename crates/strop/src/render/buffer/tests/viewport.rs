@@ -309,7 +309,8 @@ fn diff_background_and_annotation_use_absolute_cells() {
         text: b"unused".to_vec(),
         has_newline: true,
     };
-    let bg = super::super::diff::origin_bg(&crate::render::tokens(), line.origin).unwrap();
+    let bg =
+        crate::render::block::diff_line::origin_bg(&crate::render::tokens(), line.origin).unwrap();
     let style = super::super::RowStyle {
         diff_line: Some(&line),
         emphasis: Some((3, 6)),

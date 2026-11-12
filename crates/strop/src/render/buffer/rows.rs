@@ -257,11 +257,13 @@ pub(super) fn render_pane(
             }
             Some(crate::editor::ReviewRow::Removed) => {
                 style.row_fg = Some(t.diff_del);
-                style.row_bg = diff::origin_bg(t, strop_git::LineOrigin::Deletion);
+                style.row_bg =
+                    crate::render::block::diff_line::origin_bg(t, strop_git::LineOrigin::Deletion);
             }
             Some(crate::editor::ReviewRow::Added) => {
                 style.row_fg = Some(t.diff_add);
-                style.row_bg = diff::origin_bg(t, strop_git::LineOrigin::Addition);
+                style.row_bg =
+                    crate::render::block::diff_line::origin_bg(t, strop_git::LineOrigin::Addition);
             }
             Some(crate::editor::ReviewRow::Warning) => style.row_fg = Some(t.warning),
             _ => {}
@@ -289,7 +291,7 @@ pub(super) fn render_pane(
                 ));
                 style.diff_line = Some(dl);
                 style.emphasis = diff::emphasis_span(surface, line_idx);
-                style.row_bg = diff::origin_bg(t, dl.origin);
+                style.row_bg = crate::render::block::diff_line::origin_bg(t, dl.origin);
             }
             None if gutter_kind == strop_engine::editor::prepare::Gutter::Source => {
                 if let Some(info) = collection.rows.get(row).and_then(Option::as_ref) {
@@ -317,29 +319,34 @@ pub(super) fn render_pane(
             None if gutter_kind == strop_engine::editor::prepare::Gutter::List => {
                 // the list gutter (0100 §3.5): no numbers; the cursor row
                 // is marked in the sign column, the directory buffer's idiom
-                use crate::render::block::gutter::Sign;
-                // rows nested under an expanded status file carry the rail
-                let nested = matches!(
-                    surface,
-                    Some(crate::editor::Surface::Status { view, .. })
-                        if view.row(line_idx).is_some_and(|row| {
-                            !matches!(row, crate::editor::StatusRow::File(_)) && row.entry().is_some()
-                        })
-                );
-                let sign = if view.overlays && line_idx == cur_line {
-                    Sign::Cursor
-                } else if nested {
-                    Sign::Rail
-                } else {
-                    Sign::Blank
+                use crate::render::block::gutter::{self, Sign};
+                let cursor = view.overlays && line_idx == cur_line;
+                let painted = match surface {
+                    Some(crate::editor::Surface::Status { view: status, .. }) => {
+                        diff::status_painted(t, status, line_idx, cur_line, cursor, width)
+                    }
+                    _ => diff::surface_list_row(t, surface, line_idx, width, cursor).map(|row| {
+                        crate::render::block::Painted {
+                            gutter: Vec::new(),
+                            text: row.spans,
+                            row_bg: row.row_bg,
+                            ..Default::default()
+                        }
+                    }),
                 };
-                left.extend(crate::render::block::gutter::list(t, sign));
-                if let Some(row) =
-                    diff::surface_list_row(t, surface, line_idx, width, line_idx == cur_line)
-                {
-                    style.decorations = row.spans;
-                    style.row_bg = row.row_bg;
+                let mut painted = painted.unwrap_or_default();
+                if painted.gutter.is_empty() {
+                    painted.gutter =
+                        gutter::list(t, if cursor { Sign::Cursor } else { Sign::Blank });
                 }
+                left.extend(painted.gutter);
+                style.decorations = painted.text;
+                style.row_bg = painted.row_bg;
+                if let Some((line, emphasis)) = painted.line {
+                    style.diff_line = Some(line);
+                    style.emphasis = emphasis;
+                }
+                fixed = painted.fixed;
             }
             None => {
                 let num_style = if line_idx == cur_line {
