@@ -21,20 +21,10 @@ fn settle(e: &mut Editor, done: impl Fn(&Editor) -> bool) {
     }
 }
 
-/// The gutter is async: settle discovery, then refresh and settle
-/// the diff to a terminal Load state.
-fn pump_hunks(e: &mut Editor) {
-    settle(e, |e| e.git.is_some());
-    e.refresh_hunks();
-    let terminal = |e: &Editor| !matches!(e.hunk_load, strop_core::worker::Load::Running(_));
-    settle(e, terminal);
-    e.refresh_hunks(); // a failed load re-enqueues only via commands
-    settle(e, terminal);
-}
-
 use std::process::Command;
 
 use super::*;
+use crate::editor::test_support::git::pump_hunks;
 use crate::editor::Surface;
 use strop_core::frontend_input::Key;
 use strop_core::Buffer;

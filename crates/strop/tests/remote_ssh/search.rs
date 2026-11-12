@@ -27,14 +27,16 @@ fn search_here_preserves_ssh_identity_through_preview_open_collection_and_replay
     ]);
     let observed = states(&output);
     assert_eq!(observed[1]["register"], "REMOTE needle 日本語\n");
+    // the heading draws a remote file's authority as `ssh:host` before
+    // its path (0088 "File names", 0100 §3.2)
     assert!(
-        output.contains("ssh://fixture"),
+        output.contains("ssh:fixture /"),
         "SSH scope must be visible in the actual frame"
     );
     let collection = output.rsplit("─── frame ").next().unwrap();
     assert!(collection.contains("collection:"), "{collection}");
     assert!(collection.contains("REMOTE needle"), "{collection}");
-    assert!(collection.contains("ssh://fixture"), "{collection}");
+    assert!(collection.contains("ssh:fixture /"), "{collection}");
     assert!(!collection.contains("LOCAL DIRTY ONLY"), "{collection}");
     assert_eq!(
         std::fs::read_to_string(&source).unwrap(),

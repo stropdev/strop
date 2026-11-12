@@ -55,7 +55,7 @@ fn diagnostics_use_gutter_and_eol_without_underlining_source_cells() {
         .expect("cursor-line diagnostic note");
     assert_eq!(note.fg, crate::render::tokens().dim(error));
 
-    let gutter = crate::render::buffer::GUTTER;
+    let gutter = strop_engine::editor::prepare::STANDARD_GUTTER as u16;
     let source: String = (gutter..gutter + 10)
         .map(|x| buffer[(x, 0)].symbol())
         .collect();
@@ -155,11 +155,11 @@ fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
         row_symbols(terminal.backend().buffer(), 0, 2, 13),
         ["▎", " ", " ", " ", " ", " ", " ", "1", " ", "e\u{301}", "\u{fffd}", "Z", " "]
     );
-    // the stats band scrolls WITH the content; the number gutter does
-    // not — and the reserved track column (0064 §1) closes the band
+    // the file's heading is laid out against the pane, not the line: its
+    // rule fills the number gutter whatever the sideways scroll (0100)
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 9, 0, 4),
-        [" ", "+", "1", " "]
+        row_symbols(terminal.backend().buffer(), 0, 0, 9),
+        ["─", "─", "─", "─", "─", "─", "─", "─", " "]
     );
     terminal.backend_mut().assert_cursor_position((11, 2));
 }

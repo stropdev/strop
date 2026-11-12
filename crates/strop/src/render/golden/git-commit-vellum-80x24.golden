@@ -1,4 +1,4 @@
-   1 docs: say how staging works                                                
+   1 docs: say how staging works, one key per file or hunk, and what a commit b 
    2                                                                            
    3 # Write the message above; lines starting with # are left out.             
    4 # :wq commits, :q! aborts.                                                 
@@ -21,18 +21,18 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
-  INSERT    main  .git/COMMIT_EDITMSG ●                              10%   1:28 
+  NORMAL    main  .git/COMMIT_EDITMSG ●                              10%   1:1  
 
-  0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 27:#262a30/#efeadf 47:#efeadf/#efeadf 1:reset/reset
+  0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 72:#262a30/#efeadf+b 2:#8a5d13/#efeadf+b 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
-  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 62:#696d77/#f6f2e9 12:reset/#f6f2e9 1:reset/reset
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#696d77/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
-  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#696d77/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
-  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 16:#696d77/#f6f2e9 58:reset/#f6f2e9 1:reset/reset
-  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#696d77/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
-  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 17:#696d77/#f6f2e9 57:reset/#f6f2e9 1:reset/reset
-  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#696d77/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
-  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 46:#696d77/#f6f2e9 28:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 62:#696d77/#f6f2e9+i 12:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#696d77/#f6f2e9+i 48:reset/#f6f2e9 1:reset/reset
+  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#696d77/#f6f2e9+i 73:reset/#f6f2e9 1:reset/reset
+  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 16:#696d77/#f6f2e9+i 58:reset/#f6f2e9 1:reset/reset
+  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 26:#696d77/#f6f2e9+i 48:reset/#f6f2e9 1:reset/reset
+  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 17:#696d77/#f6f2e9+i 57:reset/#f6f2e9 1:reset/reset
+  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#696d77/#f6f2e9+i 73:reset/#f6f2e9 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 46:#696d77/#f6f2e9+i 28:reset/#f6f2e9 1:reset/reset
  10: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  11: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  12: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 23: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 14:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 29:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6
+ 23: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6 14:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 29:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

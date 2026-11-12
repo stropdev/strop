@@ -172,9 +172,9 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
         item(&b, 1, "if (x) {"),
     ]);
     e.feed(strop_core::frontend_input::Key::CtrlO);
-    // view rows: title, card top, body("fn main() {"), gap, body("}"), …
-    let probe = e.buf().line_start(2) + 10; // a's '{'
-    let mate = e.buf().line_start(4); // a's '}'
+    // view rows: title, blank, heading, body("fn main() {"), gap, body("}"), …
+    let probe = e.buf().line_start(3) + 10; // a's '{'
+    let mate = e.buf().line_start(5); // a's '}'
     e.set_head(probe);
     let mut terminal = viewport_terminal(50, 10);
     let cells = pair_cells(&mut e, &mut terminal, 50, 10);
@@ -187,7 +187,7 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
 
     // b's '{' pairs with a '}' no excerpt shows; the only other visible
     // '}' is a's — painting it would pair across sources
-    let b_probe = e.buf().line_start(7) + 7;
+    let b_probe = e.buf().line_start(8) + 7;
     e.set_head(b_probe);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     e.wait_analysis();

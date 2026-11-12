@@ -80,7 +80,10 @@ fn commit_browser_dives_to_delta() {
     });
     let text = e.buf().text().to_string();
     assert!(text.contains("fn b() {}"), "{text}");
-    assert!(text.starts_with("f.rs +1 -0\n"), "{text}");
+    assert!(
+        text.starts_with("f.rs\n"),
+        "the heading row is the file: {text}"
+    );
     assert!(!text.contains("diff --git"), "no raw patch noise: {text}");
     assert!(text.contains("@@ -1,1 +1,2 @@"), "hunk header row: {text}");
 
@@ -101,7 +104,7 @@ fn diff_surface_rows_carry_line_numbers() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter);
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::Diff { .. }))
@@ -519,7 +522,7 @@ fn commit_file_nav_walks_files() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter); // a.rs → delta
     settle(&mut e, |e| {
         matches!(
@@ -547,7 +550,7 @@ fn commit_file_nav_walks_files() {
         |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     let text = e.buf().text().to_string();
-    assert!(text.starts_with("b.rs +1 -0\n"), "{text}");
+    assert!(text.starts_with("b.rs\n"), "{text}");
     assert!(text.contains("dos"), "{text}");
     assert!(e.message.contains("b.rs · 2/2"), "{}", e.message);
 
@@ -579,7 +582,7 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter); // a.rs delta
     settle(&mut e, |e| {
         matches!(

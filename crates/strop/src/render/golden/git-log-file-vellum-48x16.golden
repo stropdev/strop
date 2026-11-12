@@ -1,0 +1,33 @@
+▌ * 0d21f9e Ada Example · 2 days ago · notes: … 
+  * fd21dde Ada Example · 2 days ago · notes: … 
+  * 19b4e9a Ada Example · 3 days ago · rename … 
+  *   0d964a0 Ada Example · 3 days ago · Merge… 
+  |\                                            
+  | * e8c1034 Ada Example · 4 days ago · layou… 
+  | * ff9ea27 Ada Example · 4 days ago · surfa… 
+  * | c756836 Ada Example · 3 days ago · notes… 
+  |/                                            
+  * 8cc6dd6 Ada Example · 5 days ago · base: t… 
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+  NORMAL    git log · src/lib.rs [RO]      1:1  
+
+  0: 1:#8a510f/#efeadf 1:reset/#efeadf 1:#4e6f22/#efeadf+b 1:#262a30/#efeadf 7:#4b525c/#efeadf 28:#656d7b/#efeadf 8:#262a30/#efeadf 1:reset/reset
+  1: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 1:reset/reset
+  2: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 1:reset/reset
+  3: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:reset/reset
+  4: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
+  5: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:reset/reset
+  7: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:reset/reset
+  8: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
+  9: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 11: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 12: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 14: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 15: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 20:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 5:reset/#fdfbf6 6:#4b525c/#fdfbf6

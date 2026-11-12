@@ -15,6 +15,9 @@ use ratatui::Frame;
 use crate::editor::{Editor, Mode};
 
 mod blame_card;
+mod block;
+#[cfg(test)]
+mod block_frame_tests;
 mod buffer;
 pub(crate) mod card;
 mod clip;
@@ -31,6 +34,8 @@ pub(crate) mod frame_capture;
 mod frame_tests;
 #[cfg(test)]
 mod golden;
+#[cfg(test)]
+mod golden_block_tests;
 #[cfg(test)]
 mod golden_git_tests;
 #[cfg(test)]

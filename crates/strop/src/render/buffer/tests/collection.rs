@@ -77,17 +77,17 @@ fn collection_bodies_project_syntax_and_paint_hits() {
     e.wait_analysis();
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let grid = terminal.backend().buffer();
-    // body row 2: "fn send_request…" — find the "fn" and the match
-    let row2: String = row_symbols(grid, 0, 2, 40).concat();
+    // body row 3 (title, blank, heading): "fn send_request…"
+    let row2: String = row_symbols(grid, 0, 3, 40).concat();
     let fn_at = row2.find("fn").unwrap();
-    let kw = &grid[(fn_at as u16, 2)];
+    let kw = &grid[(fn_at as u16, 3)];
     assert_ne!(
         kw.fg,
         crate::render::tokens().text,
         "the keyword carries a syntax color, not plain text"
     );
     let hit_at = row2.find("send_request").unwrap();
-    let hit = &grid[(hit_at as u16, 2)];
+    let hit = &grid[(hit_at as u16, 3)];
     assert_eq!(
         hit.fg,
         crate::render::tokens().accent,

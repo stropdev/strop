@@ -1,81 +1,133 @@
-//! Commit-log and changed-file row decoration (0010 §5, 0032 §2):
-//! rows are colored from typed data — lane-colored graph art, sha
-//! accent, author/age metadata quiet, the subject and the filename
-//! carrying the emphasis. The concatenated span content starts with
-//! the buffer line's exact bytes; anything after that prefix is
-//! virtual EOL content, so search, yank and the caret keep reading
-//! the real buffer.
+//! The commit log's and the commit files' adapters (0010 §5, 0032 §2,
+//! drawn by 0100 §4.3–§4.4). Rows are colored from typed data: lane-
+//! colored graph art, the sha and the metadata quiet, the subject and
+//! the file name carrying the emphasis. The text begins with the buffer
+//! line's exact bytes; anything after that prefix is render-only (a
+//! fact), so search, yank and the caret keep reading the real buffer.
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
 use crate::editor::Surface;
+use crate::render::block::gutter::{self, Sign};
+use crate::render::block::{heading, Painted};
 use strop_git::memory::ChangedFile;
 
 use super::super::clip;
 use super::super::style::Tokens;
 
-/// One decorated row of a log/files surface: styled spans whose
-/// concatenation begins with the buffer line's exact bytes, plus an
-/// optional full-row background (the cursor-row band).
-pub(crate) struct RowDecoration {
-    pub(crate) spans: Vec<Span<'static>>,
-    pub(crate) row_bg: Option<Color>,
+/// The least width of a list block with facts (0100 §3.9).
+const BLOCK_FLOOR: usize = 48;
+
+/// The width of the commit files' block, gutter included: the longest
+/// row + 2 + the widest fact, at least 48 cells, at most the pane — so
+/// the counts sit beside the names at any terminal width (F3). Measured
+/// once per frame.
+pub(crate) fn files_block(files: &[ChangedFile], sha: &str, pane: usize) -> usize {
+    let mut widest = heading_words(sha).len() + 2 + 3 + files_fact_width(files);
+    for file in files {
+        let path = clip::width(&strop_core::layout::printable_text(
+            file.path.to_string_lossy(),
+        ));
+        widest = widest.max(path + 2 + stats_text(file.added, file.deleted).len());
+    }
+    (strop_engine::editor::prepare::LIST_GUTTER + widest)
+        .max(BLOCK_FLOOR)
+        .min(pane)
 }
 
-/// Decorate row `line_idx` of a CommitLog, ChangedFiles or Status surface.
-/// `cursor_row` adds the quiet current-row band. Returns None for
-/// rows that render as normal text.
-pub(crate) fn surface_list_row(
-    t: &Tokens,
-    surface: Option<&Surface>,
-    line_idx: usize,
-    width: usize,
-    cursor_row: bool,
-) -> Option<RowDecoration> {
-    // the cursor row rides the cursorline plane, under the selection and
-    // search overlays (they override the background per cell)
-    let row_bg = cursor_row.then_some(t.cursorline);
-    match surface? {
-        Surface::CommitLog { rows, .. } => {
-            let row = rows.get(line_idx)?;
-            Some(RowDecoration {
-                spans: log_row_spans(t, &row.text),
-                row_bg,
-            })
-        }
-        Surface::ChangedFiles { sha, files, .. } => match line_idx {
-            0 => Some(RowDecoration {
-                spans: vec![
-                    Span::styled("commit ", Style::default().fg(t.muted)),
-                    Span::styled(
-                        sha.chars().take(10).collect::<String>(),
-                        Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
-                    ),
-                ],
-                row_bg,
-            }),
-            1 => Some(RowDecoration {
-                spans: Vec::new(),
-                row_bg,
-            }),
-            _ => {
-                let file = files.get(line_idx - 2)?;
-                Some(RowDecoration {
-                    spans: file_row_spans(t, file, width),
-                    row_bg,
-                })
-            }
-        },
-        Surface::Status { view, .. } => super::status::status_row(t, view, line_idx, cursor_row),
-        Surface::Diff { .. } => None,
+fn heading_words(sha: &str) -> String {
+    format!("commit {}", sha.get(..10).unwrap_or(sha))
+}
+
+fn stats_text(added: usize, deleted: usize) -> String {
+    format!("+{added} -{deleted}")
+}
+
+fn totals(files: &[ChangedFile]) -> (usize, usize) {
+    files
+        .iter()
+        .fold((0, 0), |(a, d), f| (a + f.added, d + f.deleted))
+}
+
+fn files_count(files: &[ChangedFile]) -> String {
+    match files.len() {
+        1 => "1 file".to_owned(),
+        n => format!("{n} files"),
     }
 }
 
-/// `* 51b63a8 t · 35 seconds ago · subject` → lane-colored graph
-/// runes, sha accent bold, author and age muted, subject in text.
-/// The subject is the THIRD ` · ` field, so a subject that itself
-/// contains ` · ` stays one piece (splitn(3), never a full split).
+fn files_fact_width(files: &[ChangedFile]) -> usize {
+    let (added, deleted) = totals(files);
+    files_count(files).len() + 2 + stats_text(added, deleted).len()
+}
+
+/// Paint row `line` of a commit log or a commit's files. `block` is the
+/// files block's width ([`files_block`]); `cursor` marks the cursor row.
+pub(crate) fn painted(
+    t: &Tokens,
+    surface: &Surface,
+    line: usize,
+    cursor: bool,
+    block: usize,
+    text_cells: usize,
+) -> Option<Painted<'static>> {
+    let sign = if cursor { Sign::Cursor } else { Sign::Blank };
+    let mut painted = match surface {
+        Surface::CommitLog { rows, .. } => {
+            let row = rows.get(line)?;
+            Painted {
+                gutter: gutter::list(t, sign),
+                text: log_row_spans(t, &row.text),
+                cut: true,
+                ..Default::default()
+            }
+        }
+        Surface::ChangedFiles { sha, files, .. } => {
+            let text_block = block
+                .saturating_sub(strop_engine::editor::prepare::LIST_GUTTER)
+                .min(text_cells);
+            if line == 0 {
+                let (added, deleted) = totals(files);
+                let mut fact = heading::fact(t, files_count(files));
+                fact.push(Span::raw("  "));
+                fact.extend(heading::stats(t, added, deleted));
+                let heading = heading::Heading {
+                    gutter: strop_engine::editor::prepare::LIST_GUTTER,
+                    ruled: true,
+                    name: heading::Name::Words(vec![
+                        Span::styled("commit ", Style::default().fg(t.muted)),
+                        Span::styled(
+                            sha.get(..10).unwrap_or(sha).to_owned(),
+                            Style::default().fg(t.text).add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    marks: Vec::new(),
+                    fact,
+                    focus: heading::Focus::Here,
+                };
+                // the rule stays on the cursor row (see diff/status.rs)
+                Painted::heading(t, &heading, text_block)
+            } else {
+                Painted {
+                    gutter: gutter::list(t, sign),
+                    text: file_row_spans(t, files.file_at_row(line)?, text_block),
+                    ..Default::default()
+                }
+            }
+        }
+        Surface::Diff { .. } | Surface::Status { .. } => return None,
+    };
+    if cursor {
+        painted.row_bg = Some(t.cursorline);
+    }
+    Some(painted)
+}
+
+/// `* 51b63a8 t · 35 seconds ago · subject` → lane-colored graph runes,
+/// the sha `fg.secondary`, author, age and separators muted, the subject
+/// in text (0100 §4.3 step A). The subject is the THIRD ` · ` field, so
+/// a subject that itself contains ` · ` stays one piece.
 fn log_row_spans(t: &Tokens, text: &str) -> Vec<Span<'static>> {
     let (graph, rest) = split_graph(text);
     let mut spans = graph_spans(t, graph);
@@ -90,7 +142,7 @@ fn log_row_spans(t: &Tokens, text: &str) -> Vec<Span<'static>> {
     }
     spans.push(Span::styled(
         rest[..sha_len].to_string(),
-        Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        Style::default().fg(t.secondary),
     ));
     let remainder = &rest[sha_len..];
     let mut parts = remainder.splitn(3, " · ");
@@ -137,15 +189,16 @@ fn hex_prefix_len(rest: &str) -> usize {
 
 /// Lane-colored graph art: each two-column lane cycles the palette, the
 /// commit node `*` is bold in its lane's color (gitui/lazygit lesson —
-/// lane color is how the eye tracks a branch through merges).
+/// lane color is how the eye tracks a branch through merges). The
+/// accent is not a lane: it has one job, where you are (0088 rule 2).
 fn graph_spans(t: &Tokens, prefix: &str) -> Vec<Span<'static>> {
     let lanes: [Color; 6] = [
-        t.accent,
         t.syn.string,
         t.syn.function,
         t.syn.keyword,
         t.syn.r#type,
         t.warning,
+        t.syn.number,
     ];
     prefix
         .chars()
@@ -166,32 +219,26 @@ fn graph_spans(t: &Tokens, prefix: &str) -> Vec<Span<'static>> {
 }
 
 /// Path left — directory secondary, filename text (the row idiom) — then
-/// `+N -M` past at least one space. The stats are virtual EOL content
-/// (the buffer row holds only the path), so the caret and the path
-/// stay byte-aligned no matter how wide the stats run. Path labels and
-/// stats are printable chrome, measured in display cells.
-fn file_row_spans(t: &Tokens, file: &ChangedFile, width: usize) -> Vec<Span<'static>> {
+/// `+N -M` ending at the block's edge, at least two cells after the
+/// path. The stats are render-only (the buffer row holds only the
+/// path), so the caret and the path stay byte-aligned. A path too long
+/// for its block yields its start, never the stats (0068 B4).
+fn file_row_spans(t: &Tokens, file: &ChangedFile, cells: usize) -> Vec<Span<'static>> {
     let display = strop_core::layout::printable_text(file.path.to_string_lossy());
-    let added = format!("+{} ", file.added);
-    let deleted = format!("-{}", file.deleted);
-    // 0068 B4: a long path yields its prefix (never the stats) — the
-    // filename end survives, the `+N -M` pair always shows.
-    let stats_w = added.len() + deleted.len() + 1;
-    let display = if clip::width(&display) > width.saturating_sub(stats_w) {
-        clip::clip_start(&display, width.saturating_sub(stats_w)).into_owned()
+    let stats = stats_text(file.added, file.deleted);
+    let room = cells.saturating_sub(stats.len() + 2);
+    let display = if clip::width(&display) > room {
+        clip::clip_start(&display, room).into_owned()
     } else {
-        display.to_string()
+        display.into_owned()
     };
     let path_cells = clip::width(&display);
     // the row idiom (0088 §2 "File names"): directory secondary, name text
     let mut spans =
         crate::render::file_name::spans(&display, crate::render::file_name::Role::Row, t).to_vec();
-    let pad = width
-        .saturating_sub(path_cells + added.len() + deleted.len())
-        .max(1);
+    let pad = cells.saturating_sub(path_cells + stats.len()).max(2);
     spans.push(Span::raw(" ".repeat(pad)));
-    spans.push(Span::styled(added, Style::default().fg(t.diff_add)));
-    spans.push(Span::styled(deleted, Style::default().fg(t.diff_del)));
+    spans.extend(heading::stats(t, file.added, file.deleted));
     spans
 }
 
@@ -215,8 +262,8 @@ mod tests {
         // the buffer line's exact bytes come first — caret/yank truth
         assert!(joined(&spans).starts_with(source));
         let sha = spans.iter().find(|s| s.content == "51b63a8").unwrap();
-        assert_eq!(sha.style.fg, Some(t.accent));
-        assert!(sha.style.add_modifier.contains(Modifier::BOLD));
+        // the accent has one job; a sha on every row is not it (0100 L3)
+        assert_eq!(sha.style.fg, Some(t.secondary));
         assert_eq!(
             spans
                 .iter()
@@ -233,6 +280,7 @@ mod tests {
                 "{muted} must be quiet"
             );
         }
+        assert!(spans.iter().all(|s| s.style.fg != Some(t.accent)));
     }
 
     #[test]
@@ -278,24 +326,10 @@ mod tests {
         let text = joined(&spans);
         assert!(text.starts_with("src/render/diff.rs"));
         assert!(text.ends_with("+12 -3"));
-        assert_eq!(
-            spans
-                .iter()
-                .find(|s| s.content == "src/render/")
-                .unwrap()
-                .style
-                .fg,
-            Some(t.secondary)
-        );
-        assert_eq!(
-            spans
-                .iter()
-                .find(|s| s.content == "diff.rs")
-                .unwrap()
-                .style
-                .fg,
-            Some(t.text)
-        );
+        assert_eq!(clip::width(&text), 40);
+        let ink = |needle: &str| spans.iter().find(|s| s.content == needle).unwrap().style.fg;
+        assert_eq!(ink("src/render/"), Some(t.secondary));
+        assert_eq!(ink("diff.rs"), Some(t.text));
     }
 
     #[test]
@@ -309,10 +343,23 @@ mod tests {
             ..Default::default()
         };
         let spans = file_row_spans(&tokens(), &file, 40);
-        let pad = spans
-            .iter()
-            .find(|s| !s.content.is_empty() && s.content.chars().all(|c| c == ' '))
-            .unwrap();
-        assert_eq!(clip::width(&pad.content), 40 - (7 + 5));
+        assert_eq!(clip::width(&joined(&spans)), 40);
+    }
+
+    /// F3: the block takes its width from its content, between the
+    /// 48-cell floor and the pane.
+    #[test]
+    fn the_files_block_is_as_wide_as_its_content() {
+        let file = |path: &str| ChangedFile {
+            path: path.into(),
+            added: 2,
+            deleted: 0,
+            ..Default::default()
+        };
+        let short = [file("a.rs"), file("src/lib.rs")];
+        assert_eq!(files_block(&short, "19b4e9aec5", 200), 48);
+        let long = [file(&"x".repeat(90))];
+        assert_eq!(files_block(&long, "19b4e9aec5", 200), 2 + 90 + 2 + 5);
+        assert_eq!(files_block(&long, "19b4e9aec5", 80), 80);
     }
 }

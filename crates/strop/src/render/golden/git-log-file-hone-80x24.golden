@@ -1,0 +1,49 @@
+▌ * 0d21f9e Ada Example · 2 days ago · notes: revision 5                        
+  * fd21dde Ada Example · 2 days ago · notes: revision 4                        
+  * 19b4e9a Ada Example · 3 days ago · rename the doc, change the logo, add a … 
+  *   0d964a0 Ada Example · 3 days ago · Merge branch 'feature/surfaces'        
+  |\                                                                            
+  | * e8c1034 Ada Example · 4 days ago · layout: one token                      
+  | * ff9ea27 Ada Example · 4 days ago · surfaces: parse tokens in three place… 
+  * | c756836 Ada Example · 3 days ago · notes: main moved on                   
+  |/                                                                            
+  * 8cc6dd6 Ada Example · 5 days ago · base: the first commit of the project    
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+~                                                                               
+  NORMAL    main  git log · src/lib.rs [RO]                          10%   1:1  
+
+  0: 1:#e8a848/#1b1e24 1:reset/#1b1e24 1:#aec37f/#1b1e24+b 1:#e6e1d6/#1b1e24 7:#a8adb8/#1b1e24 28:#858c9a/#1b1e24 17:#e6e1d6/#1b1e24 23:#1b1e24/#1b1e24 1:reset/reset
+  1: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 17:#e6e1d6/#15171c 23:reset/#15171c 1:reset/reset
+  2: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 40:#e6e1d6/#15171c 1:reset/reset
+  3: 2:reset/#15171c 1:#aec37f/#15171c+b 3:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 31:#e6e1d6/#15171c 7:reset/#15171c 1:reset/reset
+  4: 2:reset/#15171c 2:#aec37f/#15171c 75:reset/#15171c 1:reset/reset
+  5: 2:reset/#15171c 1:#aec37f/#15171c 1:#e6e1d6/#15171c 1:#86b7d8/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 17:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
+  6: 2:reset/#15171c 1:#aec37f/#15171c 1:#e6e1d6/#15171c 1:#86b7d8/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 38:#e6e1d6/#15171c 1:reset/reset
+  7: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 1:#86b7d8/#15171c 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 20:#e6e1d6/#15171c 18:reset/#15171c 1:reset/reset
+  8: 2:reset/#15171c 2:#aec37f/#15171c 75:reset/#15171c 1:reset/reset
+  9: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 37:#e6e1d6/#15171c 3:reset/#15171c 1:reset/reset
+ 10: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 11: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 12: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 13: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 14: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 15: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 16: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 17: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 18: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 19: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 20: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 21: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 22: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 20:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 25:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

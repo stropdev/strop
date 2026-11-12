@@ -72,7 +72,7 @@ fn commit_navigation_keeps_native_identity_when_display_labels_collide() {
     assert_eq!(files.len(), 2);
     assert!(files.iter().any(|file| file.path == first));
     assert!(files.iter().any(|file| file.path == second));
-    editor.feed_text("jj");
+    editor.feed_text("j");
     editor.feed(Key::Enter);
     settle(&mut editor, |editor| editor.dive_requests.is_empty());
     let initial = current_file(&editor).unwrap().to_owned();
@@ -124,16 +124,16 @@ fn control_characters_in_filenames_keep_one_row_and_a_native_dive_target() {
     settle(&mut editor, |editor| editor.dive_requests.is_empty());
     assert_eq!(
         editor.buf().last_content_line(),
-        2,
+        1,
         "one buffer row per file"
     );
-    let start = editor.buf().line_start(2);
-    let end = editor.buf().line_end(2);
+    let start = editor.buf().line_start(1);
+    let end = editor.buf().line_end(1);
     assert_eq!(
         editor.buf().text().byte_slice(start..end),
         "odd\u{fffd}name\u{fffd}\u{fffd}.txt"
     );
-    editor.feed_text("jj");
+    editor.feed_text("j");
     editor.feed(Key::Enter);
     settle(&mut editor, |editor| editor.dive_requests.is_empty());
     assert_eq!(current_file(&editor), Some(path), "{}", editor.message);
@@ -145,6 +145,6 @@ fn control_characters_in_filenames_keep_one_row_and_a_native_dive_target() {
         .any(|line| line == "after"));
     assert_eq!(
         editor.buf().text().line(0).to_string(),
-        "odd\u{fffd}name\u{fffd}\u{fffd}.txt +1 -1\n"
+        "odd\u{fffd}name\u{fffd}\u{fffd}.txt\n"
     );
 }

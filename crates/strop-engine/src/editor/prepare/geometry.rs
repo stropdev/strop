@@ -432,29 +432,55 @@ pub fn picker_rows_per_result(kind: strop_picker::Kind, replace_visible: bool) -
 // --- gutter geometry (moved from the renderer; one composition for
 // preparation clamps and paint, 0011 §3/§4) ---
 
-/// Gutter width for a surface's buffer: the diff gutter widens to fit
-/// both sides' numbers (min 3 digits each); everything else is the
-/// standard sign+number gutter.
-pub fn gutter_width(surface: Option<&Surface>) -> usize {
-    let Some(Surface::Diff { hunks, .. }) = surface else {
-        return STANDARD_GUTTER;
-    };
-    hunks.gutter_width()
+/// What a buffer's left gutter is (0100 §3.5). Chosen per surface, as
+/// data, in this one place: the caret's inset and the paint both read it,
+/// so they cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gutter {
+    /// File buffers: sign + the buffer's line numbers + 1.
+    Lines,
+    /// A collection: sign + the *source file's* line numbers + 1.
+    Source,
+    /// A diff: sign + old number + 1 + new number + 1.
+    Pair,
+    /// Status, log, file history, commit files: sign + 1, no numbers —
+    /// the rows are entries, not lines.
+    List,
+}
+
+/// The list gutter's cells: the sign column and one space.
+pub const LIST_GUTTER: usize = 2;
+
+/// Sign + `digits` + 1, with at least three digits.
+fn number_gutter(largest: usize) -> usize {
+    let digits = largest.max(1).ilog10() as usize + 1;
+    2 + digits.max(3)
 }
 
 impl Editor {
-    /// The number gutter for a pane's buffer: diff surfaces keep their
-    /// two-sided gutter; ordinary buffers size to the largest line number
-    /// (a fixed 5-cell gutter misaligned the caret past line 999).
-    pub fn number_gutter_width(&self, doc: DocumentId) -> usize {
+    /// A buffer's gutter kind and its width in cells. Ordinary buffers
+    /// size to the largest line number (a fixed 5-cell gutter misaligned
+    /// the caret past line 999); a diff keeps its two-sided gutter.
+    pub fn gutter(&self, doc: DocumentId) -> (Gutter, usize) {
         let buffer = self.doc(doc);
-        let surface = buffer.surface_payload();
-        if matches!(surface, Some(Surface::Diff { .. })) {
-            return gutter_width(surface);
+        match buffer.surface_payload() {
+            Some(Surface::Diff { hunks, .. }) => (Gutter::Pair, hunks.gutter_width()),
+            Some(
+                Surface::Status { .. } | Surface::CommitLog { .. } | Surface::ChangedFiles { .. },
+            ) => (Gutter::List, LIST_GUTTER),
+            None => match self.collection_largest_source_line(doc) {
+                Some(largest) => (Gutter::Source, number_gutter(largest)),
+                None => (
+                    Gutter::Lines,
+                    number_gutter(buffer.buf.last_content_line() + 1),
+                ),
+            },
         }
-        let number = buffer.buf.last_content_line() + 1;
-        let digits = number.ilog10() as usize + 1;
-        2 + digits.max(3)
+    }
+
+    /// The number gutter's width for a pane's buffer (see [`Self::gutter`]).
+    pub fn number_gutter_width(&self, doc: DocumentId) -> usize {
+        self.gutter(doc).1
     }
 
     /// Total left inset before a pane's content: file sidebar + blame

@@ -41,7 +41,7 @@ impl Editor {
         let view = self.docs.get(document)?;
         let collection = self.collections.get(&document)?;
         match collection.rows.get(view.buf.line_of(byte)) {
-            Some(super::collections::CollectionRow::CardTop(index)) => collection
+            Some(super::collections::CollectionRow::Heading(index)) => collection
                 .excerpts
                 .get(*index)
                 .map(|excerpt| excerpt.source),

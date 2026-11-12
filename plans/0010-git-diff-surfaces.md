@@ -49,10 +49,15 @@ colors, no search hits — and diff coloring was stringly-typed
    backgrounds (`#1b2620` / `#2a1d20`), hunk headers and the file-stats header
    sit on a quiet band (`#22242e`) — structural rows read as a band, not an
    accent. No `+`/`-` glyphs: the marker column and backgrounds carry it
-   (column-aligned content either way).
+   (column-aligned content either way). *Amended by 0100 §4.5:* the
+   file-stats header is now the file's ruled heading (the row holds the
+   path; `+N -M` is its drawn fact), and a hunk header is a band from the
+   pane's first column with `⋮` in each number column.
 5. **Changed-files and log rows are decorated too.** Files: path left,
    `+N -M` right-aligned and colored. Log: graph runes and `·` separators dim,
    sha accent — the graph stays legible without becoming a rainbow.
+   *Amended by 0100 §4.3–§4.4:* the sha is `fg.secondary` (the accent has
+   one job), the files are one block whose width follows its content.
 6. **Readonly dispatch trusts the grammar.** `feed_readonly` pushes every char
    into `pending` and lets `strop_grammar::parse` accept/reject (the resolver is
    the shared source of truth — doctrine 2), special-casing only `q`, Enter,

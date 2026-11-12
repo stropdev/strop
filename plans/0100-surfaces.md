@@ -1,7 +1,8 @@
 # 0100 — Surfaces: one look for the collection and the git buffers
 
-- Status: **proposed — not implemented.** This plan is the investigation, the
-  recommendation and the build steps. Execution is a separate change.
+- Status: **in force** (steps 1–9 of §6.4, log step A). Log step B and the
+  fuller commit view of §4.4 wait for the typed data of §7 (0101). See §11
+  for the implementation record.
 - Date: 2026-11-12
 - Source: the maintainer's note — "what about UI polish for it? I feel its UI
   isn't nice tbh, with no proper definition for the blocks ... git and commit
@@ -971,3 +972,54 @@ These are taste. The plan takes the first option in each.
 render-only at the right (step B — the typed log rows of §7 are in scope
 for 0.64). The rest take the plan's first option: 4 the path alone, 5 keep
 the rail, 6 sha grey with coloured lanes, 8 the 72-column warning on.
+
+## 11. Implementation record
+
+Shipped as §6.4 orders it, one commit per step: the heading and its table
+(`render/block/heading.rs`; Search's group header calls it and the `grep-*`
+goldens did not change); `Gutter` in `prepare/geometry.rs` and
+`render/block/gutter.rs`; the collection as blocks of words; the status
+buffer through `render/block/diff_line.rs` with the rail and section
+headings; the diff and hunk views; commit files and log step A; the commit
+message's inks; the row owner as data and `buffer/rows/{mod,owner,overlays,
+collection,commit_message}.rs`. The goldens of §9 and its frame properties
+(`render/block_frame_tests.rs`, every width from 20 to 200, both themes)
+are in.
+
+Departures, with reasons:
+
+- **A file with no line changes says `no line changes`, not `binary`.**
+  Today's data has no binary flag (numstat's `-` lands as 0/0, a native diff
+  of a binary file has no hunks), so a binary file, a mode change and a pure
+  rename look the same. Saying `binary` would be wrong for two of them. The
+  flag is one of §7's requests; `git-diff-binary-*` will change with it.
+- **The accent is not a graph lane.** Decision 6 keeps coloured lanes, but
+  the first lane was the accent, which breaks §9's one-accent property on
+  every log frame. The lanes keep five of their colours and take
+  `syn.number` for the sixth.
+- **A heading keeps its rule on the cursor row.** On the list surfaces the
+  cursor row's `▌` would take the rule's first cell, breaking "every
+  heading's rule starts at the pane's first column". The cursor line's band
+  says where the cursor is; the rule stays. On every surface the cursor row's
+  band wins over a break's band, as the status buffer already did.
+- **The heading table has one more part**: a remote file's `ssh:host`, whole,
+  after the marks (§3.9 does not list it; 0088 keeps the authority whole).
+- **`+N -M` is not bold**, in a heading's fact and in a row's; the diff inks
+  carry it.
+- **The section the cursor is in** has its rule in `fg.muted` in the status
+  buffer too, as §3.2 says for any block.
+- **The collection's gutter** is as wide as the largest *source* line number
+  it shows, not the view's row count.
+- **The line history's buffer** is `git log · <file>:<start>-<end>`, beside
+  the file history's `git log · <file>`.
+- **Search at narrow widths**: following the table, the leader now outranks
+  the directory, so a tight group header cuts the directory from the left
+  (`…s/remote.md ─── 3`) before it drops the leader; the gap below a leader
+  is two cells, not one.
+- **Goldens**: the existing scenes (`collected`, `collection`, `git-status`,
+  `git-commit`) keep their two sizes; the new ones (`collection-blocks`,
+  `git-log`, `git-log-file`, `git-files`, `git-diff`, `git-diff-binary`,
+  `git-hunk`) are at the four sizes, from a repository built with fixed
+  names and dates.
+- **Found on the way**: `plans/STATUS.md` carried a stray merge marker
+  (`||||||| 476f9d9`); removed with this plan's move to "in force".

@@ -273,11 +273,11 @@ fn substitute_in_a_collection_changes_excerpts_and_never_a_border() {
     e.feed(Key::CtrlO);
     let view = e.current();
     let (a, b) = (source(&e, &a), source(&e, &b));
-    // `a` also spells part of both card borders (a.txt, b.txt)
+    // `a` also spells part of both headings (a.txt, b.txt)
     type_keys(&mut e, ":%s/a/A/g<cr>");
     assert_eq!(text(&e, a), "AlphA one\nAlphA two\n");
     assert_eq!(text(&e, b), "betA one\nbetA two\n");
-    assert!(current_text(&e).contains("╭─ a.txt"));
+    assert!(current_text(&e).lines().any(|row| row == "a.txt"));
     assert_view_is_its_sources(&e, view);
     type_keys(&mut e, "u");
     assert_eq!(text(&e, a), "alpha one\nalpha two\n");

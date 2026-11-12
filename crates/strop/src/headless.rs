@@ -114,7 +114,7 @@ mod diff_surface_tests {
         )
     }
 
-    /// Golden shape of a diff surface frame (0010 §4): stats row, hunk
+    /// Golden shape of a diff surface frame (0010 §4): heading row, hunk
     /// header, both sides' numbers, no raw-patch noise, no prefixes.
     #[test]
     fn diff_surface_frame_shape() {
@@ -128,8 +128,17 @@ mod diff_surface_tests {
             None,
         );
         let frame = crate::headless::frame_string(&mut e, 80, 20).unwrap();
-        assert!(frame.contains(" f.rs +2 -1"), "stats row: {frame}");
-        assert!(frame.contains(" @@ -1,2 +1,3 @@"), "hunk header: {frame}");
+        // the file's heading: the rule, the name, `+N -M` at the edge
+        let heading = frame
+            .lines()
+            .find(|row| row.contains(" f.rs ─"))
+            .unwrap_or_default();
+        assert!(heading.starts_with("──"), "heading: {frame}");
+        assert!(heading.trim_end().ends_with("─ +2 -1"), "heading: {frame}");
+        assert!(
+            frame.contains("   ⋮   ⋮ @@ -1,2 +1,3 @@"),
+            "hunk header: {frame}"
+        );
         // both numbers on context, one side blank on add/del rows
         assert!(
             frame.contains("  1   1 fn a() {}"),

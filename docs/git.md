@@ -22,23 +22,31 @@ The same letters mean the same thing everywhere: `s` stages, `u` unstages,
 ## Status — `Space g g`
 
 ```text
-Head: main
-Upstream: origin/main, ahead 1
+  Head: main
+  Upstream: origin/main, ahead 1
 
-Staged (1)
-A docs/notes.md
+─ Staged ──────────────────────────────────────────────────────────────────── 1
+  A docs/notes.md
 
-Unstaged (2)
-M src/lib.rs
-@@ -1,3 +1,4 @@
- fn a() {}
-+fn b() {}
- fn c() {}
-M src/main.rs
+─ Unstaged ────────────────────────────────────────────────────────────────── 2
+▌ M src/lib.rs
+│ @@ -1,3 +1,4 @@
+│  fn a() {}
+│ +fn b() {}
+│  fn c() {}
+  M src/main.rs
 
-Untracked (1)
-? scratch.txt
+─ Untracked ───────────────────────────────────────────────────────────────── 1
+  ? scratch.txt
 ```
+
+Each section starts with a rule that names it and counts its files. The rows
+are entries, not lines, so there are no line numbers: `▌` marks the cursor's
+row, and a `│` runs down the rows of a file you expanded with `=`. An
+expanded diff reads like the diff view: the changed text on a quiet tint,
+the changed part of a line emphasised. The buffer holds the words — a
+section's row holds `Staged`, a diff row its `+` or `-` and the line — so a
+yank of a hunk is still a patch.
 
 The keys act on the row under the cursor. On a file row that is the file; on
 a diff row it is that hunk; on a section heading it is every file in the
@@ -75,7 +83,10 @@ section.
 
 The message is edited in `.git/COMMIT_EDITMSG`, an ordinary file buffer. It
 opens with an empty first line for the message and `#` lines that list what
-the commit will hold; `#` lines are left out of the message.
+the commit will hold; `#` lines are left out of the message, and are drawn
+as comments. The first line, the subject, is bold; past column 72 it turns
+the warning colour, and so does a second line that is not empty — the two
+mistakes `git log` shows worst.
 
 - `:wq` commits. So does `:w` followed by `:q`.
 - `:q!` without writing aborts.
@@ -114,11 +125,19 @@ first.
 
 ## Log, history, blame
 
-- `Space g l` is the commit graph. `enter` on a commit lists its files;
-  `enter` on a file shows its diff, with the commit's other files in a
-  sidebar (`tab` moves focus, `]f` / `[f` step through files).
-- `Space g h` is the log of the current file; from a visual selection, the
-  history of those lines.
+- `Space g l` is the commit graph: one row per commit, the sha and the
+  author and age quiet, the subject in full ink, a `…` where a row runs
+  past the edge. `enter` on a commit lists its files under a rule that
+  names the commit and counts its files and lines, each file's `+N -M`
+  beside its name; `enter` on a file shows its diff, with the commit's
+  other files in a sidebar (`tab` moves focus, `]f` / `[f` step through
+  files).
+- A diff starts with a rule naming the file and its `+N -M`; each `@@`
+  row is a band, with `⋮` where the line numbers jump. A file with no line
+  changes (a binary file, a mode change) says so on its rule.
+- `Space g h` is the log of the current file, named for it
+  (`git log · src/lib.rs`); from a visual selection, the history of those
+  lines.
 - `Space g B` shows who last changed each line, in the gutter; press it
   again to hide it. `enter` on a line opens the log at that commit. The
   gutter hides while the buffer has edits made after blame ran. In a

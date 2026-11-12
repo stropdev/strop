@@ -9,14 +9,18 @@ fn status_lists_sections_and_lands_on_the_first_file() {
         text(&e),
         "Head: main\n\
          \n\
-         Unstaged (2)\n\
+         Unstaged\n\
          M notes.md\n\
          M src/lib.rs\n\
          \n\
-         Untracked (1)\n\
+         Untracked\n\
          ? scratch.txt\n"
     );
     assert_eq!(cursor_line(&e), "M notes.md");
+    // a section's count is its heading's fact, drawn and not in the text
+    let view = e.status_view().unwrap();
+    assert_eq!(view.count(strop_git::Section::Unstaged), 2);
+    assert_eq!(view.count(strop_git::Section::Untracked), 1);
     assert!(e.buf().readonly);
     // a second press returns to the same buffer instead of stacking one
     let status = e.current();
@@ -50,7 +54,7 @@ fn s_stages_u_unstages_and_dash_toggles_the_file_under_the_cursor() {
     );
     // the cursor stays in the unstaged list, on the file that took its place
     assert_eq!(cursor_line(&e), "M src/lib.rs");
-    assert!(text(&e).contains("Staged (1)\nM notes.md\n\nUnstaged (1)\n"));
+    assert!(text(&e).contains("Staged\nM notes.md\n\nUnstaged\n"));
 
     goto(&mut e, "M notes.md");
     key(&mut e, "s");
@@ -84,14 +88,14 @@ fn a_stage_says_so_when_the_view_moved_while_it_ran() {
 #[test]
 fn a_section_heading_acts_on_every_file_in_it() {
     let (dir, mut e) = status_fixture();
-    goto(&mut e, "Unstaged (2)");
+    goto(&mut e, "Unstaged");
     key(&mut e, "s");
     assert_eq!(e.message, "staged 2 files");
     assert_eq!(
         porcelain(dir.path()),
         "M  notes.md\nM  src/lib.rs\n?? scratch.txt\n"
     );
-    goto(&mut e, "Staged (2)");
+    goto(&mut e, "Staged");
     key(&mut e, "u");
     assert_eq!(e.message, "unstaged 2 files");
     assert_eq!(
@@ -258,8 +262,8 @@ fn the_buffer_follows_the_tree_and_keeps_the_cursor() {
     e.refresh_status_buffers();
     settle_work(&mut e);
     assert_eq!(cursor_line(&e), "M src/lib.rs");
-    assert!(text(&e).contains("Staged (1)\nM notes.md\n"));
-    assert!(text(&e).contains("Untracked (2)\n? another.txt\n? scratch.txt\n"));
+    assert!(text(&e).contains("Staged\nM notes.md\n"));
+    assert!(text(&e).contains("Untracked\n? another.txt\n? scratch.txt\n"));
 }
 
 #[test]
@@ -271,6 +275,39 @@ fn motions_search_and_yank_work_like_any_buffer() {
     assert_eq!(e.register(None).text, "? scratch.txt\n");
     key(&mut e, "q");
     assert_ne!(e.buf().name.as_deref(), Some("git status"));
+}
+
+/// 0100 §9: a section's yank is its name (the count is drawn, not text),
+/// and a yanked hunk is still a patch `git apply` takes.
+#[test]
+fn a_yank_is_words_and_a_hunk_is_a_patch() {
+    let (dir, mut e) = status_fixture();
+    goto(&mut e, "Unstaged");
+    key(&mut e, "yy");
+    assert_eq!(e.register(None).text, "Unstaged\n");
+    goto(&mut e, "M src/lib.rs");
+    key(&mut e, "=");
+    goto(&mut e, "@@ -1,5");
+    key(&mut e, "y6j");
+    let hunk = e.register(None).text;
+    assert!(hunk.starts_with("@@ -1,5 +1,5 @@\n line 1\n-line 2\n+line two\n"));
+    let patch = dir.path().join("hunk.patch");
+    std::fs::write(
+        &patch,
+        format!("--- a/src/lib.rs\n+++ b/src/lib.rs\n{hunk}"),
+    )
+    .unwrap();
+    let check = std::process::Command::new("git")
+        .args(["apply", "--check", "--reverse"])
+        .arg(&patch)
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
 }
 
 #[test]
@@ -306,8 +343,8 @@ fn the_editor_s_own_lock_files_are_not_changes() {
     std::fs::write(dir.path().join("src").join(&lock), "").unwrap();
     key(&mut e, " gg");
     assert!(!text(&e).contains(".strop-lock"), "{}", text(&e));
-    assert!(text(&e).contains("Untracked (1)\n? scratch.txt\n"));
-    goto(&mut e, "Untracked (1)");
+    assert!(text(&e).contains("Untracked\n? scratch.txt\n"));
+    goto(&mut e, "Untracked");
     key(&mut e, "s");
     assert_eq!(e.message, "staged scratch.txt");
     key(&mut e, "cc");
@@ -359,7 +396,7 @@ fn saving_a_file_updates_the_status_buffer() {
             .buf
             .text()
             .to_string()
-            .contains("Unstaged (1)\nM src/lib.rs\n"),
+            .contains("Unstaged\nM src/lib.rs\n"),
         "{}",
         e.doc(status).buf.text()
     );

@@ -29,7 +29,7 @@ impl PreparedDiff {
         let (added, deleted) = super::hunk_stats(&hunks);
         let text = Rope::from_str(&super::diff_surface_text(&label, &hunks));
         let mut starts = Vec::with_capacity(hunks.len());
-        let mut emphasis = vec![None]; // stats row
+        let mut emphasis = vec![None]; // heading row
         let mut max_lineno = 0;
         for hunk in &hunks {
             starts.push(emphasis.len());
@@ -76,7 +76,7 @@ impl PreparedDiff {
     }
     pub(crate) fn row(&self, row: usize) -> Option<DiffRow<'_>> {
         if row == 0 {
-            return Some(DiffRow::Stats);
+            return Some(DiffRow::Heading);
         }
         let index = self
             .0
@@ -144,6 +144,45 @@ fn prepare_emphasis(lines: &[DiffLine], output: &mut [Option<(usize, usize)>]) {
     }
 }
 
+/// The changed byte range of one line of a hunk, paired as
+/// `prepare_emphasis` pairs whole runs: the n-th deletion of a run with
+/// the n-th addition of the run right after it. For the status buffer,
+/// which emphasises only the rows on screen.
+pub(crate) fn line_emphasis(lines: &[DiffLine], at: usize) -> Option<(usize, usize)> {
+    let origin = lines.get(at)?.origin;
+    let run_start = |end: usize, origin: LineOrigin| {
+        let mut start = end;
+        while start > 0 && lines[start - 1].origin == origin {
+            start -= 1;
+        }
+        start
+    };
+    let pair = match origin {
+        LineOrigin::Context => return None,
+        LineOrigin::Deletion => {
+            let start = run_start(at, LineOrigin::Deletion);
+            let mut added = at;
+            while added < lines.len() && lines[added].origin == LineOrigin::Deletion {
+                added += 1;
+            }
+            let pair = added + (at - start);
+            (pair < lines.len()
+                && (added..=pair).all(|index| lines[index].origin == LineOrigin::Addition))
+            .then_some(pair)?
+        }
+        LineOrigin::Addition => {
+            let start = run_start(at, LineOrigin::Addition);
+            let deleted = run_start(start, LineOrigin::Deletion);
+            let pair = deleted + (at - start);
+            (pair < start).then_some(pair)?
+        }
+    };
+    Some(changed_range(
+        &lines[at].text_str(),
+        &lines[pair].text_str(),
+    ))
+}
+
 fn changed_range(a: &str, b: &str) -> (usize, usize) {
     let prefix: usize = a
         .chars()
@@ -192,5 +231,35 @@ mod tests {
             &lines[1].text_str()[spans[1].unwrap().0..spans[1].unwrap().1],
             "éé"
         );
+    }
+
+    #[test]
+    fn one_lines_emphasis_agrees_with_the_whole_hunks() {
+        let line = |origin, text: &str| DiffLine {
+            origin,
+            old_lineno: None,
+            new_lineno: None,
+            text: text.into(),
+            has_newline: true,
+        };
+        use LineOrigin::{Addition as A, Context as C, Deletion as D};
+        let lines = vec![
+            line(C, "keep"),
+            line(D, "value one"),
+            line(D, "value two"),
+            line(A, "value 1"),
+            line(A, "value 2"),
+            line(A, "value 3"),
+            line(C, "keep"),
+            line(A, "lone"),
+            line(D, "gone"),
+            line(D, "gone too"),
+            line(A, "back"),
+        ];
+        let mut whole = vec![None; lines.len()];
+        prepare_emphasis(&lines, &mut whole);
+        for (at, expected) in whole.iter().enumerate() {
+            assert_eq!(line_emphasis(&lines, at), *expected, "line {at}");
+        }
     }
 }

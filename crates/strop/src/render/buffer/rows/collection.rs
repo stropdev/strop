@@ -95,3 +95,86 @@ impl CollectionProjection {
         Self { rows, spans, hits }
     }
 }
+
+/// The collection's adapter (0100 §4.1): a typed row in, a painted block
+/// row out. The title reads its subject strong; a heading is the ruled
+/// heading with the file's marks and hit count; a gap is a break; a body
+/// row carries the source file's line number. The cursor row is the
+/// cursor line, as in a file.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn painted(
+    editor: &Editor,
+    t: &Tokens,
+    view: &PaneView,
+    info: &crate::editor::CollectionRowInfo,
+    line: usize,
+    text: ropey::RopeSlice<'_>,
+    sign: Span<'static>,
+    (gutter_cells, text_cells): (usize, usize),
+) -> crate::render::block::Painted<'static> {
+    use crate::editor::CollectionRow;
+    use crate::render::block::{self, gutter, heading, Painted};
+    let cursor = view.overlays && editor.doc(view.doc).buf.line_of(view.cursor) == line;
+    let mut painted = match info.kind {
+        CollectionRow::Title => {
+            let text = text.to_string();
+            let subject = editor
+                .collection_title(view.doc)
+                .filter(|subject| text.starts_with(subject))
+                .map_or(0, str::len);
+            let (subject, rest) = text.split_at(subject);
+            Painted::title(
+                gutter_cells,
+                vec![
+                    Span::styled(
+                        subject.to_owned(),
+                        Style::default().fg(t.text).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(rest.to_owned(), Style::default().fg(t.secondary)),
+                ],
+                text_cells,
+            )
+        }
+        CollectionRow::Blank => Painted::blank(gutter_cells),
+        CollectionRow::Heading(_) => {
+            let label = crate::render::file_name::Label::parse(&text.to_string());
+            let hits = match info.hits {
+                1 => "1 hit".to_owned(),
+                hits => format!("{hits} hits"),
+            };
+            let heading = heading::Heading {
+                gutter: gutter_cells,
+                ruled: true,
+                name: heading::Name::Path(&label),
+                marks: heading::marks(t, info.source_dirty, info.source_readonly),
+                fact: heading::fact(t, hits),
+                focus: if info.block_active {
+                    heading::Focus::Here
+                } else {
+                    heading::Focus::Elsewhere
+                },
+            };
+            Painted::heading(t, &heading, text_cells)
+        }
+        CollectionRow::Gap => Painted::band(
+            t,
+            gutter::jump(t, gutter_cells, &gutter::source_jump(gutter_cells)),
+            vec![block::muted(t, text.to_string())],
+            text_cells,
+        ),
+        CollectionRow::Body => Painted {
+            gutter: gutter::numbered(
+                t,
+                sign,
+                editor.collection_source_lineno(view.doc, line).flatten(),
+                cursor,
+                gutter_cells,
+            ),
+            ..Default::default()
+        },
+    };
+    if cursor {
+        painted.row_bg = Some(t.cursorline);
+    }
+    painted
+}

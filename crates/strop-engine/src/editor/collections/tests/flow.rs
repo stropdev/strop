@@ -74,9 +74,13 @@ fn the_collection_says_what_was_searched_and_counts_in_words() {
     let text = current_text(&e);
     let rows: Vec<&str> = text.lines().collect();
     assert_eq!(rows[0], "search hit — 4 hits in 2 files");
-    assert_eq!(rows[1], "╭─ a.txt ── 3 hits");
-    assert!(rows.contains(&"⋮ 3 lines not shown"), "{text}");
-    assert!(rows.contains(&"╭─ b.txt ── 1 hit"), "{text}");
+    assert_eq!(rows[1], "");
+    assert_eq!(
+        rows[2], "a.txt",
+        "a heading holds the path; the count is drawn"
+    );
+    assert!(rows.contains(&"3 lines not shown"), "{text}");
+    assert!(rows.contains(&"b.txt"), "{text}");
 
     // one hit, one file, and a list with no query of its own
     let mut e = Editor::new_in(Buffer::from_text("scratch\n"), dir.path().to_path_buf());
@@ -85,7 +89,7 @@ fn the_collection_says_what_was_searched_and_counts_in_words() {
     e.feed(Key::CtrlO);
     assert_eq!(e.buf().name.as_deref(), Some("collection: locations"));
     assert!(
-        current_text(&e).starts_with("locations — 1 hit in 1 file\n╭─ b.txt ── 1 hit\n"),
+        current_text(&e).starts_with("locations — 1 hit in 1 file\n\nb.txt\n"),
         "{}",
         current_text(&e)
     );

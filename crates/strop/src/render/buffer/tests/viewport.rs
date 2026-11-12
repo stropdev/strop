@@ -309,7 +309,8 @@ fn diff_background_and_annotation_use_absolute_cells() {
         text: b"unused".to_vec(),
         has_newline: true,
     };
-    let bg = super::super::diff::origin_bg(&crate::render::tokens(), line.origin).unwrap();
+    let bg =
+        crate::render::block::diff_line::origin_bg(&crate::render::tokens(), line.origin).unwrap();
     let style = super::super::RowStyle {
         diff_line: Some(&line),
         emphasis: Some((3, 6)),
@@ -391,12 +392,16 @@ fn sidebar_emission_matches_the_inset_the_caret_uses() {
     assert_eq!(row_symbols(grid, 0, 0, 5), [" ", "s", "r", "c", "/"]);
     let divider = (0..50).find(|&x| grid[(x, 0)].symbol() == "│").unwrap();
     assert_eq!(grid[(0, 1)].symbol(), "▌");
+    // the heading's rule runs through the number gutter; its name starts
+    // at the text column
     let content = (divider + 1..50)
-        .find(|&x| grid[(x, 0)].symbol() != " ")
+        .find(|&x| !matches!(grid[(x, 0)].symbol(), " " | "─"))
         .unwrap();
+    assert_eq!(grid[(divider + 1, 0)].symbol(), "─");
     assert_eq!(
         row_symbols(grid, content, 0, 7),
-        ["s", "r", "c", "/", "v", "e", "r"]
+        ["v", "e", "r", "y", "l", "o", "n"],
+        "narrow: the leader outranks the directory (0100 §3.9)"
     );
     assert_eq!(
         projected,

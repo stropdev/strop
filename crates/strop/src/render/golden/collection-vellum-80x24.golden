@@ -1,49 +1,49 @@
      search modeline — 5 hits in 2 files                                       ▮
-     ╭─ docs/remote.md ── 2 hits · modified ──────────────────────────────────╮▮
+                                                                               ▮
+──── docs/remote.md ● ────────────────────────────────────────────────── 2 hits▮
    1 # Remote                                                                  ▮
    2                                                                           ▮
    3 The modeline dentifies the endpoint.                                      ▮
    4                                                                           ▮
    5 The modeline names the fixed root.                                        ▮
-     ╰────────────────────────────────────────────────────────────────────────╯▮
-     ╭─ src/render/statusline.rs ── 3 hits ───────────────────────────────────╮▮
+                                                                               ▮
+──── src/render/statusline.rs ────────────────────────────────────────── 3 hits▮
    1 //! The modeline: one quiet row at the bottom edge.                       ▮
    2 //!                                                                       ▮
    3 //! Every width is a display cell, never a character.                     ▮
-     ⋮ 2 lines not shown                                                       ▮
+   ⋮ 2 lines not shown                                                         ▮
    6                                                                           ▮
    7 /// Gather the row.                                                       ▮
    8 pub struct Modeline {                                                     ▮
    9     chip: String,                                                         ▮
   10     dirty: bool,                                                          ▮
-     ⋮ 1 line not shown                                                        ▮
-  12 }                                                                         ▮
+   ⋮ 1 line not shown                                                          ▮
+  12 }                                                                          
   13                                                                            
   14 impl Modeline {                                                            
-  15     fn gather(path: &Path, line: usize) -> Self {                          
-  NORMAL    collection: search modeline ●                            20%   5:14 
+  NORMAL    collection: search modeline ●                            24%   6:14 
 
-  0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 35:#262a30/#f6f2e9 39:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  1: 1:#656d7b/#f6f2e9+b 7:#656d7b/#f6f2e9 14:#262a30/#f6f2e9+b 58:#656d7b/#f6f2e9
-  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#8a510f/#f6f2e9+b 66:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  4: 1:#656d7b/#f6f2e9+b 4:#8a510f/#f6f2e9 4:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 24:#262a30/#f6f2e9 38:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 22:#262a30/#f6f2e9 40:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9
-  8: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#aeb3ba/#f6f2e9 24:#4b525c/#f6f2e9+b 47:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9
-  9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#696d77/#f6f2e9+i 8:#8a510f/#f6f2e9+b+i 35:#696d77/#f6f2e9+i 23:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 71:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 53:#696d77/#f6f2e9+i 21:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 12: 1:#656d7b/#f6f2e9+b 23:#656d7b/#f6f2e9 55:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 19:#696d77/#f6f2e9+i 55:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 6:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 53:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 57:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 58:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 18: 1:#656d7b/#f6f2e9+b 22:#656d7b/#f6f2e9 56:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 19: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 73:reset/#f6f2e9 1:#656d7b/#f6f2e9
- 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
- 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 59:reset/#f6f2e9 1:reset/reset
- 22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 2:#6f3aa8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 5:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 2:#4b525c/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 25:reset/#f6f2e9 1:reset/reset
+  0: 5:reset/#f6f2e9 15:#262a30/#f6f2e9+b 20:#4b525c/#f6f2e9 39:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  1: 79:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  2: 4:#656d7b/#f6f2e9 1:reset/#f6f2e9 5:#4b525c/#f6f2e9 9:#262a30/#f6f2e9+b 2:#8a5d13/#f6f2e9 52:#656d7b/#f6f2e9 6:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9
+  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#8a510f/#f6f2e9+b 66:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  5: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 4:#262a30/#efeadf 8:#8a510f/#efeadf+b 24:#262a30/#efeadf 38:#efeadf/#efeadf 1:#656d7b/#f6f2e9
+  6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 22:#262a30/#f6f2e9 40:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  8: 79:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  9: 4:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 11:#4b525c/#f6f2e9 13:#4b525c/#f6f2e9+b 44:#aeb3ba/#f6f2e9 6:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9
+ 10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#696d77/#f6f2e9+i 8:#8a510f/#f6f2e9+b+i 35:#696d77/#f6f2e9+i 23:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 71:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 53:#696d77/#f6f2e9+i 21:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 13: 3:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 17:#656d7b/#fdfbf6 57:#fdfbf6/#fdfbf6 1:#656d7b/#f6f2e9
+ 14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 19:#696d77/#f6f2e9+i 55:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 6:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 53:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 57:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 58:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 19: 3:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 16:#656d7b/#fdfbf6 58:#fdfbf6/#fdfbf6 1:#656d7b/#f6f2e9
+ 20: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+ 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:reset/reset
+ 22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 59:reset/#f6f2e9 1:reset/reset
  23: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 27:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 27:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6
