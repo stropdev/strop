@@ -299,9 +299,9 @@ fn collection_fixture() -> (Editor, tempfile::TempDir) {
 #[test]
 fn collection_pairing_maps_across_excerpts_of_the_same_source() {
     let (mut e, _dir) = collection_fixture();
-    // view: title, card top, body("fn main() {"), gap, body("}"), …
-    let probe_view = e.buf().line_start(2) + 10; // the '{'
-    let mate_view = e.buf().line_start(4); // the '}'
+    // view: title, blank, heading, body("fn main() {"), gap, body("}"), …
+    let probe_view = e.buf().line_start(3) + 10; // the '{'
+    let mate_view = e.buf().line_start(5); // the '}'
     assert_eq!(
         settled(&mut e, probe_view, false),
         [Some(probe_view), Some(mate_view)],
@@ -313,9 +313,9 @@ fn collection_pairing_maps_across_excerpts_of_the_same_source() {
 fn collection_pairing_never_maps_into_gaps_or_other_sources() {
     let (mut e, _dir) = collection_fixture();
     // b.txt's `if (x) {` pairs with a `}` that no excerpt shows; the
-    // ONLY other visible `}` lives in a.txt's card — mapping it would
+    // ONLY other visible `}` lives in a.txt's block — mapping it would
     // pair across sources
-    let b_card_top = 6; // after a's card (top+2 bodies+gap+bottom)
+    let b_card_top = 7; // after a's block (blank, heading, 2 bodies, gap) and a blank
     let probe_view = e.buf().line_start(b_card_top + 1) + 7; // b's '{'
     let served = settled(&mut e, probe_view, false);
     assert_eq!(

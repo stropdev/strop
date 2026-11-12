@@ -270,6 +270,7 @@ pub(super) fn render_pane(
         if text.chars().next() == Some('#') && editor.is_commit_message(view.doc) {
             style.row_fg = Some(t.syn.comment);
         }
+        let mut fixed = false;
         match surface.and_then(|surface| surface.diff_row(line_idx)) {
             Some(crate::editor::DiffRow::Stats | crate::editor::DiffRow::HunkHeader(_)) => {
                 // structural text uses the SAME fixed inset its caret
@@ -289,6 +290,29 @@ pub(super) fn render_pane(
                 style.diff_line = Some(dl);
                 style.emphasis = diff::emphasis_span(surface, line_idx);
                 style.row_bg = diff::origin_bg(t, dl.origin);
+            }
+            None if gutter_kind == strop_engine::editor::prepare::Gutter::Source => {
+                if let Some(info) = collection.rows.get(row).and_then(Option::as_ref) {
+                    let (bar, bar_color) = gutter_mark(editor, t, view, line_idx);
+                    let sign = Span::styled(
+                        bar,
+                        Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
+                    );
+                    let painted = collection::painted(
+                        editor,
+                        t,
+                        view,
+                        info,
+                        line_idx,
+                        text,
+                        sign,
+                        (number_width, width),
+                    );
+                    left.extend(painted.gutter);
+                    style.decorations = painted.text;
+                    style.row_bg = painted.row_bg;
+                    fixed = painted.fixed;
+                }
             }
             None if gutter_kind == strop_engine::editor::prepare::Gutter::List => {
                 // the list gutter (0100 §3.5): no numbers; the cursor row
@@ -330,54 +354,10 @@ pub(super) fn render_pane(
                     bar,
                     Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
                 ));
-                // Collection views gutter the SOURCE line number; chrome
-                // rows (title/headers) stay blank (0049 §6).
-                let number_cell = match editor.collection_source_lineno(view.doc, line_idx) {
-                    Some(Some(n)) => format!("{:>digits$} ", n, digits = number_width - 2),
-                    Some(None) => " ".repeat(number_width - 1),
-                    None => format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
-                };
-                left.push(Span::styled(number_cell, num_style));
-                // Collection cards (0049 §6): the title reads strong,
-                // card borders mute, the gap rows whisper, and the top
-                // border's path carries the accent.
-                match editor.collection_row_kind(view.doc, line_idx) {
-                    Some(crate::editor::CollectionRow::Title) => style.row_fg = Some(t.text),
-                    Some(crate::editor::CollectionRow::CardTop(_)) => {
-                        // 0049 §6: focus reads through the active card's
-                        // border + path, not a selection-colored chip
-                        let focused = collection
-                            .rows
-                            .get(row)
-                            .and_then(Option::as_ref)
-                            .is_some_and(|info| info.card_active);
-                        style.row_fg = Some(if focused { t.text } else { t.muted });
-                        let mut text = text.to_string();
-                        if let Some(info) = collection.rows.get(row).and_then(Option::as_ref) {
-                            if info.source_dirty {
-                                text.push_str(" · modified");
-                            }
-                            if info.source_readonly {
-                                text.push_str(" · read-only");
-                            }
-                        }
-                        let pad = width.saturating_sub(crate::render::clip::width(&text) + 2);
-                        let text = format!("{} {}╮", text, "─".repeat(pad));
-                        style.decorations = collection_card_top_spans(t, &text, focused);
-                    }
-                    Some(crate::editor::CollectionRow::Gap) => {
-                        style.row_fg = Some(t.muted);
-                    }
-                    Some(crate::editor::CollectionRow::CardBottom) => {
-                        style.row_fg = Some(t.faint);
-                        let pad = width.saturating_sub(2);
-                        style.decorations = vec![Span::styled(
-                            format!("╰{}╯", "─".repeat(pad)),
-                            Style::default().fg(t.faint),
-                        )];
-                    }
-                    _ => {}
-                }
+                left.push(Span::styled(
+                    format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
+                    num_style,
+                ));
                 if let Some(row) = directory
                     .and_then(|source| {
                         directory::row(
@@ -401,11 +381,7 @@ pub(super) fn render_pane(
                     // (render/help.rs): one accent, keycaps, no hues
                     style.decorations =
                         crate::render::help::row_spans(t, &text.to_string(), width as u16);
-                } else if view.overlays
-                    && line_idx == cur_line
-                    && surface.is_none()
-                    && editor.collection_row_kind(view.doc, line_idx).is_none()
-                {
+                } else if view.overlays && line_idx == cur_line && surface.is_none() {
                     // the cursor line is painted in file buffers (rule 1);
                     // selection/search/flash still override per cell
                     style.row_bg = Some(t.cursorline);
@@ -427,8 +403,6 @@ pub(super) fn render_pane(
                 ));
             }
         }
-        let chrome = matches!(editor.collection_row_kind(view.doc, line_idx),
-            Some(kind) if kind != crate::editor::CollectionRow::Body);
         let fixed_view = PaneView {
             hscroll: DisplayColumn::new(0),
             ..*view
@@ -445,7 +419,7 @@ pub(super) fn render_pane(
         left.extend(content_spans(
             editor,
             t,
-            if chrome { &fixed_view } else { view },
+            if fixed { &fixed_view } else { view },
             start,
             text,
             &style,
@@ -527,26 +501,4 @@ fn gutter_mark(
         }
     }
     (" ", t.muted)
-}
-
-/// A card top border's spans (0049 §6, rule 3): the path is the card
-/// title in `fg.text` bold, the border faint — muted on the active card.
-fn collection_card_top_spans(t: &Tokens, text: &str, focused: bool) -> Vec<Span<'static>> {
-    let border = Style::default().fg(if focused { t.muted } else { t.faint });
-    match (text.find("╭─ "), text.find(" ──")) {
-        (Some(lo), Some(hi)) => {
-            let path_start = lo + "╭─ ".len();
-            vec![
-                Span::styled(text[..path_start].to_string(), border),
-                Span::styled(
-                    text[path_start..hi].to_string(),
-                    Style::default()
-                        .fg(if focused { t.text } else { t.secondary })
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(text[hi..].to_string(), border),
-            ]
-        }
-        _ => vec![Span::styled(text.to_string(), border)],
-    }
 }

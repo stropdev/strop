@@ -337,6 +337,19 @@ impl Heading<'_> {
     }
 }
 
+/// `●` for modified (`diag.warning`), `[RO]` for read-only (`fg.muted`):
+/// the modeline's marks (0100 §3.2), each led by one cell.
+pub(crate) fn marks(t: &Tokens, modified: bool, readonly: bool) -> Vec<Span<'static>> {
+    let mut marks = Vec::new();
+    if modified {
+        marks.push(Span::styled(" ●", Style::default().fg(t.warning)));
+    }
+    if readonly {
+        marks.push(Span::styled(" [RO]", Style::default().fg(t.muted)));
+    }
+    marks
+}
+
 /// A fact in `fg.secondary` (a count, words).
 pub(crate) fn fact(t: &Tokens, text: impl Into<String>) -> Vec<Span<'static>> {
     vec![Span::styled(text.into(), Style::default().fg(t.secondary))]

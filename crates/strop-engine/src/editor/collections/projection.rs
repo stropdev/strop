@@ -2,11 +2,14 @@
 use super::{Collection, CollectionRow, CollectionRowInfo, Document, Editor};
 use strop_core::id::{Arena, DocumentId, DocumentKind};
 
-/// The canonical rendering (0049 §6, worded by 0097 §3.4): a title row
-/// saying what was collected and how much, then ONE CARD PER FILE — top
-/// border with the path and its hit count, excerpt bodies with a
-/// "⋮ N lines not shown" gap between disjoint spans, and a bottom border. Row roles are recorded in `collection.rows` for the renderer.
-/// Each excerpt's `view_line` is the chrome row before its body.
+/// The canonical rendering (0049 §6, worded by 0097 §3.4, drawn by 0100):
+/// a title row saying what was collected and how much, then ONE BLOCK PER
+/// FILE — an empty row, a heading row holding the path, and the excerpt
+/// bodies with an "N lines not shown" row between disjoint spans. The
+/// buffer holds words only; the rule, the hit count, the marks and the
+/// `⋮` are drawn by the renderer. Row roles are recorded in
+/// `collection.rows` for the renderer. Each excerpt's `view_line` is the
+/// heading or gap row before its body.
 pub(super) fn render(
     docs: &Arena<DocumentKind, Document>,
     cwd: &std::path::Path,
@@ -40,22 +43,20 @@ pub(super) fn render(
     let mut at = 0;
     while at < collection.excerpts.len() {
         let source = collection.excerpts[at].source;
-        let mut card_end = at;
-        while card_end + 1 < collection.excerpts.len()
-            && collection.excerpts[card_end + 1].source == source
+        let mut block_end = at;
+        while block_end + 1 < collection.excerpts.len()
+            && collection.excerpts[block_end + 1].source == source
         {
-            card_end += 1;
+            block_end += 1;
         }
         let doc = docs.get(source).unwrap();
-        let path = doc.label(cwd);
-        let hits: usize = collection.excerpts[at..=card_end]
-            .iter()
-            .map(|excerpt| super::quickfix::excerpt_hits(excerpt, &doc.buf).len())
-            .sum();
-        text.push_str(&format!("╭─ {path} ── {}\n", super::counted(hits, "hit")));
-        rows.push(CollectionRow::CardTop(at));
-        line += 1;
-        for i in at..=card_end {
+        text.push('\n');
+        rows.push(CollectionRow::Blank);
+        text.push_str(&doc.label(cwd));
+        text.push('\n');
+        rows.push(CollectionRow::Heading(at));
+        line += 2;
+        for i in at..=block_end {
             if i > at {
                 let prev = &collection.excerpts[i - 1];
                 let here = &collection.excerpts[i];
@@ -64,7 +65,7 @@ pub(super) fn render(
                     .line_of(here.start)
                     .saturating_sub(doc.buf.line_of(prev.end));
                 text.push_str(&format!(
-                    "⋮ {} not shown\n",
+                    "{} not shown\n",
                     super::counted(gap_lines, "line")
                 ));
                 rows.push(CollectionRow::Gap);
@@ -89,10 +90,7 @@ pub(super) fn render(
             }
             line += excerpt.view_lines;
         }
-        text.push_str("╰\n");
-        rows.push(CollectionRow::CardBottom);
-        line += 1;
-        at = card_end + 1;
+        at = block_end + 1;
     }
     collection.rows = rows;
     text
@@ -140,7 +138,7 @@ impl Editor {
     /// Per-row source facts for the renderer (0049 §6): the row's role,
     /// and for body rows the source document + this row's source byte
     /// span + the query hits inside it (source bytes) + whether the
-    /// caret sits in this card.
+    /// caret sits in this block.
     pub fn collection_row_info(
         &self,
         doc: strop_core::id::DocumentId,
@@ -157,10 +155,21 @@ impl Editor {
             kind,
             source: None,
             source_matches: Vec::new(),
-            card_active: false,
+            block_active: false,
+            hits: 0,
             source_dirty: false,
             source_readonly: false,
         };
+        if let CollectionRow::Heading(first) = kind {
+            let source = collection.excerpts.get(first).map(|excerpt| excerpt.source);
+            if let Some(doc) = source.and_then(|source| self.docs.get(source)) {
+                info.hits = collection.excerpts[first..]
+                    .iter()
+                    .take_while(|excerpt| Some(excerpt.source) == source)
+                    .map(|excerpt| super::quickfix::excerpt_hits(excerpt, &doc.buf).len())
+                    .sum();
+            }
+        }
         let index = collection
             .excerpts
             .partition_point(|excerpt| excerpt.view_line <= line);
@@ -175,7 +184,7 @@ impl Editor {
             let active_index = collection
                 .excerpts
                 .partition_point(|excerpt| excerpt.view_line <= caret_line);
-            info.card_active = caret_line != usize::MAX
+            info.block_active = caret_line != usize::MAX
                 && active_index
                     .checked_sub(1)
                     .and_then(|index| collection.excerpts.get(index))
@@ -243,6 +252,28 @@ impl Editor {
             }
         }
         Some(None) // title row
+    }
+
+    /// What a collection was made from (`search token`): the subject at
+    /// the start of its title row.
+    pub fn collection_title(&self, doc: DocumentId) -> Option<&str> {
+        self.collections
+            .get(&doc)
+            .map(|collection| collection.title.as_str())
+    }
+
+    /// The largest source line number a collection's gutter shows (its
+    /// width follows the files' numbers, not the view's row count).
+    pub(crate) fn collection_largest_source_line(&self, doc: DocumentId) -> Option<usize> {
+        let collection = self.collections.get(&doc)?;
+        let mut largest = 1;
+        for excerpt in &collection.excerpts {
+            if let Some(source) = self.docs.get(excerpt.source) {
+                let last = source.buf.line_of(excerpt.start) + excerpt.view_lines;
+                largest = largest.max(last);
+            }
+        }
+        Some(largest)
     }
 
     pub fn collection_unsaved(&self, document: DocumentId) -> bool {

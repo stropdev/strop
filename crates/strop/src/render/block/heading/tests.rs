@@ -1,16 +1,5 @@
 use super::*;
 use ratatui::style::Modifier;
-
-fn marks(t: &Tokens, modified: bool, readonly: bool) -> Vec<Span<'static>> {
-    let mut marks = Vec::new();
-    if modified {
-        marks.push(Span::styled(" ●", Style::default().fg(t.warning)));
-    }
-    if readonly {
-        marks.push(Span::styled(" [RO]", Style::default().fg(t.muted)));
-    }
-    marks
-}
 use strop_core::theme::ThemeId;
 
 fn t() -> Tokens {

@@ -216,7 +216,7 @@ impl Editor {
 
     /// `Enter` in a collection: open the file at the cursor. The hit on
     /// that line, or the nearest one above it, becomes current. False on a
-    /// row that shows no file (the title, a gap, a card's lower border).
+    /// row that shows no file (the title, a gap, a blank row).
     pub(crate) fn collection_enter(&mut self) -> bool {
         let list = self.current();
         if !self.collections.contains_key(&list) {

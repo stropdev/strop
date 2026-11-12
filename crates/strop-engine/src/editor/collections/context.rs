@@ -12,7 +12,7 @@ impl Editor {
         let Some(index) = collection.excerpts.iter().position(|excerpt| {
             line >= excerpt.view_line && line <= excerpt.view_line + excerpt.view_lines
         }) else {
-            self.message = "put the cursor in a file's card to change its context".into();
+            self.message = "put the cursor in a file's block to change its context".into();
             return;
         };
         let excerpt = &collection.excerpts[index];

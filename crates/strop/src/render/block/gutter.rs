@@ -27,6 +27,51 @@ pub(crate) fn list(t: &Tokens, sign: Sign) -> Vec<Span<'static>> {
     vec![mark, Span::raw(" ")]
 }
 
+/// The lines and source gutters: a sign, the number right-aligned, a
+/// space. No number (a title, a blank row) leaves the cells blank; the
+/// cursor row's number is the accent.
+pub(crate) fn numbered(
+    t: &Tokens,
+    sign: Span<'static>,
+    number: Option<usize>,
+    cursor: bool,
+    width: usize,
+) -> Vec<Span<'static>> {
+    let digits = width.saturating_sub(2);
+    let ink = Style::default().fg(if cursor { t.accent } else { t.muted });
+    let cell = match number {
+        Some(number) => format!("{number:>digits$} "),
+        None => " ".repeat(digits + 1),
+    };
+    vec![sign, Span::styled(cell, ink)]
+}
+
+/// A break's gutter: `⋮` in `fg.faint` in the last digit cell of each
+/// number column (`columns`, in cells from the gutter's start).
+pub(crate) fn jump(t: &Tokens, width: usize, columns: &[usize]) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut at = 0;
+    for &column in columns {
+        if column < at || column >= width {
+            continue;
+        }
+        if column > at {
+            spans.push(Span::raw(" ".repeat(column - at)));
+        }
+        spans.push(Span::styled("⋮", Style::default().fg(t.faint)));
+        at = column + 1;
+    }
+    if width > at {
+        spans.push(Span::raw(" ".repeat(width - at)));
+    }
+    spans
+}
+
+/// The source gutter's number column ends one cell before the space.
+pub(crate) fn source_jump(width: usize) -> [usize; 1] {
+    [width.saturating_sub(2)]
+}
+
 /// Digits per side of a pair gutter `width` cells wide.
 pub(crate) fn pair_digits(width: usize) -> usize {
     width.saturating_sub(3) / 2
@@ -79,6 +124,13 @@ mod tests {
                 width(&list(&t, sign)),
                 strop_engine::editor::prepare::LIST_GUTTER
             );
+        }
+        for cells in [5, 6, 9, 15] {
+            for number in [None, Some(1), Some(10usize.pow(cells as u32 - 2) - 1)] {
+                let sign = Span::raw(" ");
+                assert_eq!(width(&numbered(&t, sign, number, true, cells)), cells);
+            }
+            assert_eq!(width(&jump(&t, cells, &source_jump(cells))), cells);
         }
         for digits in 3..=6 {
             let line = DiffLine {

@@ -468,10 +468,13 @@ impl Editor {
             Some(
                 Surface::Status { .. } | Surface::CommitLog { .. } | Surface::ChangedFiles { .. },
             ) => (Gutter::List, LIST_GUTTER),
-            None => (
-                Gutter::Lines,
-                number_gutter(buffer.buf.last_content_line() + 1),
-            ),
+            None => match self.collection_largest_source_line(doc) {
+                Some(largest) => (Gutter::Source, number_gutter(largest)),
+                None => (
+                    Gutter::Lines,
+                    number_gutter(buffer.buf.last_content_line() + 1),
+                ),
+            },
         }
     }
 
