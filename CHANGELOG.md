@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Closing a collection closes the files it opened that you never looked at** (plans/0101). Files you opened from it, edited through it, or had open before stay; a file with unsaved changes is never closed, and the message says how many stayed for that reason. `:q` on a collection now returns the cursor to where you pressed `Ctrl-O`.
+
 ## 0.63.0 — 2026-11-12
 
 ### Changed

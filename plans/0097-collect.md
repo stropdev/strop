@@ -192,8 +192,9 @@ before `settle` → the collection is there with the cursor on the first hit;
 
 ## 6. Deferred
 
-- Closing the file buffers a collection loaded once it closes (0094 §5: it
-  needs a close that does not move the cursor).
+- ~~Closing the file buffers a collection loaded once it closes~~ — done in
+  [0101](0101-history-and-limits.md) §6: loans, released by
+  `release_document`, a close that moves no cursor.
 - `:cdo` over several hundred hits re-reads the hit list every round. It was
   12 s in a debug build for 600 hits; measure in release before changing it.
 - A collection of the picker's *symbols* lists. They are not places with a

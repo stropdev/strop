@@ -40,6 +40,7 @@ impl Document {
             detection,
             source: DocumentSource::Remote(Box::new(source)),
             external_change: false,
+            loan: None,
         }
     }
     pub(crate) fn remote_snapshot(snapshot: RemoteSnapshot) -> Self {

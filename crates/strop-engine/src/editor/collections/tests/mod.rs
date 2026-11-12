@@ -8,6 +8,7 @@ use strop_picker::{Item, Kind, Payload};
 mod convergence;
 mod flow;
 mod live;
+mod loans;
 mod ownership;
 mod quickfix;
 mod write;

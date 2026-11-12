@@ -8,6 +8,7 @@
 mod build;
 mod context;
 mod journal;
+pub(crate) mod loans;
 mod navigation;
 mod projection;
 mod quickfix;
