@@ -84,7 +84,8 @@ fn status_buffer() {
     });
 }
 
-/// `cc` from the status buffer: the message file with its summary.
+/// `cc` from the status buffer: the message file with its summary and a
+/// subject too long for `git log`.
 #[test]
 fn commit_buffer() {
     each("git-commit", |root, editor| {
@@ -92,7 +93,12 @@ fn commit_buffer() {
         keys(editor, " gg");
         keys(editor, "cc");
         editor.feed_text("i");
-        editor.paste_bracketed("docs: say how staging works");
+        // 80 cells: the subject runs past column 72 and says so
+        editor.paste_bracketed(
+            "docs: say how staging works, one key per file or hunk, and what a commit buffer.",
+        );
+        // back to the subject's start, so the frame shows all of it
+        editor.feed_text("<esc>0");
         settle_analysis()
     });
 }

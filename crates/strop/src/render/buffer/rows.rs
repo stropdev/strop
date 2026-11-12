@@ -2,6 +2,7 @@
 use super::*;
 
 mod collection;
+mod commit_message;
 use collection::CollectionProjection;
 
 /// Render one pane's rows: gutter, syntax/decoration, overlays, guides.
@@ -177,6 +178,7 @@ pub(super) fn render_pane(
     // resolved width too — one setting, no render-side config shortcut.
     let margin_tab = editor.doc(view.doc).indent.width.max(1);
     let help = buf.name.as_deref() == Some("help");
+    let commit_message = editor.is_commit_message(view.doc);
     let mut lines: Vec<Line> = Vec::with_capacity(rows);
     for row in 0..rows {
         let line_idx = view.view_top.saturating_add(row);
@@ -276,9 +278,11 @@ pub(super) fn render_pane(
             Some(crate::editor::ReviewRow::Warning) => style.row_fg = Some(t.warning),
             _ => {}
         }
-        // a commit message's `#` lines are commentary git leaves out
-        if text.chars().next() == Some('#') && editor.is_commit_message(view.doc) {
-            style.row_fg = Some(t.syn.comment);
+        // a commit message reads its three inks from its text (0100 §4.6)
+        if commit_message {
+            if let Some(spans) = commit_message::spans(t, line_idx, &text.to_string()) {
+                style.decorations = spans;
+            }
         }
         let mut fixed = false;
         match surface.and_then(|surface| surface.diff_row(line_idx)) {
