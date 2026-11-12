@@ -132,11 +132,12 @@ fn file_headers_name_the_relative_path_and_hit_count() {
         .find(|s| s.content.contains('─'))
         .expect("leader");
     assert_eq!(leader.style.fg, Some(t.faint));
-    // too tight for a leader: the gap is plain and the name is whole
+    // narrow (0100 §3.9): the leader outranks the directory, which is
+    // cut from the left; tighter still, the gap is plain
     let tight = file_header(&t, &location, std::path::Path::new("/w"), Some(3), 20);
-    let tight_text = line_text(&tight);
-    assert_eq!(tight_text, " docs/remote.md   3 ");
-    assert!(!tight_text.contains('─'));
+    assert_eq!(line_text(&tight), " …s/remote.md ─── 3 ");
+    let tighter = file_header(&t, &location, std::path::Path::new("/w"), Some(3), 16);
+    assert_eq!(line_text(&tighter), " …/remote.md  3 ");
 }
 
 #[test]
@@ -160,12 +161,14 @@ fn remote_file_headers_lead_with_the_authority_and_clip_the_path_first() {
     assert_eq!(line.spans[2].content, "/home/dev/proj/");
     assert_eq!(line.spans[3].content, "notes.txt");
     assert!(line.spans[3].style.add_modifier.contains(Modifier::BOLD));
-    // narrow: the host and the name survive, the directory elides
-    let narrow = file_header(&t, &location, std::path::Path::new("/w"), Some(1), 26);
+    // narrow: the host and the name survive, the directory elides and an
+    // absolute one keeps its leading `/` ahead of the `…`
+    let narrow = file_header(&t, &location, std::path::Path::new("/w"), Some(1), 30);
     let text = line_text(&narrow);
-    assert!(text.starts_with(" ssh:box /…"), "{text:?}");
-    assert!(text.contains("notes.txt"), "{text:?}");
-    assert_eq!(narrow.width(), 26);
+    assert_eq!(text, " ssh:box /…oj/notes.txt ─── 1 ", "{text:?}");
+    assert_eq!(narrow.width(), 30);
+    let narrower = file_header(&t, &location, std::path::Path::new("/w"), Some(1), 26);
+    assert_eq!(line_text(&narrower), " ssh:box notes.txt ──── 1 ");
 }
 
 #[test]

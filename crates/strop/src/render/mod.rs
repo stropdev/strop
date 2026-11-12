@@ -15,6 +15,7 @@ use ratatui::Frame;
 use crate::editor::{Editor, Mode};
 
 mod blame_card;
+mod block;
 mod buffer;
 pub(crate) mod card;
 mod clip;

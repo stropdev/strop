@@ -9,6 +9,7 @@ use ratatui::text::Line;
 
 use super::super::window::{match_window, replacement_window};
 use super::{emphasis, finish, generic_row, plain};
+use crate::render::block::heading;
 use crate::render::card::row_marker;
 use crate::render::clip;
 use crate::render::file_name;
@@ -30,12 +31,10 @@ pub(in crate::render::picker) fn file_count(picker: &strop_picker::Picker) -> us
 
 // ---- Search rows ------------------------------------------------------------
 
-/// One header per file group (U7), a ruled heading: the file name in
-/// the heading idiom (directory secondary, name bold), a faint leader
-/// to the file's hit count in secondary at the right edge — the same
-/// grammar as a pane title in its border. The path clips from the
-/// start so the name survives; the leader takes whatever is left and
-/// yields to a plain gap before the name does.
+/// One header per file group (U7): the ruled heading every block draws
+/// (0100 §3.2) with a one-cell blank gutter — the file name in the
+/// heading idiom, a faint leader, the file's hit count in secondary at
+/// the right edge, and one cell of padding after it.
 pub(super) fn file_header(
     t: &Tokens,
     location: &strop_workspace::ResourceLocation,
@@ -43,22 +42,18 @@ pub(super) fn file_header(
     hits: Option<usize>,
     width: u16,
 ) -> Line<'static> {
-    let count = hits.map(|hits| hits.to_string()).unwrap_or_default();
-    let budget = usize::from(width).saturating_sub(count.chars().count() + 3);
-    let label = file_name::Label::from_location(location, root).clipped(budget.max(4));
-    let gap = usize::from(width).saturating_sub(1 + label.width() + count.len() + 1);
-    let mut spans = vec![plain(" ", Style::default())];
-    spans.extend(label.spans(file_name::Role::Heading, t));
-    // ` ─── ` needs five cells to read as a leader; less is a plain gap
-    if gap >= 5 {
-        spans.push(plain(
-            format!(" {} ", "─".repeat(gap - 2)),
-            Style::default().fg(t.faint),
-        ));
-    } else {
-        spans.push(plain(" ".repeat(gap.max(1)), Style::default()));
-    }
-    spans.push(plain(count, Style::default().fg(t.secondary)));
+    let label = file_name::Label::from_location(location, root);
+    let heading = heading::Heading {
+        gutter: 1,
+        ruled: false,
+        name: heading::Name::Path(&label),
+        marks: Vec::new(),
+        fact: hits.map_or_else(Vec::new, |hits| heading::fact(t, hits.to_string())),
+        focus: heading::Focus::Plain,
+    };
+    let drawn = heading.draw(t, usize::from(width).saturating_sub(1));
+    let mut spans = drawn.gutter;
+    spans.extend(drawn.text);
     spans.push(plain(" ", Style::default()));
     finish(t, spans, width, false)
 }
