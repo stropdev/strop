@@ -16,8 +16,6 @@
   </p>
 </div>
 
-![strop demo](demos/demo.gif)
-
 **strop** is a modal text editor written in Rust. Its keys are Vim's, checked
 against Neovim key for key by a test suite of about four thousand key
 sequences; [docs/vim-compat.md](docs/vim-compat.md) lists what is there and,
