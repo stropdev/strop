@@ -21,7 +21,7 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
- NORMAL   src/render/statusline.rs                                     10:1  50%
+  NORMAL    src/render/statusline.rs                                 50%  10:1  
 
   0: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 51:#838a97/#15171c+i 23:reset/#15171c 1:reset/reset
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#838a97/#15171c+i 71:reset/#15171c 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  21: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  22: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
- 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 11:#a8adb8/#1c1f25 13:#e6e1d6/#1c1f25 37:reset/#1c1f25 9:#858c9a/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 11:#a8adb8/#1c1f25 13:#e6e1d6/#1c1f25 32:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

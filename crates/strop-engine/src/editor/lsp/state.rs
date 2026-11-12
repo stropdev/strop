@@ -351,6 +351,52 @@ impl Editor {
             self.lsp_state.navigation = None;
             self.cancel_open(strop_core::worker::CancelReason::Superseded);
         }
+        let Some((server, mut prepared)) = self.lsp_prepare(kind, rename_to) else {
+            return;
+        };
+        if kind == RequestKind::Format {
+            // Rides the admitted record so replay relaunches the
+            // identical payload (tab width included).
+            prepared.tab_width = Some(self.cur_indent().width);
+        }
+        // Register the owner stamp before launching; replayed
+        // replies validate against exactly this stamp.
+        if hover {
+            self.lsp_state.hover = Some(prepared.stamp);
+        } else {
+            self.lsp_state.navigation = Some(prepared.stamp);
+        }
+        if matches!(
+            kind,
+            RequestKind::Locations(_)
+                | RequestKind::Format
+                | RequestKind::Rename
+                | RequestKind::CodeAction
+        ) {
+            let label = match kind {
+                RequestKind::Locations(k) => k.label(),
+                other => other.label(),
+            };
+            self.message = format!("lsp: {label} …");
+        }
+        if let Err(error) = self.lsp_launch(server, prepared) {
+            if hover {
+                self.lsp_state.hover = None;
+            } else {
+                self.lsp_state.navigation = None;
+            }
+            self.message = error;
+        }
+    }
+
+    /// Admit one request for the current document: find its server, open
+    /// and sync the document there, and capture the request's stamp.
+    /// Nothing is sent. `None`: refused, and `self.message` says why.
+    pub(in crate::editor) fn lsp_prepare(
+        &mut self,
+        kind: RequestKind,
+        rename_to: Option<String>,
+    ) -> Option<(ServerId, strop_lsp::PendingRequest)> {
         // Every decline names the verb it refused (0088 U17): `Space s`
         // and `Space k` must say why nothing opened.
         let label = kind.label();
@@ -358,11 +404,11 @@ impl Editor {
             self.message = format!(
                 "{label}: language services require a complete file buffer, not a partial/follow view"
             );
-            return;
+            return None;
         };
         let Some(language) = self.lsp_doc_language(self.current(), &doc.path) else {
             self.message = format!("{label}: no language server for this file type");
-            return;
+            return None;
         };
         let Some((server, _)) =
             self.lsp_server_for(self.current(), &doc.path, &language, &doc.filesystem)
@@ -421,7 +467,7 @@ impl Editor {
                     self.lsp_refill_restarts(&language, &doc.filesystem);
                     self.lsp_attach_document(representative);
                 }
-                return;
+                return None;
             }
             self.message = match doc.filesystem {
                 strop_workspace::Filesystem::Local => {
@@ -446,13 +492,11 @@ impl Editor {
                     )
                 }
             };
-            return;
+            return None;
         };
         self.lsp_did_open_document(self.current());
         self.lsp_sync_changed();
-        let Some(doc) = self.lsp_document_location(self.current()) else {
-            return;
-        };
+        let doc = self.lsp_document_location(self.current())?;
         let line = self.buf().line_of(self.head());
         let input = RequestInput {
             document: self.current(),
@@ -477,49 +521,7 @@ impl Editor {
             client.prepare_request(native_input)
         });
         match prepared {
-            Ok(Ok(mut prepared)) => {
-                if kind == RequestKind::Format {
-                    // Rides the admitted record so replay relaunches the
-                    // identical payload (tab width included).
-                    prepared.tab_width = Some(self.cur_indent().width);
-                }
-                // Register the owner stamp before launching; replayed
-                // replies validate against exactly this stamp.
-                if hover {
-                    self.lsp_state.hover = Some(prepared.stamp);
-                } else {
-                    self.lsp_state.navigation = Some(prepared.stamp);
-                }
-                if matches!(
-                    kind,
-                    RequestKind::Locations(_)
-                        | RequestKind::Format
-                        | RequestKind::Rename
-                        | RequestKind::CodeAction
-                ) {
-                    let label = match kind {
-                        RequestKind::Locations(k) => k.label(),
-                        other => other.label(),
-                    };
-                    self.message = format!("lsp: {label} …");
-                }
-                match self.tape.request("lsp.launch", &prepared) {
-                    Ok(true) => {
-                        if let Some(client) = self.lsp_live_client(server) {
-                            client.launch_request(prepared);
-                        }
-                    }
-                    Ok(false) => {}
-                    Err(error) => {
-                        if hover {
-                            self.lsp_state.hover = None;
-                        } else {
-                            self.lsp_state.navigation = None;
-                        }
-                        self.message = format!("lsp request diverged from trace: {error}");
-                    }
-                }
-            }
+            Ok(Ok(prepared)) => Some((server, prepared)),
             Ok(Err(refusal)) => {
                 self.message = match refusal {
                     RequestRefusal::NotOpen => {
@@ -544,12 +546,35 @@ impl Editor {
                         "lsp: request exceeds its retained data bound".into()
                     }
                 };
+                None
             }
-            Err(error) => self.message = format!("lsp prepare diverged from trace: {error}"),
+            Err(error) => {
+                self.message = format!("lsp prepare diverged from trace: {error}");
+                None
+            }
         }
     }
 
-    pub(super) fn lsp_failed(&mut self, server: ServerId) {
+    /// Send a prepared request. The caller owns its stamp already.
+    pub(in crate::editor) fn lsp_launch(
+        &mut self,
+        server: ServerId,
+        prepared: strop_lsp::PendingRequest,
+    ) -> Result<(), String> {
+        match self.tape.request("lsp.launch", &prepared) {
+            Ok(true) => {
+                if let Some(client) = self.lsp_live_client(server) {
+                    client.launch_request(prepared);
+                }
+                Ok(())
+            }
+            Ok(false) => Ok(()),
+            Err(error) => Err(format!("lsp request diverged from trace: {error}")),
+        }
+    }
+
+    pub(in crate::editor) fn lsp_failed(&mut self, server: ServerId) {
+        self.analysis.symbols.server_gone(server);
         let mut docs: Vec<_> = self
             .lsp_state
             .bindings

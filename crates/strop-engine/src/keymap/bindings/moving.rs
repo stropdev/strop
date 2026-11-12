@@ -107,14 +107,6 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Motion,
     },
     Binding {
-        keys: "g<space>",
-        desc: "collection: open the file at this line",
-        sections: &["moving"],
-        live: true,
-        id: "collection-source",
-        handler: Handler::Leaf(|e, _| e.collection_open_source_pub()),
-    },
-    Binding {
         keys: "gg",
         desc: "top of file",
         sections: &["moving"],
@@ -124,7 +116,8 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "enter",
-        desc: "line down, first non-blank (blame: open the line's commit)",
+        desc:
+            "line down, first non-blank (collection: open the file here; blame: the line's commit)",
         sections: &["moving"],
         live: true,
         id: "enter",
@@ -252,19 +245,19 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "]q",
-        desc: "next quickfix hit",
+        desc: "next hit of the collection (in it: from the cursor)",
         sections: &["moving"],
         live: true,
         id: "quickfix-next",
-        handler: Handler::Leaf(|e, _| e.quickfix_step(1)),
+        handler: Handler::Leaf(|e, _| e.quickfix_step(true)),
     },
     Binding {
         keys: "[q",
-        desc: "previous quickfix hit",
+        desc: "previous hit of the collection (in it: from the cursor)",
         sections: &["moving"],
         live: true,
         id: "quickfix-prev",
-        handler: Handler::Leaf(|e, _| e.quickfix_step(-1)),
+        handler: Handler::Leaf(|e, _| e.quickfix_step(false)),
     },
     Binding {
         keys: "]f",
@@ -281,22 +274,6 @@ pub(super) const ROWS: &[Binding] = &[
         live: true,
         id: "collection-file-prev",
         handler: Handler::Leaf(|e, _| e.collection_file_step_pub(false)),
-    },
-    Binding {
-        keys: "]e",
-        desc: "next excerpt (collections; +/- context)",
-        sections: &["moving"],
-        live: true,
-        id: "collection-excerpt-next",
-        handler: Handler::Leaf(|e, _| e.collection_excerpt_step(true)),
-    },
-    Binding {
-        keys: "[e",
-        desc: "previous excerpt (collections; +/- context)",
-        sections: &["moving"],
-        live: true,
-        id: "collection-excerpt-prev",
-        handler: Handler::Leaf(|e, _| e.collection_excerpt_step(false)),
     },
     Binding {
         keys: "]c",

@@ -37,8 +37,8 @@ impl Editor {
         let Some(glue) = &mut self.picker else {
             return;
         };
-        if key != Key::Enter {
-            glue.accept_when_ranked = false;
+        if !matches!(key, Key::Enter | Key::CtrlO) {
+            glue.deferred = None;
         }
         let search = glue.picker.kind == Kind::Search;
         let replace = search && glue.picker.replacement_visible;
@@ -98,7 +98,7 @@ impl Editor {
                     glue.picker.toggle_field();
                 }
             }
-            // ctrl-o: the listed hits become a read-only source collection (0081).
+            // ctrl-o: the included hits become a collection (0097).
             Key::CtrlO => self.open_collection_from_picker(),
             Key::CtrlD if search => {
                 if glue.picker.toggle_file_excluded() {

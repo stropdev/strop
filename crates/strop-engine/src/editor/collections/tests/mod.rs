@@ -1,10 +1,12 @@
-//! Collection behavior: building, source refreshes and navigation. Editing
-//! through a collection is in `write.rs`, the quickfix names in `quickfix.rs`.
+//! Collection behavior: building and source refreshes. Editing through a
+//! collection is in `write.rs`, getting in and moving between hits in
+//! `flow.rs`, `:cdo` and the other quickfix names in `quickfix.rs`.
 
 use crate::editor::Editor;
 use strop_core::Buffer;
 use strop_picker::{Item, Kind, Payload};
 mod convergence;
+mod flow;
 mod live;
 mod ownership;
 mod quickfix;
@@ -152,7 +154,7 @@ fn stale_search_witness_is_not_projected() {
     let view = current_text(&e);
     assert!(view.contains("beta two"), "{view}");
     assert!(!view.contains("alpha one"), "stale hit projected: {view}");
-    assert!(e.message.contains("1 hit(s) skipped"), "{}", e.message);
+    assert!(e.message.contains("1 hit left out"), "{}", e.message);
 }
 
 #[test]
@@ -184,32 +186,6 @@ fn anchors_remap_when_the_source_grows() {
 }
 
 /// Hits on a.txt:1 and b.txt:1 provide two source-backed excerpts.
-fn two_file_fixture() -> (Editor, std::path::PathBuf, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap().keep();
-    let root = dir;
-    let a = root.join("a.txt");
-    let b = root.join("b.txt");
-    std::fs::write(&a, "alpha one\n").unwrap();
-    std::fs::write(&b, "beta one\n").unwrap();
-    let mut e = Editor::new_in(Buffer::from_text("scratch\n"), root.clone());
-    e.open_fixture(&a).unwrap();
-    e.open_fixture(&b).unwrap();
-    e.open_picker(Kind::Search);
-    let item = |path: &std::path::Path, witness: &str| Item {
-        badge: None,
-        text: "hit".into(),
-        payload: Payload::Grep {
-            location: strop_workspace::ResourceLocation::local(path.to_path_buf()),
-            line: 1,
-            col: 1,
-            match_len: 3,
-            line_text: witness.into(),
-        },
-    };
-    e.picker_items_fixture(vec![item(&a, "alpha one"), item(&b, "beta one")]);
-    (e, a, b)
-}
-
 #[test]
 fn unopened_sources_load_in_the_background_and_assemble() {
     // 0044 v2: hits on files that are not open load as real buffers,
@@ -368,56 +344,6 @@ fn collection_close_keeps_dirty_sources() {
     );
 }
 
-/// 0049 §5: g<Space> from a body row lands on the exact source position
-/// and Ctrl-O returns to the collection; from a header it opens the file.
-#[test]
-fn collection_open_source_maps_positions_and_returns() {
-    let (mut e, a, _) = fixture();
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    let collection = e.current();
-    // body row: line 2 is a.txt's first excerpt body
-    e.set_head(e.buf().line_start(2) + 2); // 'p' of alpha
-    e.feed_text("g ");
-    let a_id = e
-        .docs
-        .iter()
-        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
-        .unwrap();
-    assert_eq!(e.current(), a_id, "switched to the live source");
-    assert_eq!(e.head(), 2, "exact source byte — unsaved-edit view");
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    assert_eq!(e.current(), collection, "Ctrl-O returns to the collection");
-    // header row: line 1 is a.txt's header
-    e.set_head(e.buf().line_start(1));
-    e.feed_text("g ");
-    assert_eq!(e.current(), a_id);
-    assert_eq!(e.buf().line_of(e.head()), 0, "header opens at the excerpt");
-}
-
-/// 0049 §5: Enter on a header opens the source; Enter in a body row
-/// keeps its vim motion.
-#[test]
-fn collection_enter_on_header_only() {
-    let (mut e, a, _) = fixture();
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    let a_id = e
-        .docs
-        .iter()
-        .find_map(|(id, d)| (d.buf.path.as_ref() == Some(&a)).then_some(id))
-        .unwrap();
-    e.set_head(e.buf().line_start(1)); // a.txt header row
-    e.feed(strop_core::frontend_input::Key::Enter);
-    assert_eq!(e.current(), a_id, "Enter on a header opens the source");
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    e.set_head(e.buf().line_start(2)); // body row
-    e.feed(strop_core::frontend_input::Key::Enter);
-    assert_eq!(
-        e.buf().line_of(e.head()),
-        3,
-        "Enter in a body row moves down"
-    );
-}
-
 /// 0049 §7.2: occurrence selection in a collection matches excerpt
 /// bodies only — the needle in a header row is chrome, never selected.
 #[test]
@@ -545,7 +471,7 @@ fn one_card_per_file_with_gap_rows() {
         1,
         "one card for the file: {text}"
     );
-    assert!(text.contains("⋮ 2 source lines omitted"), "gap row: {text}");
+    assert!(text.contains("⋮ 2 lines not shown"), "gap row: {text}");
     // the gap row is protected chrome
     let gap_line = text.lines().position(|l| l.starts_with('⋮')).unwrap();
     e.set_head(e.buf().line_start(gap_line));
@@ -582,24 +508,6 @@ fn file_card_navigation_steps_between_cards() {
     assert_eq!(e.buf().line_of(e.head()), tops[1], "next card");
     e.feed_text("]f[f");
     assert_eq!(e.buf().line_of(e.head()), tops[0], "previous card");
-}
-
-#[test]
-fn excerpt_navigation_steps_between_excerpts() {
-    let (mut e, _, _) = two_file_fixture();
-    e.feed(strop_core::frontend_input::Key::CtrlO);
-    let collection = e.current();
-    let starts: Vec<_> = e.collections[&collection]
-        .excerpts
-        .iter()
-        .map(|excerpt| excerpt.view_start)
-        .collect();
-    assert_eq!(starts.len(), 2);
-    e.set_head(starts[0]);
-    e.feed_text("]e");
-    assert_eq!(e.head(), starts[1]);
-    e.feed_text("[e");
-    assert_eq!(e.head(), starts[0]);
 }
 
 #[test]

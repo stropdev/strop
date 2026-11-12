@@ -37,7 +37,7 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- INSERT   main  .git/COMMIT_EDITMSG ●                                                                                              1:28  10%
+  INSERT    main  .git/COMMIT_EDITMSG ●                                                                                          10%   1:28 
 
   0: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 27:#e6e1d6/#1b1e24 107:#1b1e24/#1b1e24 1:reset/reset
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 134:reset/#15171c 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
  37: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
  38: 1:#4a5160/#15171c 138:reset/#15171c 1:reset/reset
- 39: 8:#15171c/#8fc48a+b 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25 14:#e6e1d6/#1c1f25 2:#d9a85a/#1c1f25 94:reset/#1c1f25 9:#858c9a/#1c1f25
+ 39: 10:#15171c/#8fc48a+b 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25 14:#e6e1d6/#1c1f25 2:#d9a85a/#1c1f25 89:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

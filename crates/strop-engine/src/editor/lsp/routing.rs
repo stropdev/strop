@@ -91,6 +91,11 @@ impl Editor {
                 self.hover_card = Some(text);
             }
             LspEvent::Note { context, text } => {
+                if context.kind == strop_lsp::RequestKind::DocumentSymbols {
+                    // an error or "no symbols": the build's owner words it
+                    crate::editor::symbols::server_reply(self, &context, None, Some(text));
+                    return;
+                }
                 self.continue_after_format(&context, Some(text.clone()));
                 if !self.finish_lsp_reply(&context) {
                     trace::services::rejected(
@@ -171,34 +176,7 @@ impl Editor {
                 self.present_change_plan(plan);
             }
             LspEvent::Symbols { context, symbols } => {
-                if !self.finish_lsp_reply(&context) {
-                    trace::services::rejected("lsp", "symbol owner/revision changed");
-                    return;
-                }
-                if symbols.is_empty() {
-                    self.message = "no symbols in this document".into();
-                    return;
-                }
-                // The reply is retained whole (0063 §3):
-                // `documentSymbol` carries no query, so Boolean/`kind:`
-                // narrowing re-filters these candidates locally as the
-                // input changes. The fresh picker has no query yet —
-                // the initial rows are the unfiltered tree.
-                let root = self
-                    .lsp_state
-                    .bindings
-                    .get(&context.stamp.document)
-                    .map(|binding| binding.root.clone())
-                    .unwrap_or_else(|| self.cwd.clone());
-                let items = document_symbol_items(&symbols, None, &root);
-                self.open_picker(strop_picker::Kind::Symbols);
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.symbols_candidates = symbols;
-                    glue.picker.append(items);
-                }
-                // Items landed after the initial (empty-catalog)
-                // ranking: re-rank or the list renders empty.
-                self.request_picker_ranking();
+                crate::editor::symbols::server_reply(self, &context, Some(symbols), None);
             }
 
             LspEvent::WorkspaceSymbols {
@@ -519,7 +497,7 @@ impl Editor {
 /// path-family atoms against the workspace-relative path. Undecidable
 /// evidence admits (three-valued), exactly like the workspace-symbols
 /// merge; operator-free queries pass no plan and admit everything.
-fn document_symbol_items(
+pub(crate) fn document_symbol_items(
     symbols: &[strop_lsp::ProtoSymbol],
     admission: Option<&strop_picker::query::BooleanPlan>,
     root: &std::path::Path,

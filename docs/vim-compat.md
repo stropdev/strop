@@ -19,9 +19,8 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ g_ g0 g^ g$ gj gk` — last non-blank; line start, first non-blank, end; line down / up
 - `✓ gn gN` — select the next / previous search match (cgn then . changes each)
 - `✓ 0 $ G %` — line/file/pair jumps
-- `✓ g<space>` — collection: open the file at this line
 - `✓ gg` — top of file
-- `✓ enter` — line down, first non-blank (blame: open the line's commit)
+- `✓ enter` — line down, first non-blank (collection: open the file here; blame: the line's commit)
 - `✓ tab` — jump list forward (ctrl-i)
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-e ctrl-y` — scroll the window one line down / up
@@ -37,12 +36,10 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ gd` — goto definition (LSP)
 - `✓ gs` — switch source/header (clangd)
 - `✓ f<c> F<c> t<c> T<c>` — find/till char (candidates light up)
-- `✓ ]q` — next quickfix hit
-- `✓ [q` — previous quickfix hit
+- `✓ ]q` — next hit of the collection (in it: from the cursor)
+- `✓ [q` — previous hit of the collection (in it: from the cursor)
 - `✓ ]f` — next file card (collections)
 - `✓ [f` — previous file card (collections)
-- `✓ ]e` — next excerpt (collections; +/- context)
-- `✓ [e` — previous excerpt (collections; +/- context)
 - `✓ ]c` — next git hunk
 - `✓ [c` — previous git hunk
 - `✓ m<a>` — set mark at cursor
@@ -264,12 +261,11 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :jumps :symbols` — jumplist / document symbols picker
 - `✓ :format :rename` — format buffer / rename symbol: :rename NEW
 - `✓ :recover` — recover unsaved text after a crash: list, restore N, discard N
-- `✓ :collection source|expand|contract` — source, expand or contract the excerpt at the caret
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ :tab-size :indent-style` — indent width and tabs or spaces for this file
 - `✓ :fs :browse :filter :remote :terminal-local` — file operations, browse a directory (local or ssh://), filter its listing, SSH hosts, a local shell
-- `✓ :copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo` — quickfix: show the list, visit hits, run a command at each hit or file
+- `✓ :copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo` — the collection's hits (quickfix): show it, step hits, run a command at each hit line or file
 
 ## Missing
 

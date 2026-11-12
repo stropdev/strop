@@ -2,10 +2,10 @@
 use super::{Collection, CollectionRow, CollectionRowInfo, Document, Editor};
 use strop_core::id::{Arena, DocumentId, DocumentKind};
 
-/// The canonical rendering (0049 §6): a title row with counts, then ONE
-/// CARD PER FILE — top border with path and badges, excerpt bodies with
-/// a "⋮ N source lines omitted" gap between disjoint spans, and a bottom
-/// border. Row roles are recorded in `collection.rows` for the renderer.
+/// The canonical rendering (0049 §6, worded by 0097 §3.4): a title row
+/// saying what was collected and how much, then ONE CARD PER FILE — top
+/// border with the path and its hit count, excerpt bodies with a
+/// "⋮ N lines not shown" gap between disjoint spans, and a bottom border. Row roles are recorded in `collection.rows` for the renderer.
 /// Each excerpt's `view_line` is the chrome row before its body.
 pub(super) fn render(
     docs: &Arena<DocumentKind, Document>,
@@ -20,14 +20,20 @@ pub(super) fn render(
             *index == 0 || collection.excerpts[index - 1].source != excerpt.source
         })
         .count();
-    let unavailable = if collection.skipped == 0 {
-        String::new()
-    } else {
-        format!(" · {} unavailable hit(s)", collection.skipped)
+    let mut hits = 0;
+    for excerpt in &collection.excerpts {
+        if let Some(source) = docs.get(excerpt.source) {
+            hits += super::quickfix::excerpt_hits(excerpt, &source.buf).len();
+        }
+    }
+    let left_out = match collection.skipped {
+        0 => String::new(),
+        skipped => format!(" · {} left out", super::counted(skipped, "hit")),
     };
     let mut text = format!(
-        "collection: {} — {} match(es) · {} file(s){unavailable}\n",
-        collection.title, collection.match_count, files
+        "{} — {}{left_out}\n",
+        collection.title,
+        super::hits_in_files(hits, files)
     );
     let mut rows = vec![CollectionRow::Title];
     let mut line = 1;
@@ -42,21 +48,11 @@ pub(super) fn render(
         }
         let doc = docs.get(source).unwrap();
         let path = doc.label(cwd);
-        let lang = doc
-            .syntax_path()
-            .and_then(|path| path.extension())
-            .and_then(|extension| extension.to_str())
-            .and_then(strop_lsp::registry::language_for_extension_name);
-        let count = card_end - at + 1;
-        let lang_badge = lang.map(|l| format!("{l} · ")).unwrap_or_default();
-        let context = collection.excerpts[at..=card_end]
+        let hits: usize = collection.excerpts[at..=card_end]
             .iter()
-            .map(|excerpt| excerpt.context)
-            .max()
-            .unwrap_or(0);
-        text.push_str(&format!(
-            "╭─ {path} ── {lang_badge}{count} excerpt(s) · context {context} (+/-)\n"
-        ));
+            .map(|excerpt| super::quickfix::excerpt_hits(excerpt, &doc.buf).len())
+            .sum();
+        text.push_str(&format!("╭─ {path} ── {}\n", super::counted(hits, "hit")));
         rows.push(CollectionRow::CardTop(at));
         line += 1;
         for i in at..=card_end {
@@ -67,7 +63,10 @@ pub(super) fn render(
                     .buf
                     .line_of(here.start)
                     .saturating_sub(doc.buf.line_of(prev.end));
-                text.push_str(&format!("⋮ {gap_lines} source lines omitted\n"));
+                text.push_str(&format!(
+                    "⋮ {} not shown\n",
+                    super::counted(gap_lines, "line")
+                ));
                 rows.push(CollectionRow::Gap);
                 line += 1;
             }

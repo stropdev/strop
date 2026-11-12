@@ -190,9 +190,9 @@ impl Editor {
                             }
                         }
                         glue.picker.error = Some(failure.message);
-                        glue.accept_when_ranked = false;
+                        glue.deferred = None;
                     }
-                    Outcome::Cancelled(_) => glue.accept_when_ranked = false,
+                    Outcome::Cancelled(_) => glue.deferred = None,
                 }
             }
             RankingEvent::Stopped => {

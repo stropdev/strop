@@ -204,6 +204,7 @@ impl Editor {
     /// Remove one server's placements, bindings and connection with a
     /// graceful shutdown that never blocks the input thread.
     fn lsp_retire_server(&mut self, server: ServerId, reason: &str) {
+        self.analysis.symbols.server_gone(server);
         // Remove the placements first: the closes below re-enter the
         // retirement scan, and this server must already be gone from
         // the tables so the recursion is empty.

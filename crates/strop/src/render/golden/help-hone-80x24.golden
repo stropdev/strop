@@ -14,14 +14,14 @@
   14    g_ g0 g^ g$ gj gk             last non-blank; line start, first non-bla 
   15    gn gN                         select the next / previous search match ( 
   16    0 $ G %                       line/file/pair jumps                      
-  17    g<space>                      collection: open the file at this line    
-  18    gg                            top of file                               
-  19    enter                         line down, first non-blank (blame: open t 
-  20    tab                           jump list forward (ctrl-i)                
-  21    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)     
-  22    ctrl-e ctrl-y                 scroll the window one line down / up      
-  23    ctrl-^                        alternate buffer                          
- NORMAL   help [RO]                                                      1:1  0%
+  17    gg                            top of file                               
+  18    enter                         line down, first non-blank (collection: o 
+  19    tab                           jump list forward (ctrl-i)                
+  20    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)     
+  21    ctrl-e ctrl-y                 scroll the window one line down / up      
+  22    ctrl-^                        alternate buffer                          
+  23    grr                           references (LSP)                          
+  NORMAL    help [RO]                                                0%    1:1  
 
   0: 1:#858c9a/#15171c+b 4:#e8a848/#15171c 12:#e6e1d6/#15171c+b 28:#858c9a/#15171c 34:reset/#15171c 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
@@ -39,11 +39,11 @@
  13: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
  14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
  15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 22:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
- 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 40:#e6e1d6/#15171c 3:reset/#15171c 1:reset/reset
- 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 13:#e6e1d6/#15171c 30:reset/#15171c 1:reset/reset
- 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
- 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 28:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset
- 20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 39:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
- 21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 38:#e6e1d6/#15171c 5:reset/#15171c 1:reset/reset
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 13:#e6e1d6/#15171c 30:reset/#15171c 1:reset/reset
+ 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 43:#e6e1d6/#15171c 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 28:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset
+ 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 39:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
+ 20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 38:#e6e1d6/#15171c 5:reset/#15171c 1:reset/reset
+ 21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
  22: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
- 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 54:reset/#1c1f25 7:#858c9a/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 46:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25

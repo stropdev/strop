@@ -171,10 +171,34 @@ as if they were all of them.
 
 **Ctrl-O** in search results, references (`grr`) or diagnostics (`Space d`)
 opens a collection: one card per file, each hit with two lines of context,
-highlighted like the file and with the file's line numbers. It is an
-ordinary buffer. What you edit in it is edited in the files:
+highlighted like the file and with the file's line numbers. The cursor is
+on the hit that was selected in the list. If the search is still running,
+Ctrl-O waits for it and then collects; any other key takes that back.
 
-- Edit inside an excerpt with any command — `cw`, `dd`, `o`, `.`, a macro,
+The first row says what was collected, for example
+`search open_picker — 12 hits in 4 files`, and the buffer is named
+`collection: search open_picker`. Collecting the same search again brings
+that collection up to date; a different search gets its own.
+
+### Moving
+
+| Key | In the collection | In any other buffer |
+| --- | --- | --- |
+| `]q` `[q` | the next or previous hit, from the cursor | the next or previous hit, in its file |
+| `Enter` | open the file at the cursor | |
+| `Ctrl-O` | | go back; after `Enter`, back to the collection |
+| `:copen` | | back to the collection, on the hit you were last at |
+| `]f` `[f` | the next or previous file | |
+| `+` `-` | show more or less context around the hits under the cursor | |
+
+A count works: `3]q` is three hits on.
+
+### Editing
+
+A collection is an ordinary buffer. What you edit in it is edited in the
+files:
+
+- Edit inside a card with any command — `cw`, `dd`, `o`, `.`, a macro,
   visual mode, `:s`. The edit is made in the file's buffer in the same
   keystroke; open the file and it is already there. Edits made in the file
   appear in the collection the same way.
@@ -183,26 +207,23 @@ ordinary buffer. What you edit in it is edited in the files:
 - `u` and `Ctrl-R` undo and redo what you changed through the collection,
   in the files too. Editing one of its files somewhere else starts the
   collection's history over; that file's own `u` still works.
-- Card borders, the `⋮ N source lines omitted` rows and the title are not
-  text. An edit that would touch one, or join the last line of an excerpt
-  with the border under it, is refused and changes nothing.
-- `+` / `-` widen and narrow the excerpt under the cursor; `]e` / `[e` step
-  between excerpts and `]f` / `[f` between files; `g<Space>` (or Enter on a
-  card's top border) opens the file at that line, and `Ctrl-O` comes back.
-- `:%s/old/new/g` in a collection substitutes inside the excerpts only,
-  with the usual live preview.
+- Card borders, the `⋮ N lines not shown` rows and the title are not text.
+  An edit that would touch one, or join the last line of a card with the
+  border under it, is refused and changes nothing.
+- `:%s/old/new/g` in a collection substitutes inside the cards only, with
+  the usual live preview.
 
-### The quickfix list
+### One command at every hit
 
-The newest collection is the quickfix list, under the names Vim gave it:
+Vim's quickfix commands work on the collection you are in, or the one you
+were in last:
 
 | Command | Does |
 | --- | --- |
-| `:copen` | show the list (the collection) |
-| `]q` `[q`, `:cnext` `:cprev` (`:cn` `:cp`) | go to the next or previous hit in its file |
+| `:cnext` `:cprev` (`:cn` `:cp`) | the same as `]q` `[q` |
 | `:cc N` | go to hit N |
 | `:cdo {cmd}` | run an ex command with the cursor on every hit line |
-| `:cfdo {cmd}` | run an ex command once in every file of the list |
+| `:cfdo {cmd}` | run an ex command once in every file of the collection |
 
 ```vim
 :cdo s/open_picker/open_the_picker/

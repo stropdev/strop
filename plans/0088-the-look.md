@@ -68,6 +68,14 @@ message is live, ordered by severity (error > warning > info). Errors stay until
 the next keypress; info expires (4 s or first keypress). The statusline has no
 transient slot. The mode chip is fixed-width (8 cells) so the path never jumps.
 
+**Amendment 2026-11-12 — the modeline (0098).** The chip is 10 cells, so every
+label has a cell of padding either side. Distances on the row come from one
+scale (0 glued, 1 inside a group, 2 between groups); the pending keys have a
+left-aligned slot; `line:col` and the percentage are fixed-width fields, and
+`line:col` is `fg.secondary`. A floating card keeps one empty row between
+itself and the edge or row it hangs from. See
+[0098](0098-modeline-design.md).
+
 ## 3. Palettes
 
 The `Theme` struct becomes the token set of 0087 §4.2 (bg / fg / accent / mode /

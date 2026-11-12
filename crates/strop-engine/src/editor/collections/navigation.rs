@@ -1,18 +1,9 @@
-//! Source and file-card navigation.
+//! Where a view row is in its file, and file-card navigation. Hits are in
+//! `quickfix.rs`.
 use super::{CollectionRow, Editor};
 use strop_core::id::DocumentId;
 
 impl Editor {
-    /// `g<Space>` in a collection, Enter on a header row, and
-    /// `:collection source` (0049 §5): open the full source under the
-    /// caret — the live document with its unsaved edits, never a disk
-    /// reload. A body row maps to the exact source position; a header
-    /// row opens the file at that excerpt's first line. The jump is
-    /// recorded so Ctrl-O returns to the collection working context.
-    pub fn collection_open_source_pub(&mut self) {
-        self.collection_open_source();
-    }
-
     /// Shared source context for navigation actions, including a collection's
     /// source-bearing file header. Presentation chrome never becomes a path.
     pub(crate) fn navigation_source(&self) -> Option<(DocumentId, usize)> {
@@ -27,23 +18,6 @@ impl Editor {
             .find(|excerpt| excerpt.view_line == line)
             .map(|excerpt| (excerpt.source, excerpt.start))
     }
-    pub(crate) fn collection_open_source(&mut self) {
-        if !self.collections.contains_key(&self.current()) {
-            return;
-        }
-        let target = self.navigation_source();
-        let Some((document, head)) = target else {
-            self.message = "not on an excerpt".into();
-            return;
-        };
-        if self.docs.get(document).is_none() {
-            self.message = "collection: that source was closed".into();
-            return;
-        }
-        self.push_jump();
-        self.jump_land(document, head);
-        self.lsp_attach_document(self.current());
-    }
 }
 
 impl Editor {
@@ -56,7 +30,7 @@ impl Editor {
     pub(crate) fn collection_file_step(&mut self, forward: bool) {
         let id = self.current();
         let Some(collection) = self.collections.get(&id) else {
-            self.message = "file cards live in collections".into();
+            self.message = "]f and [f move between the files of a collection".into();
             return;
         };
         let caret = self.buf().line_of(self.head());
@@ -72,44 +46,12 @@ impl Editor {
             tops.iter().copied().rev().find(|row| *row < caret)
         };
         let Some(row) = target else {
-            self.message = if forward { "last card" } else { "first card" }.into();
+            self.message = if forward { "last file" } else { "first file" }.into();
             return;
         };
         self.push_jump();
         self.set_head(self.buf().line_start(row));
         self.clamp_cursor();
         self.scroll_to_cursor(self.view_rows());
-    }
-}
-
-impl Editor {
-    pub fn collection_excerpt_step(&mut self, forward: bool) {
-        let Some(collection) = self.collections.get(&self.current()) else {
-            self.message = "excerpt navigation belongs to a collection".into();
-            return;
-        };
-        let after = collection
-            .excerpts
-            .partition_point(|excerpt| excerpt.view_start <= self.head());
-        let index = if forward {
-            Some(after)
-        } else {
-            after.checked_sub(2)
-        };
-        let target = index
-            .and_then(|index| collection.excerpts.get(index))
-            .map(|excerpt| excerpt.view_start);
-        let Some(target) = target else {
-            self.message = if forward {
-                "last excerpt"
-            } else {
-                "first excerpt"
-            }
-            .into();
-            return;
-        };
-        self.push_jump();
-        self.set_head(target);
-        self.place_jump_target();
     }
 }

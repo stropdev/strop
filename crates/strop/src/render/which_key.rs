@@ -34,6 +34,9 @@ const PREFIXES: &[(&str, &str)] = &[
 /// Ten rows or more flow into two columns.
 const TWO_COLUMNS_AT: usize = 10;
 const DESC_CAP: usize = 48;
+/// Empty rows between the card and the echo row / statusline: both are
+/// on the surface plane and would read as one block if they touched.
+const MARGIN: u16 = 1;
 
 pub fn render_which_key(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     if editor.picker_open() {
@@ -140,8 +143,9 @@ fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], echo_ro
     } else {
         1
     };
-    // borders (2) + statusline + one row of breathing room + echo rows
-    let reserved = 4 + echo_rows;
+    // borders (2) + the statusline + the empty row that parts the card
+    // from it (0098 §3.4) + echo rows
+    let reserved = 2 + 1 + MARGIN + echo_rows;
     let per_column = rows.len().div_ceil(columns);
     let body_budget = usize::from(area.height.saturating_sub(reserved)).max(1);
     let shown_per_column = if per_column > body_budget {
@@ -165,7 +169,7 @@ fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], echo_ro
     let height = body_rows as u16 + 2;
     let card = Rect {
         x: area.width.saturating_sub(card_w) / 2, // bottom-center
-        y: area.height.saturating_sub(height + 1 + echo_rows),
+        y: area.height.saturating_sub(height + MARGIN + 1 + echo_rows),
         width: card_w,
         height,
     };
@@ -215,7 +219,8 @@ fn render_rows(frame: &mut Frame, t: &Tokens, title: &str, rows: &[Row], echo_ro
     }
     if overflow > 0 {
         lines.push(Line::from(Span::styled(
-            format!("+{overflow} more"),
+            // in the key column, under the keys it continues
+            format!(" +{overflow} more"),
             Style::default().fg(t.muted),
         )));
     }
@@ -377,6 +382,55 @@ mod tests {
         e.feed_text(" ");
         let frame = crate::headless::frame_string(&mut e, 60, 8).unwrap();
         assert!(frame.contains("more"), "overflow footer: {frame}");
+    }
+
+    /// 0098 §3.4: the card and the statusline share a plane, so one
+    /// empty row parts them — above the echo rows when a message is live.
+    #[test]
+    fn the_card_hangs_one_row_above_the_statusline() {
+        let border = |line: &str| line.contains('╰') || line.contains('│');
+        for (columns, rows) in [(80, 24), (140, 40), (60, 8), (44, 12)] {
+            let mut e = Editor::new(Buffer::from_text("x\n"));
+            e.feed_text(" ");
+            let frame = crate::headless::frame_string(&mut e, columns, rows).unwrap();
+            let lines: Vec<&str> = frame.lines().collect();
+            let last = lines.len() - 1;
+            assert!(lines[last].contains("PENDING"), "{frame}");
+            assert!(!border(lines[last - 1]), "{columns}x{rows}: {frame}");
+            assert!(lines[last - 2].contains('╰'), "{columns}x{rows}: {frame}");
+        }
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.set_message("a live message");
+        e.feed_text(" ");
+        let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
+        if let Some(echo) = frame
+            .lines()
+            .position(|line| line.contains("a live message"))
+        {
+            let lines: Vec<&str> = frame.lines().collect();
+            assert!(!border(lines[echo - 1]), "{frame}");
+            assert!(lines[echo - 2].contains('╰'), "{frame}");
+        }
+    }
+
+    /// 0098 §3.4: the overflow footer starts in the key column.
+    #[test]
+    fn the_overflow_footer_lines_up_with_the_keys() {
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(" ");
+        let frame = crate::headless::frame_string(&mut e, 60, 10).unwrap();
+        let lines: Vec<&str> = frame.lines().collect();
+        let footer = lines.iter().position(|line| line.contains("more")).unwrap();
+        let cells = |line: &str, at: usize| line[..at].chars().count();
+        let plus = cells(lines[footer], lines[footer].find('+').unwrap());
+        let key = lines[footer - 1]
+            .char_indices()
+            .skip_while(|(_, ch)| *ch != '│')
+            .skip(1)
+            .find(|(_, ch)| *ch != ' ')
+            .map(|(at, _)| cells(lines[footer - 1], at))
+            .unwrap();
+        assert_eq!(plus, key, "{frame}");
     }
 
     /// 0068 C1: the card centers horizontally instead of hugging the

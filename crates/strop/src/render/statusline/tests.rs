@@ -15,6 +15,8 @@ use super::render;
 use crate::render::clip::width;
 use crate::render::tokens;
 
+mod stability;
+
 /// The modeline cells, including severity styling as well as symbols.
 fn grid(editor: &Editor, columns: u16, rows: u16) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(columns, rows)).unwrap();
@@ -66,7 +68,7 @@ fn fail(editor: &mut Editor, id: u64, reason: &str) {
 }
 
 #[test]
-fn the_chip_is_eight_cells_in_every_mode() {
+fn the_chip_is_ten_cells_with_padding_in_every_mode() {
     let mut e = editor("alpha beta\n", Some("/w/f.rs"));
     let chip = |e: &Editor| -> String {
         let grid = grid(e, 80, 4);
@@ -76,20 +78,20 @@ fn the_chip_is_eight_cells_in_every_mode() {
             .map(|x| grid[(x, 3)].symbol())
             .collect()
     };
-    assert_eq!(chip(&e), " NORMAL ");
+    assert_eq!(chip(&e), "  NORMAL  ");
     e.feed_text("i");
-    assert_eq!(chip(&e), " INSERT ");
+    assert_eq!(chip(&e), "  INSERT  ");
     e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("v");
-    assert_eq!(chip(&e), " VISUAL ");
+    assert_eq!(chip(&e), "  VISUAL  ");
     e.feed_text("V");
-    assert_eq!(chip(&e), " V-LINE ");
+    assert_eq!(chip(&e), "  V-LINE  ");
     e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text("d");
-    assert_eq!(chip(&e), "PENDING ");
+    assert_eq!(chip(&e), " PENDING  ");
     e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text(":");
-    assert_eq!(chip(&e), "COMMAND ");
+    assert_eq!(chip(&e), " COMMAND  ");
     // the path starts at the same column whatever the mode
     e.feed(strop_core::frontend_input::Key::Esc);
     e.feed(strop_core::frontend_input::Key::Esc);
@@ -293,14 +295,14 @@ fn wide_and_control_labels_stay_printable_whole_graphemes() {
     assert!(!wide.contains('\x1b') && !wide.contains('\r'), "{wide:?}");
     assert!(width(&wide) <= 30, "{wide:?}");
 
-    let clipped = row(&editor, 22, 4);
+    let clipped = row(&editor, 27, 4);
     assert!(
         clipped.contains("界界"),
         "the name clips, not the position: {clipped:?}"
     );
     assert!(clipped.contains('…'), "clipping marks itself: {clipped:?}");
     assert!(clipped.contains("1:1"), "{clipped:?}");
-    assert!(width(&clipped) <= 22, "{clipped:?}");
+    assert!(width(&clipped) <= 27, "{clipped:?}");
 }
 
 #[test]

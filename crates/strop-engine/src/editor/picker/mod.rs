@@ -99,7 +99,8 @@ pub struct PickerGlue {
     pub(crate) rank_dirty: bool,
     pub(crate) ranked_query: Option<String>,
     pub(crate) rank_alive: bool,
-    pub(crate) accept_when_ranked: bool,
+    /// What a key asked for before the list was ready; it runs when it is.
+    pub(crate) deferred: Option<Deferred>,
     /// The manual query-suggestion list (0051 R02): ctrl-space opens
     /// it; it owns accept/cancel keys until dismissed.
     pub suggestions: Option<SuggestionList>,
@@ -128,7 +129,7 @@ pub struct PickerGlue {
     /// `textDocument/documentSymbol` carries no query, so Boolean and
     /// `kind:` narrowing re-filters these candidates locally as the
     /// picker's query changes.
-    pub(crate) symbols_candidates: Vec<strop_lsp::ProtoSymbol>,
+    pub(crate) symbols_candidates: std::sync::Arc<Vec<strop_lsp::ProtoSymbol>>,
     /// `Space a`: the typed owners behind the rows.
     pub(crate) actions: Option<super::actions::ActionOwner>,
 }
@@ -159,7 +160,7 @@ impl PickerGlue {
             rank_dirty: false,
             ranked_query: None,
             rank_alive: false,
-            accept_when_ranked: false,
+            deferred: None,
             suggestions: None,
             query_highlights: Vec::new(),
             status_row: String::new(),
@@ -171,7 +172,7 @@ impl PickerGlue {
             indent_target: None,
             search: None,
             preview_witness: None,
-            symbols_candidates: Vec::new(),
+            symbols_candidates: Default::default(),
             wsymbols_generation: 0,
             actions: None,
         }
@@ -384,10 +385,10 @@ impl Editor {
         if glue.rank_pending.is_some()
             || ((replacing || glue.picker.current().is_none()) && glue.picker.streaming)
         {
-            glue.accept_when_ranked = true;
+            glue.deferred = Some(Deferred::Open);
             return;
         }
-        glue.accept_when_ranked = false;
+        glue.deferred = None;
         if replacing {
             self.prepare_search_review();
             return;
@@ -493,18 +494,34 @@ impl Editor {
         self.accept_picker(payload, context);
     }
 
+    /// The list settled: run what a key asked for while it was not.
     pub(crate) fn finish_pending_picker_accept(&mut self) {
-        if self.picker.as_ref().is_some_and(|glue| {
-            glue.accept_when_ranked
-                && glue.rank_pending.is_none()
-                && (!(glue.picker.kind == Kind::Search
-                    && glue.picker.replacement_visible
-                    && glue.picker.field == strop_picker::Field::Replace)
-                    || !glue.picker.streaming)
-        }) {
-            self.accept_current_picker();
+        let Some(glue) = self.picker.as_ref() else {
+            return;
+        };
+        if glue.rank_pending.is_some() {
+            return;
+        }
+        let replacing = glue.picker.kind == Kind::Search
+            && glue.picker.replacement_visible
+            && glue.picker.field == strop_picker::Field::Replace;
+        match glue.deferred {
+            Some(Deferred::Open) if !replacing || !glue.picker.streaming => {
+                self.accept_current_picker()
+            }
+            Some(Deferred::Collect) if !glue.picker.streaming => self.open_collection_from_picker(),
+            _ => {}
         }
     }
+}
+
+/// A key pressed ahead of its list: Enter opens the top row once it is
+/// ranked (0093 §3.1); Ctrl-O collects once the search has finished
+/// (0097 §3.1). Any other key takes the request back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Deferred {
+    Open,
+    Collect,
 }
 
 pub struct PreviewEntry {

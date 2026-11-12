@@ -43,6 +43,21 @@ impl SymbolKind {
             SymbolKind::Constant => "const",
         }
     }
+
+    /// This kind's LSP `SymbolKind` name: the vocabulary a symbol list
+    /// is labelled in, whichever source produced it (0099 §4.1).
+    pub fn lsp_name(self) -> &'static str {
+        match self {
+            SymbolKind::Function => "Function",
+            SymbolKind::Method => "Method",
+            SymbolKind::Class => "Class",
+            SymbolKind::Struct => "Struct",
+            SymbolKind::Enum => "Enum",
+            SymbolKind::Interface => "Interface",
+            SymbolKind::Module => "Module",
+            SymbolKind::Constant => "Constant",
+        }
+    }
 }
 
 /// One extracted declaration: kind, name and inclusive line span.
@@ -67,10 +82,15 @@ pub struct DeclExtractor {
 }
 
 impl DeclExtractor {
-    /// The languages this build can extract. `None` for everything
-    /// else — the index then simply has no entry for those files.
-    pub fn for_language(language: LanguageId) -> Option<Self> {
-        let (ts, source) = match language {
+    /// Whether this build can extract `language`: a table lookup, no
+    /// parser or query is built (0099: asked on the event loop).
+    pub fn supports(language: LanguageId) -> bool {
+        Self::grammar(language).is_some()
+    }
+
+    /// The linked grammar and its symbols query.
+    fn grammar(language: LanguageId) -> Option<(tree_sitter::Language, &'static str)> {
+        Some(match language {
             LanguageId::Rust => (
                 tree_sitter_rust::LANGUAGE.into(),
                 include_str!("../queries/rust/symbols.scm"),
@@ -92,7 +112,13 @@ impl DeclExtractor {
                 include_str!("../queries/lua/symbols.scm"),
             ),
             _ => return None,
-        };
+        })
+    }
+
+    /// The languages this build can extract. `None` for everything
+    /// else — the index then simply has no entry for those files.
+    pub fn for_language(language: LanguageId) -> Option<Self> {
+        let (ts, source) = Self::grammar(language)?;
         let mut parser = Parser::new();
         parser
             .set_language(&ts)

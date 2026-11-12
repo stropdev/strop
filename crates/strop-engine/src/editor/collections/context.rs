@@ -12,7 +12,7 @@ impl Editor {
         let Some(index) = collection.excerpts.iter().position(|excerpt| {
             line >= excerpt.view_line && line <= excerpt.view_line + excerpt.view_lines
         }) else {
-            self.message = "place the caret on an excerpt or its gap/header".into();
+            self.message = "put the cursor in a file's card to change its context".into();
             return;
         };
         let excerpt = &collection.excerpts[index];
@@ -93,6 +93,9 @@ impl Editor {
             self.clamp_cursor();
             self.scroll_to_cursor(self.view_rows());
         }
-        self.message = format!("collection context: {context} line(s); + expand, - contract");
+        self.message = format!(
+            "context: {} around each hit — + more, - less",
+            super::counted(context, "line")
+        );
     }
 }

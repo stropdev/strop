@@ -254,7 +254,7 @@ impl Editor {
         };
         if let Some(glue) = self.picker.as_mut() {
             glue.suggestions = None;
-            glue.accept_when_ranked = false;
+            glue.deferred = None;
             if kind == Kind::Search && glue.picker.field == strop_picker::Field::Replace {
                 self.search_intent_changed();
                 return;
@@ -404,7 +404,7 @@ impl Editor {
                 return;
             };
             glue.suggestions = None;
-            glue.accept_when_ranked = false;
+            glue.deferred = None;
             glue.revoke(CancelReason::Superseded);
             if let Some(worker) = &glue.rank_worker {
                 worker.cancel_pending();

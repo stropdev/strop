@@ -37,7 +37,7 @@
   │                                                 │                                                                                    │  
   │                                                 │                                                                                    │  
   ╰  enter  open   ctrl-t  replace   ctrl-x  drop hit   ctrl-d  drop file   ctrl-o  collect   ctrl-space  suggest   esc  close ──────────╯  
- SEARCH   src/render/statusline.rs                                                                                                   1:1  5%
+  SEARCH    src/render/statusline.rs                                                                                              5%   1:1  
 
   0: 2:reset/#15171c 1:#858c9a/#1c1f25 8:#e6e1d6/#1c1f25+b 127:#858c9a/#1c1f25 2:reset/#15171c
   1: 2:reset/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25 6:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 119:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
@@ -78,4 +78,4 @@
  36: 2:reset/#15171c 1:#858c9a/#1c1f25 49:reset/#1c1f25 1:#4a5160/#1c1f25 84:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
  37: 2:reset/#15171c 1:#858c9a/#1c1f25 49:reset/#1c1f25 1:#4a5160/#1c1f25 84:reset/#1c1f25 1:#858c9a/#1c1f25 2:reset/#15171c
  38: 2:reset/#15171c 2:#858c9a/#1c1f25 7:#e8a848/#23272f+b 7:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 8:#e8a848/#23272f+b 11:#858c9a/#1c1f25 8:#e8a848/#23272f+b 12:#858c9a/#1c1f25 8:#e8a848/#23272f+b 10:#858c9a/#1c1f25 12:#e8a848/#23272f+b 10:#858c9a/#1c1f25 5:#e8a848/#23272f+b 18:#858c9a/#1c1f25 2:reset/#15171c
- 39: 8:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 99:reset/#17191f 7:#464b54/#17191f
+ 39: 10:#14161b/#4b644d+b 2:reset/#17191f 11:#565961/#17191f 13:#72716f/#17191f 92:reset/#17191f 4:#464b54/#17191f 2:reset/#17191f 6:#565961/#17191f

@@ -14,30 +14,30 @@
   14    g_ g0 g^ g$ gj gk             last non-blank; line start, first non-blank, end; line down / up                                      
   15    gn gN                         select the next / previous search match (cgn then . changes each)                                     
   16    0 $ G %                       line/file/pair jumps                                                                                  
-  17    g<space>                      collection: open the file at this line                                                                
-  18    gg                            top of file                                                                                           
-  19    enter                         line down, first non-blank (blame: open the line's commit)                                            
-  20    tab                           jump list forward (ctrl-i)                                                                            
-  21    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)                                                                 
-  22    ctrl-e ctrl-y                 scroll the window one line down / up                                                                  
-  23    ctrl-^                        alternate buffer                                                                                      
-  24    grr                           references (LSP)                                                                                      
-  25    grn                           rename the symbol under the cursor (prompts with its name)                                            
-  26    gra                           actions here, as space a (code actions; Neovim's key)                                                 
-  27    gri gI                        implementation (LSP)                                                                                  
-  28    gy                            type definition (LSP)                                                                                 
-  29    gD                            declaration (LSP)                                                                                     
-  30    ]d                            next diagnostic                                                                                       
-  31    [d                            previous diagnostic                                                                                   
-  32    gd                            goto definition (LSP)                                                                                 
-  33    gs                            switch source/header (clangd)                                                                         
-  34    f<c> F<c> t<c> T<c>           find/till char (candidates light up)                                                                  
-  35    ]q                            next quickfix hit                                                                                     
-  36    [q                            previous quickfix hit                                                                                 
-  37    ]f                            next file card (collections)                                                                          
-  38    [f                            previous file card (collections)                                                                      
-  39    ]e                            next excerpt (collections; +/- context)                                                               
- NORMAL   help [RO]                                                                                                                  1:1  0%
+  17    gg                            top of file                                                                                           
+  18    enter                         line down, first non-blank (collection: open the file here; blame: the line's commit)                 
+  19    tab                           jump list forward (ctrl-i)                                                                            
+  20    ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)                                                                 
+  21    ctrl-e ctrl-y                 scroll the window one line down / up                                                                  
+  22    ctrl-^                        alternate buffer                                                                                      
+  23    grr                           references (LSP)                                                                                      
+  24    grn                           rename the symbol under the cursor (prompts with its name)                                            
+  25    gra                           actions here, as space a (code actions; Neovim's key)                                                 
+  26    gri gI                        implementation (LSP)                                                                                  
+  27    gy                            type definition (LSP)                                                                                 
+  28    gD                            declaration (LSP)                                                                                     
+  29    ]d                            next diagnostic                                                                                       
+  30    [d                            previous diagnostic                                                                                   
+  31    gd                            goto definition (LSP)                                                                                 
+  32    gs                            switch source/header (clangd)                                                                         
+  33    f<c> F<c> t<c> T<c>           find/till char (candidates light up)                                                                  
+  34    ]q                            next hit of the collection (in it: from the cursor)                                                   
+  35    [q                            previous hit of the collection (in it: from the cursor)                                               
+  36    ]f                            next file card (collections)                                                                          
+  37    [f                            previous file card (collections)                                                                      
+  38    ]c                            next git hunk                                                                                         
+  39    [c                            previous git hunk                                                                                     
+  NORMAL    help [RO]                                                                                                            0%    1:1  
 
   0: 1:#656d7b/#f6f2e9+b 4:#8a510f/#f6f2e9 12:#262a30/#f6f2e9+b 28:#656d7b/#f6f2e9 94:reset/#f6f2e9 1:#656d7b/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:#656d7b/#f6f2e9
@@ -55,27 +55,27 @@
  13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 66:#262a30/#f6f2e9 37:reset/#f6f2e9 1:reset/reset
  14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 67:#262a30/#f6f2e9 36:reset/#f6f2e9 1:reset/reset
  15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
- 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 40:#262a30/#f6f2e9 63:reset/#f6f2e9 1:reset/reset
- 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 13:#262a30/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
- 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 60:#262a30/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
- 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 28:#262a30/#f6f2e9 75:reset/#f6f2e9 1:reset/reset
- 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
- 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
+ 16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 13:#262a30/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
+ 17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 87:#262a30/#f6f2e9 16:reset/#f6f2e9 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 28:#262a30/#f6f2e9 75:reset/#f6f2e9 1:reset/reset
+ 19: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 39:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
+ 21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
  22: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
- 23: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 18:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
- 24: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 60:#262a30/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
- 25: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 55:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
- 26: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
- 27: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
- 28: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
- 29: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 17:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
- 30: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 21:#262a30/#f6f2e9 82:reset/#f6f2e9 1:reset/reset
- 31: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
- 32: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 31:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
- 33: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
- 34: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
- 35: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
- 36: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 30:#262a30/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
- 37: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 34:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
- 38: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 41:#262a30/#f6f2e9 62:reset/#f6f2e9 1:reset/reset
- 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 114:reset/#fdfbf6 7:#656d7b/#fdfbf6
+ 23: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 60:#262a30/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
+ 24: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 55:#262a30/#f6f2e9 48:reset/#f6f2e9 1:reset/reset
+ 25: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 22:#262a30/#f6f2e9 81:reset/#f6f2e9 1:reset/reset
+ 26: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
+ 27: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
+ 28: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 17:#262a30/#f6f2e9 86:reset/#f6f2e9 1:reset/reset
+ 29: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 21:#262a30/#f6f2e9 82:reset/#f6f2e9 1:reset/reset
+ 30: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 23:#262a30/#f6f2e9 80:reset/#f6f2e9 1:reset/reset
+ 31: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 31:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
+ 32: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 38:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
+ 33: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 53:#262a30/#f6f2e9 50:reset/#f6f2e9 1:reset/reset
+ 34: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 57:#262a30/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 35: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 30:#262a30/#f6f2e9 73:reset/#f6f2e9 1:reset/reset
+ 36: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 34:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
+ 37: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 15:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+ 38: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
+ 39: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 106:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6

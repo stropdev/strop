@@ -37,7 +37,7 @@
   37          let chip = format!(" {} ", "NORMAL");                                                                                         
   38          // the filename must survive truncation                                                                                       
  › replace: review of 2 file(s) — Enter applies and writes                                                                                  
- NORMAL   review: replace [RO]                                                                                                       1:1  2%
+  NORMAL    review: replace [RO]                                                                                                  2%   1:1  
 
   0: 1:#858c9a/#1b1e24+b 32:#e8a848/#1b1e24 106:#1b1e24/#1b1e24 1:reset/reset
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 46:#e6e1d6/#15171c 88:reset/#15171c 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 46:#e6e1d6/#15171c 88:reset/#15171c 1:reset/reset
  37: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 48:#e6e1d6/#15171c 86:reset/#15171c 1:reset/reset
  38: 3:#e6e1d6/#1c1f25+b 55:#e6e1d6/#1c1f25 82:reset/#1c1f25
- 39: 8:#15171c/#e8a848+b 2:reset/#1c1f25 15:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 103:reset/#1c1f25 7:#858c9a/#1c1f25
+ 39: 10:#15171c/#e8a848+b 2:reset/#1c1f25 15:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 96:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

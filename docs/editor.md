@@ -166,6 +166,13 @@ error from the server never pushes the mode or the position off the line.
 project, and why it failed. When a server recovers, its failure message
 goes away. Messages about other projects or other problems stay.
 
+`Space s` lists the current file's symbols. The list is fetched when the
+file is opened and after each edit, so it opens with the key and without
+asking the server again; it is never a list from before an edit. In Rust,
+Python, C, C++ and Lua files that no server serves, the list comes from
+the syntax tree (functions, methods, types, modules, constants) and the
+message line says so.
+
 A server that crashes after it was ready restarts by itself, up to three
 times per project: a message says `restarting (1/3)`, the `LSP!` badge
 stays until the new server is ready, and every file the old server had

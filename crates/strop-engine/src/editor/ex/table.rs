@@ -483,37 +483,40 @@ pub(crate) const COMMANDS: &[ExCommand] = &[
     command(
         "copen",
         4,
-        "show the quickfix list: the newest collection",
+        "show the collection, on its current hit (the quickfix list)",
         |e, _| e.quickfix_open(),
     ),
     command(
         "cwindow",
         2,
-        "show the quickfix list: the newest collection",
+        "show the collection, on its current hit (the quickfix list)",
         |e, _| e.quickfix_open(),
     ),
-    command("cnext", 2, "next quickfix hit (]q)", |e, _| {
-        e.quickfix_step(1)
+    command("cnext", 2, "next hit of the collection (]q)", |e, _| {
+        e.quickfix_step(true)
     }),
-    command("cprevious", 2, "previous quickfix hit ([q)", |e, _| {
-        e.quickfix_step(-1)
+    command(
+        "cprevious",
+        2,
+        "previous hit of the collection ([q)",
+        |e, _| e.quickfix_step(false),
+    ),
+    command("cNext", 2, "previous hit of the collection ([q)", |e, _| {
+        e.quickfix_step(false)
     }),
-    command("cNext", 2, "previous quickfix hit ([q)", |e, _| {
-        e.quickfix_step(-1)
-    }),
-    command("cc", 2, ":cc [N]: quickfix hit N", |e, c| {
+    command("cc", 2, ":cc [N]: hit N of the collection", |e, c| {
         e.quickfix_goto(c.arg)
     }),
     command(
         "cdo",
         3,
-        "run an ex command at every quickfix hit: :cdo s/a/b/g",
+        "run an ex command on every hit line of the collection: :cdo s/a/b/g",
         |e, c| e.quickfix_do(c.arg, false),
     ),
     command(
         "cfdo",
         3,
-        "run an ex command once per quickfix file: :cfdo w",
+        "run an ex command once in every file of the collection: :cfdo w",
         |e, c| e.quickfix_do(c.arg, true),
     ),
     own(
@@ -539,16 +542,6 @@ pub(crate) const COMMANDS: &[ExCommand] = &[
         "indent-style",
         "choose indentation style: spaces, tabs or auto",
         |e, c| e.indent_style_command(c.arg),
-    ),
-    own(
-        "collection",
-        "source, expand or contract the excerpt at the caret",
-        |e, c| match c.arg {
-            "source" => e.collection_open_source(),
-            "expand" => e.collection_context_step(true),
-            "contract" => e.collection_context_step(false),
-            _ => e.message = ":collection source — open the full source at the caret".into(),
-        },
     ),
     own(
         "recover",

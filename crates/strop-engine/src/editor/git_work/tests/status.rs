@@ -68,6 +68,20 @@ fn s_stages_u_unstages_and_dash_toggles_the_file_under_the_cursor() {
 }
 
 #[test]
+fn a_stage_says_so_when_the_view_moved_while_it_ran() {
+    // the index write refreshes the status buffer (a watcher hint, the
+    // previous mutation landing) before this completion arrives: the
+    // stage landed and the echo row still reports it
+    let (dir, mut e) = status_fixture();
+    e.feed_text("s");
+    e.invalidate_git_view();
+    e.refresh_status_buffers();
+    settle_work(&mut e);
+    assert_eq!(e.message, "staged notes.md");
+    assert!(porcelain(dir.path()).starts_with("M  notes.md\n"));
+}
+
+#[test]
 fn a_section_heading_acts_on_every_file_in_it() {
     let (dir, mut e) = status_fixture();
     goto(&mut e, "Unstaged (2)");

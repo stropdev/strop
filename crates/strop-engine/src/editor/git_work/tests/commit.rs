@@ -32,6 +32,24 @@ fn cc_opens_the_message_file_with_the_staged_summary() {
 }
 
 #[test]
+fn cc_opens_the_message_when_the_status_refreshed_meanwhile() {
+    // writing the template wakes the watcher, and the status buffer
+    // refreshes while the message file is still opening: the open lands
+    let (dir, mut e) = status_fixture();
+    key(&mut e, "s");
+    let status = e.current();
+    e.feed_text("cc");
+    crate::editor::test_support::git::settle(&mut e, |e| e.git_work.draft.is_none());
+    let snapshot = text(&e);
+    e.replace_system(status, &snapshot).unwrap();
+    settle_work(&mut e);
+    assert_eq!(
+        e.buf().path.as_deref(),
+        Some(dir.path().join(".git/COMMIT_EDITMSG").as_path())
+    );
+}
+
+#[test]
 fn wq_commits_what_was_staged_and_nothing_else() {
     let (dir, mut e) = commit_fixture();
     write_message(&mut e, "notes: say more");

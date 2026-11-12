@@ -110,7 +110,7 @@ impl Editor {
                         role: strop_picker::query::Role::Error,
                     });
                 glue.picker.error = Some(diagnostic.message);
-                glue.accept_when_ranked = false;
+                glue.deferred = None;
                 glue.file_scope = None;
             }
             PickerMsg::Finished(outcome) => {
@@ -126,12 +126,12 @@ impl Editor {
                     Outcome::Success(()) => {}
                     Outcome::Failed { failure, .. } => {
                         glue.picker.error = Some(failure.message);
-                        glue.accept_when_ranked = false;
+                        glue.deferred = None;
                         glue.file_scope = None;
                     }
                     Outcome::Cancelled(_) => {
                         glue.picker.error = Some("source cancelled; refresh to continue".into());
-                        glue.accept_when_ranked = false;
+                        glue.deferred = None;
                         glue.file_scope = None;
                     }
                 }

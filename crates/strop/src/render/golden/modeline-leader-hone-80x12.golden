@@ -1,0 +1,25 @@
+   1 let value_0 ╭ space g ──────────────────────────────────╮                 ▮
+   2 let value_1 │  g  status: changed files                 │                 ▮
+   3 let value_2 │  c  commit (:wq commits, :q! aborts)      │                  
+   4 let value_3 │  b  branches: switch / create             │                  
+   5 let value_4 │  l  log                                   │                  
+   6 let value_5 │  h  file history (visual: selected lines) │                  
+   7 let value_6 │  B  blame gutter / card                   │                  
+   8 let value_7 │  s  hunk: stage                           │                  
+   9 let value_8 │  +5 more                                  │                  
+  10 let value_9 ╰───────────────────────────────────────────╯                  
+  11 let value_10 = alpha + beta * 10;                                          
+ PENDING    feature/modeline-design  …ne/layout.rs  space g  ●1 ▲2    2%   1:1  
+
+  0: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 12:#e6e1d6/#1b1e24 1:#858c9a/#1c1f25 9:#e6e1d6/#1c1f25+b 35:#858c9a/#1c1f25 17:#1b1e24/#1b1e24 1:#858c9a/#15171c
+  1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 22:#e6e1d6/#1c1f25 17:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:#858c9a/#15171c
+  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 33:#e6e1d6/#1c1f25 6:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 26:#e6e1d6/#1c1f25 13:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 4:#e6e1d6/#1c1f25 35:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 38:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 20:#e6e1d6/#1c1f25 19:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 12:#e6e1d6/#1c1f25 27:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 8:#858c9a/#1c1f25 34:reset/#1c1f25 1:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 12:#e6e1d6/#15171c 45:#858c9a/#1c1f25 17:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 33:#e6e1d6/#15171c 41:reset/#15171c 1:reset/reset
+ 11: 10:#15171c/#e8a848+b 2:reset/#1c1f25 23:#858c9a/#1c1f25 2:reset/#1c1f25 4:#a8adb8/#1c1f25 9:#e6e1d6/#1c1f25 2:reset/#1c1f25 7:#e8a848/#1c1f25 2:reset/#1c1f25 2:#e8707c/#1c1f25 1:reset/#1c1f25 2:#d9a85a/#1c1f25 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

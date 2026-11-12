@@ -37,7 +37,7 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- NORMAL   main  git status [RO]                                                                                                     9:1  36%
+  NORMAL    main  git status [RO]                                                                                                36%   9:1  
 
   0: 1:#656d7b/#f6f2e9+b 10:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 124:reset/#f6f2e9 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  37: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  38: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
- 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 10:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 101:reset/#fdfbf6 8:#656d7b/#fdfbf6
+ 39: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 10:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 95:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

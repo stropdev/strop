@@ -99,14 +99,15 @@ const EXTRA: &[(&str, &[(&str, &str)])] = &[
     (
         "Collections",
         &[
-            ("ctrl-o", "Collect complete included results; all-excluded is empty"),
-            ("+ / -", "Expand/contract the current excerpt's context"),
-            ("]e / [e", "Next/previous excerpt; ]f / [f move file cards"),
-            ("g<space>", "Open the real source; Ctrl-O restores the collection view"),
-            ("edit", "Edits inside an excerpt change its source; borders and gaps are not text"),
+            ("ctrl-o", "In search results, references or diagnostics: collect the included hits"),
+            ("]q / [q", "Next/previous hit, from the cursor; from a file, in the hit's file"),
+            ("enter", "Open the file at the cursor; Ctrl-O comes back"),
+            ("]f / [f", "Next/previous file"),
+            ("+ / -", "Show more/less context around the hits under the cursor"),
+            ("edit", "Edits inside a card change its file; borders and gaps are not text"),
             (":w", "Write every changed file the collection shows"),
-            ("u", "Undo the collection's own edits, in its sources too"),
-            (":copen", "The newest collection is the quickfix list; ]q / [q visit its hits"),
+            ("u", "Undo the collection's own edits, in its files too"),
+            (":copen", "Back to the collection, on its current hit (Vim's quickfix names work)"),
             (":cdo / :cfdo", "Run an ex command at every hit, or once per file: :cdo s/a/b/g"),
         ],
     ),
@@ -271,15 +272,7 @@ mod tests {
             last = at;
         }
         let missing: Vec<_> = [
-            ":theme",
-            ":jumps",
-            ":noh",
-            ":format",
-            ":rename",
-            ":recover",
-            ":qa",
-            ":qall",
-            ":collection",
+            ":theme", ":jumps", ":noh", ":format", ":rename", ":recover", ":qa", ":qall",
             ":symbols",
         ]
         .into_iter()

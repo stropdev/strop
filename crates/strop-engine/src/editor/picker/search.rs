@@ -231,7 +231,7 @@ impl Editor {
                     glue.picker.field = strop_picker::Field::Replace;
                 }
                 glue.suggestions = None;
-                glue.accept_when_ranked = false;
+                glue.deferred = None;
             }
             return;
         }
@@ -298,7 +298,7 @@ impl Editor {
         glue.rank_pending = None;
         glue.rank_dirty = false;
         glue.rank_alive = false;
-        glue.accept_when_ranked = false;
+        glue.deferred = None;
         glue.suggestions = None;
         if let Some(old) = self.retained_search.replace(glue) {
             self.retire_picker_model(old.picker);
@@ -342,7 +342,7 @@ impl Editor {
 
     pub(super) fn search_intent_changed(&mut self) {
         let session = if let Some(glue) = self.picker.as_mut() {
-            glue.accept_when_ranked = false;
+            glue.deferred = None;
             let Some(context) = glue.search.as_mut() else {
                 return;
             };
@@ -373,7 +373,7 @@ impl Editor {
                 return;
             }
             glue.picker.toggle_replacement();
-            glue.accept_when_ranked = false;
+            glue.deferred = None;
             glue.suggestions = None;
         }
     }

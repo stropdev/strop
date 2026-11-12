@@ -21,7 +21,7 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
-COMMAND   src/render/statusline.rs                                      8:1  40%
+ COMMAND    src/render/statusline.rs                                 40%   8:1  
 
   0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 51:#696d77/#f6f2e9+i 23:reset/#f6f2e9 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 8:reset/#f6f2e9 1:#656d7b/#fdfbf6 9:#262a30/#fdfbf6+b 38:#656d7b/#fdfbf6 15:reset/#f6f2e9 1:reset/reset
@@ -46,4 +46,4 @@ COMMAND   src/render/statusline.rs                                      8:1  40%
  20: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 23: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 38:reset/#fdfbf6 8:#656d7b/#fdfbf6
+ 23: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 32:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

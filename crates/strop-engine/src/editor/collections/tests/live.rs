@@ -21,7 +21,7 @@ fn context_merges_preserve_same_line_matches_and_source_position() {
     });
     editor.picker_items_fixture(items.to_vec());
     editor.feed(strop_core::frontend_input::Key::CtrlO);
-    assert!(current_text(&editor).contains("2 match(es)"));
+    assert!(current_text(&editor).contains("2 hits in 1 file"));
     assert!(current_text(&editor).contains("before\nfn hit() { hit(); }\nafter"));
     let at = current_text(&editor).find("fn hit").unwrap() + 3;
     editor.set_head(at);
