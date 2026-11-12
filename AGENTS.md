@@ -145,5 +145,5 @@ The release is done when all four checks pass, and not one moment before.
   `cargo check` to sync `Cargo.lock` (the release gate runs `--locked` — a stale
   lock fails the tag's builds). A release is done only when the **Release gates**
   section above passes against the live public surfaces.
-- The demo must never lie (0004 §4): tapes drive the real binary; a demo-only code path
-  is a bug.
+- The site must never lie (0004 §4): its frames are captured from the release binary
+  (`tools/frames.py` in the site repo); a frame-only code path is a bug.

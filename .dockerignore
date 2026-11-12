@@ -2,6 +2,5 @@
 .git/
 dist/
 target/
-demos/
 plans/
 proofs/.lake/

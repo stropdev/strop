@@ -9,6 +9,11 @@ enforced); demo pipeline green end-to-end (push → musl build → VHS render �
 PR → site publish → redeploy dispatch). What follows is the road from placeholder to
 the real thing.
 
+Amended 0.63 (2026-11-12): the demo GIF is dropped — `demos/`, the `demo`
+workflow and the README image are deleted. The site's front-page frames,
+captured from the release binary by `tools/frames.py`, are the only
+picture of the editor. §3 and §4 are history.
+
 ---
 
 ## 1. Repos and flow
