@@ -472,3 +472,16 @@ fn the_warm_check_decides_once_per_state() {
     warm(&mut e);
     assert_eq!(e.analysis.symbols.settled, settled);
 }
+
+#[test]
+fn a_server_is_not_asked_unasked_about_a_huge_buffer() {
+    let server = Some(Producer::Server(SERVER));
+    assert_eq!(super::unasked(server, 5_000), server);
+    assert_eq!(super::unasked(server, 5_001), None);
+    // the outline is local: its size costs a thread some time, nothing else
+    assert_eq!(
+        super::unasked(Some(Producer::Outline), 1_000_000),
+        Some(Producer::Outline)
+    );
+    assert_eq!(super::unasked(None, 1), None);
+}

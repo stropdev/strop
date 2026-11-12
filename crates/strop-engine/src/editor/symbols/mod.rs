@@ -147,6 +147,21 @@ fn source(editor: &Editor, document: DocumentId) -> Option<Producer> {
     outline_language(editor, document).map(|_| Producer::Outline)
 }
 
+/// The longest buffer a server is asked about unasked. A `documentSymbol`
+/// reply over the client's JSON structure bound drops the connection (0099
+/// §1), and a file has about as many symbols as lines at most: a background
+/// request must never be what costs the user their server. A press still
+/// asks, as it always did.
+const UNASKED_LINES: usize = 5_000;
+
+/// The source `warm` may build from without being asked.
+fn unasked(source: Option<Producer>, lines: usize) -> Option<Producer> {
+    match source {
+        Some(Producer::Server(_)) if lines > UNASKED_LINES => None,
+        other => other,
+    }
+}
+
 fn current_of(editor: &Editor, document: DocumentId) -> Option<Current> {
     let doc = editor.docs.get(document)?;
     Some(Current {
@@ -200,7 +215,7 @@ pub(crate) fn warm(editor: &mut Editor) {
         return;
     }
     editor.analysis.symbols.settled = Some(state);
-    let Some(producer) = source else {
+    let Some(producer) = unasked(source, editor.buf().len_lines()) else {
         return;
     };
     if editor
