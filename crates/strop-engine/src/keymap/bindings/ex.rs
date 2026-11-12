@@ -102,11 +102,6 @@ pub(super) const ROWS: &[Binding] = &[
         "ex-recover",
     ),
     row(
-        ":collection source|expand|contract",
-        "source, expand or contract the excerpt at the caret",
-        "ex-collection",
-    ),
-    row(
         ":select-next :select-all :select-skip :select-pop",
         "occurrence selection: next / all / skip / pop last-added",
         "ex-occurrence-selection",
@@ -134,7 +129,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: ":copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo",
-        desc: "quickfix: show the list, visit hits, run a command at each hit or file",
+        desc: "the collection's hits (quickfix): show it, step hits, run a command at each hit line or file",
         sections: &["ex"],
         live: true,
         id: "quickfix",

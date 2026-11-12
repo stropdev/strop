@@ -335,7 +335,7 @@ pub(super) fn render_pane(
                             }
                         }
                         let pad = width.saturating_sub(crate::render::clip::width(&text) + 2);
-                        let text = format!("{}─{}╮", text, "─".repeat(pad));
+                        let text = format!("{} {}╮", text, "─".repeat(pad));
                         style.decorations = collection_card_top_spans(t, &text, focused);
                     }
                     Some(crate::editor::CollectionRow::Gap) => {

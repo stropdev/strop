@@ -110,10 +110,10 @@ fn which_key_children() {
         .iter()
         .any(|h| h.key == "X" && h.desc.contains("discard")));
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
-    // + gb gB g␣, the case operators (gU gu g~ g?), the g motions
+    // + gb gB, the case operators (gU gu g~ g?), the g motions
     // (g_ g0 g^ g$ gj gk gn gN), gp gP, gJ, g* g#, g&, gc, and
     // Neovim's grr grn gra gri where gr was
-    assert_eq!(children_of("g", Mode::Normal).len(), 38);
+    assert_eq!(children_of("g", Mode::Normal).len(), 37);
     // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
     assert_eq!(v.len(), 1);
@@ -149,11 +149,12 @@ const DISPATCHED: &[&str] = &[
     "space P",
     "space j",
     "space s",
-    "g<space>",
     "gb",
     "gB",
     "]f",
     "[f",
+    "]q",
+    "[q",
     // git namespace
     "space g g",
     "space g c",
@@ -253,15 +254,9 @@ fn every_dispatched_sequence_has_a_row() {
             if NAMED.contains(&tok) {
                 toks.push(tok.to_string());
             } else if let Some(pos) = tok.find('<') {
-                // g<space> style: leading chars, then the named token in
-                // the walker's vocabulary
+                // f<c> style: leading chars, then the placeholder
                 toks.extend(tok[..pos].chars().map(|c| c.to_string()));
-                let named = &tok[pos..];
-                toks.push(if named == "<space>" {
-                    "space".to_string()
-                } else {
-                    named.to_string()
-                });
+                toks.push(tok[pos..].to_string());
             } else {
                 toks.extend(tok.chars().map(|c| c.to_string()));
             }
@@ -328,11 +323,6 @@ fn live_rows_dispatch_through_the_table() {
                     "<c>" => "x".into(),
                     t if t.starts_with("ctrl-") || t == "up" || t == "down" || t == "tab" => {
                         String::new() // key events, not walker chars
-                    }
-                    t if t.contains("<space>") => {
-                        // "g<space>": the key, then a literal space
-                        let i = t.find('<').unwrap();
-                        format!("{} ", &t[..i])
                     }
                     t if t.contains('<') => {
                         // "f<c>": the key, then a concrete char

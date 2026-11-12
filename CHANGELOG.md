@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Collecting search hits is one smooth step** (plans/0097). `Ctrl-O` in search results, references or diagnostics now puts the cursor on the hit you had selected, not on the first row. Pressed while the search is still running, it waits and then collects instead of asking you to press it again.
+- **`]q` / `[q` step the hits inside the collection**, from wherever the cursor is, so you can walk every hit and edit as you go. In any other buffer they still go to the next or previous hit in its file, counted from the hit you were last at. `:copen` returns to the collection on that hit.
+- **`Enter` in a collection opens the file at the cursor**; `Ctrl-O` comes back.
+- **A collection says what it holds**: the first row and the buffer name carry the search (`search open_picker — 12 hits in 4 files`, `collection: search open_picker`), and each file's card shows its number of hits. Collecting the same search again brings its collection up to date instead of adding another buffer.
+- **Plain words in the collection's messages**: "hit" throughout, counts written out (`1 hit in 1 file`), and `hit 2 of 4: src/a.rs:11` when stepping.
+
+### Removed
+
+- **`g<Space>`, `]e` / `[e` and `:collection`**. `Enter` opens the file, `]q` / `[q` step the hits, and `+` / `-` change the context.
+
 ## 0.62.0 — 2026-11-11
 
 ### Changed

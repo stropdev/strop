@@ -501,11 +501,6 @@ impl Editor {
                 .excerpts
                 .retain(|excerpt| excerpt.source != closed);
             if collection.excerpts.len() != before {
-                collection.match_count = collection
-                    .excerpts
-                    .iter()
-                    .map(|excerpt| excerpt.matches.len().max(excerpt.hit_anchors.len()))
-                    .sum();
                 affected_collections.push(*id);
             }
         }

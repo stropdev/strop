@@ -1,4 +1,4 @@
-//! The quickfix names (0094 §3.1): the newest collection is the list.
+//! Vim's quickfix names over a collection's hits (0094 §3.1, 0097 §3.2).
 use super::*;
 use strop_core::frontend_input::Key;
 
@@ -49,35 +49,45 @@ fn quickfix_names_refuse_without_a_list() {
     for command in [":copen<cr>", ":cnext<cr>", ":cdo s/a/b/<cr>", "]q"] {
         e.feed_text(command);
         assert!(
-            e.message.contains("no quickfix list"),
+            e.message.contains("nothing collected yet"),
             "{command}: {}",
             e.message
         );
     }
 }
 
+/// Outside the collection the keys visit each hit in its file, counted
+/// from the current hit; `:copen` comes back to it.
 #[test]
-fn hits_are_visited_in_order_and_copen_returns_to_the_list() {
+fn hits_are_visited_in_their_files_and_copen_returns_to_the_current_one() {
     let dir = tempfile::tempdir().unwrap();
     let (mut e, paths) = many(dir.path());
     let list = e.current();
+    // collecting put the cursor on hit 1; leave the collection
+    e.feed(Key::CtrlO);
+    assert_ne!(e.current(), list);
     e.feed_text("]q");
     assert_eq!(e.buf().path.as_deref(), Some(paths[0].as_path()));
-    assert_eq!(e.buf().line_of(e.head()), 0);
-    assert!(e.message.starts_with("quickfix 1 of 6"), "{}", e.message);
-    e.feed_text("]q");
     assert_eq!(e.buf().line_of(e.head()), 322);
+    assert_eq!(e.message, "hit 2 of 6: a.txt:323");
     e.feed_text(":cnext<cr>");
     assert_eq!(e.buf().path.as_deref(), Some(paths[1].as_path()));
+    assert_eq!(e.buf().line_of(e.head()), 0);
     e.feed_text("[q");
     assert_eq!(e.buf().path.as_deref(), Some(paths[0].as_path()));
     e.feed_text(":cc 6<cr>");
     assert_eq!(e.buf().path.as_deref(), Some(paths[2].as_path()));
     assert_eq!(e.buf().line_of(e.head()), 322);
     e.feed_text("]q");
-    assert_eq!(e.message, "quickfix: last hit");
-    e.feed_text(":copen<cr>");
+    assert_eq!(e.message, "last hit");
+    e.feed_text(":cc 7<cr>");
+    assert_eq!(e.message, "there are 6 hits");
+    e.feed_text(":cc 1<cr>[q");
+    assert_eq!(e.message, "first hit");
+    e.feed_text(":cc 4<cr>:copen<cr>");
     assert_eq!(e.current(), list);
+    assert_eq!(e.head(), e.collection_hits(list)[3].view);
+    assert!(e.message.starts_with("6 hits in 3 files"), "{}", e.message);
 }
 
 #[test]
@@ -88,7 +98,7 @@ fn cdo_substitutes_at_every_hit_line_and_cfdo_once_per_file() {
     e.feed_text(":cdo s/old/new/<cr>");
     assert_eq!(e.current(), list, "focus returns to where it was");
     assert!(
-        e.message.contains("ran at 6 hit(s) in 3 file(s)"),
+        e.message.contains("ran on 6 lines in 3 files"),
         "{}",
         e.message
     );
@@ -103,7 +113,7 @@ fn cdo_substitutes_at_every_hit_line_and_cfdo_once_per_file() {
     assert!(e.buf().text().to_string().contains("new top"));
 
     e.feed_text(":cfdo %s/old/OLD/g<cr>");
-    assert!(e.message.contains("ran in 3 file(s)"), "{}", e.message);
+    assert!(e.message.contains("ran in 3 files"), "{}", e.message);
     for path in &paths {
         assert!(text_at(&e, path).ends_with("new end OLD\n"));
     }
@@ -141,7 +151,7 @@ fn cdo_runs_normal_keys_and_line_commands_at_every_hit() {
     assert_eq!(e.current(), list, "focus returns to where it was");
     assert_eq!(e.mode, crate::editor::Mode::Normal);
     assert!(
-        e.message.contains("ran at 6 hit(s) in 3 file(s)"),
+        e.message.contains("ran on 6 lines in 3 files"),
         "{}",
         e.message
     );
@@ -152,7 +162,10 @@ fn cdo_runs_normal_keys_and_line_commands_at_every_hit() {
     }
     assert!(e.buf().text().to_string().contains("old top;"));
 
-    e.feed_text(":cc 1<cr>u");
+    // hit 1 in the collection, Enter to its file, and undo there
+    e.feed_text(":cc 1<cr>");
+    e.feed(Key::Enter);
+    e.feed_text("u");
     let text = text_at(&e, &paths[0]);
     assert!(text.ends_with("old end old\n"), "u undid the newest hit");
     assert!(text.starts_with("old top;\n"), "and only that one");

@@ -67,7 +67,11 @@ fn excerpts_edit_their_sources_and_w_writes_the_files() {
         "origin.txt",
     );
     let frames: Vec<&str> = output.split("─── frame ").collect();
-    assert!(frames[1].contains("collection: search"), "{}", frames[1]);
+    assert!(
+        frames[1].contains("search needle_ — 3 hits in 2 files"),
+        "{}",
+        frames[1]
+    );
     assert!(frames[1].contains("needle_one();"), "{}", frames[1]);
     assert!(frames[2].contains("alpha();"), "{}", frames[2]);
     assert!(frames[2].contains("gamma();"), "{}", frames[2]);
@@ -170,6 +174,57 @@ fn states_last(output: &str) -> serde_json::Value {
     states(output).pop().unwrap()
 }
 
+/// 0097: `Ctrl-O` typed before the search has finished still collects, with
+/// the cursor on the first hit; `]q` steps the hits inside the collection
+/// and `Enter` opens the file at the one under the cursor.
+#[test]
+fn collect_waits_for_the_search_and_enter_opens_the_hit() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = &directory.path().join("project");
+    std::fs::create_dir(root).unwrap();
+    std::fs::write(root.join("origin.txt"), "start here\n").unwrap();
+    std::fs::write(root.join("a.rs"), "fn first() {\n    needle_one();\n}\n").unwrap();
+    std::fs::write(
+        root.join("b.rs"),
+        "fn second() {\n    let x = 1;\n    needle_two(needle_three());\n}\n",
+    )
+    .unwrap();
+    let output = run(
+        root,
+        "keys <space>/\npaste \"needle_\"\nkeys <c-o>\nsettle\nframe\nstate\n\
+         keys ]q]q\nsettle\nframe\nstate\nkeys <cr>\nsettle\nframe\nstate\n",
+        "origin.txt",
+    );
+    let frames: Vec<&str> = output.split("─── frame ").collect();
+    let states = states(&output);
+    assert!(
+        frames[1].contains("search needle_ — 3 hits in 2 files"),
+        "{}",
+        frames[1]
+    );
+    assert!(frames[1].contains("a.rs ── 1 hit "), "{}", frames[1]);
+    assert!(frames[1].contains("b.rs ── 2 hits "), "{}", frames[1]);
+    assert_eq!(
+        states[0]["message"],
+        "3 hits in 2 files — ]q next, Enter opens the file, :w writes"
+    );
+    // on the first hit's matched text: title, border, `fn first`, the hit
+    assert_eq!(
+        (&states[0]["line"], &states[0]["col"]),
+        (&4.into(), &5.into())
+    );
+    // two steps on: still the collection, on the second hit of b.rs
+    assert!(frames[2].contains("search needle_"), "{}", frames[2]);
+    assert_eq!(states[1]["message"], "hit 3 of 3: b.rs:3");
+    // Enter: b.rs itself, at that hit
+    assert!(!frames[3].contains("search needle_"), "{}", frames[3]);
+    assert!(frames[3].contains("b.rs"), "{}", frames[3]);
+    assert_eq!(
+        (&states[2]["line"], &states[2]["col"]),
+        (&3.into(), &16.into())
+    );
+}
+
 /// The quickfix names over the same list: `:cdo s/…/…/` at every hit,
 /// `:cfdo w` to write, and the files on disk agree.
 #[test]
@@ -191,14 +246,14 @@ fn cdo_changes_every_hit_and_cfdo_writes() {
     let states = states(&output);
     assert_eq!(
         states[0]["message"],
-        ":cdo s/old/new/ — ran at 3 hit(s) in 3 file(s)"
+        ":cdo s/old/new/ — ran on 3 lines in 3 files"
     );
     assert_eq!(states[1]["dirty_buffers"], 0);
     assert!(
         states[2]["message"]
             .as_str()
             .unwrap()
-            .starts_with("quickfix 1 of 3: a.txt:2"),
+            .starts_with("hit 2 of 3: b.txt:2"),
         "{}",
         states[2]["message"]
     );

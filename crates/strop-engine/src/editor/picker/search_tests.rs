@@ -116,14 +116,7 @@ fn included_same_line_matches_drive_both_collect_and_review() {
     editor.feed(Key::CtrlT); // collecting with replacement hidden sees the same workset
     editor.feed(Key::CtrlO);
     editor.wait_io().unwrap();
-    assert_eq!(
-        editor
-            .collections
-            .get(&editor.current())
-            .unwrap()
-            .match_count,
-        2
-    );
+    assert_eq!(editor.collection_hits(editor.current()).len(), 2);
     editor.open_search(true);
     editor.wait_picker();
     editor.feed(Key::Enter);
@@ -462,4 +455,38 @@ fn stale_search_results_cannot_publish_after_disconnect_and_new_query() {
     let picker = &editor.picker.as_ref().unwrap().picker;
     assert_eq!(picker.items.len(), item_count);
     assert!(!picker.items.iter().any(|item| item.text.contains("STALE")));
+}
+
+/// 0097 §3.1: Ctrl-O ahead of the search waits for it, as Enter does, and
+/// then collects everything it found.
+#[test]
+fn ctrl_o_before_the_search_finishes_collects_when_it_does() {
+    let (_root, mut editor) = fixture();
+    editor.open_search(false);
+    editor.paste_bracketed("needle");
+    editor.feed(Key::CtrlO);
+    assert!(editor.picker_open(), "the list is not complete yet");
+    assert!(editor.collections.is_empty());
+    assert_eq!(editor.message, "collecting when the list is complete…");
+    editor.wait_picker();
+    editor.wait_io().unwrap();
+    assert!(!editor.picker_open());
+    assert_eq!(editor.collection_hits(editor.current()).len(), 4);
+    assert_eq!(
+        editor.buf().name.as_deref(),
+        Some("collection: search needle")
+    );
+}
+
+/// Any other key takes the request back: the list stays a list.
+#[test]
+fn a_key_after_an_early_ctrl_o_takes_it_back() {
+    let (_root, mut editor) = fixture();
+    editor.open_search(false);
+    editor.paste_bracketed("needle");
+    editor.feed(Key::CtrlO);
+    editor.feed(Key::Down);
+    editor.wait_picker();
+    assert!(editor.picker_open());
+    assert!(editor.collections.is_empty());
 }

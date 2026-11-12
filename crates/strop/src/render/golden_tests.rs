@@ -373,6 +373,22 @@ fn terminal_normal_mode() {
     });
 }
 
+/// 0097 §3.1: straight after `Ctrl-O` with the bar on the second hit. The
+/// title says what was searched, each card counts its hits, and the cursor
+/// is on that hit's matched text.
+#[test]
+fn collected_search() {
+    each("collected", |editor| {
+        editor.open_search(false);
+        editor.paste_bracketed("modeline");
+        editor.wait_picker();
+        editor.feed(strop_core::frontend_input::Key::Down);
+        editor.feed(strop_core::frontend_input::Key::CtrlO);
+        editor.wait_io().unwrap();
+        settle_analysis()
+    });
+}
+
 /// 0094 §3.1: the collection after an edit through it. The edited excerpt
 /// shows the new text, its card is marked modified, and the chip reads
 /// NORMAL without `[RO]`: it is an editing surface.

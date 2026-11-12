@@ -1,22 +1,22 @@
-     collection: search — 5 match(es) · 2 file(s)                                                                                           
-     ╭─ docs/remote.md ── 1 excerpt(s) · context 2 (+/-) · modified───────────────────────────────────────────────────────────────────────╮ 
+     search modeline — 5 hits in 2 files                                                                                                    
+     ╭─ docs/remote.md ── 2 hits · modified ──────────────────────────────────────────────────────────────────────────────────────────────╮ 
    1 # Remote                                                                                                                               
    2                                                                                                                                        
    3 The modeline dentifies the endpoint.                                                                                                   
    4                                                                                                                                        
    5 The modeline names the fixed root.                                                                                                     
      ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ 
-     ╭─ src/render/statusline.rs ── rust · 3 excerpt(s) · context 2 (+/-)─────────────────────────────────────────────────────────────────╮ 
+     ╭─ src/render/statusline.rs ── 3 hits ───────────────────────────────────────────────────────────────────────────────────────────────╮ 
    1 //! The modeline: one quiet row at the bottom edge.                                                                                    
    2 //!                                                                                                                                    
    3 //! Every width is a display cell, never a character.                                                                                  
-     ⋮ 2 source lines omitted                                                                                                               
+     ⋮ 2 lines not shown                                                                                                                    
    6                                                                                                                                        
    7 /// Gather the row.                                                                                                                    
    8 pub struct Modeline {                                                                                                                  
    9     chip: String,                                                                                                                      
   10     dirty: bool,                                                                                                                       
-     ⋮ 1 source lines omitted                                                                                                               
+     ⋮ 1 line not shown                                                                                                                     
   12 }                                                                                                                                      
   13                                                                                                                                        
   14 impl Modeline {                                                                                                                        
@@ -37,9 +37,9 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- NORMAL   collection: search ●                                                                                                     5:14  20%
+ NORMAL   collection: search modeline ●                                                                                            5:14  20%
 
-  0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 44:#262a30/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
+  0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 35:#262a30/#f6f2e9 99:reset/#f6f2e9 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 7:#656d7b/#f6f2e9 14:#262a30/#f6f2e9+b 117:#656d7b/#f6f2e9 1:reset/reset
   2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#8a510f/#f6f2e9+b 126:reset/#f6f2e9 1:reset/reset
   3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
@@ -51,13 +51,13 @@
   9: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#696d77/#f6f2e9+i 8:#8a510f/#f6f2e9+b+i 35:#696d77/#f6f2e9+i 83:reset/#f6f2e9 1:reset/reset
  10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 131:reset/#f6f2e9 1:reset/reset
  11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 53:#696d77/#f6f2e9+i 81:reset/#f6f2e9 1:reset/reset
- 12: 1:#656d7b/#f6f2e9+b 28:#656d7b/#f6f2e9 110:reset/#f6f2e9 1:reset/reset
+ 12: 1:#656d7b/#f6f2e9+b 23:#656d7b/#f6f2e9 115:reset/#f6f2e9 1:reset/reset
  13: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
  14: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 19:#696d77/#f6f2e9+i 115:reset/#f6f2e9 1:reset/reset
  15: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 6:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 113:reset/#f6f2e9 1:reset/reset
  16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 117:reset/#f6f2e9 1:reset/reset
  17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 118:reset/#f6f2e9 1:reset/reset
- 18: 1:#656d7b/#f6f2e9+b 28:#656d7b/#f6f2e9 110:reset/#f6f2e9 1:reset/reset
+ 18: 1:#656d7b/#f6f2e9+b 22:#656d7b/#f6f2e9 116:reset/#f6f2e9 1:reset/reset
  19: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
  20: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
  21: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 119:reset/#f6f2e9 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  37: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  38: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
- 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 18:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 101:reset/#fdfbf6 9:#656d7b/#fdfbf6
+ 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 27:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 92:reset/#fdfbf6 9:#656d7b/#fdfbf6

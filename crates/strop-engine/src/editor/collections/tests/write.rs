@@ -204,8 +204,9 @@ fn two_collections_of_one_source_stay_in_step() {
     let (mut e, a, _) = fixture();
     e.feed(Key::CtrlO);
     let first = e.current();
-    // a second collection over the same hits
+    // a second collection, of another search, over one of the same lines
     e.open_picker(Kind::Search);
+    e.picker.as_mut().unwrap().picker.paste("two");
     e.picker_items_fixture(vec![Item {
         badge: None,
         text: "a.txt:2".into(),

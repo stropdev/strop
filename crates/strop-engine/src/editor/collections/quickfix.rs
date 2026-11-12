@@ -1,14 +1,60 @@
-//! The quickfix list (0094 §3.1): the newest collection's hits, under the
-//! names vim gave them. `:copen` shows the list, `]q`/`[q` and
-//! `:cnext`/`:cprev`/`:cc N` visit a hit in its source, `:cdo` runs an ex
-//! command at every hit and `:cfdo` once per file. Collecting loaded every
-//! source already, so nothing here waits on a job.
-use super::Editor;
+//! The hits of a collection (0094 §3.1, 0097 §3): Vim's quickfix names over
+//! the collection's own list. A collection has a current hit; in the
+//! collection the cursor is it, so `]q`/`[q` step from the cursor and stay
+//! there, and from any other buffer they visit the next hit in its file.
+//! `Enter` opens the file under the cursor, `:copen` comes back to the
+//! current hit, `:cdo` runs an ex command at every hit line and `:cfdo` once
+//! per file. Collecting loaded every source already, so nothing here waits
+//! on a job.
+use super::{counted, hits_in_files, Editor, Excerpt};
 use strop_core::id::DocumentId;
+use strop_core::Buffer;
+
+/// One hit of a collection: where it is in its file and in the view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Hit {
+    pub source: DocumentId,
+    /// Source byte: the matched text's start when the hit came from
+    /// Search and is still there, else its line's start.
+    pub at: usize,
+    /// The same place in the collection's view.
+    pub view: usize,
+}
+
+/// An excerpt's hits as source bytes, in order: every match still standing
+/// on a hit line, or the line's start when none is (a reference, or a
+/// match that has been edited).
+pub(super) fn excerpt_hits(excerpt: &Excerpt, source: &Buffer) -> Vec<usize> {
+    let mut anchors = excerpt.hit_anchors.clone();
+    anchors.sort_unstable();
+    anchors.dedup();
+    let mut hits = Vec::new();
+    for anchor in anchors {
+        let anchor = anchor.min(source.len_bytes());
+        let line_end = source.line_end(source.line_of(anchor));
+        let before = hits.len();
+        for (start, _) in &excerpt.matches {
+            if *start >= anchor && *start <= line_end {
+                hits.push(source.clamp_boundary(*start));
+            }
+        }
+        hits[before..].sort_unstable();
+        if hits.len() == before {
+            hits.push(source.clamp_boundary(anchor));
+        }
+    }
+    hits.dedup();
+    hits
+}
 
 impl Editor {
-    /// The list, or the reason there is none.
-    fn quickfix_list(&mut self) -> Option<DocumentId> {
+    /// The collection the hit commands act on: the one in view, else the
+    /// one last in view or last made. `None` leaves the reason in the
+    /// message.
+    fn hit_list(&mut self) -> Option<DocumentId> {
+        if self.collections.contains_key(&self.current()) {
+            self.changes.quickfix = Some(self.current());
+        }
         let list = self
             .changes
             .quickfix
@@ -16,15 +62,14 @@ impl Editor {
         if list.is_none() {
             self.changes.quickfix = None;
             self.message =
-                "no quickfix list — Ctrl-O in search results, references or diagnostics makes one"
+                "nothing collected yet — Ctrl-O in search results, references or diagnostics collects them"
                     .into();
         }
         list
     }
 
-    /// Every hit as `(source, byte)`, in list order. The byte is the
-    /// match's start when the hit came from Search, else its line's start.
-    fn quickfix_hits(&self, list: DocumentId) -> Vec<(DocumentId, usize)> {
+    /// Every hit of a collection, in list order.
+    pub(crate) fn collection_hits(&self, list: DocumentId) -> Vec<Hit> {
         let Some(collection) = self.collections.get(&list) else {
             return Vec::new();
         };
@@ -33,61 +78,108 @@ impl Editor {
             let Some(source) = self.docs.get(excerpt.source) else {
                 continue;
             };
-            let mut anchors = excerpt.hit_anchors.clone();
-            anchors.sort_unstable();
-            anchors.dedup();
-            for anchor in anchors {
-                let anchor = anchor.min(source.buf.len_bytes());
-                let line_end = source.buf.line_end(source.buf.line_of(anchor));
-                let at = excerpt
-                    .matches
-                    .iter()
-                    .map(|(start, _)| *start)
-                    .find(|start| *start >= anchor && *start <= line_end)
-                    .unwrap_or(anchor);
-                hits.push((excerpt.source, source.buf.clamp_boundary(at)));
+            for at in excerpt_hits(excerpt, &source.buf) {
+                let offset = at.saturating_sub(excerpt.start);
+                hits.push(Hit {
+                    source: excerpt.source,
+                    at,
+                    view: (excerpt.view_start + offset).min(excerpt.view_end),
+                });
             }
         }
         hits
     }
 
-    /// `:copen`: show the list.
-    pub(crate) fn quickfix_open(&mut self) {
-        let Some(list) = self.quickfix_list() else {
+    fn files_of(hits: &[Hit]) -> usize {
+        let mut files: Vec<DocumentId> = Vec::new();
+        for hit in hits {
+            if !files.contains(&hit.source) {
+                files.push(hit.source);
+            }
+        }
+        files.len()
+    }
+
+    fn set_current_hit(&mut self, list: DocumentId, index: usize) {
+        if let Some(collection) = self.collections.get_mut(&list) {
+            collection.cursor = Some(index);
+        }
+    }
+
+    /// `hit 2 of 4: src/a.rs:11`.
+    fn announce_hit(&mut self, hits: &[Hit], index: usize) {
+        let Some(hit) = hits.get(index) else {
             return;
         };
+        let Some(source) = self.docs.get(hit.source) else {
+            return;
+        };
+        self.message = format!(
+            "hit {} of {}: {}:{}",
+            index + 1,
+            hits.len(),
+            source.label(&self.cwd),
+            source.buf.line_of(hit.at) + 1
+        );
+    }
+
+    /// `:copen`: show the collection, cursor on the current hit.
+    pub(crate) fn quickfix_open(&mut self) {
+        let Some(list) = self.hit_list() else {
+            return;
+        };
+        let hits = self.collection_hits(list);
         if self.current() != list {
             self.push_jump();
             self.switch_to(list);
+            let current = self.collections[&list].cursor.unwrap_or(0);
+            if let Some(hit) = hits.get(current) {
+                self.set_head(hit.view);
+                self.clamp_cursor();
+                self.place_jump_target();
+            }
         }
-        let count = self.quickfix_hits(list).len();
-        self.message =
-            format!("quickfix: {count} hit(s) — ]q [q visit, :cdo runs a command at each");
+        self.message = format!(
+            "{} — ]q next, Enter opens the file, :cdo runs a command at each",
+            hits_in_files(hits.len(), Self::files_of(&hits))
+        );
     }
 
-    /// `]q` / `[q`, `:cnext` / `:cprev`: the hit `delta` away from the
-    /// last one visited.
-    pub fn quickfix_step(&mut self, delta: isize) {
-        let Some(list) = self.quickfix_list() else {
+    /// `]q` / `[q`, `:cnext` / `:cprev`. In the collection: the hit after
+    /// or before the cursor. Anywhere else: the hit after or before the
+    /// current one, in its file.
+    pub fn quickfix_step(&mut self, forward: bool) {
+        let Some(list) = self.hit_list() else {
             return;
         };
-        let cursor = self.collections[&list].cursor;
-        let target = match (cursor, delta >= 0) {
-            (None, true) => Some(delta.unsigned_abs().saturating_sub(1)),
-            (None, false) => None,
-            (Some(at), _) => at.checked_add_signed(delta),
+        let hits = self.collection_hits(list);
+        let target = if self.current() == list {
+            let head = self.head();
+            match forward {
+                true => hits.iter().position(|hit| hit.view > head),
+                false => hits.iter().rposition(|hit| hit.view < head),
+            }
+        } else {
+            match (self.collections[&list].cursor, forward) {
+                (None, true) => Some(0),
+                (None, false) => None,
+                (Some(at), true) => Some(at + 1),
+                (Some(at), false) => at.checked_sub(1),
+            }
         };
-        match target {
-            Some(index) => self.quickfix_visit(list, index),
-            None => self.message = "quickfix: first hit".into(),
+        match target.filter(|index| *index < hits.len()) {
+            Some(index) => self.quickfix_visit(list, &hits, index),
+            None if hits.is_empty() => self.message = "the collection has no hits left".into(),
+            None => self.message = if forward { "last hit" } else { "first hit" }.into(),
         }
     }
 
     /// `:cc N`: hit N, counted from one.
     pub(crate) fn quickfix_goto(&mut self, argument: &str) {
-        let Some(list) = self.quickfix_list() else {
+        let Some(list) = self.hit_list() else {
             return;
         };
+        let hits = self.collection_hits(list);
         let index = match argument.trim() {
             "" => self.collections[&list].cursor.unwrap_or(0),
             number => match number.parse::<usize>() {
@@ -98,32 +190,57 @@ impl Editor {
                 }
             },
         };
-        self.quickfix_visit(list, index);
+        if index < hits.len() {
+            self.quickfix_visit(list, &hits, index);
+        } else {
+            self.message = format!("there are {}", counted(hits.len(), "hit"));
+        }
     }
 
-    fn quickfix_visit(&mut self, list: DocumentId, index: usize) {
-        let hits = self.quickfix_hits(list);
-        let Some(&(source, at)) = hits.get(index) else {
-            self.message = if hits.is_empty() {
-                "quickfix: the list is empty".into()
-            } else {
-                "quickfix: last hit".into()
-            };
-            return;
-        };
-        if let Some(collection) = self.collections.get_mut(&list) {
-            collection.cursor = Some(index);
+    /// Make hit `index` current and put the cursor on it: in the
+    /// collection when that is the buffer in view, else in its file.
+    fn quickfix_visit(&mut self, list: DocumentId, hits: &[Hit], index: usize) {
+        let hit = hits[index];
+        self.set_current_hit(list, index);
+        self.push_jump();
+        if self.current() == list {
+            self.set_head(hit.view);
+            self.clamp_cursor();
+            self.place_jump_target();
+        } else {
+            self.jump_land(hit.source, hit.at);
+            self.lsp_attach_document(self.current());
         }
+        self.announce_hit(hits, index);
+    }
+
+    /// `Enter` in a collection: open the file at the cursor. The hit on
+    /// that line, or the nearest one above it, becomes current. False on a
+    /// row that shows no file (the title, a gap, a card's lower border).
+    pub(crate) fn collection_enter(&mut self) -> bool {
+        let list = self.current();
+        if !self.collections.contains_key(&list) {
+            return false;
+        }
+        let Some((source, at)) = self.navigation_source() else {
+            return false;
+        };
+        if self.docs.get(source).is_none() {
+            self.message = "that file was closed".into();
+            return true;
+        }
+        let line_end = self.buf().line_end(self.buf().line_of(self.head()));
+        let hits = self.collection_hits(list);
+        let current = hits
+            .iter()
+            .rposition(|hit| hit.view <= line_end)
+            .unwrap_or(0);
+        self.changes.quickfix = Some(list);
+        self.set_current_hit(list, current);
         self.push_jump();
         self.jump_land(source, at);
         self.lsp_attach_document(self.current());
-        self.message = format!(
-            "quickfix {} of {}: {}:{}",
-            index + 1,
-            hits.len(),
-            self.cur().label(&self.cwd),
-            self.buf().line_of(at) + 1
-        );
+        true
     }
 
     /// `:cdo {command}` / `:cfdo {command}`: run an ex command with the
@@ -142,16 +259,16 @@ impl Editor {
             self.message = format!(":{name} does not nest");
             return;
         }
-        let Some(list) = self.quickfix_list() else {
+        let Some(list) = self.hit_list() else {
             return;
         };
         let origin = (self.current(), self.head());
         let mut ran = 0;
         let mut files: Vec<DocumentId> = Vec::new();
         let mut index = 0;
-        // Hits are re-read every round: the command edits the sources and
+        // Lines are re-read every round: the command edits the sources and
         // the list's anchors move with them.
-        while let Some(&(source, at)) = self.quickfix_hits(list).get(index) {
+        while let Some(&(source, at)) = self.hit_lines(list).get(index) {
             index += 1;
             let seen = files.contains(&source);
             if !seen {
@@ -174,12 +291,31 @@ impl Editor {
             self.clamp_cursor();
         }
         self.message = if per_file {
-            format!(":cfdo {command} — ran in {ran} file(s)")
+            format!(":cfdo {command} — ran in {}", counted(ran, "file"))
         } else {
             format!(
-                ":cdo {command} — ran at {ran} hit(s) in {} file(s)",
-                files.len()
+                ":cdo {command} — ran on {} in {}",
+                counted(ran, "line"),
+                counted(files.len(), "file")
             )
         };
+    }
+
+    /// Every hit line once, as `(source, byte)`: several matches on one
+    /// line are one line to `:cdo`.
+    fn hit_lines(&self, list: DocumentId) -> Vec<(DocumentId, usize)> {
+        let mut lines: Vec<(DocumentId, usize)> = Vec::new();
+        let mut last = None;
+        for hit in self.collection_hits(list) {
+            let Some(source) = self.docs.get(hit.source) else {
+                continue;
+            };
+            let line = (hit.source, source.buf.line_of(hit.at));
+            if last != Some(line) {
+                lines.push((hit.source, hit.at));
+                last = Some(line);
+            }
+        }
+        lines
     }
 }
