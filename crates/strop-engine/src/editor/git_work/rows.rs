@@ -62,7 +62,8 @@ pub struct StatusView {
     /// Diffs of the expanded entries, as of `tree`.
     pub deltas: Vec<(StatusEntry, FileDelta)>,
     /// Lines added and removed per entry, `stats[n]` for
-    /// `tree.entries[n]` (0100 §7); installed with the tree.
+    /// `tree.entries[n]` (0100 §7). They land just after their snapshot,
+    /// and are empty until then.
     pub stats: Vec<Option<LineStat>>,
     /// What `=` opened; carried into every refresh.
     pub expanded: Vec<StatusEntry>,
@@ -116,17 +117,14 @@ impl StatusView {
 
     /// Install a snapshot: returns the buffer text for it. Expansions
     /// whose entry left the tree are dropped.
-    pub fn install(&mut self, data: super::super::git_memory::StatusData) -> String {
-        let super::super::git_memory::StatusData {
-            tree,
-            deltas,
-            stats,
-        } = data;
-        debug_assert_eq!(stats.len(), tree.entries.len(), "one stat per entry");
+    pub fn install(&mut self, tree: WorkingTree, deltas: Vec<(StatusEntry, FileDelta)>) -> String {
         self.expanded.retain(|entry| tree.entries.contains(entry));
+        if self.tree != tree {
+            // counts belong to the snapshot they were taken of
+            self.stats.clear();
+        }
         self.tree = tree;
         self.deltas = deltas;
-        self.stats = stats;
         self.loaded = true;
         let (text, rows) = build(&self.tree, &self.deltas);
         self.rows = rows;

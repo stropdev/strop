@@ -24,7 +24,7 @@ pub(crate) use types::MutationKind;
 pub(crate) use types::{
     BlameKey, BranchKey, CardKey, CommitDraft, ContextKey, DiveData, DiveKey, DiveTarget, DraftKey,
     GitMutation, HunkData, HunkKey, LogRequest, MutationKey, MutationOp, Porcelain, PorcelainDone,
-    PorcelainKey, StatusData, StatusKey,
+    PorcelainKey, StatusCounts, StatusData, StatusKey,
 };
 
 use std::path::{Path, PathBuf};

@@ -28,7 +28,7 @@ pub use exec::{GitExec, GitExecError, GitRun};
 pub use repo::{GitContext, GitError, Repo};
 pub use revision::{GitRevision, SourceLocation};
 pub use status::{
-    Branch, Change, FileDelta, LineStat, Section, StatusEntry, Tracking, WorkingTree,
+    Branch, Change, FileDelta, LineStat, LineStats, Section, StatusEntry, Tracking, WorkingTree,
 };
 pub use target::RepoTarget;
 

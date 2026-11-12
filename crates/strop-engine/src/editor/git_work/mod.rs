@@ -17,7 +17,7 @@ use std::collections::{HashMap, VecDeque};
 use strop_core::frontend_input::Key;
 use strop_core::id::{DocumentId, LineIndex};
 use strop_core::worker::{CancelReason, Completion, Outcome, Ticket};
-use strop_git::{RepoTarget, Section};
+use strop_git::RepoTarget;
 
 pub use rows::{StatusRow, StatusView};
 
@@ -26,7 +26,7 @@ use self::keys::{Action, Step};
 use super::document::Surface;
 use super::git_memory::{
     git_failure, repo_or_unavailable, BranchKey, DraftKey, GitJob, GitMutation, MutationKey,
-    MutationOp, PorcelainKey, StatusData, StatusKey,
+    MutationOp, PorcelainKey, StatusCounts, StatusData, StatusKey,
 };
 use super::io::OpenIntent;
 use super::{trace, Editor};
@@ -229,6 +229,8 @@ impl Editor {
         });
         let args = (ticket.clone(), expanded.clone());
         let workdir = repo.workdir().to_path_buf();
+        let tx = self.git_tx.clone();
+        let snapshot_ticket = ticket.clone();
         self.launch_git_job(
             "git-status",
             "git.status",
@@ -251,40 +253,57 @@ impl Editor {
                     Ok(tree) => tree,
                     Err(error) => return failed(git_failure("status", error)),
                 };
-                // every entry's `+N -M` (0100 §7) is its delta's sum; only
-                // the expanded ones keep the delta itself
                 let mut deltas = Vec::new();
-                let mut stats = Vec::with_capacity(tree.entries.len());
-                for entry in &tree.entries {
-                    let open = expanded.contains(entry);
-                    if !open && (entry.section == Section::Conflicts || entry.is_directory()) {
-                        stats.push(None);
+                for entry in expanded {
+                    if !tree.entries.contains(&entry) {
                         continue;
                     }
-                    match repo.file_delta(entry) {
-                        Ok(delta) => {
-                            stats.push(Some(delta.stat()));
-                            if open {
-                                deltas.push((entry.clone(), delta));
-                            }
-                        }
-                        Err(error) if open => return failed(git_failure("diff", error)),
-                        // a file that moved under the read: no count
-                        Err(_) => stats.push(None),
+                    match repo.file_delta(&entry) {
+                        Ok(delta) => deltas.push((entry, delta)),
+                        Err(error) => return failed(git_failure("diff", error)),
                     }
                 }
-                Outcome::Success(StatusData {
-                    tree,
-                    deltas,
-                    stats,
-                })
+                // the list first; every entry's `+N -M` (0100 §7) after it,
+                // from two whole-tree diffs — a status of thousands of
+                // changed files is not held up by counting them
+                let counted = tree.clone();
+                let _ = tx.send(GitJob::StatusSnapshot(
+                    snapshot_ticket,
+                    StatusData { tree, deltas },
+                ));
+                let counts = match repo.line_stats() {
+                    Ok(counts) => counts,
+                    Err(error) => return failed(git_failure("diff", error)),
+                };
+                Outcome::Success(
+                    counted
+                        .entries
+                        .iter()
+                        .map(|entry| (!entry.is_directory()).then(|| counts.of(entry)).flatten())
+                        .collect(),
+                )
             },
         );
     }
 
+    /// The list of a snapshot still being counted: published now.
+    pub(crate) fn handle_status_snapshot(&mut self, ticket: Ticket<StatusKey>, data: StatusData) {
+        let document = ticket.key.document;
+        let owned = self
+            .git_work
+            .status
+            .get(&document)
+            .is_some_and(|running| running.ticket == ticket);
+        if !owned || self.status_view_mut(document).is_none() {
+            trace::services::rejected("git", "status snapshot superseded or buffer closed");
+            return;
+        }
+        self.publish_status(document, data);
+    }
+
     pub(crate) fn handle_status_completion(
         &mut self,
-        completion: Completion<StatusKey, StatusData>,
+        completion: Completion<StatusKey, StatusCounts>,
     ) {
         let document = completion.ticket.key.document;
         let Some(again) = self
@@ -304,7 +323,14 @@ impl Editor {
             return;
         }
         match completion.outcome {
-            Outcome::Success(data) => self.publish_status(document, data),
+            Outcome::Success(counts) => {
+                if let Some(view) = self.status_view_mut(document) {
+                    // the counts are of the snapshot this request published
+                    if view.loaded && counts.len() == view.tree.entries.len() {
+                        view.stats = counts;
+                    }
+                }
+            }
             Outcome::Failed { failure, .. } => {
                 let loaded = self
                     .status_view_mut(document)
@@ -341,7 +367,7 @@ impl Editor {
         };
         let first = !view.loaded;
         let anchor = Anchor::capture(view, line);
-        let text = view.install(data);
+        let text = view.install(data.tree, data.deltas);
         let land = if first {
             view.rows
                 .iter()
@@ -377,7 +403,6 @@ impl Editor {
                 .filter(|(entry, _)| view.expanded.contains(entry))
                 .cloned()
                 .collect(),
-            stats: view.stats.clone(),
         };
         self.publish_status(document, data);
     }

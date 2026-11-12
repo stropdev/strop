@@ -719,8 +719,13 @@ Departures and choices where the plan left room:
   the commit's subject, body, author and time
   (`Surface::ChangedFiles::commit`) and per file the status letter, the old
   path of a rename or copy, and a binary flag. The status snapshot carries
-  each entry's `+N -M` and binary flag (`StatusView::stat`), counted from
-  the same delta the expanded entry shows. The status list has no rename
+  each entry's `+N -M` and binary flag (`StatusView::stat`), from two
+  whole-tree diffs (HEAD→index, index→worktree with untracked files as
+  added). They follow the snapshot as a second message of the same job
+  (`GitJob::StatusSnapshot`, then the completion with the counts): on a
+  status of 2,000 changed files counting takes about 180 ms, and the list
+  is on screen at 6 ms as before rather than waiting for it (the first
+  version counted per entry inside the snapshot: 900 ms). The status list has no rename
   detection (libgit2's default, and 0100 §4.2 draws a rename as `D` and
   `A`), so a status entry has no old path.
 - The commit's message is a second `git show -s` run rather than one run

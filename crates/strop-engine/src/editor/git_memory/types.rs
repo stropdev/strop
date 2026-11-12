@@ -279,10 +279,12 @@ pub struct StatusKey {
 pub struct StatusData {
     pub tree: WorkingTree,
     pub deltas: Vec<(StatusEntry, FileDelta)>,
-    /// `stats[n]` is the line count of `tree.entries[n]`: none for a
-    /// conflict or an untracked directory (0100 §7).
-    pub stats: Vec<Option<LineStat>>,
 }
+
+/// The `+N -M` of a snapshot's entries, `counts[n]` for `tree.entries[n]`
+/// (0100 §7): none for a conflict or an untracked directory. They follow
+/// the snapshot they count, so the list is never late for them.
+pub type StatusCounts = Vec<Option<LineStat>>;
 
 /// A commit-message template being written for `repo`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -351,7 +353,9 @@ pub enum GitJob {
     Gutter(Completion<BlameKey, Vec<BlameLine>>),
     Card(Completion<CardKey, Box<BlameCard>>),
     Dive(Completion<DiveKey, DiveData>),
-    Status(Completion<StatusKey, StatusData>),
+    /// A status snapshot, ahead of its counts.
+    StatusSnapshot(strop_core::worker::Ticket<StatusKey>, StatusData),
+    Status(Completion<StatusKey, StatusCounts>),
     CommitDraft(Completion<DraftKey, CommitDraft>),
     Porcelain(Completion<PorcelainKey, PorcelainDone>),
     Branches(Completion<BranchKey, Vec<Branch>>),

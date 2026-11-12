@@ -632,6 +632,7 @@ impl Editor {
             GitJob::Gutter(c) => self.handle_gutter_completion(c),
             GitJob::Card(c) => self.handle_card_completion(c),
             GitJob::Dive(c) => self.handle_dive_completion(c),
+            GitJob::StatusSnapshot(ticket, data) => self.handle_status_snapshot(ticket, data),
             GitJob::Status(c) => self.handle_status_completion(c),
             GitJob::CommitDraft(c) => self.handle_commit_draft(c),
             GitJob::Porcelain(c) => self.handle_porcelain_completion(c),

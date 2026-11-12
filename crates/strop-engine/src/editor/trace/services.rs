@@ -52,6 +52,9 @@ pub fn git(job: &GitJob) {
         GitJob::Gutter(value) => completion("git", "gutter", value),
         GitJob::Card(value) => completion("git", "blame_card", value),
         GitJob::Dive(value) => completion("git", "dive", value),
+        GitJob::StatusSnapshot(ticket, data) => {
+            json!({"service":"git","result":"status-snapshot","ticket":ticket,"entries":data.tree.entries.len()})
+        }
         GitJob::Status(value) => completion("git", "status", value),
         GitJob::CommitDraft(value) => completion("git", "commit_draft", value),
         GitJob::Porcelain(value) => completion("git", "porcelain", value),
