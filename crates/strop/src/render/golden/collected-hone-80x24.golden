@@ -21,7 +21,7 @@
   13                                                                            
   14 impl Modeline {                                                            
  › 5 hits in 2 files — ]q next, Enter opens the file, :w writes                 
- NORMAL   collection: search modeline                                   7:5  28%
+  NORMAL    collection: search modeline                              28%   7:5  
 
   0: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 35:#e6e1d6/#15171c 39:reset/#15171c 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 7:#858c9a/#15171c 14:#e6e1d6/#15171c+b 58:#858c9a/#15171c
@@ -46,4 +46,4 @@
  20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
  21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 4:#c99ce0/#15171c 1:#e6e1d6/#15171c 8:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#9da3af/#15171c 59:reset/#15171c 1:reset/reset
  22: 3:#e6e1d6/#1c1f25+b 60:#e6e1d6/#1c1f25 17:reset/#1c1f25
- 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 27:#e6e1d6/#1c1f25 35:reset/#1c1f25 8:#858c9a/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 27:#e6e1d6/#1c1f25 29:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

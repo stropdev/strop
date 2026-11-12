@@ -1,21 +1,26 @@
-//! The modeline (0032, 0088 §2): one quiet row on the surface plane at
-//! the terminal's bottom edge.
+//! The modeline (0032, 0088 §2, 0098): one quiet row on the surface
+//! plane at the terminal's bottom edge.
 //!
-//! `[ NORMAL ]  main*  crates/strop/src/render/ statusline.rs ●        ●1 ▲2  LSP!  98:9  17%`
+//! `  NORMAL    main*  crates/strop/src/render/statusline.rs ●      d2        LSP!  ●1 ▲2   17%   98:9  `
 //!
-//! A fixed 8-cell mode chip, so the path never jumps; branch and path on
-//! the left; diagnostics only when non-zero, a 4-cell `LSP!` badge only
-//! on failure, `Spaces:N` only when it differs from the configured
-//! default, then the position — separated by two spaces. While an
-//! operator pends, the grammar's spec footer replaces the right side in
-//! the accent (0001 §4). Messages never
-//! live here: they have their own echo row (`render/echo.rs`).
+//! The left half says what this is: a fixed 10-cell mode chip, so the
+//! path never jumps; recording; branch; file. The right half says what
+//! is happening: the pending keys in their slot (the grammar's spec
+//! footer, in the accent — 0001 §4), then diagnostics only when
+//! non-zero, a 4-cell `LSP!` badge only on failure, `Spaces:N` only
+//! when it differs from the configured default, and where the cursor
+//! is, in fixed-width fields. Messages never live here: they have their
+//! own echo row (`render/echo.rs`).
 //!
-//! Every width is a display cell, never a character: under pressure the
-//! row yields the directory first, then the Git context, then the
-//! optional signals, and only then clips the filename. Service failures
-//! keep their badge through every degradation, including the chip-and-
-//! position-only fallback.
+//! Distances come from one scale (0098 §3.1): marks are glued to their
+//! owner, one cell parts the members of a group, two cells part groups.
+//! Every width is a display cell, never a character. Which part gives
+//! way under pressure is `layout.rs`'s one table: the lowest part
+//! shrinks to its floor before it is dropped — the directory first, the
+//! filename last. Service failures keep their badge through every
+//! degradation, including the chip-and-position-only fallback.
+
+use std::borrow::Cow;
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -26,7 +31,7 @@ use ratatui::Frame;
 use crate::editor::Editor;
 
 use super::card::{hint_spans, Hint};
-use super::clip::{clip_end, width};
+use super::clip::{clip_end, clip_start, width};
 use super::file_name;
 use super::style::Tokens;
 
@@ -37,39 +42,41 @@ mod spec;
 #[cfg(test)]
 mod tests;
 
-/// Groups are separated by two cells.
-const SEP: &str = "  ";
-const SEP_W: usize = 2;
-/// The halves never jam together while a spare cell exists.
-const GAP: usize = 1;
+use layout::{Grants, Part};
 
 pub(super) fn render(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
         return; // a 0-sized resize must not underflow (0027 §2)
     }
     let cells = area.width as usize;
-    let mut row = Modeline::gather(editor, t);
-    row.fit(cells);
+    let row = Modeline::gather(editor, t);
+    let spans = match row.fit(cells) {
+        Some(grants) => row.spans(t, &grants),
+        None => {
+            let (chip, chip_cells) = row.bare(cells);
+            row.bare_spans(t, &chip, chip_cells, cells)
+        }
+    };
     let rect = Rect {
         y: area.bottom() - 1,
         height: 1,
         ..area
     };
     frame.render_widget(
-        Paragraph::new(Line::from(row.spans(t, cells))).style(Style::default().bg(t.surface)),
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(t.surface)),
         rect,
     );
 }
 
 /// Everything the row can show. Strings are gathered (and sanitized)
-/// once; [`Modeline::fit`] then narrows the model in place — dropping
-/// or clipping fields — until it fits the terminal's cell width.
+/// once; [`Modeline::fit`] then decides how many cells each part gets.
 /// Width fitting borrows the gathered fields; spans are allocated only
-/// for the final row, not for every degradation step.
+/// for the final row.
 struct Modeline {
-    chip: String, // exactly `chip::WIDTH` cells unless the row is bare
+    chip: String, // exactly `chip::WIDTH` cells
     chip_color: Color,
-    recording: bool,             // terminal capture: a `REC` badge after the chip
+    /// `REC` while a terminal captures, `REC @a` while a macro records.
+    rec: String,
     git_context: String,         // branch or historical commit identity
     worktree_dirty: bool,        // "*" — unstaged or untracked changes
     staged_mark: bool,           // "+" — staged changes
@@ -80,7 +87,7 @@ struct Modeline {
     readonly: bool,              // " [RO]"
     multicursor: Option<String>, // "3×", without its leading pad
     /// The grammar footer (pending operator, live preview spec, walker
-    /// state): replaces the right-side signals while present.
+    /// state), in the pending slot.
     spec: String,
     /// Terminal keycap hints, whole chords only (rule 10).
     hints: Vec<(String, &'static str)>,
@@ -89,14 +96,12 @@ struct Modeline {
     services: Option<services::Badge>,
     errors: usize,
     warnings: usize,
-    show_diag: bool,
     line: usize,
     col: usize,
+    lines: usize, // the last line's number: the line field's width
     percent: Option<usize>,
     search: Option<(usize, usize)>, // current and total matches
     indent: String,                 // "Spaces:2" — only when non-default (rule 4)
-    bare: bool,                     // degenerate layout: chip · position only
-    bare_chip: usize,               // cells the chip may occupy in that layout
 }
 
 impl Modeline {
@@ -165,10 +170,15 @@ impl Modeline {
         } else {
             indent.label()
         };
+        let rec = match editor.recording() {
+            Some(register) => format!("REC @{register}"),
+            None if terminal && editor.terminal_capture_enabled() => "REC".to_owned(),
+            None => String::new(),
+        };
         Self {
             chip,
             chip_color,
-            recording: terminal && editor.terminal_capture_enabled(),
+            rec: printable(rec),
             git_context: printable(git_context),
             namespace: printable(namespace),
             worktree_dirty: !terminal
@@ -186,58 +196,151 @@ impl Modeline {
             services: services::Badge::gather(editor),
             errors,
             warnings,
-            show_diag: errors > 0 || warnings > 0,
             line,
             col,
+            lines: if terminal_input { line } else { content },
             percent: (!terminal).then_some(percent),
             search: (!terminal).then(|| editor.search_position()).flatten(),
             indent,
-            bare: false,
-            bare_chip: 0,
         }
     }
 
-    fn file_spans<'a>(&'a self, t: &Tokens) -> Vec<Span<'a>> {
-        let mut spans = Vec::new();
-        if !self.namespace.is_empty() {
-            spans.push(Span::styled(
-                self.namespace.as_str(),
-                Style::default().fg(t.muted),
-            ));
-            spans.push(Span::raw(" "));
+    /// The finished row: the left half, the flexible gap, the right
+    /// half. Each part is cut to the cells the plan gave it.
+    fn spans<'a>(&'a self, t: &Tokens, grants: &Grants) -> Vec<Span<'a>> {
+        let muted = Style::default().fg(t.muted);
+        let warning = Style::default().fg(t.warning);
+        let mut row = Row {
+            spans: vec![self.chip_span(t, self.chip.as_str())],
+        };
+        if grants.get(Part::Rec).is_some() {
+            row.group();
+            row.push(
+                self.rec.as_str(),
+                Style::default().fg(t.error).add_modifier(Modifier::BOLD),
+            );
         }
-        // the file-name idiom (0088 §2 "File names"), row weight: the
-        // modeline is one quiet row, not a heading
-        if !self.dir.is_empty() {
-            spans.push(Span::styled(self.dir.as_str(), file_name::dir_style(t)));
+        if let Some(cells) = grants.get(Part::Git) {
+            let marks = usize::from(self.worktree_dirty) + usize::from(self.staged_mark);
+            row.group();
+            row.push(clip_end(&self.git_context, cells - marks), muted);
+            if self.worktree_dirty {
+                row.push("*", warning);
+            }
+            if self.staged_mark {
+                row.push("+", warning);
+            }
         }
-        if !self.name.is_empty() {
-            spans.push(Span::styled(
-                self.name.as_str(),
+        if let Some(cells) = grants.get(Part::Name) {
+            row.group();
+            if let Some(cells) = grants.get(Part::Namespace) {
+                row.push(clip_end(&self.namespace, cells - 1), muted);
+                row.pad(1);
+            }
+            // the file-name idiom (0088 §2 "File names"), row weight:
+            // the modeline is one quiet row, not a heading
+            if let Some(cells) = grants.get(Part::Dir) {
+                row.push(clip_start(&self.dir, cells), file_name::dir_style(t));
+            }
+            row.push(
+                clip_end(&self.name, self.name_cells(cells)),
                 file_name::name_style(file_name::Role::Row, t),
-            ));
+            );
+            if self.dirty {
+                row.push(" ●", warning);
+            }
+            if self.readonly {
+                row.push(" [RO]", warning);
+            }
+            if let Some(mark) = &self.multicursor {
+                row.pad(1);
+                row.push(
+                    mark.as_str(),
+                    Style::default()
+                        .fg(t.secondary)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
         }
-        if self.dirty {
-            spans.push(Span::styled(" ●", Style::default().fg(t.warning)));
+        row.pad(grants.spare());
+        if let Some(cells) = grants.get(Part::Spec) {
+            row.group();
+            row.push(clip_end(&self.spec, cells), Style::default().fg(t.accent));
+            // typed keys grow to the right inside their slot
+            row.pad(grants.get(Part::SlotPad).unwrap_or(0));
         }
-        if self.readonly {
-            spans.push(Span::styled(" [RO]", Style::default().fg(t.warning)));
+        if grants.get(Part::Attention).is_some() {
+            for badge in &self.attention {
+                row.group();
+                row.push(*badge, warning);
+            }
         }
-        if let Some(mark) = &self.multicursor {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                mark.as_str(),
-                Style::default()
-                    .fg(t.secondary)
-                    .add_modifier(Modifier::BOLD),
-            ));
+        if let Some(cells) = grants.get(Part::Hints) {
+            let hints: Vec<Hint<'_>> = self
+                .hints
+                .iter()
+                .take(self.hints_shown(cells))
+                .map(|(key, desc)| Hint { key, desc })
+                .collect();
+            let mut spans = hint_spans(&hints, usize::MAX, t);
+            // drop the footer's own edge padding: groups here are parted
+            // by the row's separator like every other group
+            spans.pop();
+            let used: usize = spans.iter().skip(1).map(|span| width(&span.content)).sum();
+            row.group();
+            row.spans.extend(spans.into_iter().skip(1));
+            row.pad(cells - used);
         }
-        spans
+        if let Some(badge) = self
+            .services
+            .as_ref()
+            .filter(|_| grants.get(Part::Services).is_some())
+        {
+            row.group();
+            row.spans.push(badge.span(t));
+        }
+        if grants.get(Part::Diag).is_some() {
+            row.group();
+            if self.errors > 0 {
+                row.push(format!("●{}", self.errors), Style::default().fg(t.error));
+            }
+            if self.warnings > 0 {
+                if self.errors > 0 {
+                    row.pad(1);
+                }
+                row.push(format!("▲{}", self.warnings), warning);
+            }
+        }
+        if grants.get(Part::Indent).is_some() {
+            row.group();
+            row.push(self.indent.as_str(), muted);
+        }
+        if let Some((current, total)) = self.search.filter(|_| grants.get(Part::Search).is_some()) {
+            let cells = layout::digits(total);
+            row.group();
+            row.push(format!("{current:>cells$}/{total}"), muted);
+        }
+        if let Some(percent) = self.percent.filter(|_| grants.get(Part::Percent).is_some()) {
+            row.group();
+            row.push(format!("{percent:>3}%"), muted);
+        }
+        row.group();
+        row.push(
+            format!(
+                "{:>line$}:{:<col$}",
+                self.line,
+                self.col,
+                line = self.line_cells(),
+                col = self.col_cells()
+            ),
+            Style::default().fg(t.secondary),
+        );
+        row.spans
     }
 
-    fn chip_span<'a>(&'a self, t: &Tokens) -> Span<'a> {
+    fn chip_span<'a>(&self, t: &Tokens, text: impl Into<Cow<'a, str>>) -> Span<'a> {
         Span::styled(
-            self.chip.as_str(),
+            text,
             Style::default()
                 .fg(t.on_accent)
                 .bg(self.chip_color)
@@ -245,129 +348,31 @@ impl Modeline {
         )
     }
 
-    /// Build the visible halves once, after all width decisions.
-    fn halves<'a>(&'a self, t: &Tokens) -> (Vec<Span<'a>>, Vec<Span<'a>>) {
-        let mut left = vec![self.chip_span(t)];
-        if self.recording {
-            left.push(Span::raw(" "));
-            left.push(Span::styled(
-                "REC",
-                Style::default().fg(t.error).add_modifier(Modifier::BOLD),
-            ));
-        }
-        if !self.git_context.is_empty() {
-            left.push(Span::raw(SEP));
-            left.push(Span::styled(
-                self.git_context.as_str(),
-                Style::default().fg(t.muted),
-            ));
-            if self.worktree_dirty {
-                left.push(Span::styled("*", Style::default().fg(t.warning)));
-            }
-            if self.staged_mark {
-                left.push(Span::styled("+", Style::default().fg(t.warning)));
-            }
-        }
-        if self.has_file() {
-            left.push(Span::raw(SEP));
-            left.extend(self.file_spans(t));
-        }
-        let mut right = Vec::new();
-        let group = |right: &mut Vec<Span<'a>>| {
-            if !right.is_empty() {
-                right.push(Span::raw(SEP));
-            }
-        };
-        if !self.spec.is_empty() {
-            right.push(Span::styled(
-                self.spec.as_str(),
-                Style::default().fg(t.accent),
-            ));
-        }
-        for badge in &self.attention {
-            group(&mut right);
-            right.push(Span::styled(*badge, Style::default().fg(t.warning)));
-        }
-        if !self.hints.is_empty() {
-            let hints: Vec<Hint<'_>> = self
-                .hints
-                .iter()
-                .map(|(key, desc)| Hint { key, desc })
-                .collect();
-            right.extend(hint_spans(&hints, usize::MAX, t));
-        }
-        if let Some(badge) = &self.services {
-            group(&mut right);
-            right.push(badge.span(t));
-        }
-        if self.show_diag {
-            group(&mut right);
-            if self.errors > 0 {
-                right.push(Span::styled(
-                    format!("●{}", self.errors),
-                    Style::default().fg(t.error),
-                ));
-            }
-            if self.warnings > 0 {
-                if self.errors > 0 {
-                    right.push(Span::raw(" "));
-                }
-                right.push(Span::styled(
-                    format!("▲{}", self.warnings),
-                    Style::default().fg(t.warning),
-                ));
-            }
-        }
-        if !self.indent.is_empty() {
-            group(&mut right);
-            right.push(Span::styled(
-                self.indent.as_str(),
-                Style::default().fg(t.muted),
-            ));
-        }
-        group(&mut right);
-        right.push(Span::styled(self.position(), Style::default().fg(t.muted)));
-        (left, right)
-    }
-
-    /// The finished row: halves joined by a flexible gap that never
-    /// closes while both halves are on screen.
-    fn spans<'a>(&'a self, t: &Tokens, cells: usize) -> Vec<Span<'a>> {
-        if self.bare {
-            return self.bare_spans(t, cells);
-        }
-        let (left, right) = self.halves(t);
-        // the fit invariant already reserved the gap: l + GAP + r
-        // fits, so this pad is at least GAP cells wide
-        let pad = cells.saturating_sub(span_width(&left) + span_width(&right));
-        let mut spans = left;
-        spans.push(Span::raw(" ".repeat(pad)));
-        spans.extend(right);
-        spans
-    }
-
-    fn bare_spans(&self, t: &Tokens, cells: usize) -> Vec<Span<'static>> {
+    fn bare_spans(
+        &self,
+        t: &Tokens,
+        chip: &str,
+        chip_cells: usize,
+        cells: usize,
+    ) -> Vec<Span<'static>> {
         let mut spans = Vec::new();
-        if self.bare_chip >= 1 {
+        if chip_cells >= 1 {
             // the leading cells carry the safety marks: cut, never elide
-            let shown: String =
-                unicode_segmentation::UnicodeSegmentation::graphemes(self.chip.as_str(), true)
-                    .scan(0usize, |used, grapheme| {
-                        *used += width(grapheme);
-                        (*used <= self.bare_chip).then_some(grapheme)
-                    })
-                    .collect();
-            spans.push(Span::styled(
-                shown,
-                Style::default()
-                    .fg(t.on_accent)
-                    .bg(self.chip_color)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            let shown: String = unicode_segmentation::UnicodeSegmentation::graphemes(chip, true)
+                .scan(0usize, |used, grapheme| {
+                    *used += width(grapheme);
+                    (*used <= chip_cells).then_some(grapheme)
+                })
+                .collect();
+            spans.push(self.chip_span(t, shown));
         }
         spans.push(Span::styled(
-            clip_end(&self.position(), cells.saturating_sub(self.bare_chip)).into_owned(),
-            Style::default().fg(t.muted),
+            clip_end(
+                &format!("{}:{}", self.line, self.col),
+                cells.saturating_sub(chip_cells),
+            )
+            .into_owned(),
+            Style::default().fg(t.secondary),
         ));
         spans
     }
@@ -379,10 +384,33 @@ impl Modeline {
             || self.readonly
             || self.multicursor.is_some()
     }
+
+    fn show_diag(&self) -> bool {
+        self.errors > 0 || self.warnings > 0
+    }
 }
 
-fn span_width(spans: &[Span<'_>]) -> usize {
-    spans.iter().map(|span| width(&span.content)).sum()
+/// The row under construction: spans, with the spacing scale's
+/// distances as the only way to add blank cells.
+struct Row<'a> {
+    spans: Vec<Span<'a>>,
+}
+
+impl<'a> Row<'a> {
+    fn push(&mut self, text: impl Into<Cow<'a, str>>, style: Style) {
+        self.spans.push(Span::styled(text, style));
+    }
+
+    fn pad(&mut self, cells: usize) {
+        if cells > 0 {
+            self.spans.push(Span::raw(" ".repeat(cells)));
+        }
+    }
+
+    /// The separator before a group.
+    fn group(&mut self) {
+        self.pad(layout::SEP);
+    }
 }
 
 fn printable(text: String) -> String {

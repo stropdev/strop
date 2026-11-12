@@ -21,7 +21,7 @@
   21 i    let ch                                                                
 ~                                                                               
 ~                                                                               
- INSERT   src/render/statusline.rs ●                                 21:12  100%
+  INSERT    src/render/statusline.rs ●                              100%  21:12 
 
   0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 51:#696d77/#f6f2e9+i 23:reset/#f6f2e9 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 71:reset/#f6f2e9 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 5:#262a30/#efeadf 3:#6f3aa8/#efeadf 3:#262a30/#efeadf 63:#efeadf/#efeadf 1:reset/reset
  21: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#aeb3ba/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 23: 8:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 33:reset/#fdfbf6 11:#656d7b/#fdfbf6
+ 23: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 2:#8a5d13/#fdfbf6 30:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

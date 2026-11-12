@@ -29,16 +29,10 @@ pub(super) fn spec(editor: &Editor) -> String {
             editor.pending().text().trim_end_matches('\r')
         );
     }
-    if let Some(state) = editor.substitute_preview() {
-        use strop_engine::editor::SubstitutePreviewState;
-        match state {
-            SubstitutePreviewState::Ready(_) => {}
-            SubstitutePreviewState::Resolving => return "substitute resolving…".into(),
-            SubstitutePreviewState::NoTarget => return "no substitution matches".into(),
-            SubstitutePreviewState::Incomplete(message)
-            | SubstitutePreviewState::Invalid(message)
-            | SubstitutePreviewState::Unavailable(message) => return message,
-        }
+    if editor.substitute_preview().is_some() {
+        // the `:` card shows the substitution's state: one fact, one
+        // place (0098 §3.2)
+        return String::new();
     }
     let preview = match editor.preview() {
         Ok(Some((_, spec))) => Some(spec),

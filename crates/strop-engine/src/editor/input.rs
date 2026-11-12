@@ -211,8 +211,18 @@ impl Walker {
         if let Some(n) = self.state.count2 {
             s.push_str(&n.to_string());
         }
+        // a named key is a word: `space g`, never `spaceg`
+        let mut named = false;
         for t in &self.path {
+            let name = t.chars().count() > 1;
+            if !s.is_empty() && (named || name) {
+                s.push(' ');
+            }
             s.push_str(t);
+            named = name;
+        }
+        if named && !self.motion.is_empty() {
+            s.push(' ');
         }
         s.push_str(&self.motion);
         s

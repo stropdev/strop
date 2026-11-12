@@ -21,7 +21,7 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
- PICKER   src/render/statusline.rs                                  ▲1  9:1  45%
+  PICKER    src/render/statusline.rs                            ▲1   45%   9:1  
 
   0: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 51:#b6b6b5/#f6f2e9+i 23:reset/#f6f2e9 1:reset/reset
   1: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 3:#b6b6b5/#f6f2e9+i 71:reset/#f6f2e9 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  21: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
  22: 1:#d5d5d3/#f6f2e9 78:reset/#f6f2e9 1:reset/reset
- 23: 8:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 34:reset/#f8f5ee 2:#c5ae88/#f8f5ee 2:reset/#f8f5ee 8:#b4b6b7/#f8f5ee
+ 23: 10:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 28:reset/#f8f5ee 2:#c5ae88/#f8f5ee 2:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 6:#a8a9a9/#f8f5ee

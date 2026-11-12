@@ -37,7 +37,7 @@
   37    [f                            previous file card (collections)                                                                      
   38    ]c                            next git hunk                                                                                         
   39    [c                            previous git hunk                                                                                     
- NORMAL   help [RO]                                                                                                                  1:1  0%
+  NORMAL    help [RO]                                                                                                            0%    1:1  
 
   0: 1:#656d7b/#f6f2e9+b 4:#8a510f/#f6f2e9 12:#262a30/#f6f2e9+b 28:#656d7b/#f6f2e9 94:reset/#f6f2e9 1:#656d7b/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:#656d7b/#f6f2e9
@@ -78,4 +78,4 @@
  36: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 34:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
  37: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 15:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
  38: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 29:#8a510f/#e5dfd0+b 19:#262a30/#f6f2e9 84:reset/#f6f2e9 1:reset/reset
- 39: 8:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 114:reset/#fdfbf6 7:#656d7b/#fdfbf6
+ 39: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 106:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6

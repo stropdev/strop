@@ -1,6 +1,11 @@
 //! The command/search card (noice.nvim lineage): `:` and `/` float as a
 //! top-center card instead of squatting in the statusline — what you're
 //! typing deserves focus. Match count rides along on search.
+//!
+//! Inside the card there is one text column (0098 §3.4): the sigil and
+//! the row markers (`▌`, `-`, `+`) live in a two-cell gutter, and what
+//! you type, completion names, the summary and the changed lines all
+//! start in the column after it.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -12,6 +17,9 @@ use crate::editor::Editor;
 
 use super::card::Card;
 use super::style::Tokens;
+
+/// The sigil and the cell after it: every row's text starts past this.
+const GUTTER: u16 = 2;
 
 pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     // `?` is a first-class search sigil here (the old detection missed
@@ -157,7 +165,7 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         let label = super::clip::clip_end(&label, usize::from(text_area.width) / 3);
         let label_w = super::clip::width(&label);
         let used: usize = spans.iter().map(|span| span.width()).sum();
-        let pad = usize::from(text_area.width).saturating_sub(used + label_w + 1);
+        let pad = usize::from(text_area.width).saturating_sub(used + label_w);
         spans.push(Span::raw(" ".repeat(pad)));
         spans.push(Span::styled(
             label.into_owned(),
@@ -195,10 +203,12 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
             (t.text, t.muted)
         };
         let marker = if name == &body_str { "▌" } else { " " };
-        let doc_budget = usize::from(text_area.width).saturating_sub(1 + name_w + 2 + 1);
+        let doc_budget =
+            usize::from(text_area.width.saturating_sub(GUTTER)).saturating_sub(name_w + 2);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(marker, Style::default().fg(t.accent)),
+                Span::raw(" "),
                 Span::styled(
                     format!("{:<name_w$}  ", super::clip::clip_end(name, name_w)),
                     Style::default().fg(name_fg).add_modifier(Modifier::BOLD),
@@ -235,13 +245,18 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
                     (format!("unavailable · {error}"), t.error)
                 }
             };
+            let column = Rect {
+                x: text_area.x + GUTTER.min(text_area.width),
+                y,
+                width: text_area.width.saturating_sub(GUTTER),
+                height: 1,
+            };
             frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(label, Style::default().fg(color)))),
-                Rect {
-                    y,
-                    height: 1,
-                    ..text_area
-                },
+                Paragraph::new(Line::from(Span::styled(
+                    super::clip::clip_end(&label, usize::from(column.width)).into_owned(),
+                    Style::default().fg(color),
+                ))),
+                column,
             );
         }
         if let crate::editor::SubstitutePreviewState::Ready(preview) = state {
@@ -256,7 +271,8 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
                     )
                 })
                 .collect();
-            let windows = changed_windows(&lines, usize::from(text_area.width));
+            // one cell goes to the gap between the sign and the text
+            let windows = changed_windows(&lines, usize::from(text_area.width.saturating_sub(1)));
             let changed = windows
                 .into_iter()
                 .zip(lines.iter().map(|(_, row)| *row))
@@ -272,7 +288,10 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
                 let y = y + 1 + index as u16 + u16::from(elided);
                 if changed_row_count > 8 && index == 4 && y - 1 < inner.y + inner.height {
                     frame.render_widget(
-                        Paragraph::new(Line::from(Span::styled("…", Style::default().fg(t.muted)))),
+                        Paragraph::new(Line::from(Span::styled(
+                            "  …",
+                            Style::default().fg(t.muted),
+                        ))),
                         Rect {
                             y: y - 1,
                             height: 1,
@@ -288,8 +307,14 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
                     crate::editor::ReviewRow::Added => t.diff_add,
                     _ => unreachable!("filtered changed rows"),
                 };
+                // the sign sits in the gutter, the text in the text column
+                let mut text = line.chars();
+                let sign: String = text.next().into_iter().collect();
                 frame.render_widget(
-                    Paragraph::new(Line::from(Span::styled(line, Style::default().fg(color)))),
+                    Paragraph::new(Line::from(Span::styled(
+                        format!("{sign} {}", text.as_str()),
+                        Style::default().fg(color),
+                    ))),
                     Rect {
                         y,
                         height: 1,
@@ -468,16 +493,16 @@ mod tests {
         let grid = draw_ex(&editor, 14);
         assert!(row_text(&grid, 3).contains("3 substitutions"));
         assert!(row_text(&grid, 3).contains("2 changed lines"));
-        assert!(row_text(&grid, 4).contains("-alpha one"));
-        assert!(row_text(&grid, 5).contains("+omega one"));
-        assert!(row_text(&grid, 6).contains("-alpha two alpha"));
-        assert!(row_text(&grid, 7).contains("+omega two omega"));
+        assert!(row_text(&grid, 4).contains("- alpha one"));
+        assert!(row_text(&grid, 5).contains("+ omega one"));
+        assert!(row_text(&grid, 6).contains("- alpha two alpha"));
+        assert!(row_text(&grid, 7).contains("+ omega two omega"));
         assert_eq!(editor.buf().text().to_string(), original);
 
         editor.feed_text("x");
         let grid = draw_ex(&editor, 14);
         assert!(row_text(&grid, 3).contains("invalid · trailing characters: x"));
-        assert!(!row_text(&grid, 4).contains("+omega"));
+        assert!(!row_text(&grid, 4).contains("+ omega"));
         assert_eq!(editor.buf().text().to_string(), original);
     }
 
@@ -500,7 +525,7 @@ mod tests {
         let grid = terminal.backend().buffer().clone();
         let removed = row_text(&grid, 4);
         let added = row_text(&grid, 5);
-        assert!(removed.contains("-…"), "cut on the left: {removed}");
+        assert!(removed.contains("- …"), "cut on the left: {removed}");
         assert!(removed.contains("needle = old_value;"), "{removed}");
         assert!(added.contains("needle = fresh;"), "{added}");
         assert_eq!(
@@ -509,8 +534,8 @@ mod tests {
             "one window for the pair"
         );
         // a line that fits is not cut
-        assert!(row_text(&grid, 6).contains("-short old_value"));
-        assert!(row_text(&grid, 7).contains("+short fresh"));
+        assert!(row_text(&grid, 6).contains("- short old_value"));
+        assert!(row_text(&grid, 7).contains("+ short fresh"));
     }
 
     /// 0091 B6: no terminal is too small to type a command in. The card
@@ -544,6 +569,52 @@ mod tests {
         }
     }
 
+    /// 0098 §3.4: one text column. What you type, the completion names,
+    /// the summary and the changed lines start in the same cell, and
+    /// every row may run to one cell before the border.
+    #[test]
+    fn typed_text_completions_summary_and_changes_share_one_column() {
+        let column = |row: &str, text: &str| {
+            let at = row
+                .find(text)
+                .unwrap_or_else(|| panic!("{text:?} in {row:?}"));
+            crate::render::clip::width(&row[..at])
+        };
+        let mut editor = Editor::new(Buffer::from_text("alpha one\n"));
+        editor.feed_text(":wq");
+        let grid = draw_ex(&editor, 14);
+        let typed = column(&row_text(&grid, 2), "wq");
+        assert_eq!(column(&row_text(&grid, 3), "wq"), typed);
+
+        let mut editor = Editor::new(Buffer::from_text("alpha one\n"));
+        editor.feed_text(":%s/alpha/omega/g");
+        let grid = draw_ex(&editor, 14);
+        let typed = column(&row_text(&grid, 2), "%s/alpha");
+        assert_eq!(column(&row_text(&grid, 3), "1 substitution"), typed);
+        assert_eq!(column(&row_text(&grid, 4), "alpha one"), typed);
+        assert_eq!(column(&row_text(&grid, 5), "omega one"), typed);
+        // the signs sit under the sigil
+        assert_eq!(
+            column(&row_text(&grid, 4), "- "),
+            column(&row_text(&grid, 2), ": ")
+        );
+
+        // a summary too long for the card says it was cut
+        let text = (0..30)
+            .map(|line| format!("alpha {line}\n"))
+            .collect::<String>();
+        let mut editor = Editor::new(Buffer::from_text(&text));
+        editor.feed_text(":%s/alpha/omega/g");
+        let backend = ratatui::backend::TestBackend::new(60, 14);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_cmd_card(&editor, &tokens(), frame))
+            .unwrap();
+        let summary = row_text(terminal.backend().buffer(), 3);
+        assert!(summary.contains("30 substitutions"), "{summary}");
+        assert!(summary.trim_end().ends_with("… │"), "{summary}");
+    }
+
     #[test]
     fn substitute_card_reports_offscreen_extent_and_outer_field_mode() {
         let original = (0..30)
@@ -555,7 +626,7 @@ mod tests {
         assert!(row_text(&grid, 3).contains("30 substitutions"));
         assert!(row_text(&grid, 3).contains("6 offscreen"));
         assert!(row_text(&grid, 8).contains('…'));
-        assert!(row_text(&grid, 12).contains("+omega 29"));
+        assert!(row_text(&grid, 12).contains("+ omega 29"));
 
         let mut editor = Editor::new(Buffer::from_text("alpha\n"));
         editor.feed_text("d/alpha");

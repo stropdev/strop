@@ -21,7 +21,7 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
- NORMAL   [scratch]                                                    1:1  100%
+  NORMAL    [scratch]                                                100%  1:1  
 
   0: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 74:#1b1e24/#1b1e24 1:reset/reset
   1: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  21: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  22: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
- 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 9:#e6e1d6/#1c1f25 52:reset/#1c1f25 9:#858c9a/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 9:#e6e1d6/#1c1f25 48:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25

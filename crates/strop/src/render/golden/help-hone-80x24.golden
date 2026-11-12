@@ -21,7 +21,7 @@
   21    ctrl-e ctrl-y                 scroll the window one line down / up      
   22    ctrl-^                        alternate buffer                          
   23    grr                           references (LSP)                          
- NORMAL   help [RO]                                                      1:1  0%
+  NORMAL    help [RO]                                                0%    1:1  
 
   0: 1:#858c9a/#15171c+b 4:#e8a848/#15171c 12:#e6e1d6/#15171c+b 28:#858c9a/#15171c 34:reset/#15171c 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 38:#e6e1d6/#15171c 5:reset/#15171c 1:reset/reset
  21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
  22: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
- 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 54:reset/#1c1f25 7:#858c9a/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 46:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25

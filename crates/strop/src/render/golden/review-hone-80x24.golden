@@ -21,7 +21,7 @@
   21  //!                                                                       
   22  //! Every width is a display cell, never a character.                     
  › replace: review of 2 file(s) — Enter applies and writes                      
- NORMAL   review: replace [RO]                                           1:1  2%
+  NORMAL    review: replace [RO]                                      2%   1:1  
 
   0: 1:#858c9a/#1b1e24+b 32:#e8a848/#1b1e24 46:#1b1e24/#1b1e24 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 46:#e6e1d6/#15171c 28:reset/#15171c 1:#858c9a/#15171c
@@ -46,4 +46,4 @@
  20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 4:#e6e1d6/#15171c 70:reset/#15171c 1:reset/reset
  21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 54:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
  22: 3:#e6e1d6/#1c1f25+b 55:#e6e1d6/#1c1f25 22:reset/#1c1f25
- 23: 8:#15171c/#e8a848+b 2:reset/#1c1f25 15:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 43:reset/#1c1f25 7:#858c9a/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 15:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 36:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

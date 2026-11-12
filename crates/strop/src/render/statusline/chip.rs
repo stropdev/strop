@@ -1,5 +1,6 @@
-//! The fixed-width mode chip (0088 §2): eight cells for every mode name,
-//! so the path beside it never jumps. The colour is the mode token; the
+//! The fixed-width mode chip (0088 §2, 0098 §3.2): ten cells for every
+//! mode name — the longest label and a cell either side — so the path
+//! beside it never jumps and no label touches the chip's edge. The colour is the mode token; the
 //! label says which surface owns the keys.
 
 use ratatui::style::Color;
@@ -8,7 +9,9 @@ use crate::editor::Editor;
 use crate::render::style::Tokens;
 
 /// Every chip is exactly this many cells wide.
-pub(super) const WIDTH: usize = 8;
+pub(super) const WIDTH: usize = 10;
+/// The longest label the chip holds whole.
+const LABEL: usize = WIDTH - 2;
 
 /// The chip text (padded to [`WIDTH`]) and its colour.
 pub(super) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
@@ -40,10 +43,11 @@ pub(super) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
     (pad(label), color)
 }
 
-/// Centre a label in the chip's cells; a label wider than the chip is
-/// cut, never allowed to widen it.
+/// Centre a label in the chip's cells, the odd cell on the right; a
+/// label too long for the chip is cut, never allowed to widen it or to
+/// take its padding.
 fn pad(label: &str) -> String {
-    let label: String = label.chars().take(WIDTH).collect();
+    let label: String = label.chars().take(LABEL).collect();
     let free = WIDTH - label.chars().count();
     let left = free / 2;
     format!("{}{label}{}", " ".repeat(left), " ".repeat(free - left))
@@ -75,14 +79,16 @@ mod tests {
         for label in [
             "NORMAL", "INSERT", "VISUAL", "V-LINE", "V-BLOCK", "PENDING", "TERMINAL", "FILES",
             "SEARCH", "SYMBOLS", "BUFFERS", "COMMAND", "PIPE", "DIAG", "JUMPS", "THEME", "LOCS",
-            "REMOTE", "PICKER", "",
+            "REMOTE", "PICKER", "BRANCHES", "",
         ] {
-            assert_eq!(pad(label).chars().count(), WIDTH, "{label:?}");
-            assert!(pad(label).contains(label));
+            let chip = pad(label);
+            assert_eq!(chip.chars().count(), WIDTH, "{label:?}");
+            assert!(chip.contains(label));
+            assert!(chip.starts_with(' ') && chip.ends_with(' '), "{chip:?}");
         }
-        assert_eq!(pad("NORMAL"), " NORMAL ");
-        assert_eq!(pad("V-BLOCK"), "V-BLOCK ");
-        assert_eq!(pad("TERMINAL"), "TERMINAL");
-        assert_eq!(pad("TOO-LONG-LABEL"), "TOO-LONG");
+        assert_eq!(pad("NORMAL"), "  NORMAL  ");
+        assert_eq!(pad("V-BLOCK"), " V-BLOCK  ");
+        assert_eq!(pad("TERMINAL"), " TERMINAL ");
+        assert_eq!(pad("TOO-LONG-LABEL"), " TOO-LONG ");
     }
 }

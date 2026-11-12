@@ -21,7 +21,7 @@
 │                             │                                                │
 │                             │                                                │
 ╰  enter  open   ↑↓  move   ctrl-r "  paste yank   esc  close ─────────────────╯
- FILES    src/render/statusline.rs                                       1:1  5%
+  FILES     src/render/statusline.rs                                  5%   1:1  
 
   0: 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 72:#656d7b/#fdfbf6
   1: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 2:#8a510f/#fdfbf6 3:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 71:reset/#fdfbf6 1:#656d7b/#fdfbf6
@@ -46,4 +46,4 @@
  20: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
  21: 1:#656d7b/#fdfbf6 29:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 48:reset/#fdfbf6 1:#656d7b/#fdfbf6
  22: 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 4:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 10:#8a510f/#e5dfd0+b 13:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 25:#656d7b/#fdfbf6
- 23: 8:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 39:reset/#f8f5ee 7:#b4b6b7/#f8f5ee
+ 23: 10:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 32:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 6:#a8a9a9/#f8f5ee

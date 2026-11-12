@@ -9,10 +9,24 @@
 - **`Enter` in a collection opens the file at the cursor**; `Ctrl-O` comes back.
 - **A collection says what it holds**: the first row and the buffer name carry the search (`search open_picker — 12 hits in 4 files`, `collection: search open_picker`), and each file's card shows its number of hits. Collecting the same search again brings its collection up to date instead of adding another buffer.
 - **Plain words in the collection's messages**: "hit" throughout, counts written out (`1 hit in 1 file`), and `hit 2 of 4: src/a.rs:11` when stepping.
+- **The status line holds still** (plans/0098). The keys you are typing (`d`, `d2`, `"a3d`, `space g`) now sit in a slot of their own and grow to the right, instead of sliding left one cell per key. The line number, column and percentage are fixed-width, so moving from line 9 to 10 no longer shifts everything beside them; the percentage now comes before `line:col`.
+- **A narrow status line shortens before it drops.** A long branch name is cut to `feature/…` before it disappears, and pressing a key takes only the cells that key needs. Before, pressing `Space` on a full row could drop the whole branch and jump the file name across the screen.
+- **Every mode label has room.** The mode chip is two cells wider, so `PENDING`, `COMMAND` and `TERMINAL` no longer touch its edge. Groups on the row are always two cells apart, and the row no longer runs into the right edge of the screen.
+- **The key card no longer sits on the status line**: one empty row parts them. Its `+N more` line starts under the keys.
+- **Inside the `:` card everything lines up**: what you type, the completion names, the substitution summary and the changed lines start in one column, with `-` and `+` under the `:`. A summary too long for the card ends in `…`.
+- **The status line no longer repeats the `:s` summary** that the card already shows; the branch and diagnostics keep their place while you type a substitution.
+
+### Added
+
+- **`REC @a` in the status line while a macro records**, from `qa` until `q`.
 
 ### Removed
 
 - **`g<Space>`, `]e` / `[e` and `:collection`**. `Enter` opens the file, `]q` / `[q` step the hits, and `+` / `-` change the context.
+
+### Fixed
+
+- **The leader prefix reads `space g`**, not `spaceg`.
 
 ## 0.62.0 — 2026-11-11
 

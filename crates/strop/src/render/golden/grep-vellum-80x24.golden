@@ -21,7 +21,7 @@
 │                                               │                              │
 │                                               │                              │
 ╰  enter  open   ctrl-t  replace   ctrl-x  drop hit   ctrl-d  drop file ───────╯
- SEARCH   src/render/statusline.rs                                       1:1  5%
+  SEARCH    src/render/statusline.rs                                  5%   1:1  
 
   0: 1:#656d7b/#fdfbf6 8:#262a30/#fdfbf6+b 71:#656d7b/#fdfbf6
   1: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 7:#8a510f/#fdfbf6 8:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 61:reset/#fdfbf6 1:#656d7b/#fdfbf6
@@ -46,4 +46,4 @@
  20: 1:#656d7b/#fdfbf6 47:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 30:reset/#fdfbf6 1:#656d7b/#fdfbf6
  21: 1:#656d7b/#fdfbf6 47:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 30:reset/#fdfbf6 1:#656d7b/#fdfbf6
  22: 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 8:#8a510f/#e5dfd0+b 10:#656d7b/#fdfbf6 8:#8a510f/#e5dfd0+b 11:#656d7b/#fdfbf6 8:#8a510f/#e5dfd0+b 19:#656d7b/#fdfbf6
- 23: 8:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 39:reset/#f8f5ee 7:#b4b6b7/#f8f5ee
+ 23: 10:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 32:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 6:#a8a9a9/#f8f5ee

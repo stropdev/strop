@@ -7,6 +7,12 @@ use super::Editor;
 use strop_core::frontend_input::Key;
 
 impl Editor {
+    /// The register a macro is being recorded into, from `q{reg}` until
+    /// the closing `q`.
+    pub fn recording(&self) -> Option<char> {
+        self.recording
+    }
+
     /// `q{reg}`: start recording; `q` while recording stops (handled in
     /// `feed` before the machine sees it — the toggle key never
     /// records itself).

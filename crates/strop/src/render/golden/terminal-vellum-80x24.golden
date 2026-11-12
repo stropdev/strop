@@ -21,7 +21,7 @@ $
                                                                                 
                                                                                 
                                                                                 
-TERMINAL  term:///work//1:sh                         ctrl-\ ctrl-n  NORMAL   1:1
+ TERMINAL   term:///work//1:sh                      ctrl-\ ctrl-n  NORMAL  1:1  
 
   0: 2:#aeb3ba/#f6f2e9 13:#656d7b/#f6f2e9 13:#656d7b/#f6f2e9+b 52:#aeb3ba/#f6f2e9
   1: 1:#656d7b/#f6f2e9+b 4:#8a510f/#f6f2e9 1:#696d77/#aeb3ba+i 50:#696d77/#f6f2e9+i 23:reset/#f6f2e9 1:#656d7b/#f6f2e9
@@ -46,4 +46,4 @@ TERMINAL  term:///work//1:sh                         ctrl-\ ctrl-n  NORMAL   1:1
  20: 79:reset/#f6f2e9 1:reset/reset
  21: 79:reset/#f6f2e9 1:reset/reset
  22: 79:reset/#f6f2e9 1:reset/reset
- 23: 8:#f6f2e9/#1f6f7a+b 2:reset/#fdfbf6 18:#262a30/#fdfbf6 24:reset/#fdfbf6 15:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 3:reset/#fdfbf6 3:#656d7b/#fdfbf6
+ 23: 10:#f6f2e9/#1f6f7a+b 2:reset/#fdfbf6 18:#262a30/#fdfbf6 21:reset/#fdfbf6 15:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6
