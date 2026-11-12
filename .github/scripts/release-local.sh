@@ -85,11 +85,13 @@ package)
     printf 'frame\n' > "$WORK/smoke.txt"
     "$BINARY" --headless "$WORK/smoke.txt" "$WORK/smoke.rs" | grep -q "fn main"
     # The find budgets (plans/0093 §7): finder paint and per-key list,
-    # search first hit and completion; and the symbols budgets (plans/0099
-    # §7). Each exits non-zero past its budget.
+    # search first hit and completion; the symbols budgets (plans/0099
+    # §7); and the history budgets (plans/0101 §5.1, needs git). Each
+    # exits non-zero past its budget.
     TMPDIR="$WORK" "$BINARY" --bench find
     TMPDIR="$WORK" "$BINARY" --bench search
     TMPDIR="$WORK" "$BINARY" --bench symbols
+    TMPDIR="$WORK" "$BINARY" --bench history
     catalog
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
     echo "qualified local release directory: $DIST"

@@ -5,7 +5,8 @@
 
 use super::JumpRecord;
 use crate::editor::git_memory::{CommitFiles, HunkOrigin};
-use strop_git::memory::LogRow;
+use strop_git::log::LogRow;
+use strop_git::memory::CommitSummary;
 use strop_git::Hunk;
 
 /// What backs a document. Derived facts (readonly, save refusal) come
@@ -49,6 +50,8 @@ pub enum Surface {
     ChangedFiles {
         sha: String,
         files: crate::editor::git_memory::PreparedFiles,
+        /// Subject, body, author and time of the commit (0100 §7).
+        commit: Box<CommitSummary>,
         return_to: Option<JumpRecord>,
     },
     /// A diff as a readonly buffer (0010 §2): the file's delta at a

@@ -86,6 +86,8 @@ impl Editor {
                 crate::editor::symbols::warm(self);
                 // 0101 §6.1: a collection's loaned file on screen is taken.
                 crate::editor::collections::loans::take_shown(self);
+                // 0101 §2.1: a slow history read builds a commit-graph.
+                crate::editor::git_memory::graph::consider(self);
                 // Logical OSC52 consumption is common to both modes; the
                 // actual escape write stays the terminal adapter's
                 // live-only effect, recorded as a request — never an

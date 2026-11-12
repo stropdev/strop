@@ -114,6 +114,36 @@ pub enum FileDelta {
     Binary,
 }
 
+/// The lines one change adds and removes: the fact on a status row
+/// (0100 §7). A binary change has no line counts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LineStat {
+    pub added: usize,
+    pub deleted: usize,
+    pub binary: bool,
+}
+
+impl FileDelta {
+    /// What the hunks add up to — the same lines the expanded entry shows.
+    pub fn stat(&self) -> LineStat {
+        let FileDelta::Hunks(hunks) = self else {
+            return LineStat {
+                binary: true,
+                ..LineStat::default()
+            };
+        };
+        let mut stat = LineStat::default();
+        for line in hunks.iter().flat_map(|hunk| &hunk.lines) {
+            match line.origin {
+                LineOrigin::Addition => stat.added += 1,
+                LineOrigin::Deletion => stat.deleted += 1,
+                LineOrigin::Context => {}
+            }
+        }
+        stat
+    }
+}
+
 /// One row of the branch list.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Branch {

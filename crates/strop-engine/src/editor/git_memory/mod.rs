@@ -6,6 +6,8 @@
 //! `git_memory::jobs` handlers which validate ownership first.
 
 mod file_list;
+pub(crate) mod graph;
+mod history;
 pub mod hunk_set;
 mod jobs;
 mod presentation;
@@ -21,7 +23,7 @@ pub use types::GitJob;
 pub(crate) use types::MutationKind;
 pub(crate) use types::{
     BlameKey, BranchKey, CardKey, CommitDraft, ContextKey, DiveData, DiveKey, DiveTarget, DraftKey,
-    GitMutation, HunkData, HunkKey, LogKey, MutationKey, MutationOp, Porcelain, PorcelainDone,
+    GitMutation, HunkData, HunkKey, LogRequest, MutationKey, MutationOp, Porcelain, PorcelainDone,
     PorcelainKey, StatusData, StatusKey,
 };
 
@@ -29,13 +31,12 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use strop_core::id::{BufferRevision, DocumentId};
-use strop_core::worker::{CancelReason, FailureKind, Outcome, Ticket};
-use strop_git::exec::GitExec;
-use strop_git::memory::{self, BlameLine};
+use strop_core::worker::Ticket;
+use strop_git::memory::BlameLine;
 use strop_git::{Hunk, LineOrigin, RepoTarget};
 
 use super::document::Surface;
-use super::{trace, Editor};
+use super::Editor;
 use strop_core::frontend_input::Key;
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
@@ -145,112 +146,26 @@ impl Editor {
         );
     }
 
+    /// The current log surface is still reading: more pages may come.
+    pub fn log_loading(&self) -> bool {
+        self.log_requests.contains_key(&self.current())
+    }
+
     /// `Space g l`: commit browser. `Space g h`: log scoped to the file.
     pub fn open_log(&mut self, file_scoped: bool) {
-        self.open_log_inner(file_scoped, None, None);
+        history::open(self, file_scoped, None, None);
     }
 
     /// Open the commit browser *at* a commit — the blame dive lands on
     /// the row it was asked about (0011 §3), not the newest entry.
     pub(crate) fn open_log_at(&mut self, sha: &str) {
-        self.open_log_inner(false, Some(sha.to_string()), None);
+        history::open(self, false, Some(sha.to_string()), None);
     }
 
     /// `Space g h` in visual mode: the history of the selected lines
     /// (git log -L) — selection archaeology (0014 wave 4).
     pub(crate) fn open_line_history(&mut self, start: usize, end: usize) {
-        self.open_log_inner(true, None, Some((start, end)));
-    }
-
-    fn open_log_inner(
-        &mut self,
-        file_scoped: bool,
-        focus: Option<String>,
-        range: Option<(usize, usize)>,
-    ) {
-        let Some(context) = self.git_context().cloned() else {
-            self.message = "not a git repo".into();
-            return;
-        };
-        // `git log -L` speaks file line numbers: a partial remote
-        // window's lines are window-relative, and pretending they are
-        // file coordinates would show the history of the WRONG lines
-        // (0036: partial windows never masquerade as full-file Git
-        // inputs).
-        let repo = context.repo.clone();
-        let file = if file_scoped {
-            self.current_buffer_rel(&repo)
-        } else {
-            None
-        };
-        self.push_surface(
-            Some(if range.is_some() {
-                "git log ·lines"
-            } else if file_scoped {
-                "git log ·file"
-            } else {
-                "git log"
-            }),
-            ropey::Rope::from_str("loading log…"),
-            Surface::CommitLog {
-                rows: vec![],
-                focus,
-                return_to: None,
-            },
-        );
-        // the new surface document owns its request; registration
-        // happens before launch (replay contract)
-        let doc = self.current();
-        let key = LogKey {
-            document: doc,
-            revision: self.buf().revision(),
-            repo: repo.clone(),
-        };
-        let Some(ticket) = self.git_ticket(key) else {
-            return;
-        };
-        self.log_requests.insert(doc, ticket.clone());
-        let revision = self.buf().revision().get();
-        strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
-            serde_json::json!({
-                "service":"git","request":"log",
-                "target":if repo.is_remote() { "remote" } else { "local" },
-                "document":{"slot":doc.index(),"generation":doc.generation()},
-                "revision":revision,
-                "path":file.as_ref().map(|p|p.to_string_lossy()),
-            })
-        });
-        let args = (
-            ticket.clone(),
-            file.clone().map(trace::services::NativePath),
-            range,
-        );
-        let client = self.remote_client();
-        self.launch_git_job(
-            "git-log",
-            "git.log",
-            ticket,
-            &args,
-            GitJob::Log,
-            move |cancel| {
-                if cancel.is_cancelled() {
-                    return Outcome::Cancelled(CancelReason::Superseded);
-                }
-                let host = jobs::repo_host(&client, &repo, &cancel);
-                let exec = match host.and_then(|host| {
-                    GitExec::for_target(&repo, host.as_ref()).map_err(|error| error.to_string())
-                }) {
-                    Ok(exec) => exec,
-                    Err(error) => {
-                        return Outcome::failed(FailureKind::Unavailable, error.to_string())
-                    }
-                };
-                match memory::log_graph_range(&exec, &cancel, 200, file.as_deref(), range) {
-                    Ok(rows) => Outcome::Success(rows),
-                    Err(message) => Outcome::failed(FailureKind::Exit, message),
-                }
-            },
-        );
+        history::open(self, true, None, Some((start, end)));
     }
 
     // ---- surface interaction -------------------------------------------

@@ -17,7 +17,7 @@ use std::collections::{HashMap, VecDeque};
 use strop_core::frontend_input::Key;
 use strop_core::id::{DocumentId, LineIndex};
 use strop_core::worker::{CancelReason, Completion, Outcome, Ticket};
-use strop_git::RepoTarget;
+use strop_git::{RepoTarget, Section};
 
 pub use rows::{StatusRow, StatusView};
 
@@ -70,6 +70,8 @@ pub(crate) struct GitWork {
     commit: Option<porcelain::CommitSession>,
     porcelain: Option<Ticket<PorcelainKey>>,
     branches: Option<Ticket<BranchKey>>,
+    /// strop's private commit-graph builds (0101 §2.1).
+    pub(crate) graph: super::git_memory::graph::GraphState,
 }
 
 impl GitWork {
@@ -82,6 +84,7 @@ impl GitWork {
             || self.draft.is_some()
             || self.porcelain.is_some()
             || self.branches.is_some()
+            || self.graph.building()
     }
 
     /// An accepted write that shutdown must let finish: a commit the
@@ -248,17 +251,33 @@ impl Editor {
                     Ok(tree) => tree,
                     Err(error) => return failed(git_failure("status", error)),
                 };
+                // every entry's `+N -M` (0100 §7) is its delta's sum; only
+                // the expanded ones keep the delta itself
                 let mut deltas = Vec::new();
-                for entry in expanded {
-                    if !tree.entries.contains(&entry) {
+                let mut stats = Vec::with_capacity(tree.entries.len());
+                for entry in &tree.entries {
+                    let open = expanded.contains(entry);
+                    if !open && (entry.section == Section::Conflicts || entry.is_directory()) {
+                        stats.push(None);
                         continue;
                     }
-                    match repo.file_delta(&entry) {
-                        Ok(delta) => deltas.push((entry, delta)),
-                        Err(error) => return failed(git_failure("diff", error)),
+                    match repo.file_delta(entry) {
+                        Ok(delta) => {
+                            stats.push(Some(delta.stat()));
+                            if open {
+                                deltas.push((entry.clone(), delta));
+                            }
+                        }
+                        Err(error) if open => return failed(git_failure("diff", error)),
+                        // a file that moved under the read: no count
+                        Err(_) => stats.push(None),
                     }
                 }
-                Outcome::Success(StatusData { tree, deltas })
+                Outcome::Success(StatusData {
+                    tree,
+                    deltas,
+                    stats,
+                })
             },
         );
     }
@@ -322,7 +341,7 @@ impl Editor {
         };
         let first = !view.loaded;
         let anchor = Anchor::capture(view, line);
-        let text = view.install(data.tree, data.deltas);
+        let text = view.install(data);
         let land = if first {
             view.rows
                 .iter()
@@ -358,6 +377,7 @@ impl Editor {
                 .filter(|(entry, _)| view.expanded.contains(entry))
                 .cloned()
                 .collect(),
+            stats: view.stats.clone(),
         };
         self.publish_status(document, data);
     }

@@ -457,6 +457,7 @@ fn historical_delta_names_its_revision_and_file_not_the_worktree() {
                     path: "src/reader.rs".into(),
                     added: 1,
                     deleted: 0,
+                    ..Default::default()
                 }],
             ),
             current: "src/reader.rs".into(),

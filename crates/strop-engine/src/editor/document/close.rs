@@ -94,6 +94,7 @@ impl Editor {
             .and_then(|document| document.return_point().cloned());
         self.mru.retain(|&x| x != closed);
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
+        crate::editor::git_memory::graph::document_closed(self);
         Released {
             return_to,
             review,

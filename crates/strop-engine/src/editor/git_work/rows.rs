@@ -2,7 +2,9 @@
 //! they can not disagree: line `n` of the buffer is `rows[n]`. Pure —
 //! no editor, no git handle.
 
-use strop_git::{DiffLine, FileDelta, Hunk, LineOrigin, Section, StatusEntry, WorkingTree};
+use strop_git::{
+    DiffLine, FileDelta, Hunk, LineOrigin, LineStat, Section, StatusEntry, WorkingTree,
+};
 
 /// What one buffer line is. Indices point into the view's tree and
 /// deltas; rendering and the key verbs both read rows, never the text.
@@ -59,6 +61,9 @@ pub struct StatusView {
     pub tree: WorkingTree,
     /// Diffs of the expanded entries, as of `tree`.
     pub deltas: Vec<(StatusEntry, FileDelta)>,
+    /// Lines added and removed per entry, `stats[n]` for
+    /// `tree.entries[n]` (0100 §7); installed with the tree.
+    pub stats: Vec<Option<LineStat>>,
     /// What `=` opened; carried into every refresh.
     pub expanded: Vec<StatusEntry>,
     pub rows: Vec<StatusRow>,
@@ -73,6 +78,12 @@ impl StatusView {
 
     pub fn entry(&self, index: usize) -> Option<&StatusEntry> {
         self.tree.entries.get(index)
+    }
+
+    /// `+N -M` of entry `index`: none for a conflict, an untracked
+    /// directory, or a file that moved under the read.
+    pub fn stat(&self, index: usize) -> Option<LineStat> {
+        self.stats.get(index).copied().flatten()
     }
 
     pub fn delta(&self, entry: &StatusEntry) -> Option<&FileDelta> {
@@ -105,10 +116,17 @@ impl StatusView {
 
     /// Install a snapshot: returns the buffer text for it. Expansions
     /// whose entry left the tree are dropped.
-    pub fn install(&mut self, tree: WorkingTree, deltas: Vec<(StatusEntry, FileDelta)>) -> String {
+    pub fn install(&mut self, data: super::super::git_memory::StatusData) -> String {
+        let super::super::git_memory::StatusData {
+            tree,
+            deltas,
+            stats,
+        } = data;
+        debug_assert_eq!(stats.len(), tree.entries.len(), "one stat per entry");
         self.expanded.retain(|entry| tree.entries.contains(entry));
         self.tree = tree;
         self.deltas = deltas;
+        self.stats = stats;
         self.loaded = true;
         let (text, rows) = build(&self.tree, &self.deltas);
         self.rows = rows;

@@ -9,8 +9,11 @@ use std::path::PathBuf;
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{Completion, WorkerId};
-use strop_git::memory::{BlameCard, BlameLine, LogRow};
-use strop_git::{Branch, FileDelta, GitContext, Hunk, RepoTarget, StatusEntry, WorkingTree};
+use strop_git::log::LogRow;
+use strop_git::memory::{BlameCard, BlameLine, CommitSummary};
+use strop_git::{
+    Branch, FileDelta, GitContext, Hunk, LineStat, RepoTarget, StatusEntry, WorkingTree,
+};
 
 use crate::files::FileTarget;
 
@@ -176,6 +179,43 @@ pub struct LogKey {
     pub repo: RepoTarget,
 }
 
+/// A log request in flight: its ticket, and the revision the surface is
+/// at — the one the next page must find it at. Each page the request
+/// publishes moves it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogRequest {
+    pub ticket: strop_core::worker::Ticket<LogKey>,
+    pub expected: BufferRevision,
+    /// A page has replaced the `loading log…` text.
+    pub published: bool,
+}
+
+/// The end of a history read: the rows after the last page, and how
+/// long git took — a slow read on a local repository asks for a
+/// private commit-graph (0101 §2.1).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LogDone {
+    pub rows: Vec<LogRow>,
+    pub took: std::time::Duration,
+}
+
+/// A private commit-graph build: the repository and the `HEAD` it was
+/// started for.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GraphKey {
+    pub repo: RepoTarget,
+    pub head: Option<String>,
+}
+
+/// What a build found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GraphBuilt {
+    /// Both steps installed.
+    Built,
+    /// The repository keeps a commit-graph of its own: git's to refresh.
+    Gits,
+}
+
 /// Frozen document, file and repository identity for a blame request.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BlameKey {
@@ -221,7 +261,8 @@ pub struct DiveKey {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DiveData {
-    Files(super::PreparedFiles),
+    /// A commit's file list, with what the commit says about itself.
+    Files(super::PreparedFiles, Box<CommitSummary>),
     Delta(super::PreparedDiff),
 }
 
@@ -238,6 +279,9 @@ pub struct StatusKey {
 pub struct StatusData {
     pub tree: WorkingTree,
     pub deltas: Vec<(StatusEntry, FileDelta)>,
+    /// `stats[n]` is the line count of `tree.entries[n]`: none for a
+    /// conflict or an untracked directory (0100 §7).
+    pub stats: Vec<Option<LineStat>>,
 }
 
 /// A commit-message template being written for `repo`.
@@ -300,7 +344,10 @@ pub enum GitJob {
     Context(Completion<ContextKey, Option<GitContext>>),
     Hunks(Completion<HunkKey, HunkData>),
     Mutation(Completion<MutationKey, ()>),
-    Log(Completion<LogKey, Vec<LogRow>>),
+    /// A page of a history read still running; rows are appended.
+    LogPage(strop_core::worker::Ticket<LogKey>, Vec<LogRow>),
+    Log(Completion<LogKey, LogDone>),
+    Graph(Completion<GraphKey, GraphBuilt>),
     Gutter(Completion<BlameKey, Vec<BlameLine>>),
     Card(Completion<CardKey, Box<BlameCard>>),
     Dive(Completion<DiveKey, DiveData>),

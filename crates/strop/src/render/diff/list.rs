@@ -271,6 +271,7 @@ mod tests {
             path: "src/render/diff.rs".into(),
             added: 12,
             deleted: 3,
+            ..Default::default()
         };
         let t = tokens();
         let spans = file_row_spans(&t, &file, 40);
@@ -305,6 +306,7 @@ mod tests {
             path: "界/x.rs".into(),
             added: 1,
             deleted: 0,
+            ..Default::default()
         };
         let spans = file_row_spans(&tokens(), &file, 40);
         let pad = spans

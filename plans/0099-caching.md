@@ -210,7 +210,12 @@ was added to `Editor`.
 - **Bounds.** 64 lists of at most 20,000 symbols each. A longer list is shown
   and not kept.
 
-### 4.2 Git history (designed, not landed)
+### 4.2 Git history (designed, not landed; superseded by 0101)
+
+[0101](0101-history-and-limits.md) §2 fixed these flows at the source
+instead — a private commit-graph and streamed rows — and keeps no rows, so
+nothing below landed. It stays as the design should a row cache ever be
+asked for.
 
 - **Key.** Subject: repository + scope (the whole log, or one file). Version: a
   counter the owner moves whenever a job reports a different `HEAD` commit for
@@ -327,7 +332,7 @@ the recorded-action path, where the after-event work runs.
 
 ## 8. Deferred
 
-- Git history (§4.2).
+- ~~Git history (§4.2)~~ — fixed without a cache by 0101 §2.
 - The `documentSymbol` reply bound that restarts the server on huge files
   (§1). When it is fixed, `UNASKED_LINES` in `editor/symbols/mod.rs` goes.
 - A persistent path index for the finder (0093 §9), if a real tree misses its

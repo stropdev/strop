@@ -9,6 +9,8 @@
 //! keeps a non-local workdir from ever reaching a local Git call.
 
 pub mod exec;
+pub mod graph;
+pub mod log;
 pub mod memory;
 pub mod permalink;
 pub mod remote;
@@ -25,7 +27,9 @@ pub use diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin, Sign};
 pub use exec::{GitExec, GitExecError, GitRun};
 pub use repo::{GitContext, GitError, Repo};
 pub use revision::{GitRevision, SourceLocation};
-pub use status::{Branch, Change, FileDelta, Section, StatusEntry, Tracking, WorkingTree};
+pub use status::{
+    Branch, Change, FileDelta, LineStat, Section, StatusEntry, Tracking, WorkingTree,
+};
 pub use target::RepoTarget;
 
 #[cfg(test)]

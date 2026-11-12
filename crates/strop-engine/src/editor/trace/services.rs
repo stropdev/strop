@@ -44,7 +44,11 @@ pub fn git(job: &GitJob) {
         GitJob::Context(value) => completion("git", "context", value),
         GitJob::Hunks(value) => completion("git", "hunks", value),
         GitJob::Mutation(value) => completion("git", "mutation", value),
+        GitJob::LogPage(ticket, rows) => {
+            json!({"service":"git","result":"log-page","ticket":ticket,"rows":rows.len()})
+        }
         GitJob::Log(value) => completion("git", "log", value),
+        GitJob::Graph(value) => completion("git", "graph", value),
         GitJob::Gutter(value) => completion("git", "gutter", value),
         GitJob::Card(value) => completion("git", "blame_card", value),
         GitJob::Dive(value) => completion("git", "dive", value),

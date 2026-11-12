@@ -15,9 +15,10 @@ use strop_core::worker::{
 };
 
 use super::types::*;
+use super::{graph, history};
 use super::{CommitFiles, Surface};
 use crate::editor::{trace, Editor};
-use strop_git::memory::{BlameCard, BlameLine, LogRow};
+use strop_git::memory::{BlameCard, BlameLine};
 use strop_git::{GitContext, GitError, RepoTarget};
 
 /// What the dive's origin surface turned out to be at completion
@@ -194,8 +195,8 @@ impl Editor {
     /// document-close path calls this BEFORE removal): late results
     /// for a dead or recycled slot cannot publish.
     pub(crate) fn revoke_git_requests_for(&mut self, doc: DocumentId) {
-        if let Some(ticket) = self.log_requests.remove(&doc) {
-            self.cancel_git_worker(ticket.request, CancelReason::Dismissed);
+        if let Some(request) = self.log_requests.remove(&doc) {
+            self.cancel_git_worker(request.ticket.request, CancelReason::Dismissed);
         }
         if let Some(ticket) = self.dive_requests.remove(&doc) {
             self.cancel_git_worker(ticket.request, CancelReason::Dismissed);
@@ -414,83 +415,6 @@ impl Editor {
         self.pump_git_mutations();
     }
 
-    // ---- log --------------------------------------------------------------------
-
-    /// Land successful log rows in the surface buffer — the existing
-    /// text/focus/cursor contract, extracted from the old inline
-    /// handler. An empty successful log is a completed empty list.
-    fn publish_log_rows(&mut self, doc: DocumentId, rows: Vec<LogRow>) {
-        let text = rows
-            .iter()
-            .map(|r| r.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        if let Err(error) = self.replace_system(doc, &text) {
-            trace::services::rejected("git", "log publish failed");
-            self.message = format!("git log publish failed: {error}");
-            return;
-        }
-        let mut focus_row = None;
-        if let Some(Some(Surface::CommitLog {
-            rows: slot, focus, ..
-        })) = self.docs.get_mut(doc).map(|d| d.surface_payload_mut())
-        {
-            focus_row = focus
-                .take()
-                .and_then(|sha| rows.iter().position(|r| r.sha.as_deref() == Some(&sha)));
-            *slot = rows;
-        }
-        if let Some(row) = focus_row {
-            // the blame dive asked for this commit: land on it (only
-            // when the browser is still what's being driven)
-            if self.current() == doc {
-                let at = self.doc(doc).buf.line_start(row);
-                self.set_head(at);
-                self.view_mut().view_top = row;
-            }
-        }
-    }
-
-    /// Replace a log surface's loading text with a terminal status;
-    /// rows stay empty. The surface never shows "loading" forever.
-    fn publish_log_status(&mut self, doc: DocumentId, status: &str) {
-        if let Err(error) = self.replace_system(doc, status) {
-            trace::services::rejected("git", "log status publish failed");
-            self.message = format!("git log publish failed: {error}");
-        }
-    }
-
-    pub(crate) fn handle_log_completion(&mut self, completion: Completion<LogKey, Vec<LogRow>>) {
-        let doc = completion.ticket.key.document;
-        if self.log_requests.get(&doc) != Some(&completion.ticket) {
-            trace::services::rejected("git", "log request superseded");
-            return;
-        }
-        self.log_requests.remove(&doc);
-        self.worker_handles.remove(&completion.ticket.request);
-        // only the still-live CommitLog surface at its request
-        // revision accepts rows — a closed/recycled slot cannot
-        let valid = self.docs.get(doc).is_some_and(|d| {
-            d.buf.revision() == completion.ticket.key.revision
-                && matches!(d.surface_payload(), Some(Surface::CommitLog { .. }))
-        });
-        if !valid {
-            trace::services::rejected("git", "log surface changed or closed");
-            return;
-        }
-        match completion.outcome {
-            Outcome::Success(rows) => self.publish_log_rows(doc, rows),
-            Outcome::Failed { failure, .. } => {
-                self.publish_log_status(doc, &format!("git log failed: {}\n", failure.message));
-                if !self.docs.is_empty() && self.current() == doc {
-                    self.message = failure.message;
-                }
-            }
-            Outcome::Cancelled(_) => self.publish_log_status(doc, "git log cancelled\n"),
-        }
-    }
-
     // ---- blame -------------------------------------------------------------------
 
     pub(crate) fn handle_gutter_completion(
@@ -647,7 +571,7 @@ impl Editor {
                 self.message.clear();
                 self.open_delta("git hunk", diff, Some(origin), None);
             }
-            (DiveLanding::LogSurface, Outcome::Success(DiveData::Files(files))) => {
+            (DiveLanding::LogSurface, Outcome::Success(DiveData::Files(files, commit))) => {
                 let sha = match &key.target {
                     DiveTarget::CommitFiles { sha } => sha.clone(),
                     _ => return,
@@ -660,6 +584,7 @@ impl Editor {
                     Surface::ChangedFiles {
                         sha,
                         files,
+                        commit,
                         return_to: None,
                     },
                 );
@@ -701,7 +626,9 @@ impl Editor {
             GitJob::Context(c) => self.handle_context_completion(c),
             GitJob::Hunks(c) => self.handle_hunk_completion(c),
             GitJob::Mutation(c) => self.handle_mutation_completion(c),
-            GitJob::Log(c) => self.handle_log_completion(c),
+            GitJob::LogPage(ticket, rows) => history::handle_page(self, ticket, rows),
+            GitJob::Log(c) => history::handle_completion(self, c),
+            GitJob::Graph(c) => graph::handle_completion(self, c),
             GitJob::Gutter(c) => self.handle_gutter_completion(c),
             GitJob::Card(c) => self.handle_card_completion(c),
             GitJob::Dive(c) => self.handle_dive_completion(c),

@@ -369,6 +369,7 @@ fn sidebar_emission_matches_the_inset_the_caret_uses() {
                 path: "src/verylongfilename.rs".into(),
                 added: 1,
                 deleted: 0,
+                ..Default::default()
             }],
         ),
         current: "src/verylongfilename.rs".into(),

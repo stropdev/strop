@@ -10,9 +10,33 @@ use crate::editor::{Editor, GitJob, Surface};
 use strop_core::frontend_input::Key;
 use strop_core::worker::{Completion, FailureKind, Outcome};
 use strop_core::Buffer;
-use strop_git::memory::LogRow;
+use strop_git::log::LogRow;
 use strop_git::LineOrigin;
 use strop_trace::replay::Tape;
+
+/// A log row naming `sha`, its text ending in `subject`.
+pub(super) fn commit_row(sha: &str, subject: &str) -> LogRow {
+    LogRow::new(
+        "* ".into(),
+        Some(strop_git::log::LogCommit {
+            sha: sha.into(),
+            short: sha.chars().take(4).collect(),
+            refs: Vec::new(),
+            subject: subject.into(),
+            author: "t".into(),
+            time: 0,
+            age: "now".into(),
+        }),
+    )
+}
+
+/// A finished history read with these rows.
+pub(super) fn log_done(rows: Vec<LogRow>) -> crate::editor::git_memory::types::LogDone {
+    crate::editor::git_memory::types::LogDone {
+        rows,
+        took: std::time::Duration::ZERO,
+    }
+}
 
 #[test]
 fn commit_browser_dives_to_delta() {
@@ -35,7 +59,17 @@ fn commit_browser_dives_to_delta() {
     let text = e.buf().text().to_string();
     assert!(text.contains("commit"), "{text}");
     assert!(text.contains("f.rs"), "{text}");
-    assert!(matches!(e.surface(), Some(Surface::ChangedFiles { .. })));
+    // the commit's own words and each file's status ride along (0100 §7)
+    let Some(Surface::ChangedFiles { commit, files, .. }) = e.surface() else {
+        panic!("changed files");
+    };
+    assert_eq!(
+        (commit.subject.as_str(), commit.author.as_str()),
+        ("add b", "t")
+    );
+    assert!(commit.body.is_empty() && commit.time > 0);
+    assert_eq!(files[0].status, strop_git::memory::FileStatus::Modified);
+    assert_eq!((files[0].added, files[0].binary), (1, false));
 
     // Enter on the file row → the diff surface
     e.feed_text("j");
@@ -424,15 +458,15 @@ fn stale_log_results_are_dropped() {
     let stale_ticket = e
         .log_requests
         .get(&dead_surface)
-        .cloned()
+        .map(|request| request.ticket.clone())
         .expect("request registered");
     e.feed_text("q"); // closes the surface
     e.handle_git_job(GitJob::Log(strop_core::worker::Completion {
         ticket: stale_ticket,
-        outcome: strop_core::worker::Outcome::Success(vec![LogRow {
-            text: "POISON ROW".into(),
-            sha: None,
-        }]),
+        outcome: strop_core::worker::Outcome::Success(log_done(vec![LogRow::new(
+            "POISON ROW".into(),
+            None,
+        )])),
     }));
     for (i, (_, d)) in e.docs.iter().enumerate() {
         let text = d.buf.text().to_string();
@@ -620,6 +654,7 @@ fn hunk_discard_undoes_byte_exact() {
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
 
+mod history;
 #[cfg(unix)]
 mod native_paths;
 mod ownership;
