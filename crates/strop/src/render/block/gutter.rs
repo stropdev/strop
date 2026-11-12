@@ -72,6 +72,12 @@ pub(crate) fn source_jump(width: usize) -> [usize; 1] {
     [width.saturating_sub(2)]
 }
 
+/// The pair gutter's two number columns: `[sign][old] [new] `.
+pub(crate) fn pair_jump(width: usize) -> [usize; 2] {
+    let digits = pair_digits(width);
+    [digits, 2 * digits + 1]
+}
+
 /// Digits per side of a pair gutter `width` cells wide.
 pub(crate) fn pair_digits(width: usize) -> usize {
     width.saturating_sub(3) / 2
@@ -131,7 +137,13 @@ mod tests {
                 assert_eq!(width(&numbered(&t, sign, number, true, cells)), cells);
             }
             assert_eq!(width(&jump(&t, cells, &source_jump(cells))), cells);
+            assert_eq!(width(&jump(&t, cells, &pair_jump(cells))), cells);
         }
+        let jumped: String = jump(&t, 9, &pair_jump(9))
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert_eq!(jumped, "   ⋮   ⋮ ", "each mark at its column's last digit");
         for digits in 3..=6 {
             let line = DiffLine {
                 origin: LineOrigin::Addition,

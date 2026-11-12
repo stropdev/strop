@@ -124,7 +124,7 @@ impl Editor {
     }
 
     /// A diff surface from structured hunks (0010 §2). `label` heads the
-    /// stats row; `origin` is set only for working-tree hunk previews.
+    /// heading row; `origin` is set only for working-tree hunk previews.
     pub fn open_delta(
         &mut self,
         name: &str,
@@ -425,12 +425,12 @@ pub(crate) fn hunk_stats(hunks: &[Hunk]) -> (usize, usize) {
     })
 }
 
-/// The buffer text a diff surface shows: stats row, then per hunk a
+/// The buffer text a diff surface shows: the heading row (its label, the
+/// file; the `+N -M` beside it is drawn, 0100 §3.8), then per hunk a
 /// header row and unprefixed content rows — exactly the rendered
 /// layout (0010 §2).
 pub(crate) fn diff_surface_text(label: &str, hunks: &[Hunk]) -> String {
-    let (added, deleted) = hunk_stats(hunks);
-    let mut text = format!("{label} +{added} -{deleted}\n");
+    let mut text = format!("{label}\n");
     for hunk in hunks {
         text.push_str(&hunk.header());
         text.push('\n');

@@ -29,7 +29,7 @@ impl PreparedDiff {
         let (added, deleted) = super::hunk_stats(&hunks);
         let text = Rope::from_str(&super::diff_surface_text(&label, &hunks));
         let mut starts = Vec::with_capacity(hunks.len());
-        let mut emphasis = vec![None]; // stats row
+        let mut emphasis = vec![None]; // heading row
         let mut max_lineno = 0;
         for hunk in &hunks {
             starts.push(emphasis.len());
@@ -76,7 +76,7 @@ impl PreparedDiff {
     }
     pub(crate) fn row(&self, row: usize) -> Option<DiffRow<'_>> {
         if row == 0 {
-            return Some(DiffRow::Stats);
+            return Some(DiffRow::Heading);
         }
         let index = self
             .0

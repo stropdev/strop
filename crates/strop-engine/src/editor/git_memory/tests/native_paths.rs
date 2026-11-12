@@ -145,6 +145,6 @@ fn control_characters_in_filenames_keep_one_row_and_a_native_dive_target() {
         .any(|line| line == "after"));
     assert_eq!(
         editor.buf().text().line(0).to_string(),
-        "odd\u{fffd}name\u{fffd}\u{fffd}.txt +1 -1\n"
+        "odd\u{fffd}name\u{fffd}\u{fffd}.txt\n"
     );
 }

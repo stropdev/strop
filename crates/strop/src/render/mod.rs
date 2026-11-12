@@ -33,6 +33,8 @@ mod frame_tests;
 #[cfg(test)]
 mod golden;
 #[cfg(test)]
+mod golden_block_tests;
+#[cfg(test)]
 mod golden_git_tests;
 #[cfg(test)]
 mod golden_modeline_tests;

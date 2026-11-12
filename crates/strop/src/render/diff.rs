@@ -1,15 +1,18 @@
-//! Diff surface rendering (0010 §4/§5): gutters, row backgrounds,
-//! structural rows. All decoration comes from typed hunk data —
-//! never from sniffing `+`/`-` in the text. Anatomy borrowed from
-//! tuicr (`[sign][old][new][content]`, quiet bands for structural
-//! rows), tuned to the strop palette. Log/file row decoration lives
-//! in `diff/list`; the blame column and commit file sidebar in
-//! `diff/margins` (0011/0032).
+//! Diff surface rendering (0010 §4/§5, drawn by 0100 §4.5): one block
+//! per file — the file's ruled heading with `+N -M` as its fact, each
+//! hunk header a break, the lines with both sides' numbers, the quiet
+//! tint and intra-line emphasis. All decoration comes from typed hunk
+//! data — never from sniffing `+`/`-` in the text. Log/file row
+//! decoration lives in `diff/list`, the status buffer's in `diff/status`;
+//! the blame column and commit file sidebar in `diff/margins`
+//! (0011/0032).
 
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::style::Style;
 
 use crate::editor::{DiffRow, Surface};
+use crate::render::block::gutter::{self};
+use crate::render::block::{diff_line, heading, Painted};
+use crate::render::file_name::Label;
 
 use super::style::Tokens;
 
@@ -21,46 +24,62 @@ pub(crate) use list::{surface_list_row, RowDecoration};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};
 pub(crate) use status::painted as status_painted;
 
-/// Intra-line emphasis (delta-style): the byte range within this row's
-/// text that actually changed, paired against the opposite-side row at
-/// the same index in the hunk's del/add run. None for context rows and
-/// unmatched rows (pure adds/deletes emphasize the whole line).
-pub(crate) fn emphasis_span(surface: Option<&Surface>, row: usize) -> Option<(usize, usize)> {
-    let Some(Surface::Diff { hunks, .. }) = surface else {
+/// The diff view's adapter: row `row` of a diff surface as a block row.
+/// The cursor row lights its numbers and lies on the cursor line, except
+/// over a changed line, which keeps its tint.
+pub(crate) fn painted<'a>(
+    t: &Tokens,
+    surface: &'a Surface,
+    row: usize,
+    cursor: bool,
+    gutter_cells: usize,
+    text_cells: usize,
+) -> Option<Painted<'a>> {
+    let Surface::Diff { hunks, .. } = surface else {
         return None;
     };
-    hunks.emphasis(row)
-}
-
-/// Stats and hunk-header rows: a quiet band, label/stats left, nothing
-/// loud (0010 §4). No width padding here — the row is ordinary content
-/// that scrolls horizontally and gets its band from RowStyle.row_bg;
-/// the caller prepends the fixed number-gutter cells.
-pub(crate) fn structural_row(t: &Tokens, surface: &Surface, row: usize) -> Line<'static> {
-    match (surface, row) {
-        (Surface::Diff { hunks, .. }, 0) => Line::from(vec![
-            Span::styled(
-                hunks.label().to_owned(),
-                Style::default().fg(t.text).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!(" +{} ", hunks.added()),
-                Style::default().fg(t.diff_add).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!("-{}", hunks.deleted()),
-                Style::default().fg(t.diff_del).add_modifier(Modifier::BOLD),
-            ),
-        ])
-        .style(Style::default().bg(t.surface)),
-        (Surface::Diff { .. }, _) => surface
-            .diff_row(row)
-            .and_then(|row| match row {
-                DiffRow::HunkHeader(hunk) => Some(super::block::diff_line::hunk_header(t, hunk)),
-                _ => None,
-            })
-            .map(|spans| Line::from(spans).style(Style::default().bg(t.surface)))
-            .unwrap_or_default(),
-        _ => Line::default(),
+    let mut painted = match surface.diff_row(row)? {
+        DiffRow::Heading => {
+            let label = Label::parse(hunks.label());
+            // a delta with no line changes (binary, a mode or a rename)
+            // says so instead of `+0 -0`
+            let fact = if hunks.is_empty() {
+                vec![ratatui::text::Span::styled(
+                    "no line changes",
+                    Style::default().fg(t.muted),
+                )]
+            } else {
+                heading::stats(t, hunks.added(), hunks.deleted())
+            };
+            let heading = heading::Heading {
+                gutter: gutter_cells,
+                ruled: true,
+                name: heading::Name::Path(&label),
+                marks: Vec::new(),
+                fact,
+                focus: heading::Focus::Here,
+            };
+            Painted::heading(t, &heading, text_cells)
+        }
+        DiffRow::HunkHeader(hunk) => Painted::band(
+            t,
+            gutter::jump(t, gutter_cells, &gutter::pair_jump(gutter_cells)),
+            diff_line::hunk_header(t, hunk),
+            text_cells,
+        ),
+        DiffRow::Line(line) => Painted {
+            gutter: gutter::pair(t, line, cursor, gutter_cells),
+            row_bg: diff_line::origin_bg(t, line.origin),
+            line: Some((line, hunks.emphasis(row))),
+            ..Default::default()
+        },
+    };
+    if cursor
+        && painted
+            .line
+            .is_none_or(|(line, _)| line.origin == strop_git::LineOrigin::Context)
+    {
+        painted.row_bg = Some(t.cursorline);
     }
+    Some(painted)
 }

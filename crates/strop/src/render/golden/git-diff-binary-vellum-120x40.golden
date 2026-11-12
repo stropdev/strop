@@ -1,0 +1,81 @@
+ crates/                │──────── logo.bin ──────────────────────────────────────────────────────────── no line changes 
+   strop-engine/        │~                                                                                              
+     src/               │~                                                                                              
+       editor/          │~                                                                                              
+         collections/   │~                                                                                              
+           tests/       │~                                                                                              
+             a_very_lo… │~                                                                                              
+▌logo.bin               │~                                                                                              
+ src/                   │~                                                                                              
+   lib.rs               │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+                        │~                                                                                              
+  NORMAL    @c1b9c8ba  logo.bin [RO]                                                                         100%  1:1  
+
+  0: 8:#656d7b/#efeadf 16:reset/#efeadf 1:#aeb3ba/#efeadf 8:#656d7b/#efeadf 1:reset/#efeadf 8:#262a30/#efeadf+b 77:#656d7b/#efeadf 1:reset/reset
+  1: 16:#656d7b/#f6f2e9 8:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  2: 9:#656d7b/#f6f2e9 15:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  3: 14:#656d7b/#f6f2e9 10:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  4: 21:#656d7b/#f6f2e9 3:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  5: 17:#656d7b/#f6f2e9 7:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  6: 23:#262a30/#f6f2e9 1:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  7: 9:#8a510f/#e5dfd0+b 15:reset/#e5dfd0 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  8: 5:#656d7b/#f6f2e9 19:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+  9: 9:#262a30/#f6f2e9 15:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 10: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 11: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 12: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 13: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 14: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 15: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 16: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 17: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 18: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 19: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 20: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 21: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 22: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 23: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 24: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 25: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 26: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 27: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 28: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 29: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 30: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 31: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 32: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 33: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 34: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 35: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 36: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 37: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 38: 24:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
+ 39: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 9:#656d7b/#fdfbf6 2:reset/#fdfbf6 8:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 73:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6

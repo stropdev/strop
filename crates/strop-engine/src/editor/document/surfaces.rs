@@ -53,7 +53,7 @@ pub enum Surface {
     },
     /// A diff as a readonly buffer (0010 §2): the file's delta at a
     /// commit, or the `Space g p` hunk preview. The buffer's rows mirror
-    /// the rendered layout — a stats row, then per hunk a `@@` header
+    /// the rendered layout — a heading row, then per hunk a `@@` header
     /// row and unprefixed content rows — so motions, `/` and yank see
     /// exactly what's on screen. `origin` names the working buffer a
     /// hunk preview belongs to, so `Space g X`/`g s` act on the file;
@@ -80,7 +80,8 @@ pub enum Surface {
 
 /// One canonical row projection shared by rendering and source navigation.
 pub enum DiffRow<'a> {
-    Stats,
+    /// Row 0: the file's heading.
+    Heading,
     HunkHeader(&'a Hunk),
     Line(&'a strop_git::DiffLine),
 }

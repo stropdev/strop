@@ -153,6 +153,15 @@ impl Editor {
         let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
         let captured_hunks = self.hunks.clone();
+        // a hunk preview is named for its file (0100 §4.5): the heading
+        // says which file, and the path gives the preview its syntax
+        let hunk_label = match &target {
+            DiveTarget::HunkPreview { .. } => self
+                .current_buffer_rel(&repo)
+                .map(|path| strop_core::layout::printable_text(path.to_string_lossy()).into_owned())
+                .unwrap_or_else(|| self.cur().label(&self.cwd)),
+            _ => String::new(),
+        };
         let client = self.remote_client();
         self.launch_git_job(
             "git-dive",
@@ -167,7 +176,7 @@ impl Editor {
                 match &target {
                     DiveTarget::HunkPreview { index, .. } => match captured_hunks.get(*index) {
                         Some(hunk) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
-                            "hunk".into(),
+                            hunk_label.clone(),
                             vec![hunk.as_ref().clone()],
                         ))),
                         None => Outcome::failed(

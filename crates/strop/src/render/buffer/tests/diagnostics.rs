@@ -155,11 +155,11 @@ fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
         row_symbols(terminal.backend().buffer(), 0, 2, 13),
         ["▎", " ", " ", " ", " ", " ", " ", "1", " ", "e\u{301}", "\u{fffd}", "Z", " "]
     );
-    // the stats band scrolls WITH the content; the number gutter does
-    // not — and the reserved track column (0064 §1) closes the band
+    // the file's heading is laid out against the pane, not the line: its
+    // rule fills the number gutter whatever the sideways scroll (0100)
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 9, 0, 4),
-        [" ", "+", "1", " "]
+        row_symbols(terminal.backend().buffer(), 0, 0, 9),
+        ["─", "─", "─", "─", "─", "─", "─", "─", " "]
     );
     terminal.backend_mut().assert_cursor_position((11, 2));
 }

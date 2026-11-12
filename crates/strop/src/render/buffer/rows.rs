@@ -274,24 +274,20 @@ pub(super) fn render_pane(
         }
         let mut fixed = false;
         match surface.and_then(|surface| surface.diff_row(line_idx)) {
-            Some(crate::editor::DiffRow::Stats | crate::editor::DiffRow::HunkHeader(_)) => {
-                // structural text uses the SAME fixed inset its caret
-                // would; the band is row background, the text scrolls
-                left.push(Span::raw(" ".repeat(number_width)));
-                let decorated = diff::structural_row(t, surface.unwrap(), line_idx);
-                style.row_bg = decorated.style.bg;
-                style.decorations = decorated.spans;
-            }
-            Some(crate::editor::DiffRow::Line(dl)) => {
-                left.extend(crate::render::block::gutter::pair(
-                    t,
-                    dl,
-                    line_idx == cur_line,
-                    number_width,
-                ));
-                style.diff_line = Some(dl);
-                style.emphasis = diff::emphasis_span(surface, line_idx);
-                style.row_bg = crate::render::block::diff_line::origin_bg(t, dl.origin);
+            Some(_) => {
+                let cursor = view.overlays && line_idx == cur_line;
+                if let Some(painted) = surface.and_then(|surface| {
+                    diff::painted(t, surface, line_idx, cursor, number_width, width)
+                }) {
+                    left.extend(painted.gutter);
+                    style.decorations = painted.text;
+                    style.row_bg = painted.row_bg;
+                    if let Some((line, emphasis)) = painted.line {
+                        style.diff_line = Some(line);
+                        style.emphasis = emphasis;
+                    }
+                    fixed = painted.fixed;
+                }
             }
             None if gutter_kind == strop_engine::editor::prepare::Gutter::Source => {
                 if let Some(info) = collection.rows.get(row).and_then(Option::as_ref) {

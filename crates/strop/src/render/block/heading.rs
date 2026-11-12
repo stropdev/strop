@@ -363,6 +363,15 @@ pub(crate) fn marks(t: &Tokens, modified: bool, readonly: bool) -> Vec<Span<'sta
     marks
 }
 
+/// `+N -M` in the diff inks.
+pub(crate) fn stats(t: &Tokens, added: usize, deleted: usize) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(format!("+{added}"), Style::default().fg(t.diff_add)),
+        Span::raw(" "),
+        Span::styled(format!("-{deleted}"), Style::default().fg(t.diff_del)),
+    ]
+}
+
 /// A fact in `fg.secondary` (a count, words).
 pub(crate) fn fact(t: &Tokens, text: impl Into<String>) -> Vec<Span<'static>> {
     vec![Span::styled(text.into(), Style::default().fg(t.secondary))]
