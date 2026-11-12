@@ -371,15 +371,12 @@ impl Editor {
         };
         self.worker_handles.remove(&completion.ticket.request);
         let key = completion.ticket.key;
-        // the write already happened (or failed) — validation decides
-        // only whether THIS editor view still reports it
-        let current = !self.docs.is_empty()
-            && self.current() == key.document
-            && self
-                .docs
-                .get(key.document)
-                .is_some_and(|d| d.buf.revision() == key.revision)
-            && self.git_view == key.git_view;
+        // the write already happened (or failed): it is reported while
+        // the user is still on the buffer that asked. Its revision and the
+        // git view are not consulted — the index write itself refreshes
+        // the status buffer and moves the view (a watcher hint, the
+        // previous mutation), and a stage that landed must still say so.
+        let current = !self.docs.is_empty() && self.current() == key.document;
         match completion.outcome {
             Outcome::Success(()) => {
                 // the index changed under every cached diff: new view

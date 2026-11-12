@@ -29,6 +29,8 @@
 ### Fixed
 
 - **The leader prefix reads `space g`**, not `spaceg`.
+- **Staging always says so.** A stage, unstage or discard in the status buffer sometimes finished without its `staged a.txt` line, when the status refreshed while git was still writing.
+- **`cc` always opens the commit message.** When the status buffer refreshed while the message file was opening, the commit message sometimes never appeared.
 
 ## 0.62.0 — 2026-11-11
 

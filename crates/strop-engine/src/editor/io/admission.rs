@@ -164,10 +164,14 @@ impl Editor {
                 return false;
             }
         }
+        // An edit of the origin means the user moved on. A readonly
+        // origin cannot be edited: its revision moves only when the
+        // editor refreshes it (a status buffer after the index changed),
+        // which says nothing about where the user is.
         !self.docs.is_empty()
             && self.current() == key.origin
             && self.focus_epoch == key.focus
-            && self.buf().revision() == key.revision
+            && (self.buf().readonly || self.buf().revision() == key.revision)
     }
 
     fn finish_open(&mut self, document: DocumentId, intent: OpenIntent) {
