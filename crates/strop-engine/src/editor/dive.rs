@@ -61,8 +61,7 @@ impl Editor {
                 DiveTarget::CommitFiles { sha }
             }
             Some(Surface::ChangedFiles { sha, files, .. }) => {
-                // row 0/1 are the header
-                let Some(file) = line.checked_sub(2).and_then(|i| files.get(i)) else {
+                let Some(file) = files.file_at_row(line) else {
                     return;
                 };
                 DiveTarget::FileDelta {

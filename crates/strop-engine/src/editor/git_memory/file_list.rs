@@ -20,7 +20,7 @@ struct FileList {
 }
 impl PreparedFiles {
     pub fn new(sha: String, files: Vec<ChangedFile>) -> Self {
-        let mut text = format!("commit {}\n\n", sha.get(..10).unwrap_or(&sha));
+        let mut text = format!("commit {}\n", sha.get(..10).unwrap_or(&sha));
         for file in &files {
             text.push_str(&strop_core::layout::printable_text(
                 file.path.to_string_lossy(),
@@ -43,6 +43,11 @@ impl PreparedFiles {
     }
     pub fn sidebar(&self) -> &Sidebar {
         &self.0.sidebar
+    }
+    /// The file a row of the buffer names: row 0 is the commit's
+    /// heading, then one path per row (0100 §4.4).
+    pub fn file_at_row(&self, row: usize) -> Option<&ChangedFile> {
+        self.0.files.get(row.checked_sub(1)?)
     }
     pub(crate) fn index_of(&self, path: &Path) -> Option<usize> {
         let index = self

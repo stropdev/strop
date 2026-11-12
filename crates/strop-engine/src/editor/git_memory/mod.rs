@@ -184,14 +184,16 @@ impl Editor {
         } else {
             None
         };
+        // a file's history is named for its file (0100 §4.3)
+        let name = match (&file, range) {
+            (Some(file), Some((start, end))) => {
+                format!("git log · {}:{start}-{end}", file.display())
+            }
+            (Some(file), None) => format!("git log · {}", file.display()),
+            (None, _) => "git log".to_owned(),
+        };
         self.push_surface(
-            Some(if range.is_some() {
-                "git log ·lines"
-            } else if file_scoped {
-                "git log ·file"
-            } else {
-                "git log"
-            }),
+            Some(&name),
             ropey::Rope::from_str("loading log…"),
             Surface::CommitLog {
                 rows: vec![],

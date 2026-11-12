@@ -168,6 +168,17 @@ pub(super) fn content_spans(
         spans.push(Span::styled(symbol, cell));
         used = visible.x + visible.width;
     }
+    if !reached_end && style.ellipsis && used == width {
+        // the last cell says the row goes on; a wide glyph it replaces
+        // leaves its other cell blank
+        if let Some(last) = spans.pop() {
+            let cells = last.width();
+            if cells > 1 {
+                spans.push(Span::styled(" ".repeat(cells - 1), last.style));
+            }
+            spans.push(Span::styled("…", last.style));
+        }
+    }
     if reached_end {
         if let Some((note, cell)) = &style.note {
             // virtual EOL annotation at the line's absolute end cell.

@@ -1,0 +1,33 @@
+▌ * 0d21f9e Ada Example · 2 days ago · notes: … 
+  * fd21dde Ada Example · 2 days ago · notes: … 
+  * 19b4e9a Ada Example · 3 days ago · rename … 
+  *   0d964a0 Ada Example · 3 days ago · Merge… 
+  |\                                            
+  | * e8c1034 Ada Example · 4 days ago · layou… 
+  | * ff9ea27 Ada Example · 4 days ago · surfa… 
+  * | c756836 Ada Example · 3 days ago · notes… 
+  |/                                            
+  * 8cc6dd6 Ada Example · 5 days ago · base: t… 
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+  NORMAL    main  git log [RO]       10%   1:1  
+
+  0: 1:#e8a848/#1b1e24 1:reset/#1b1e24 1:#aec37f/#1b1e24+b 1:#e6e1d6/#1b1e24 7:#a8adb8/#1b1e24 28:#858c9a/#1b1e24 8:#e6e1d6/#1b1e24 1:reset/reset
+  1: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 8:#e6e1d6/#15171c 1:reset/reset
+  2: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 8:#e6e1d6/#15171c 1:reset/reset
+  3: 2:reset/#15171c 1:#aec37f/#15171c+b 3:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 6:#e6e1d6/#15171c 1:reset/reset
+  4: 2:reset/#15171c 2:#aec37f/#15171c 43:reset/#15171c 1:reset/reset
+  5: 2:reset/#15171c 1:#aec37f/#15171c 1:#e6e1d6/#15171c 1:#86b7d8/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 6:#e6e1d6/#15171c 1:reset/reset
+  6: 2:reset/#15171c 1:#aec37f/#15171c 1:#e6e1d6/#15171c 1:#86b7d8/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 6:#e6e1d6/#15171c 1:reset/reset
+  7: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 1:#86b7d8/#15171c 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 6:#e6e1d6/#15171c 1:reset/reset
+  8: 2:reset/#15171c 2:#aec37f/#15171c 43:reset/#15171c 1:reset/reset
+  9: 2:reset/#15171c 1:#aec37f/#15171c+b 1:#e6e1d6/#15171c 7:#a8adb8/#15171c 28:#858c9a/#15171c 8:#e6e1d6/#15171c 1:reset/reset
+ 10: 1:#4a5160/#15171c 46:reset/#15171c 1:reset/reset
+ 11: 1:#4a5160/#15171c 46:reset/#15171c 1:reset/reset
+ 12: 1:#4a5160/#15171c 46:reset/#15171c 1:reset/reset
+ 13: 1:#4a5160/#15171c 46:reset/#15171c 1:reset/reset
+ 14: 1:#4a5160/#15171c 46:reset/#15171c 1:reset/reset
+ 15: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 6:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

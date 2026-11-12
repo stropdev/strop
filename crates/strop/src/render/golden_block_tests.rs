@@ -5,7 +5,9 @@
 //! every run; ages come from injected log rows.
 use std::path::Path;
 
-use strop_engine::editor::test_support::git::{editor_in, pump, pump_hunks, settle_dives};
+use strop_engine::editor::test_support::git::{
+    editor_in, log_rows_fixture, pump, pump_hunks, settle_dives,
+};
 
 use super::golden::assert_golden;
 use super::golden_tests::{frame, settle_analysis, Settle, THEMES};
@@ -143,6 +145,82 @@ fn open_file_delta(editor: &mut Editor, keys: &str) {
     editor.feed_text(keys);
     editor.feed(strop_core::frontend_input::Key::Enter);
     settle_dives(editor);
+}
+
+/// The log rows of §4.3, ages included: a merge, two lanes, a subject
+/// long enough to be cut.
+fn log_rows() -> Vec<strop_git::memory::LogRow> {
+    let row = |text: &str, sha: Option<&str>| strop_git::memory::LogRow {
+        text: text.to_owned(),
+        sha: sha.map(|sha| format!("{sha}{}", "0".repeat(40 - sha.len()))),
+    };
+    vec![
+        row(
+            "* 0d21f9e Ada Example · 2 days ago · notes: revision 5",
+            Some("0d21f9e"),
+        ),
+        row(
+            "* fd21dde Ada Example · 2 days ago · notes: revision 4",
+            Some("fd21dde"),
+        ),
+        row(
+            &format!("* 19b4e9a Ada Example · 3 days ago · {LONG_SUBJECT}"),
+            Some("19b4e9a"),
+        ),
+        row(
+            "*   0d964a0 Ada Example · 3 days ago · Merge branch 'feature/surfaces'",
+            Some("0d964a0"),
+        ),
+        row("|\\", None),
+        row(
+            "| * e8c1034 Ada Example · 4 days ago · layout: one token",
+            Some("e8c1034"),
+        ),
+        row(
+            "| * ff9ea27 Ada Example · 4 days ago · surfaces: parse tokens in three places with care",
+            Some("ff9ea27"),
+        ),
+        row(
+            "* | c756836 Ada Example · 3 days ago · notes: main moved on",
+            Some("c756836"),
+        ),
+        row("|/", None),
+        row(
+            "* 8cc6dd6 Ada Example · 5 days ago · base: the first commit of the project",
+            Some("8cc6dd6"),
+        ),
+    ]
+}
+
+/// `Space g l`: the commit log, step A of §4.3.
+#[test]
+fn commit_log() {
+    each("git-log", |_, editor| {
+        editor.feed_text(" gl");
+        pump(editor);
+        log_rows_fixture(editor, log_rows());
+        settle_analysis()
+    });
+}
+
+/// `Space g h`: the same rows, named for the file.
+#[test]
+fn file_history() {
+    each("git-log-file", |_, editor| {
+        editor.feed_text(" gh");
+        pump(editor);
+        log_rows_fixture(editor, log_rows());
+        settle_analysis()
+    });
+}
+
+/// Enter on a commit: its files, one with a 90-cell path.
+#[test]
+fn commit_files() {
+    each("git-files", |_, editor| {
+        open_commit_files(editor);
+        settle_analysis()
+    });
 }
 
 /// A file of a commit, two hunks, beside the commit's file sidebar.

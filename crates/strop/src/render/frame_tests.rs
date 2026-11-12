@@ -179,7 +179,7 @@ fn gutters_and_sidebar_render() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter); // a.rs delta
     settle(&mut e, |e| {
         matches!(

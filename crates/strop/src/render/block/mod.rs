@@ -32,6 +32,9 @@ pub(crate) struct Painted<'a> {
     /// A changed line: its origin drives the inks, and the changed byte
     /// range (in the row's own bytes) is emphasised over the tint.
     pub line: Option<(&'a strop_git::DiffLine, Option<(usize, usize)>)>,
+    /// A list row that runs past the last content cell ends in `…`
+    /// there (0100 §3.9); it still scrolls sideways like any long line.
+    pub cut: bool,
 }
 
 impl Painted<'_> {

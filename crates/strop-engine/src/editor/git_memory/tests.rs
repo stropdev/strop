@@ -70,7 +70,7 @@ fn diff_surface_rows_carry_line_numbers() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter);
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::Diff { .. }))
@@ -488,7 +488,7 @@ fn commit_file_nav_walks_files() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter); // a.rs → delta
     settle(&mut e, |e| {
         matches!(
@@ -548,7 +548,7 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter); // a.rs delta
     settle(&mut e, |e| {
         matches!(

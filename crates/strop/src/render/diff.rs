@@ -20,7 +20,7 @@ mod list;
 mod margins;
 mod status;
 
-pub(crate) use list::{surface_list_row, RowDecoration};
+pub(crate) use list::{files_block, painted as list_painted, RowDecoration};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};
 pub(crate) use status::painted as status_painted;
 

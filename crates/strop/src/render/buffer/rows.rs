@@ -166,6 +166,13 @@ pub(super) fn render_pane(
         + blame.map_or(0, |_| strop_engine::editor::prepare::BLAME_GUTTER_WIDTH)
         + number_width;
     let width = usize::from(area.width).saturating_sub(inset);
+    // a commit's files are one block as wide as its content (0100 §3.9)
+    let files_block = match surface {
+        Some(crate::editor::Surface::ChangedFiles { sha, files, .. }) => {
+            diff::files_block(files, sha, number_width + width)
+        }
+        _ => 0,
+    };
     // 0051 R08: the fixed margins measure with the viewed document's
     // resolved width too — one setting, no render-side config shortcut.
     let margin_tab = editor.doc(view.doc).indent.width.max(1);
@@ -234,6 +241,7 @@ pub(super) fn render_pane(
         style.row_fg = None;
         style.decorations.clear();
         style.note = None;
+        style.ellipsis = false;
         style.syn_spans = syn_spans;
         style.search_hits = search_hits;
         // Collection body rows: source-projected syntax + query hits
@@ -321,14 +329,10 @@ pub(super) fn render_pane(
                     Some(crate::editor::Surface::Status { view: status, .. }) => {
                         diff::status_painted(t, status, line_idx, cur_line, cursor, width)
                     }
-                    _ => diff::surface_list_row(t, surface, line_idx, width, cursor).map(|row| {
-                        crate::render::block::Painted {
-                            gutter: Vec::new(),
-                            text: row.spans,
-                            row_bg: row.row_bg,
-                            ..Default::default()
-                        }
-                    }),
+                    Some(surface) => {
+                        diff::list_painted(t, surface, line_idx, cursor, files_block, width)
+                    }
+                    None => None,
                 };
                 let mut painted = painted.unwrap_or_default();
                 if painted.gutter.is_empty() {
@@ -343,6 +347,7 @@ pub(super) fn render_pane(
                     style.emphasis = emphasis;
                 }
                 fixed = painted.fixed;
+                style.ellipsis = painted.cut;
             }
             None => {
                 let num_style = if line_idx == cur_line {
@@ -361,20 +366,15 @@ pub(super) fn render_pane(
                     format!("{:>digits$} ", line_idx + 1, digits = number_width - 2),
                     num_style,
                 ));
-                if let Some(row) = directory
-                    .and_then(|source| {
-                        directory::row(
-                            t,
-                            source,
-                            line_idx,
-                            text,
-                            view.overlays && line_idx == cur_line,
-                        )
-                    })
-                    .or_else(|| {
-                        diff::surface_list_row(t, surface, line_idx, width, line_idx == cur_line)
-                    })
-                {
+                if let Some(row) = directory.and_then(|source| {
+                    directory::row(
+                        t,
+                        source,
+                        line_idx,
+                        text,
+                        view.overlays && line_idx == cur_line,
+                    )
+                }) {
                     // the quiet cursor-row band rides under overlays
                     // (search/visual/flash still override per cell)
                     style.decorations = row.spans;

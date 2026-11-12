@@ -399,6 +399,9 @@ struct RowStyle<'a> {
     /// The cursor line's end-of-line diagnostic note, laid out at the
     /// line's ABSOLUTE end cell (tabs continue the line's stops).
     note: Option<(String, Style)>,
+    /// A row that runs past the pane's last cell shows `…` there
+    /// (0100 §3.9: list rows are never cut silently).
+    ellipsis: bool,
 }
 
 #[cfg(test)]
