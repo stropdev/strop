@@ -369,4 +369,27 @@ source per press, §4.1), which removed the "show what we have, then refresh"
 path the draft considered; and the two calibrations of §5.1 are the ones the
 design showed to be observable.
 
-Gates: see the commit that closes this plan for the lanes that ran.
+Gates, as run on this machine for this change:
+
+- Host: `cargo fmt --check`, `cargo clippy --locked --workspace --all-targets
+  -- -D warnings` and `cargo test --locked --workspace` pass, except
+  `differential_vs_nvim`, which fails on the base commit too: the host's nvim
+  is 0.9.5 and the corpus needs the gate's pinned one.
+- `docker compose run --build --rm test`: passed. Two earlier runs failed in
+  `differential_vs_nvim` only — sixteen consecutive cases of one generated
+  group, in a `.txt` fixture this change does not touch, each with the file
+  unwritten: the harness's `settle 5000` ran out while the machine was building
+  for several agents at once (load average 28). The harness does not check
+  the editor's exit status, so a timeout reads as a divergence. Worth fixing
+  there; not done here.
+- `docker compose --profile proofs run --build --rm proofs`: passed — the
+  translation matches the committed `proofs/Extracted`, `lake build`, the
+  axiom audit (73 theorems, 25 required claims, standard axioms only) and
+  20 of 20 mutants rejected by their named theorems, in 158 s.
+- `strop --bench symbols`: within both budgets (§7).
+- `model`, `ssh-pythonfree` and the release lanes were not run: nothing they
+  cover changed.
+
+A binary-level journey (`crates/strop/tests/symbols.rs`) runs the shipped
+`strop --headless` with an empty `PATH`: the outline lists, and after an edit
+the rows carry the new lines.
