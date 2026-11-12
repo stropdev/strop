@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **`Space s` opens at once** (plans/0099): the current file's symbols are fetched when you open it and after each finished edit, and kept until the text changes. A second press asks nobody, and the list opens in the same moment as the key. Rows from before an edit are never shown: if the new list is not ready the picker waits for it rather than showing old line numbers.
+- **Symbols without a language server**: in Rust, Python, C, C++ and Lua files that no server serves — none installed, or still starting — `Space s` lists the declarations from the syntax tree, and says so. It used to answer only "no language server".
+
 ## 0.62.0 — 2026-11-11
 
 ### Changed

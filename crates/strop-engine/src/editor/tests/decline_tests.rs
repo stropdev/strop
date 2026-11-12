@@ -27,9 +27,14 @@ fn each_x_is_its_own_undo_step_and_feeds_the_undo_tree() {
 
 #[test]
 fn symbols_and_hover_without_a_language_server_name_the_verb_and_the_cause() {
-    for (keys, verb) in [(" s", "document symbols"), (" k", "hover")] {
+    // Go has no symbols query in this build: with no server either,
+    // `Space s` has nothing to list (0099 §4.1).
+    for (keys, verb, file) in [
+        (" s", "document symbols", "/proj/lonely.go"),
+        (" k", "hover", "/proj/lonely.cpp"),
+    ] {
         let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
-        e.buf_mut().path = Some(PathBuf::from("/proj/lonely.cpp"));
+        e.buf_mut().path = Some(PathBuf::from(file));
         e.feed_text(keys);
         assert!(e.picker.is_none());
         assert!(
@@ -39,6 +44,22 @@ fn symbols_and_hover_without_a_language_server_name_the_verb_and_the_cause() {
             e.message()
         );
     }
+}
+
+#[test]
+fn symbols_without_a_language_server_come_from_the_syntax_tree() {
+    let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
+    e.buf_mut().path = Some(PathBuf::from("/proj/lonely.cpp"));
+    e.feed_text(" s");
+    e.wait_analysis();
+    let glue = e.picker.as_ref().expect("the outline opens");
+    assert_eq!(glue.picker.items.len(), 1);
+    assert!(glue.picker.items[0].text.starts_with("main"));
+    assert!(
+        e.message().contains("no language server"),
+        "{}",
+        e.message()
+    );
 }
 
 #[test]

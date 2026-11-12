@@ -81,6 +81,9 @@ impl Editor {
                 if !self.docs.is_empty() {
                     self.lsp_sync_changed();
                 }
+                // 0099 §4.1: fetch the current document's symbols ahead
+                // of the key. O(1) when nothing changed.
+                crate::editor::symbols::warm(self);
                 // Logical OSC52 consumption is common to both modes; the
                 // actual escape write stays the terminal adapter's
                 // live-only effect, recorded as a request — never an

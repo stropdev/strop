@@ -136,89 +136,6 @@ fn manual_external_open_names_the_context_route() {
     );
 }
 
-#[test]
-fn document_symbols_open_a_picker_and_accepting_jumps() {
-    // 0047 §1: the reply becomes picker rows; Enter lands on the
-    // symbol and records a jumplist entry for ctrl-o.
-    let mut e = editor("struct Foo;\nimpl Foo { fn bar() {} }\nfn main() {}\n");
-    e.feed_text("G"); // cursor to line 3, so the jump back is observable
-    let origin = e.head();
-    let context = arm(
-        &mut e,
-        0,
-        RequestKind::DocumentSymbols,
-        PositionEncoding::Utf8,
-    );
-    e.handle_lsp_event(LspEvent::Symbols {
-        context,
-        symbols: vec![
-            strop_lsp::protocol::ProtoSymbol {
-                name: "Foo".into(),
-                container: String::new(),
-                kind: "Struct".into(),
-                location: strop_lsp::ServerLocation {
-                    doc: strop_workspace::ResourceLocation::local(PathBuf::from(
-                        "/workspace/origin.txt",
-                    )),
-                    position: ServerPosition {
-                        line: LineIndex::new(0),
-                        column: ServerColumn::new(7),
-                    },
-                },
-            },
-            strop_lsp::protocol::ProtoSymbol {
-                name: "bar".into(),
-                container: "Foo".into(),
-                kind: "Method".into(),
-                location: strop_lsp::ServerLocation {
-                    doc: strop_workspace::ResourceLocation::local(PathBuf::from(
-                        "/workspace/origin.txt",
-                    )),
-                    position: ServerPosition {
-                        line: LineIndex::new(1),
-                        column: ServerColumn::new(16),
-                    },
-                },
-            },
-        ],
-    });
-    let glue = e.picker.as_ref().expect("the symbols picker opened");
-    assert_eq!(glue.picker.kind, strop_picker::Kind::Symbols);
-    let items = &glue.picker.items;
-    assert_eq!(items.len(), 2);
-    assert_eq!(items[0].badge.as_deref(), Some("struct"), "kind chip");
-    assert!(items[0].text.contains("Foo") && items[0].text.contains(":1"));
-    assert_eq!(items[1].badge.as_deref(), Some("meth"));
-    assert!(
-        items[1].text.contains("bar")
-            && items[1].text.contains("Foo")
-            && items[1].text.contains(":2")
-    );
-    e.wait_picker();
-    e.feed(Key::Enter);
-    assert!(!e.picker_open());
-    assert_eq!(e.head(), 7, "landed on the struct identifier");
-    e.feed(Key::CtrlO);
-    assert_eq!(e.head(), origin, "ctrl-o returns to the pre-jump spot");
-}
-
-#[test]
-fn document_symbols_empty_reply_names_the_document() {
-    let mut e = editor("x\n");
-    let context = arm(
-        &mut e,
-        0,
-        RequestKind::DocumentSymbols,
-        PositionEncoding::Utf8,
-    );
-    e.handle_lsp_event(LspEvent::Symbols {
-        context,
-        symbols: Vec::new(),
-    });
-    assert!(!e.picker_open(), "an empty reply opens nothing");
-    assert_eq!(e.message, "no symbols in this document");
-}
-
 /// 0063 §3 fixtures: one `documentSymbol` reply becomes the retained
 /// candidate tree the picker narrows locally — the wire carries no
 /// query, so every Boolean/`kind:` change re-filters these.
@@ -244,6 +161,18 @@ fn doc_symbol(
 
 fn symbols_picker(e: &mut Editor, symbols: Vec<strop_lsp::protocol::ProtoSymbol>) {
     let context = arm(e, 0, RequestKind::DocumentSymbols, PositionEncoding::Utf8);
+    // a symbols request is a build owned by the symbols component (0099)
+    e.lsp_state.navigation = None;
+    e.analysis
+        .symbols
+        .store
+        .begin(crate::editor::symbols::store::Build {
+            id: crate::editor::symbols::store::BuildId::Server(context.stamp),
+            document: context.stamp.document,
+            revision: context.stamp.revision,
+            producer: crate::editor::symbols::store::Producer::Server(context.stamp.server),
+            open: true,
+        });
     e.handle_lsp_event(LspEvent::Symbols { context, symbols });
     e.wait_picker();
 }

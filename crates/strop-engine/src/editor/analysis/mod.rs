@@ -52,6 +52,10 @@ pub enum AnalysisEvent {
     Completed(Box<Completion<AnalysisKey, FrameAnalysis>>),
     /// A matching-delimiter job landed (0051 §7 R09).
     Matched(Box<Completion<MatchKey, Option<PairMatch>>>),
+    /// A symbol-outline job landed (0099 §4.1).
+    Outlined(
+        Box<Completion<crate::editor::symbols::outline::OutlineKey, Vec<strop_lsp::ProtoSymbol>>>,
+    ),
     Stopped,
 }
 struct Pending {
@@ -75,6 +79,9 @@ pub(crate) struct AnalysisState {
     /// Matching-delimiter jobs/results (0051 §7 R09) — same worker,
     /// same lifecycle.
     pub(crate) pair: PairState,
+    /// Document symbols and their builds (0099 §4.1): the edit, close
+    /// and stop lifecycle below covers them.
+    pub(crate) symbols: crate::editor::symbols::SymbolState,
     started: bool,
     stopping: bool,
 }
@@ -90,6 +97,7 @@ impl Default for AnalysisState {
             cache: HashMap::new(),
             presentations: HashMap::new(),
             pair: PairState::default(),
+            symbols: Default::default(),
             started: false,
             stopping: false,
         }
@@ -97,7 +105,10 @@ impl Default for AnalysisState {
 }
 impl AnalysisState {
     pub fn pending(&self) -> bool {
-        !self.pending.is_empty() || !self.pair.pending_empty() || self.stopping
+        !self.pending.is_empty()
+            || !self.pair.pending_empty()
+            || self.symbols.pending()
+            || self.stopping
     }
     pub(crate) fn start(&mut self, tape: &strop_trace::replay::Tape) -> Result<(), String> {
         if self.started {
@@ -129,6 +140,7 @@ impl AnalysisState {
         // work (0051 §7 R09): its delivery would fail the revision
         // recheck anyway — cancel the scan itself, not only the guard
         self.pair.cancel_target(&target);
+        self.symbols.edited(document);
         if !self.registered.contains(&target) {
             return;
         }
@@ -152,6 +164,9 @@ impl AnalysisState {
             pending.cancel.store(true, Ordering::Release);
         }
         self.pair.forget(&target);
+        if let AnalysisTarget::Document(document) = &target {
+            self.symbols.closed(*document);
+        }
         self.cache.remove(&target);
         self.presentations.remove(&target);
         self.registered.remove(&target);
@@ -167,6 +182,7 @@ impl AnalysisState {
             pending.cancel.store(true, Ordering::Release);
         }
         self.pair.cancel_all();
+        self.symbols.stop();
         self.stopping = self.started;
         self.worker = None;
     }
@@ -495,6 +511,10 @@ impl Editor {
             }
             AnalysisEvent::Matched(completion) => {
                 self.handle_match(*completion);
+                return;
+            }
+            AnalysisEvent::Outlined(completion) => {
+                crate::editor::symbols::outline_done(self, *completion);
                 return;
             }
             AnalysisEvent::Completed(completion) => completion,

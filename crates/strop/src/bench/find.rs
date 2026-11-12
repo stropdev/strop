@@ -28,7 +28,7 @@ const KEY_SETTLE: Duration = Duration::from_millis(50);
 const FIRST_HIT: Duration = Duration::from_millis(150);
 const SEARCH_COMPLETE: Duration = Duration::from_millis(400);
 
-fn within(op: &Op, budget: Duration) -> io::Result<()> {
+pub(super) fn within(op: &Op, budget: Duration) -> io::Result<()> {
     let p95 = op.pct(95);
     let limit = budget.as_secs_f64() * 1000.0;
     if p95 > limit {
