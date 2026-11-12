@@ -16,14 +16,6 @@ use strop_git::memory::ChangedFile;
 use super::super::clip;
 use super::super::style::Tokens;
 
-/// One decorated row of a directory buffer: styled spans whose
-/// concatenation begins with the buffer line's exact bytes, plus an
-/// optional full-row background (the cursor-row band).
-pub(crate) struct RowDecoration {
-    pub(crate) spans: Vec<Span<'static>>,
-    pub(crate) row_bg: Option<Color>,
-}
-
 /// The least width of a list block with facts (0100 §3.9).
 const BLOCK_FLOOR: usize = 48;
 

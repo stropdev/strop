@@ -35,6 +35,8 @@ pub(crate) struct Painted<'a> {
     /// A list row that runs past the last content cell ends in `…`
     /// there (0100 §3.9); it still scrolls sideways like any long line.
     pub cut: bool,
+    /// One ink for the whole row's text (the review buffer's rows).
+    pub row_fg: Option<Color>,
 }
 
 impl Painted<'_> {
