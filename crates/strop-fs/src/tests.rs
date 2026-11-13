@@ -393,4 +393,43 @@ fn trash_is_recoverable_and_restore_refuses_occupied_names() {
     });
 }
 
+#[test]
+fn completed_operations_leave_no_protocol_file_and_listings_hide_leftovers() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("home")).unwrap();
+    let folder = root.path().join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    with_token(|context, token| {
+        let created = folder.join("new.txt");
+        let renamed = folder.join("renamed.txt");
+        for step in [
+            intent(OperationKind::CreateFile, None, Some(&created)),
+            intent(OperationKind::Rename, Some(&created), Some(&renamed)),
+            intent(OperationKind::Trash, Some(&renamed), None),
+        ] {
+            let plan = prepare(context, root.path(), &step, &token);
+            assert!(local::execute(&plan, None, &[], context, &token).is_committed());
+        }
+        let left: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+
+        // A crash leaves a lock file; the listing never shows it.
+        std::fs::write(folder.join(".strop-lock-00"), "").unwrap();
+        std::fs::write(folder.join("kept.txt"), "").unwrap();
+        let listed =
+            crate::listing::list(context, &ResourceLocation::local(folder.clone()), &token)
+                .unwrap();
+        let names: Vec<_> = listed
+            .snapshot
+            .entries
+            .iter()
+            .map(|entry| entry.name.display())
+            .collect();
+        assert_eq!(names, ["kept.txt"]);
+    });
+}
+
 mod store;
