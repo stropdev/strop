@@ -152,7 +152,7 @@ a heavy line is a seam inside a buffer; a band is a jump inside a file.**
 | band (`bg.surface`) + `⋮` | break | a jump inside one file | unchanged (0100 §3.1) |
 | `╭ ╮ ╰ ╯` | corners | a card: a box that has all four sides | cards only (picker, which-key, completion, hover). **Never on panes.** |
 
-Reserved for the tree layout (the follow-up named in
+*Junctions drawn by [0104](0104-window-tree.md).* Reserved for the tree layout (the follow-up named in
 `strop-engine/src/editor/panes.rs`; not built here): `├ ┤ ┴ ┼` where a stacked
 title meets a divider. Because titles are rules, those junctions fall out with
 no new idea.

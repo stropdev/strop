@@ -1,7 +1,6 @@
 # 0104 — The window tree: splits that nest, as in vim
 
-- Status: **proposed** (for 0.67). Hand-off plan: the implementer takes every
-  default in §13 unless the owner answers otherwise.
+- Status: **in force** (0.67). Every default in §13 was taken.
 - Source: the owner — "I did a horizontal split so now two windows, then doing
   a vertical split produced a third window but flipped everything into
   vertical. I feel it is buggy."
