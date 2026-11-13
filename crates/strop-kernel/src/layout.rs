@@ -19,6 +19,9 @@
 //!   frame exactly: a closed child's cells go back to the others;
 //! - when the minimum fits, every child gets at least its minimum: a column
 //!   per window side by side, a title and a row per window stacked.
+//! - when the minimum fits, a child of `t` windows gets between `t·q` and
+//!   `t·(q+1)` of the spare cells, `q` the spare cells per window: the
+//!   windows of one flat split differ by at most one cell.
 
 /// One child's cells along its parent's axis.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -65,7 +68,7 @@ pub fn total(tracks: &[usize]) -> usize {
 /// `weight` windows are still to be served (itself included). Rounds down:
 /// the odd cells go to later children.
 pub fn share(room: usize, tracks: usize, weight: usize) -> usize {
-    (tracks * room).checked_div(weight).unwrap_or_default()
+    (tracks * room).checked_div(weight).unwrap_or(0)
 }
 
 /// Divide `cells` among children; child `k` holds `tracks[k]` windows side by
@@ -74,7 +77,7 @@ pub fn share(room: usize, tracks: usize, weight: usize) -> usize {
 pub fn tile(cells: usize, unit: usize, gap: usize, tracks: &[usize], out: &mut [Span]) {
     let mut weight = total(tracks);
     let need = minimum(weight, unit, gap);
-    let mut room = if cells > need { cells - need } else { 0 };
+    let mut room = cells.saturating_sub(need);
     let mut at = 0;
     let mut k = 0;
     while k < tracks.len() && k < out.len() {

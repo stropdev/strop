@@ -18,19 +18,7 @@ set_option maxHeartbeats 1000000
 /- You can set the `maxRecDepth` value with the `-max-recdepth` CLI option -/
 set_option maxRecDepth 2048
 
-/- You can remove the following line by using the CLI option `-all-computable`: -/
-noncomputable section
-
 namespace strop_kernel
-
-/-- [core::option::{core::option::Option<T>}::unwrap_or_default]:
-    Source: '/rustc/library/core/src/option.rs', lines 1093:4-1095:27
-    Name pattern: [core::option::{core::option::Option<@T>}::unwrap_or_default]
-    Visibility: public -/
-@[rust_fun "core::option::{core::option::Option<@T>}::unwrap_or_default"]
-axiom core.option.Option.unwrap_or_default
-  {T : Type _} (defaultDefaultInst : core.default.Default T) :
-  Option T → Result T
 
 /-- [strop_kernel::cache::Slot]
     Source: 'crates/strop-kernel/src/cache.rs', lines 30:0-37:1
@@ -627,42 +615,42 @@ def generation.index_for_len (len : Std.Usize) : Result (Option Std.U32) := do
        ok (some i1)
 
 /-- [strop_kernel::layout::Span]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 25:0-28:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 28:0-31:1
     Visibility: public -/
 structure layout.Span where
   «at» : Std.Usize
   len : Std.Usize
 
 /-- [strop_kernel::layout::{impl core::clone::Clone for strop_kernel::layout::Span}::clone]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:9-24:14
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:9-27:14
     Visibility: public -/
 def layout.Span.Insts.CoreCloneClone.clone
   (self : layout.Span) : Result layout.Span := do
   ok self
 
 /-- Trait implementation: [strop_kernel::layout::{impl core::clone::Clone for strop_kernel::layout::Span}]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:9-24:14 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:9-27:14 -/
 @[reducible]
 def layout.Span.Insts.CoreCloneClone : core.clone.Clone layout.Span := {
   clone := layout.Span.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [strop_kernel::layout::{impl core::marker::Copy for strop_kernel::layout::Span}]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:16-24:20 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:16-27:20 -/
 @[reducible]
 def layout.Span.Insts.CoreMarkerCopy : core.marker.Copy layout.Span := {
   cloneInst := layout.Span.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [strop_kernel::layout::{impl core::marker::StructuralPartialEq for strop_kernel::layout::Span}]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:22-24:31 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:22-27:31 -/
 @[reducible]
 def layout.Span.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq layout.Span := {
 }
 
 /-- [strop_kernel::layout::{impl core::cmp::PartialEq<strop_kernel::layout::Span> for strop_kernel::layout::Span}::eq]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:22-24:31
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:22-27:31
     Visibility: public -/
 def layout.Span.Insts.CoreCmpPartialEqSpan.eq
   (self : layout.Span) (other : layout.Span) : Result Bool := do
@@ -671,7 +659,7 @@ def layout.Span.Insts.CoreCmpPartialEqSpan.eq
   else ok false
 
 /-- Trait implementation: [strop_kernel::layout::{impl core::cmp::PartialEq<strop_kernel::layout::Span> for strop_kernel::layout::Span}]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:22-24:31 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:22-27:31 -/
 @[reducible]
 def layout.Span.Insts.CoreCmpPartialEqSpan : core.cmp.PartialEq layout.Span
   layout.Span := {
@@ -679,14 +667,14 @@ def layout.Span.Insts.CoreCmpPartialEqSpan : core.cmp.PartialEq layout.Span
 }
 
 /-- [strop_kernel::layout::{impl core::cmp::Eq for strop_kernel::layout::Span}::assert_fields_are_eq]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:33-24:35
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:33-27:35
     Visibility: public -/
 def layout.Span.Insts.CoreCmpEq.assert_fields_are_eq
   (self : layout.Span) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [strop_kernel::layout::{impl core::cmp::Eq for strop_kernel::layout::Span}]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:33-24:35 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:33-27:35 -/
 @[reducible]
 def layout.Span.Insts.CoreCmpEq : core.cmp.Eq layout.Span := {
   partialEqInst := layout.Span.Insts.CoreCmpPartialEqSpan
@@ -694,7 +682,7 @@ def layout.Span.Insts.CoreCmpEq : core.cmp.Eq layout.Span := {
 }
 
 /-- [strop_kernel::layout::{impl core::fmt::Debug for strop_kernel::layout::Span}::fmt]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:37-24:42
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:37-27:42
     Visibility: public -/
 def layout.Span.Insts.CoreFmtDebug.fmt
   (self : layout.Span) (f : core.fmt.Formatter) :
@@ -706,27 +694,27 @@ def layout.Span.Insts.CoreFmtDebug.fmt
     dyn (toStr "len") dyn1
 
 /-- Trait implementation: [strop_kernel::layout::{impl core::fmt::Debug for strop_kernel::layout::Span}]
-    Source: 'crates/strop-kernel/src/layout.rs', lines 24:37-24:42 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:37-27:42 -/
 @[reducible]
 def layout.Span.Insts.CoreFmtDebug : core.fmt.Debug layout.Span := {
   fmt := layout.Span.Insts.CoreFmtDebug.fmt
 }
 
 /-- [strop_kernel::layout::empty]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 31:0-33:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 34:0-36:1
     Visibility: public -/
 def layout.empty : Result layout.Span := do
   ok { «at» := 0#usize, len := 0#usize }
 
 /-- [strop_kernel::layout::least]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 35:0-41:1 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 38:0-44:1 -/
 def layout.least (a : Std.Usize) (b : Std.Usize) : Result Std.Usize := do
   if a < b
   then ok a
   else ok b
 
 /-- [strop_kernel::layout::minimum]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 45:0-51:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 48:0-54:1
     Visibility: public -/
 def layout.minimum
   (tracks : Std.Usize) (unit : Std.Usize) (gap : Std.Usize) :
@@ -741,7 +729,7 @@ def layout.minimum
     i + i2
 
 /-- [strop_kernel::layout::total]: loop body 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 57:4-60:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 60:4-63:5
     Visibility: public -/
 @[rust_loop_body]
 def layout.total_loop.body
@@ -758,7 +746,7 @@ def layout.total_loop.body
   else ok (done sum)
 
 /-- [strop_kernel::layout::total]: loop 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 57:4-60:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 60:4-63:5
     Visibility: public -/
 @[rust_loop]
 def layout.total_loop
@@ -770,14 +758,14 @@ def layout.total_loop
     (sum, k)
 
 /-- [strop_kernel::layout::total]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 54:0-62:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 57:0-65:1
     Visibility: public -/
 @[reducible]
 def layout.total (tracks : Slice Std.Usize) : Result Std.Usize := do
   layout.total_loop tracks 0#usize 0#usize
 
 /-- [strop_kernel::layout::share]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 67:0-69:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 70:0-72:1
     Visibility: public -/
 def layout.share
   (room : Std.Usize) (tracks : Std.Usize) (weight : Std.Usize) :
@@ -785,10 +773,10 @@ def layout.share
   := do
   let i ← tracks * room
   let o ← lift (Usize.checked_div i weight)
-  core.option.Option.unwrap_or_default core.default.DefaultUsize o
+  ok (core.option.Option.unwrap_or o 0#usize)
 
 /-- [strop_kernel::layout::tile]: loop body 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 80:4-93:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 83:4-96:5
     Visibility: public -/
 @[rust_loop_body]
 def layout.tile_loop.body
@@ -829,7 +817,7 @@ def layout.tile_loop.body
   else ok (done out)
 
 /-- [strop_kernel::layout::tile]: loop 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 80:4-93:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 83:4-96:5
     Visibility: public -/
 @[rust_loop]
 def layout.tile_loop
@@ -844,7 +832,7 @@ def layout.tile_loop
     (out, weight, room, «at», k)
 
 /-- [strop_kernel::layout::tile]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 74:0-94:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 77:0-97:1
     Visibility: public -/
 def layout.tile
   (cells : Std.Usize) (unit : Std.Usize) (gap : Std.Usize)
@@ -853,9 +841,7 @@ def layout.tile
   := do
   let weight ← layout.total tracks
   let need ← layout.minimum weight unit gap
-  let room ← if cells > need
-               then cells - need
-               else ok 0#usize
+  let room ← lift (core.num.Usize.saturating_sub cells need)
   layout.tile_loop cells unit gap tracks out weight room 0#usize 0#usize
 
 end strop_kernel
