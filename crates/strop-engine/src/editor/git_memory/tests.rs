@@ -55,13 +55,14 @@ fn commit_browser_dives_to_delta() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
+    // the commit's words, then each file's letter and path (0100 §4.4)
     let text = e.buf().text().to_string();
-    assert!(text.contains("commit"), "{text}");
-    assert!(text.contains("f.rs"), "{text}");
-    // the commit's own words and each file's status ride along (0100 §7)
-    let Some(Surface::ChangedFiles { commit, files, .. }) = e.surface() else {
+    assert!(text.starts_with("commit "), "{text}");
+    assert!(text.ends_with("\nadd b\n\nFiles\nM f.rs\n"), "{text}");
+    let Some(Surface::ChangedFiles { files, .. }) = e.surface() else {
         panic!("changed files");
     };
+    let commit = files.summary();
     assert_eq!(
         (commit.subject.as_str(), commit.author.as_str()),
         ("add b", "t")
@@ -69,10 +70,12 @@ fn commit_browser_dives_to_delta() {
     assert!(commit.body.is_empty() && commit.time > 0);
     assert_eq!(files[0].status, strop_git::memory::FileStatus::Modified);
     assert_eq!((files[0].added, files[0].binary), (1, false));
+    // the view opens on its first file; yy yanks its letter and path
+    assert_eq!(e.buf().line_of(e.head()), 4);
+    e.feed_text("yy");
+    assert_eq!(e.register(None).text, "M f.rs\n");
 
     // Enter on the file row → the diff surface
-    e.feed_text("j");
-    e.feed_text("j");
     e.feed(Key::Enter);
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::Diff { .. }))
@@ -521,8 +524,7 @@ fn commit_file_nav_walks_files() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("j");
-    e.feed(Key::Enter); // a.rs → delta
+    e.feed(Key::Enter); // the view opens on a.rs → its delta
     settle(&mut e, |e| {
         matches!(
             e.surface(),

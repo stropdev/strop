@@ -1,7 +1,10 @@
-─ commit c1b9c8ba0e ──────────────────────────────────────────────────────────────── 3 files  +4 -2                     
-  crates/strop-engine/src/editor/collections/tests/a_very_long_module_name_for_projection.rs  +1 -0                     
-  logo.bin                                                                                    +0 -0                     
-  src/lib.rs                                                                                  +3 -2                     
+─ commit c1b9c8ba0e ──────────────────────────────────────────────────────── Ada Example · 1 week ago                   
+  rename the doc, change the logo, add a token, and say in one long subject line why every surface is a block now       
+                                                                                                                        
+─ Files ────────────────────────────────────────────────────────────────────────────── 3 files  +4 -2                   
+▌ A crates/strop-engine/src/editor/collections/tests/a_very_long_module_name_for_projection.rs  +1 -0                   
+  M logo.bin                                                                                   binary                   
+  M src/lib.rs                                                                                  +3 -2                   
 ~                                                                                                                       
 ~                                                                                                                       
 ~                                                                                                                       
@@ -34,18 +37,15 @@
 ~                                                                                                                       
 ~                                                                                                                       
 ~                                                                                                                       
-~                                                                                                                       
-~                                                                                                                       
-~                                                                                                                       
-  NORMAL    @c1b9c8ba  git files [RO]                                                                         25%  1:1  
+  NORMAL    @c1b9c8ba  git files [RO]                                                                         71%  5:1  
 
-  0: 1:#858c9a/#1b1e24 1:reset/#1b1e24 7:#858c9a/#1b1e24 10:#e6e1d6/#1b1e24+b 66:#858c9a/#1b1e24 7:#a8adb8/#1b1e24 2:#e6e1d6/#1b1e24 2:#8fc48a/#1b1e24 1:#e6e1d6/#1b1e24 2:#e8707c/#1b1e24 20:#1b1e24/#1b1e24 1:reset/reset
-  1: 2:reset/#15171c 49:#a8adb8/#15171c 43:#e6e1d6/#15171c 2:#8fc48a/#15171c 1:#e6e1d6/#15171c 2:#e8707c/#15171c 20:reset/#15171c 1:reset/reset
-  2: 2:reset/#15171c 92:#e6e1d6/#15171c 2:#8fc48a/#15171c 1:#e6e1d6/#15171c 2:#e8707c/#15171c 20:reset/#15171c 1:reset/reset
-  3: 2:reset/#15171c 4:#a8adb8/#15171c 88:#e6e1d6/#15171c 2:#8fc48a/#15171c 1:#e6e1d6/#15171c 2:#e8707c/#15171c 20:reset/#15171c 1:reset/reset
-  4: 1:#4a5160/#15171c 118:reset/#15171c 1:reset/reset
-  5: 1:#4a5160/#15171c 118:reset/#15171c 1:reset/reset
-  6: 1:#4a5160/#15171c 118:reset/#15171c 1:reset/reset
+  0: 1:#4a5160/#15171c 1:reset/#15171c 7:#858c9a/#15171c 10:#a8adb8/#15171c+b 58:#4a5160/#15171c 24:#a8adb8/#15171c 18:reset/#15171c 1:reset/reset
+  1: 2:reset/#15171c 111:#e6e1d6/#15171c+b 6:reset/#15171c 1:reset/reset
+  2: 119:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c 1:reset/#15171c 5:#e6e1d6/#15171c+b 80:#858c9a/#15171c 7:#a8adb8/#15171c 2:#e6e1d6/#15171c 2:#8fc48a/#15171c 1:#e6e1d6/#15171c 2:#e8707c/#15171c 18:reset/#15171c 1:reset/reset
+  4: 1:#e8a848/#1b1e24 1:reset/#1b1e24 2:#8fc48a/#1b1e24 49:#a8adb8/#1b1e24 43:#e6e1d6/#1b1e24 2:#8fc48a/#1b1e24 1:#e6e1d6/#1b1e24 2:#e8707c/#1b1e24 18:#1b1e24/#1b1e24 1:reset/reset
+  5: 2:reset/#15171c 2:#d9a85a/#15171c 91:#e6e1d6/#15171c 6:#858c9a/#15171c 18:reset/#15171c 1:reset/reset
+  6: 2:reset/#15171c 2:#d9a85a/#15171c 4:#a8adb8/#15171c 88:#e6e1d6/#15171c 2:#8fc48a/#15171c 1:#e6e1d6/#15171c 2:#e8707c/#15171c 18:reset/#15171c 1:reset/reset
   7: 1:#4a5160/#15171c 118:reset/#15171c 1:reset/reset
   8: 1:#4a5160/#15171c 118:reset/#15171c 1:reset/reset
   9: 1:#4a5160/#15171c 118:reset/#15171c 1:reset/reset

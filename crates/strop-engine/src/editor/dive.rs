@@ -60,12 +60,12 @@ impl Editor {
                 };
                 DiveTarget::CommitFiles { sha }
             }
-            Some(Surface::ChangedFiles { sha, files, .. }) => {
+            Some(Surface::ChangedFiles { files, .. }) => {
                 let Some(file) = files.file_at_row(line) else {
                     return;
                 };
                 DiveTarget::FileDelta {
-                    sha: sha.clone(),
+                    sha: files.sha().to_owned(),
                     path: file.path.clone(),
                 }
             }
@@ -199,10 +199,10 @@ impl Editor {
                             }
                         };
                         match strop_git::memory::show_commit(&exec, &cancel, sha) {
-                            Ok(detail) => Outcome::Success(DiveData::Files(
-                                PreparedFiles::new(sha.clone(), detail.files),
-                                Box::new(detail.summary),
-                            )),
+                            Ok(detail) => Outcome::Success(DiveData::Files(PreparedFiles::new(
+                                detail.summary,
+                                detail.files,
+                            ))),
                             Err(message) => {
                                 Outcome::failed(strop_core::worker::FailureKind::Exit, message)
                             }

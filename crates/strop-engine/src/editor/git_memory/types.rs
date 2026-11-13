@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{Completion, WorkerId};
 use strop_git::log::LogRow;
-use strop_git::memory::{BlameCard, BlameLine, CommitSummary};
+use strop_git::memory::{BlameCard, BlameLine};
 use strop_git::{
     Branch, FileDelta, GitContext, Hunk, LineStat, RepoTarget, StatusEntry, WorkingTree,
 };
@@ -262,7 +262,7 @@ pub struct DiveKey {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DiveData {
     /// A commit's file list, with what the commit says about itself.
-    Files(super::PreparedFiles, Box<CommitSummary>),
+    Files(super::PreparedFiles),
     Delta(super::PreparedDiff),
 }
 

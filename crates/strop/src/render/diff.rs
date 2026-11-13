@@ -16,6 +16,7 @@ use crate::render::file_name::Label;
 
 use super::style::Tokens;
 
+mod files;
 mod list;
 mod log;
 mod margins;
@@ -36,19 +37,31 @@ pub(crate) fn painted<'a>(
     gutter_cells: usize,
     text_cells: usize,
 ) -> Option<Painted<'a>> {
-    let Surface::Diff { hunks, .. } = surface else {
+    let Surface::Diff { hunks, commit, .. } = surface else {
         return None;
     };
     let mut painted = match surface.diff_row(row)? {
         DiffRow::Heading => {
             let label = Label::parse(hunks.label());
-            // a delta with no line changes (binary, a mode or a rename)
-            // says so instead of `+0 -0`
-            let fact = if hunks.is_empty() {
+            // a binary file says so (the commit's list knows it); any
+            // other delta without line changes — a mode, a pure rename —
+            // says that instead of `+0 -0`
+            let binary = commit.as_ref().is_some_and(|commit| {
+                commit
+                    .files
+                    .file_at_path(&commit.current)
+                    .is_some_and(|file| file.binary)
+            });
+            let quiet = |words: &'static str| {
                 vec![ratatui::text::Span::styled(
-                    "no line changes",
+                    words,
                     Style::default().fg(t.muted),
                 )]
+            };
+            let fact = if binary {
+                quiet("binary")
+            } else if hunks.is_empty() {
+                quiet("no line changes")
             } else {
                 heading::stats(t, hunks.added(), hunks.deleted())
             };

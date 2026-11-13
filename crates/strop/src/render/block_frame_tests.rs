@@ -14,7 +14,7 @@ use super::golden_block_tests::{collection_workspace, history, open_commit_files
 use super::golden_git_tests::{change, change_binary, keys};
 use super::golden_tests::THEMES;
 use super::style::Tokens;
-use crate::editor::{CollectionRow, DiffRow, Editor, StatusRow, Surface};
+use crate::editor::{CollectionRow, DiffRow, Editor, FilesRow, StatusRow, Surface};
 use strop_engine::editor::prepare::Gutter;
 
 /// What a buffer line is, read from its surface's typed rows.
@@ -55,7 +55,11 @@ fn kinds(editor: &Editor) -> Vec<Kind> {
                     Some(StatusRow::Line { .. }) => Kind::Line,
                     _ => Kind::Other,
                 },
-                Some(Surface::ChangedFiles { .. }) if line == 0 => Kind::Heading,
+                Some(Surface::ChangedFiles { files, .. }) => match files.row(line) {
+                    Some(FilesRow::Commit | FilesRow::Files) => Kind::Heading,
+                    Some(FilesRow::Blank) => Kind::Blank,
+                    _ => Kind::Other,
+                },
                 _ => Kind::Other,
             }
         })
@@ -120,7 +124,12 @@ fn check(editor: &Editor, grid: &Buffer, accent_only_marks: bool, what: &str) {
                     .rev()
                     .find(|x| grid[(*x as u16, y)].symbol() != " ")
                     .unwrap_or(first);
-                heading_ends.push(end);
+                // a name that leaves no room for a leader or a fact ends
+                // where it ends; every other heading reaches the edge
+                let name_only = text.starts_with(shown.trim_end().trim_end_matches('…'));
+                if !name_only {
+                    heading_ends.push(end);
+                }
                 // the name is the buffer's words, or a cut of them
                 let name = shown.split(' ').next().unwrap_or_default();
                 assert!(

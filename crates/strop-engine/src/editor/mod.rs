@@ -86,7 +86,7 @@ pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
 pub use git_memory::log_text::LogColumns;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
-pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
+pub use git_memory::{CommitFiles, FilesRow, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
 pub use git_work::{StatusRow, StatusView};
 pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
 pub use panes::{LayoutDir, Pane};

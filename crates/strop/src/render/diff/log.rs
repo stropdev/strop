@@ -51,6 +51,26 @@ pub(crate) fn short_age(seconds: i64) -> String {
     }
 }
 
+/// The same age in words, for a heading's fact: `3 days ago`.
+pub(crate) fn age_words(seconds: i64) -> String {
+    let short = short_age(seconds);
+    let split = short
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(short.len());
+    let (count, unit) = short.split_at(split);
+    let unit = match unit {
+        "s" => "second",
+        "m" => "minute",
+        "h" => "hour",
+        "d" => "day",
+        "w" => "week",
+        "mo" => "month",
+        _ => "year",
+    };
+    let plural = if count == "1" { "" } else { "s" };
+    format!("{count} {unit}{plural} ago")
+}
+
 /// One log row's text spans: the buffer row's own bytes, styled — lane-
 /// coloured graph, the sha grey, refs bold with the branch `HEAD` points
 /// to in the accent, the subject in text — then, for a commit, the
@@ -282,6 +302,9 @@ mod tests {
             assert_eq!(short_age(seconds), age, "{seconds}");
             assert!(age.len() <= AGE_CELLS);
         }
+        assert_eq!(age_words(3 * day), "3 days ago");
+        assert_eq!(age_words(3600), "1 hour ago");
+        assert_eq!(age_words(200 * day), "6 months ago");
     }
 
     #[test]

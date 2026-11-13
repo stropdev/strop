@@ -145,6 +145,7 @@ pub(super) fn open_commit_files(editor: &mut Editor) {
     pump(editor);
     editor.feed(strop_core::frontend_input::Key::Enter);
     settle_dives(editor);
+    read_at_log_now(editor);
 }
 
 /// From the commit's files, Enter on the file `keys` move to.
@@ -204,6 +205,11 @@ const LOG_NOW: i64 = 1_794_916_800;
 /// The fixed rows, read at [`LOG_NOW`].
 fn inject_log(editor: &mut Editor) {
     log_rows_fixture(editor, log_rows());
+    read_at_log_now(editor);
+}
+
+/// Ages are counted against [`LOG_NOW`], not the wall clock.
+fn read_at_log_now(editor: &mut Editor) {
     let tick = strop_trace::replay::Tick {
         unix_seconds: LOG_NOW,
         ..editor.tape().now()

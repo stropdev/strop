@@ -543,12 +543,8 @@ impl Editor {
                     }
                     (
                         DiveTarget::FileDelta { sha, .. },
-                        Some(Surface::ChangedFiles {
-                            sha: surface_sha,
-                            files,
-                            ..
-                        }),
-                    ) if surface_sha == sha => DiveLanding::Files {
+                        Some(Surface::ChangedFiles { files, .. }),
+                    ) if files.sha() == sha => DiveLanding::Files {
                         sha: sha.clone(),
                         files: files.clone(),
                     },
@@ -571,23 +567,23 @@ impl Editor {
                 self.message.clear();
                 self.open_delta("git hunk", diff, Some(origin), None);
             }
-            (DiveLanding::LogSurface, Outcome::Success(DiveData::Files(files, commit))) => {
-                let sha = match &key.target {
-                    DiveTarget::CommitFiles { sha } => sha.clone(),
-                    _ => return,
-                };
+            (DiveLanding::LogSurface, Outcome::Success(DiveData::Files(files))) => {
                 let text = files.text();
+                let first = files.first_file_row();
                 self.message.clear();
                 self.push_surface(
                     Some("git files"),
                     text,
                     Surface::ChangedFiles {
-                        sha,
                         files,
-                        commit,
                         return_to: None,
                     },
                 );
+                // the view opens on its first file (0100 §4.4)
+                if let Some(row) = first {
+                    let at = self.buf().line_start(row);
+                    self.set_head(at);
+                }
             }
             (DiveLanding::Files { sha, files }, Outcome::Success(DiveData::Delta(diff))) => {
                 let path = match &key.target {

@@ -1,4 +1,4 @@
- crates/                │──────── logo.bin      
+ crates/                │──────── logo.bin ──── 
    strop-engine/        │~                      
      src/               │~                      
        editor/          │~                      
@@ -15,7 +15,7 @@
                         │~                      
   NORMAL    @c1b9c8…  logo.bin [RO]  100%  1:1  
 
-  0: 8:#656d7b/#efeadf 16:reset/#efeadf 1:#aeb3ba/#efeadf 8:#656d7b/#efeadf 1:reset/#efeadf 8:#262a30/#efeadf+b 5:#262a30/#efeadf 1:reset/reset
+  0: 8:#656d7b/#efeadf 16:reset/#efeadf 1:#aeb3ba/#efeadf 8:#656d7b/#efeadf 1:reset/#efeadf 8:#262a30/#efeadf+b 5:#656d7b/#efeadf 1:reset/reset
   1: 16:#656d7b/#f6f2e9 8:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset
   2: 9:#656d7b/#f6f2e9 15:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset
   3: 14:#656d7b/#f6f2e9 10:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset

@@ -365,7 +365,10 @@ fn sidebar_emission_matches_the_inset_the_caret_uses() {
         },
         sha: "0123456789abcdef".into(),
         files: crate::editor::PreparedFiles::new(
-            "0123456789abcdef".into(),
+            strop_git::memory::CommitSummary {
+                sha: "0123456789abcdef".into(),
+                ..Default::default()
+            },
             vec![strop_git::memory::ChangedFile {
                 path: "src/verylongfilename.rs".into(),
                 added: 1,

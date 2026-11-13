@@ -95,8 +95,9 @@ const NAME_FLOOR: usize = 8;
 const DIRECTORY_FLOOR: usize = 2;
 
 /// Share `cells` among the parts (pure; §9's allocator contract). A part
-/// is served only once what it hangs from is: the leader needs the fact
-/// (or no fact at all), the directory needs the whole file name.
+/// is served only once what it hangs from is: the directory needs the
+/// whole file name. When the fact leaves, the leader still runs the
+/// rule to the edge, so the headings of a block end together.
 pub(crate) fn layout(sizes: &Sizes, cells: usize) -> Grants {
     let mut granted = [0usize; PARTS];
     let mut spare = cells;
@@ -123,9 +124,6 @@ pub(crate) fn layout(sizes: &Sizes, cells: usize) -> Grants {
             continue;
         }
         let served = match part {
-            Part::Leader => {
-                sizes[Part::Fact as usize].want == 0 || granted[Part::Fact as usize] != 0
-            }
             Part::Directory => {
                 let name = sizes[Part::Name as usize];
                 name.want != 0 && granted[Part::Name as usize] == name.want

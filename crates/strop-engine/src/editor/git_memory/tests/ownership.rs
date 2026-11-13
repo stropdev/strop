@@ -512,10 +512,12 @@ fn dive_results_need_their_surface() {
         ticket: foreign,
         outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(
             crate::editor::git_memory::PreparedFiles::new(
-                "0123456789abcdef0123456789abcdef01234567".into(),
+                strop_git::memory::CommitSummary {
+                    sha: "0123456789abcdef0123456789abcdef01234567".into(),
+                    ..Default::default()
+                },
                 vec![],
             ),
-            Box::default(),
         )),
     }));
     assert_eq!(e.current(), doc, "no surface was pushed");
@@ -530,10 +532,12 @@ fn dive_results_need_their_surface() {
         ticket: owner,
         outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(
             crate::editor::git_memory::PreparedFiles::new(
-                "0123456789abcdef0123456789abcdef01234567".into(),
+                strop_git::memory::CommitSummary {
+                    sha: "0123456789abcdef0123456789abcdef01234567".into(),
+                    ..Default::default()
+                },
                 vec![file],
             ),
-            Box::default(),
         )),
     }));
     assert!(

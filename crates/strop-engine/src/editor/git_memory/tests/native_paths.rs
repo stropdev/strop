@@ -122,18 +122,19 @@ fn control_characters_in_filenames_keep_one_row_and_a_native_dive_target() {
     pump(&mut editor);
     editor.feed(Key::Enter);
     settle(&mut editor, |editor| editor.dive_requests.is_empty());
+    // the commit's heading, subject, a blank row, `Files`, then the file
     assert_eq!(
         editor.buf().last_content_line(),
-        1,
+        4,
         "one buffer row per file"
     );
-    let start = editor.buf().line_start(1);
-    let end = editor.buf().line_end(1);
+    let start = editor.buf().line_start(4);
+    let end = editor.buf().line_end(4);
     assert_eq!(
         editor.buf().text().byte_slice(start..end),
-        "odd\u{fffd}name\u{fffd}\u{fffd}.txt"
+        "M odd\u{fffd}name\u{fffd}\u{fffd}.txt"
     );
-    editor.feed_text("j");
+    // the view opens on that file
     editor.feed(Key::Enter);
     settle(&mut editor, |editor| editor.dive_requests.is_empty());
     assert_eq!(current_file(&editor), Some(path), "{}", editor.message);

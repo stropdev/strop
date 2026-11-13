@@ -13,7 +13,7 @@ mod jobs;
 pub mod log_text;
 mod presentation;
 mod sidebar;
-pub use file_list::PreparedFiles;
+pub use file_list::{file_row_text, FilesRow, PreparedFiles};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use history::publish_rows as publish_log_rows;
 pub(crate) use hunk_set::HunkSet;

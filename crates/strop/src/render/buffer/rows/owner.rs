@@ -123,10 +123,15 @@ impl<'a> Owner<'a> {
                 diff::status_painted(t, status, line, row.cursor_line, row.cursor, cells.text)
                     .unwrap_or_else(|| list_blank(t, row.cursor))
             }
-            Owner::Block(Block::List(surface)) => {
-                diff::list_painted(t, surface, line, row.cursor, cells.list, cells.text)
-                    .unwrap_or_else(|| list_blank(t, row.cursor))
-            }
+            Owner::Block(Block::List(surface)) => diff::list_painted(
+                t,
+                surface,
+                line,
+                (row.cursor, row.cursor_line),
+                cells.list,
+                cells.text,
+            )
+            .unwrap_or_else(|| list_blank(t, row.cursor)),
             Owner::Directory(directory) => {
                 let mut painted =
                     directory::row(t, directory, line, row.text, row.cursor).unwrap_or_default();
