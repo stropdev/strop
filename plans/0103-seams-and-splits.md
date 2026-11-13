@@ -1,6 +1,8 @@
 # 0103 — Seams and splits: one grammar of lines
 
-- Status: **proposed** (2026-11-13). Design verdict and hand-off; no code yet.
+- Status: **in force** (0.66, 2026-11-13). Taste question 1 was decided for
+  the fallback: every seam is `fg.muted`, wherever the cursor is; focus is the
+  name's ink. Every other question took the plan's default.
 - Source: the owner — "for the multibuffer edit, is it possible to make the
   different buffers/files more visibly split? I know we have `-----` to split
   files and we aim for consistent UI, but maybe make it like a thick line

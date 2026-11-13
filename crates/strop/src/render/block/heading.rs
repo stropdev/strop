@@ -4,6 +4,10 @@
 //! out by one pass the way the modeline is (0098 §3.3): in table order
 //! each part takes what it wants from the cells still free, shrinks to
 //! its floor, and leaves before the part above it loses a cell.
+//!
+//! A heading is set into a rule (0103 §4.1): light for a block, heavy for
+//! a seam — the place in one buffer where the rows start belonging to
+//! another file. Only the collection has seams.
 
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
@@ -143,6 +147,26 @@ pub(crate) fn layout(sizes: &Sizes, cells: usize) -> Grants {
     }
 }
 
+/// The line a heading is set into (0103 §4.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Rule {
+    /// A blank gutter and a light leader (Search's group header).
+    None,
+    /// A block of one buffer: status sections, diff and commit files.
+    Light,
+    /// Another file's rows start here: heavy, always in `fg.muted`.
+    Seam,
+}
+
+impl Rule {
+    fn glyph(self) -> &'static str {
+        match self {
+            Rule::None | Rule::Light => "─",
+            Rule::Seam => "━",
+        }
+    }
+}
+
 /// What the heading names: a file (drawn in the file-name idiom) or any
 /// other words, as styled spans (cut at the end).
 pub(crate) enum Name<'a> {
@@ -161,11 +185,11 @@ pub(crate) enum Focus {
     Plain,
 }
 
-/// A heading to lay out: `gutter` cells (ruled or blank, the last always
-/// a space), the name, its marks (each led by its own space), the fact.
+/// A heading to lay out: `gutter` cells (ruled unless `Rule::None`, the
+/// last always a space), the name, its marks (each led by its own space), the fact.
 pub(crate) struct Heading<'a> {
     pub gutter: usize,
-    pub ruled: bool,
+    pub rule: Rule,
     pub name: Name<'a>,
     pub marks: Vec<Span<'static>>,
     pub fact: Vec<Span<'static>>,
@@ -223,7 +247,7 @@ pub(crate) fn clip_spans(spans: Vec<Span<'static>>, cells: usize) -> Vec<Span<'s
 
 impl Heading<'_> {
     fn rule_ink(&self, t: &Tokens) -> Color {
-        if self.focus == Focus::Here {
+        if self.rule == Rule::Seam || self.focus == Focus::Here {
             t.muted
         } else {
             t.faint
@@ -287,9 +311,9 @@ impl Heading<'_> {
         let gutter_cells = grants.get(Part::Gutter);
         let gutter = if gutter_cells == 0 {
             Vec::new()
-        } else if self.ruled {
+        } else if self.rule != Rule::None {
             vec![
-                Span::styled("─".repeat(gutter_cells - 1), rule),
+                Span::styled(self.rule.glyph().repeat(gutter_cells - 1), rule),
                 Span::raw(" "),
             ]
         } else {
@@ -333,7 +357,7 @@ impl Heading<'_> {
             text.push(Span::styled(
                 format!(
                     " {}{}",
-                    "─".repeat(gap - 1 - trailing),
+                    self.rule.glyph().repeat(gap - 1 - trailing),
                     " ".repeat(trailing)
                 ),
                 rule,

@@ -47,6 +47,10 @@ pub fn text_budget(rect: CellRect) -> CellRect {
 /// current layout. Pure over pane count, layout direction and geometry;
 /// preparation and paint share this one computation so both agree on the
 /// exact same cells.
+///
+/// Side by side, a one-column divider separates the panes. Stacked, there
+/// is no gap: a pane's title row is its boundary with the pane above, and
+/// a pane ends at the next title or the modeline (0103 §5.4).
 pub fn pane_cells(count: usize, is_row: bool, area: CellRect) -> Vec<CellRect> {
     if count == 0 {
         return Vec::new();
@@ -54,7 +58,8 @@ pub fn pane_cells(count: usize, is_row: bool, area: CellRect) -> Vec<CellRect> {
     let total_w = usize::from(area.width);
     let total_h = usize::from(area.height.saturating_sub(1)); // statusline
     let axis = if is_row { total_w } else { total_h };
-    let usable = axis.saturating_sub(count - 1);
+    let gap = usize::from(is_row);
+    let usable = axis.saturating_sub(gap * (count - 1));
     let base = usable / count;
     let mut offset = 0usize;
     let mut rects = Vec::with_capacity(count);
@@ -87,7 +92,7 @@ pub fn pane_cells(count: usize, is_row: bool, area: CellRect) -> Vec<CellRect> {
             rect.height = rect.height.saturating_sub(1);
         }
         rects.push(rect);
-        offset = offset.saturating_add(size).saturating_add(1);
+        offset = offset.saturating_add(size).saturating_add(gap);
     }
     rects
 }
@@ -529,4 +534,62 @@ pub fn preview_window(
         ..first
             .saturating_add(visible)
             .min(preview_source_lines(rope))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 0103 §5.4: stacked panes share no gap row — the lower title is the
+    /// boundary — while side-by-side panes keep their one divider column.
+    #[test]
+    fn stacked_panes_give_the_closing_row_back() {
+        let area = CellRect::new(0, 0, 80, 24);
+        let stacked = pane_cells(2, false, area);
+        assert_eq!(
+            (
+                stacked[0].y,
+                stacked[0].height,
+                stacked[1].y,
+                stacked[1].height
+            ),
+            (1, 10, 12, 11)
+        );
+        let side = pane_cells(2, true, area);
+        assert_eq!((side[0].x, side[0].width), (0, 39));
+        assert_eq!((side[1].x, side[1].width), (40, 40));
+    }
+
+    /// Every pane plus its title fits above the modeline without overlap,
+    /// and a stacked layout uses every row.
+    #[test]
+    fn panes_tile_the_area_above_the_modeline() {
+        for count in 1..=4usize {
+            for width in 1..=120u16 {
+                for height in 1..=40u16 {
+                    let area = CellRect::new(0, 0, width, height);
+                    for is_row in [true, false] {
+                        let rects = pane_cells(count, is_row, area);
+                        let title = u16::from(count > 1);
+                        let mut end = 0u16;
+                        for rect in &rects {
+                            if rect.height == 0 || rect.width == 0 {
+                                continue;
+                            }
+                            assert!(rect.y + rect.height < height, "{count} {width}x{height}");
+                            assert!(rect.x + rect.width <= width);
+                            if !is_row {
+                                assert!(rect.y - title >= end, "overlap {count} {width}x{height}");
+                                end = rect.y + rect.height;
+                            }
+                        }
+                        let tall = usize::from(height - 1) >= count * 2;
+                        if !is_row && tall {
+                            assert_eq!(end, height - 1, "{count} {width}x{height}");
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

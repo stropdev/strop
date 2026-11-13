@@ -45,7 +45,7 @@ pub(super) fn file_header(
     let label = file_name::Label::from_location(location, root);
     let heading = heading::Heading {
         gutter: 1,
-        ruled: false,
+        rule: heading::Rule::None,
         name: heading::Name::Path(&label),
         marks: Vec::new(),
         fact: hits.map_or_else(Vec::new, |hits| heading::fact(t, hits.to_string())),

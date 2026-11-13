@@ -1,4 +1,4 @@
-╭ 1 src/render/statusline.rs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+─ 1 src/render/statusline.rs ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
    1 //! The modeline: one quiet row at the bottom edge.                                                                                   ▮
    2 //!                                                                                                                                   ▮
    3 //! Every width is a display cell, never a character.                                                                                 ▮
@@ -17,8 +17,7 @@
   16 │   │   let chip = format!(" {} ", "NORMAL");                                                                                          
   17 │   │   // the filename must survive truncation                                                                                        
   18 │   │   Self { chip, dirty: path.exists(), line }                                                                                      
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+─ 2 term:///work//1:sh ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 $ cargo test                                                                                                                                
    Compiling demo v0.1.0                                                                                                                    
 running 3 tests                                                                                                                             
@@ -26,6 +25,7 @@ test render::chip ... ok
 test render::echo ... ok                                                                                                                    
 test result: ok. 3 passed                                                                                                                   
 $                                                                                                                                           
+                                                                                                                                            
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             
@@ -58,15 +58,15 @@ $
  16: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 1:#262a30/#f6f2e9 6:#235f8c/#f6f2e9 1:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9 6:#4e6f22/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 8:#4e6f22/#f6f2e9 2:#656d7b/#f6f2e9 89:reset/#f6f2e9 1:reset/reset
  17: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 39:#696d77/#f6f2e9+i 87:reset/#f6f2e9 1:reset/reset
  18: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 3:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
- 19: 140:#aeb3ba/#f6f2e9
- 20: 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 18:#262a30/#f6f2e9+b 118:#656d7b/#f6f2e9
- 21: 12:#262a30/#f6f2e9+b 13:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 19: 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 18:#262a30/#f6f2e9+b 118:#656d7b/#f6f2e9
+ 20: 12:#262a30/#f6f2e9+b 13:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 21: 25:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
  22: 25:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
- 23: 25:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 23: 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
  24: 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
- 25: 24:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
- 26: 25:#4e6f22/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
- 27: 25:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 25: 25:#4e6f22/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 26: 25:#262a30/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
+ 27: 139:reset/#f6f2e9 1:reset/reset
  28: 139:reset/#f6f2e9 1:reset/reset
  29: 139:reset/#f6f2e9 1:reset/reset
  30: 139:reset/#f6f2e9 1:reset/reset

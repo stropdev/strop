@@ -1,4 +1,4 @@
-╭ 1 src/render/statusline.rs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+─ 1 src/render/statusline.rs ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
    1 //! The modeline: one quiet row at the bottom edge.                                                                                   ▮
    2 //!                                                                                                                                   ▮
    3 //! Every width is a display cell, never a character.                                                                                 ▮
@@ -17,8 +17,7 @@
   16 │   │   let chip = format!(" {} ", "NORMAL");                                                                                          
   17 │   │   // the filename must survive truncation                                                                                        
   18 │   │   Self { chip, dirty: path.exists(), line }                                                                                      
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+─ 2 term:///work//1:sh ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 $ cargo test                                                                                                                                
    Compiling demo v0.1.0                                                                                                                    
 running 3 tests                                                                                                                             
@@ -26,6 +25,7 @@ test render::chip ... ok
 test render::echo ... ok                                                                                                                    
 test result: ok. 3 passed                                                                                                                   
 $                                                                                                                                           
+                                                                                                                                            
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             
@@ -58,15 +58,15 @@ $
  16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 3:#c99ce0/#15171c 6:#e6e1d6/#15171c 1:#b4b8c2/#15171c 1:#e6e1d6/#15171c 6:#86b7d8/#15171c 1:#b4b8c2/#15171c 1:#9da3af/#15171c 6:#aec37f/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 8:#aec37f/#15171c 2:#9da3af/#15171c 89:reset/#15171c 1:reset/reset
  17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 39:#838a97/#15171c+i 87:reset/#15171c 1:reset/reset
  18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 1:#2b2f38/#15171c 3:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 6:#e6e1d6/#15171c 1:#9da3af/#15171c 5:#e6e1d6/#15171c 1:#9da3af/#15171c 6:#e6e1d6/#15171c 3:#9da3af/#15171c 6:#e6e1d6/#15171c 1:#9da3af/#15171c 85:reset/#15171c 1:reset/reset
- 19: 140:#4a5160/#15171c
- 20: 2:#858c9a/#15171c 2:#e6e1d6/#15171c 18:#e6e1d6/#15171c+b 118:#858c9a/#15171c
- 21: 12:#e6e1d6/#15171c+b 13:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
+ 19: 2:#858c9a/#15171c 2:#e6e1d6/#15171c 18:#e6e1d6/#15171c+b 118:#858c9a/#15171c
+ 20: 12:#e6e1d6/#15171c+b 13:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
+ 21: 25:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
  22: 25:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
- 23: 25:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
+ 23: 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
  24: 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
- 25: 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
- 26: 25:#8fc48a/#15171c 114:reset/#15171c 1:reset/reset
- 27: 25:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
+ 25: 25:#8fc48a/#15171c 114:reset/#15171c 1:reset/reset
+ 26: 25:#e6e1d6/#15171c 114:reset/#15171c 1:reset/reset
+ 27: 139:reset/#15171c 1:reset/reset
  28: 139:reset/#15171c 1:reset/reset
  29: 139:reset/#15171c 1:reset/reset
  30: 139:reset/#15171c 1:reset/reset

@@ -18,7 +18,7 @@ fn text(drawn: &Drawn) -> String {
 fn file<'a>(label: &'a Label, marks: Vec<Span<'static>>, count: &str) -> Heading<'a> {
     Heading {
         gutter: 5,
-        ruled: true,
+        rule: Rule::Light,
         name: Name::Path(label),
         marks,
         fact: heading_fact(count),
@@ -52,6 +52,31 @@ fn narrow_widths_give_way_in_table_order() {
         let drawn = heading.draw(&t, cells);
         assert_eq!(text(&drawn), want, "at {cells}");
         assert_eq!(clip::width(&text(&drawn)), cells, "at {cells}");
+        // a seam lays out cell for cell like a block, in the heavy glyph
+        let seam = Heading {
+            rule: Rule::Seam,
+            ..file(label, marks(&t, modified, false), fact)
+        };
+        assert_eq!(text(&seam.draw(&t, cells)), want.replace('─', "━"));
+    }
+}
+
+/// A seam stays `fg.muted` in every block (0103 §9 q1): the file boundary
+/// is never the quietest line on screen; focus is the name's ink.
+#[test]
+fn a_seam_is_muted_wherever_the_cursor_is() {
+    let t = t();
+    let label = Label::local("src/b.rs");
+    for focus in [Focus::Here, Focus::Elsewhere] {
+        let heading = Heading {
+            rule: Rule::Seam,
+            focus,
+            ..file(&label, Vec::new(), "2 hits")
+        };
+        let drawn = heading.draw(&t, 40);
+        assert_eq!(drawn.gutter[0].style.fg, Some(t.muted), "{focus:?}");
+        let leader = drawn.text.iter().find(|span| span.content.contains('━'));
+        assert_eq!(leader.map(|span| span.style.fg), Some(Some(t.muted)));
     }
 }
 

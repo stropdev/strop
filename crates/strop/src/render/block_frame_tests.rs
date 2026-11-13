@@ -20,7 +20,10 @@ use strop_engine::editor::prepare::Gutter;
 /// What a buffer line is, read from its surface's typed rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
-    Heading,
+    /// A ruled heading; `seam` when another file's rows start (0103).
+    Heading {
+        seam: bool,
+    },
     Break,
     Blank,
     /// A line of a file or a diff: it scrolls, it is never cut.
@@ -35,7 +38,7 @@ fn kinds(editor: &Editor) -> Vec<Kind> {
         .map(|line| {
             if let Some(kind) = editor.collection_row_kind(doc, line) {
                 return match kind {
-                    CollectionRow::Heading(_) => Kind::Heading,
+                    CollectionRow::Heading(_) => Kind::Heading { seam: true },
                     CollectionRow::Gap => Kind::Break,
                     CollectionRow::Blank => Kind::Blank,
                     CollectionRow::Title => Kind::Other,
@@ -44,19 +47,19 @@ fn kinds(editor: &Editor) -> Vec<Kind> {
             }
             match editor.surface() {
                 Some(surface @ Surface::Diff { .. }) => match surface.diff_row(line) {
-                    Some(DiffRow::Heading) => Kind::Heading,
+                    Some(DiffRow::Heading) => Kind::Heading { seam: false },
                     Some(DiffRow::HunkHeader(_)) => Kind::Break,
                     _ => Kind::Line,
                 },
                 Some(Surface::Status { view, .. }) => match view.row(line) {
-                    Some(StatusRow::Section(_)) => Kind::Heading,
+                    Some(StatusRow::Section(_)) => Kind::Heading { seam: false },
                     Some(StatusRow::HunkHeader { .. }) => Kind::Break,
                     Some(StatusRow::Blank) => Kind::Blank,
                     Some(StatusRow::Line { .. }) => Kind::Line,
                     _ => Kind::Other,
                 },
                 Some(Surface::ChangedFiles { files, .. }) => match files.row(line) {
-                    Some(FilesRow::Commit | FilesRow::Files) => Kind::Heading,
+                    Some(FilesRow::Commit | FilesRow::Files) => Kind::Heading { seam: false },
                     Some(FilesRow::Blank) => Kind::Blank,
                     _ => Kind::Other,
                 },
@@ -113,11 +116,12 @@ fn check(editor: &Editor, grid: &Buffer, accent_only_marks: bool, what: &str) {
         let text = editor.buf().line_text(line);
         let shown = cells(grid, y, text_column, last + 1);
         match kind {
-            Kind::Heading => {
-                // rules line up: from the pane's first column
+            Kind::Heading { seam } => {
+                // rules line up: from the pane's first column, heavy only
+                // at a seam
                 assert_eq!(
                     grid[(first as u16, y)].symbol(),
-                    "─",
+                    if seam { "━" } else { "─" },
                     "{what}: rule at {row}"
                 );
                 let end = (first..=last)
@@ -198,7 +202,7 @@ fn check(editor: &Editor, grid: &Buffer, accent_only_marks: bool, what: &str) {
     // separation: one blank row before each heading but the buffer's
     // first, none after one
     for (line, kind) in kinds.iter().enumerate() {
-        if *kind != Kind::Heading {
+        if !matches!(kind, Kind::Heading { .. }) {
             continue;
         }
         if line > 0 {

@@ -89,7 +89,7 @@ pub(crate) fn painted<'a>(
             let here = section_of(view, cursor_line) == Some(section);
             let heading = heading::Heading {
                 gutter: strop_engine::editor::prepare::LIST_GUTTER,
-                ruled: true,
+                rule: heading::Rule::Light,
                 name: heading::Name::Words(vec![Span::styled(
                     section.title(),
                     Style::default().fg(t.text).add_modifier(Modifier::BOLD),

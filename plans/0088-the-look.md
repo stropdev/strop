@@ -35,6 +35,7 @@ and draws chrome through one primitive module (`render/card.rs`). Nothing in
    default. `Spaces:N` only when it differs from the configured default. A failed
    service is a 4-cell `LSP!` badge; ready services show nothing. Pane titles live
    in the pane's top border (`╭ 1 statusline.rs ● ──`), only with ≥ 2 panes.
+   *Amended by [0103](0103-seams-and-splits.md): a title rule `─ 1 statusline.rs ● ──`, no corners.*
 5. **One selected-row idiom:** full-row `bg.raised` + `▌` in accent at column 0.
    Applied/current = `●` accent after the label. Dirty = `●` warning. No `[x]`,
    `✓`, `▸`, `▶` elsewhere.

@@ -1,4 +1,4 @@
-╭ 1 src/render/statusline.rs ───────────────────────────────────────╮ ╭ 2 src/render/statusline.rs ────────────────────────────────────────╮
+─ 1 src/render/statusline.rs ────────────────────────────────────────┬─ 2 src/render/statusline.rs ─────────────────────────────────────────
    1 //! The modeline: one quiet row at the bottom edge.             │   1 //! The modeline: one quiet row at the bottom edge.              
    2 //!                                                             │   2 //!                                                              
    3 //! Every width is a display cell, never a character.           │   3 //! Every width is a display cell, never a character.            

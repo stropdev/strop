@@ -201,6 +201,47 @@ fn split() {
     });
 }
 
+/// 0103 §5.4: stacked panes, the lower one active — the inactive title
+/// on row 0 and the active one mid-screen, one row per boundary.
+#[test]
+fn split_stacked() {
+    each("split-stacked", |editor| {
+        editor.feed_text("5j");
+        editor.split(false, None);
+        editor.focus_pane(1);
+        editor.feed_text("3j");
+        settle_analysis()
+    });
+}
+
+/// 0103 §5.3: three side by side, the middle active; two junctions.
+#[test]
+fn split_three() {
+    each("split-three", |editor| {
+        editor.split(true, None);
+        editor.split(true, None);
+        editor.focus_pane(1);
+        editor.feed_text("2j");
+        settle_analysis()
+    });
+}
+
+/// 0103 §5.5: a file beside a collection, the collection active — the
+/// light frame, the heavy seams and the bands at once.
+#[test]
+fn split_collection() {
+    each("split-collection", |editor| {
+        editor.split(true, None);
+        editor.focus_pane(1);
+        editor.open_search(false);
+        editor.paste_bracketed("modeline");
+        editor.wait_picker();
+        editor.feed(strop_core::frontend_input::Key::CtrlO);
+        editor.wait_io().unwrap();
+        settle_analysis()
+    });
+}
+
 #[test]
 fn files_picker() {
     each("files", |editor| {

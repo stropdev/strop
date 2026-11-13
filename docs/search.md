@@ -227,6 +227,8 @@ files:
 - `u` and `Ctrl-R` undo and redo what you changed through the collection,
   in the files too. Editing one of its files somewhere else starts the
   collection's history over; that file's own `u` still works.
+- Each file starts at a thick line (`━━━━ src/b.rs ━━━━ 2 hits`), so you
+  always see where one file's lines end and the next file's begin.
 - A file's row, the `N lines not shown` rows, the empty rows and the title
   are not the files' text. An edit that would touch one, or join the last
   line of a file with the row under it, is refused and changes nothing.

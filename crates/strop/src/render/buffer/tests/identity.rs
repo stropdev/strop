@@ -63,8 +63,8 @@ fn cli_picker_and_edit_project_the_same_workspace_relative_title() {
         editor.split(true, None);
         let titles = row_symbols(&draw(&mut editor, 100, 6), 0, 0, 100).join("");
         assert_eq!(titles.matches("src/sample.rs").count(), 2, "{titles}");
-        assert!(titles.contains("╭ 1 src/sample.rs"), "{titles}");
-        assert!(titles.contains("╭ 2 src/sample.rs"), "{titles}");
+        assert!(titles.contains("─ 1 src/sample.rs"), "{titles}");
+        assert!(titles.contains("─ 2 src/sample.rs"), "{titles}");
         assert!(!titles.contains(root.path().to_string_lossy().as_ref()));
     }
 }
@@ -96,15 +96,15 @@ fn duplicate_outside_dirty_and_readonly_titles_keep_their_context() {
 
     let titles = row_symbols(&draw(&mut editor, 180, 6), 0, 0, 180).join("");
     assert!(titles.contains("one/shared.rs"), "{titles}");
-    assert!(titles.contains("╭ 2 one/shared.rs"), "{titles}");
-    assert!(titles.contains("╭ 3 two/shared.rs"), "{titles}");
+    assert!(titles.contains("─ 2 one/shared.rs"), "{titles}");
+    assert!(titles.contains("─ 3 two/shared.rs"), "{titles}");
     assert!(titles.contains(outside_path.to_string_lossy().as_ref()));
     assert!(titles.contains('●'), "{titles}");
     assert!(titles.contains("[RO]"), "{titles}");
 
     let titles = row_symbols(&draw(&mut editor, 48, 16), 0, 0, 48).join("");
     assert!(
-        titles.contains("╭ 1 /"),
+        titles.contains("─ 1 /"),
         "outside authority remains absolute: {titles}"
     );
     assert!(
@@ -126,7 +126,7 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
     let grid = draw(&mut editor, 100, 6);
     let titles = row_symbols(&grid, 0, 0, 100).join("");
     assert!(
-        titles.contains("╭ 1 ssh:fixture /repo/app.log"),
+        titles.contains("─ 1 ssh:fixture /repo/app.log"),
         "the authority is its own segment, never spliced into the path: {titles}"
     );
     assert!(!titles.contains("ssh://"), "{titles}");
@@ -134,7 +134,7 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
         !titles.contains("[RO]"),
         "a connected host is editable: {titles}"
     );
-    assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
+    assert!(titles.contains("─ 2 [scratch]"), "{titles}");
 
     let grid = draw(&mut editor, 48, 16);
     let titles = row_symbols(&grid, 0, 0, 48).join("");
@@ -146,8 +146,8 @@ fn remote_pane_identity_is_document_scoped_and_keeps_authority_when_narrow() {
     editor.focus_pane(0);
     let grid = draw(&mut editor, 100, 6);
     let titles = row_symbols(&grid, 0, 0, 100).join("");
-    assert!(titles.contains("╭ 1 ssh:fixture /repo/app.log"), "{titles}");
-    assert!(titles.contains("╭ 2 [scratch]"), "{titles}");
+    assert!(titles.contains("─ 1 ssh:fixture /repo/app.log"), "{titles}");
+    assert!(titles.contains("─ 2 [scratch]"), "{titles}");
 }
 
 #[test]
@@ -172,10 +172,11 @@ fn narrow_titles_preserve_focus_flags_geometry_and_single_vertical_rule() {
         if vertical {
             let grid = terminal.backend().buffer();
             let second_title = (0..48).find(|&x| grid[(x, 0)].symbol() == "2").unwrap();
-            // `╭ 2 …`: the corner, a space, the number; the divider column
-            // sits one cell left of the corner and carries the one rule
+            // `┬─ 2 …`: the divider meets the title rules in a junction,
+            // then runs down as the one vertical rule
             assert_eq!(grid[(second_title - 1, 0)].symbol(), " ");
-            assert_eq!(grid[(second_title - 2, 0)].symbol(), "╭");
+            assert_eq!(grid[(second_title - 2, 0)].symbol(), "─");
+            assert_eq!(grid[(second_title - 3, 0)].symbol(), "┬");
             assert_eq!(
                 grid[(second_title - 3, 1)].symbol(),
                 "│",
@@ -183,9 +184,17 @@ fn narrow_titles_preserve_focus_flags_geometry_and_single_vertical_rule() {
             );
             assert_eq!(grid[(47, 1)].symbol(), " ", "reserved column, no track");
         } else {
+            // stacked: the lower title is the boundary, nothing closes
             let grid = terminal.backend().buffer();
-            assert!((0..grid.area.height).any(|y| grid[(0, y)].symbol() == "╰"));
+            let rows: Vec<String> = (0..grid.area.height)
+                .map(|y| row_symbols(grid, 0, y, 48).join(""))
+                .collect();
+            assert!(
+                rows.iter().skip(1).any(|row| row.starts_with("─ 2 ")),
+                "{rows:?}"
+            );
         }
+        assert_no_corners(terminal.backend().buffer());
 
         for (width, height) in [(48, 16), (24, 10), (48, 16)] {
             terminal.backend_mut().resize(width, height);
@@ -193,10 +202,66 @@ fn narrow_titles_preserve_focus_flags_geometry_and_single_vertical_rule() {
                 .draw(|f| crate::render::paint(&mut editor, f))
                 .unwrap();
             let text = grid_text(terminal.backend().buffer());
-            assert!(text.contains("╭ 2 "), "{text}");
+            assert!(text.contains("─ 2 "), "{text}");
             assert!(text.contains('●'), "{text}");
             assert!(text.contains("[RO]"), "{text}");
+            assert_no_corners(terminal.backend().buffer());
         }
+    }
+}
+
+/// Corners are for cards (0103 §4.1): no pane frame draws one.
+fn assert_no_corners(grid: &ratatui::buffer::Buffer) {
+    let text = grid_text(grid);
+    assert!(!text.contains(['╭', '╮', '╰', '╯']), "{text}");
+}
+
+/// The title rule takes its pane's focus ink; the divider and its
+/// junction belong to neither pane and are always `fg.faint`. Moving
+/// focus changes inks, never a symbol.
+#[test]
+fn title_rules_carry_focus_and_the_divider_does_not() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("sample.rs");
+    std::fs::write(&path, "fn main() {}\n").unwrap();
+    for vertical in [true, false] {
+        let mut editor = Editor::new_in(Buffer::open(&path).unwrap(), root.path().to_path_buf());
+        editor.split(vertical, None);
+        let t = crate::render::style::Tokens::new(editor.theme());
+        let mut frames = Vec::new();
+        for _ in 0..2 {
+            let grid = draw(&mut editor, 80, 24);
+            let active = editor.prepared_view().active_pane;
+            let rects: Vec<_> = editor
+                .prepared_view()
+                .panes
+                .iter()
+                .map(|pane| pane.rect)
+                .collect();
+            for (i, rect) in rects.iter().enumerate() {
+                // the rule cell left of the number
+                let cell = &grid[(rect.x, rect.y - 1)];
+                assert_eq!(cell.symbol(), "─");
+                let ink = if i == active { t.muted } else { t.faint };
+                assert_eq!(cell.fg, ink, "pane {i} vertical={vertical}");
+            }
+            if vertical {
+                let dx = rects[0].x + rects[0].width;
+                assert_eq!(grid[(dx, 0)].symbol(), "┬");
+                assert_eq!(grid[(dx, 0)].fg, t.faint);
+                assert_eq!(grid[(dx, 5)].symbol(), "│");
+                assert_eq!(grid[(dx, 5)].fg, t.faint);
+            } else {
+                assert_eq!(
+                    rects[0].y + rects[0].height + 1,
+                    rects[1].y,
+                    "one row per boundary"
+                );
+            }
+            frames.push(grid_text(&grid));
+            editor.focus_pane(1 - active);
+        }
+        assert_eq!(frames[0], frames[1], "focus changes no symbol");
     }
 }
 
