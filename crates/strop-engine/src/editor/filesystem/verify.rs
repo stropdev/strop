@@ -16,7 +16,7 @@ impl Editor {
             .find(|attempt| attempt.ticket.request == operation)
             .and_then(|attempt| attempt.receipts.get(step))
             .cloned()
-            .ok_or("filesystem receipt not found")?;
+            .ok_or("that change is no longer recorded")?;
         let request = self.worker_ids.allocate().map_err(|error| error.message)?;
         let ticket = Ticket {
             request,
@@ -50,7 +50,7 @@ impl Editor {
             },
         );
         self.worker_handles.insert(request, handle);
-        self.message = "verifying filesystem outcome; no mutation will be retried".into();
+        self.message = "checking an unconfirmed change on disk; nothing is retried".into();
         Ok(())
     }
 
@@ -139,12 +139,11 @@ impl Editor {
                 return;
             }
             Outcome::Cancelled(_) => {
-                self.message =
-                    "filesystem verification cancelled; outcome remains unconfirmed".into();
+                self.message = "the check was cancelled; the change stays unconfirmed".into();
                 return;
             }
         }
-        self.publish_filesystem_receipt(index);
         self.finish_filesystem_draft_attempt(index);
+        self.settle_filesystem_attempt(index);
     }
 }

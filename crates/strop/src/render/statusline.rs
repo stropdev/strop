@@ -163,7 +163,11 @@ impl Modeline {
         };
         let indent = editor.indentation_at(editor.current(), editor.head());
         let config = editor.config();
-        let indent = if terminal
+        // A folder has no indentation; its slot carries the listing's
+        // own readout (`27 items`, `3 of 9 · filter rs`).
+        let indent = if let Some(summary) = editor.directory_summary() {
+            summary
+        } else if terminal
             || (indent.width == config.tab_size && indent.style == config.indent_style)
         {
             String::new()
@@ -444,25 +448,11 @@ fn file_display(editor: &Editor) -> (String, String) {
         );
     }
     if let Some(directory) = editor.directory() {
-        let path = &directory.location.path;
-        let parent = path
-            .parent()
-            .map(strop_workspace::directory::display_path)
-            .unwrap_or_default();
-        let mut name = strop_workspace::directory::display_path(
-            path.file_name().map(std::path::Path::new).unwrap_or(path),
-        );
-        if !name.ends_with('/') {
-            name.push('/');
-        }
-        return (
-            if parent.is_empty() {
-                parent
-            } else {
-                format!("{parent}/")
-            },
-            name,
-        );
+        // `crates/strop-engine/` splits as `crates/` + `strop-engine/`.
+        let label = editor.folder_label(&directory.location);
+        let body = &label[..label.len() - 1];
+        let split = body.rfind('/').map_or(0, |slash| slash + 1);
+        return (label[..split].to_string(), label[split..].to_string());
     }
     if let Some(file) = editor.remote_file() {
         let directory = file.path().parent().map_or_else(String::new, |parent| {

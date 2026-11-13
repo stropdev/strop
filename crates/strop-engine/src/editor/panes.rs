@@ -152,7 +152,7 @@ impl Editor {
     pub(crate) fn quit_all(&mut self, force: bool) {
         if !force && self.filesystem.unconfirmed() > 0 {
             self.message =
-                "filesystem outcomes are unconfirmed; :fs verify before quitting, or :qa! to force"
+                "some file changes are still unconfirmed; wait for the check, or :qa! to force"
                     .into();
             return;
         }

@@ -12,7 +12,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space e",
-        desc: "show this file in its directory",
+        desc: "this file's folder, cursor on the file",
         sections: &["leader"],
         live: true,
         id: "directory-reveal",
@@ -124,7 +124,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space a",
-        desc: "actions here (fixes and code; files in a directory)",
+        desc: "actions here (fixes and code; in a folder: search, terminal, copy path)",
         sections: &["leader"],
         live: true,
         id: "code-actions",

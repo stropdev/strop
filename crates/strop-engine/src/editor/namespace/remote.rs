@@ -155,7 +155,7 @@ impl StepKernel for RemoteKernel<'_> {
             OperationKind::Trash => {
                 return Err(failure(
                     FsFailureKind::Unsupported,
-                    "an SSH host has no Trash; :fs remove deletes permanently",
+                    "an SSH host has no Trash; a delete there is permanent",
                 ))
             }
             OperationKind::Restore => {

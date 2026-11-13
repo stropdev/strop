@@ -57,7 +57,7 @@ impl Editor {
             replacement.buf.readonly = self.doc(document).buf.readonly;
         }
         let label = if replacement.directory_metadata_ref().is_some() {
-            "directory"
+            "folder"
         } else if replacement.remote_metadata().is_some() {
             "remote snapshot"
         } else {
@@ -65,8 +65,10 @@ impl Editor {
         };
         match self.publish_source_snapshot(document, replacement) {
             Ok(()) => {
-                self.message = if self.filename_draft(document).is_some() {
-                    "filename draft retained; source observations refreshed".into()
+                self.message = if self.filename_draft(document).is_some()
+                    && self.doc(document).buf.is_dirty()
+                {
+                    "reloaded; your pending changes are kept".into()
                 } else {
                     format!("{label} refreshed")
                 }

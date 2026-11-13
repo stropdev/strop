@@ -1,6 +1,7 @@
 #![cfg(unix)]
 
 mod completion;
+mod folder;
 mod git;
 mod harness;
 mod journeys;

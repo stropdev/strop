@@ -482,3 +482,68 @@ fn substitute_card() {
         settle_analysis()
     });
 }
+
+/// 0102: a folder is a buffer of names. Scenes list `docs/` (a relative
+/// folder, so no temporary path reaches the frame).
+fn folder(editor: &mut Editor) {
+    let docs = editor.cwd().join("docs");
+    std::fs::create_dir_all(docs.join("guide")).unwrap();
+    std::fs::write(docs.join("notes.txt"), "notes\n").unwrap();
+    std::fs::write(docs.join(".draft.md"), "").unwrap();
+    editor.feed_text(":e docs<cr>");
+    editor.wait_io().unwrap();
+}
+
+#[test]
+fn folder_listing() {
+    each("folder", |editor| {
+        folder(editor);
+        settle_analysis()
+    });
+}
+
+#[test]
+fn folder_empty() {
+    each("folder-empty", |editor| {
+        folder(editor);
+        editor.feed(strop_core::frontend_input::Key::Enter);
+        editor.wait_io().unwrap();
+        settle_analysis()
+    });
+}
+
+#[test]
+fn folder_filtered() {
+    each("folder-filter", |editor| {
+        folder(editor);
+        editor.feed_text(":filter md<cr>");
+        editor.wait_io().unwrap();
+        settle_analysis()
+    });
+}
+
+/// Each edited row says what `:w` will do with it.
+fn folder_edits(editor: &mut Editor) {
+    folder(editor);
+    // rename remote.md, copy notes.txt, add a folder, delete .draft.md
+    editor.feed_text("Gccremote-notes.md<esc>kyypccnotes-copy.txt<esc>Gonew/<esc>ggjdd");
+}
+
+#[test]
+fn folder_pending() {
+    each("folder-pending", |editor| {
+        folder_edits(editor);
+        settle_analysis()
+    });
+}
+
+/// `:w`: the changes, relative to the folder, and the two keys.
+#[test]
+fn folder_confirm() {
+    each("folder-confirm", |editor| {
+        folder_edits(editor);
+        editor.feed_text(":w<cr>");
+        editor.wait_io().unwrap();
+        settle_analysis()
+    });
+}

@@ -45,6 +45,10 @@ impl Editor {
                 _ => {}
             }
         }
+        // A folder's `-` is its parent (0102); a line motion elsewhere.
+        if self.walker.is_ground() && key == Key::Char('-') && self.directory_key(key) {
+            return;
+        }
         // every other key event walks the one machine (0016)
         self.feed_command(key);
     }
@@ -75,6 +79,8 @@ impl Editor {
     pub(crate) fn refuse_readonly(&mut self) {
         self.message = if self.terminal_document(self.current()).is_some() {
             "terminal buffer is read-only — i enters TERMINAL mode".into()
+        } else if self.directory().is_some() {
+            crate::editor::filesystem::draft::OVER_LIMIT.into()
         } else if self.review.live(self.current()) {
             "a review is read-only — Enter applies and writes, u reverts, q closes".into()
         } else {
@@ -127,6 +133,10 @@ impl Editor {
                                 | "pane-nav"
                                 | "pane-split"
                                 | "pane-close"
+                                | "window-focus"
+                                | "window-split"
+                                | "window-close"
+                                | "window-equal"
                                 | "hunk-next"
                                 | "hunk-prev"
                                 | "clip-yank"

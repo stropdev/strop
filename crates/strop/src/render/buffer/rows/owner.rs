@@ -133,8 +133,9 @@ impl<'a> Owner<'a> {
             )
             .unwrap_or_else(|| list_blank(t, row.cursor)),
             Owner::Directory(directory) => {
-                let mut painted =
-                    directory::row(t, directory, line, row.text, row.cursor).unwrap_or_default();
+                let now = editor.tape().now().unix_seconds;
+                let mut painted = directory::row(t, directory, now, line, row.text, row.cursor)
+                    .unwrap_or_default();
                 painted.gutter = numbered(editor, t, view, line, cells.gutter);
                 painted
             }
@@ -244,15 +245,15 @@ fn sign(editor: &Editor, t: &Tokens, view: &PaneView, line: usize) -> Span<'stat
 }
 
 fn mark(editor: &Editor, t: &Tokens, view: &PaneView, line_idx: usize) -> (&'static str, Color) {
-    if let Some(directory) = editor
-        .doc(view.doc)
-        .directory_metadata_ref()
-        .filter(|source| source.draft.is_none())
-    {
-        if let Some(entry) = directory.entry(strop_core::id::LineIndex::new(line_idx)) {
-            if directory.marked.contains_key(&entry.name) {
-                return ("●", t.accent);
-            }
+    if let Some(directory) = editor.doc(view.doc).directory_metadata_ref() {
+        let entry = match &directory.draft {
+            Some(draft) => draft
+                .source(line_idx)
+                .and_then(|source| directory.entry_index(&source.location))
+                .and_then(|index| directory.entries.get(index)),
+            None => directory.entry(strop_core::id::LineIndex::new(line_idx)),
+        };
+        if let Some(entry) = entry {
             if entry.error.is_some() {
                 return ("!", t.diff_del);
             }

@@ -345,6 +345,10 @@ impl Editor {
         if self.collection_enter() {
             return;
         }
+        // 0102: Enter in a folder opens the entry under the cursor.
+        if self.directory_key(strop_core::frontend_input::Key::Enter) {
+            return;
+        }
         let n = self.walker.state.count1.unwrap_or(1);
         let line = (self.buf().line_of(self.head()) + n).min(self.buf().last_content_line());
         let s = self.buf().line_start(line);

@@ -20,16 +20,18 @@ impl Editor {
         document: DocumentId,
         mut replacement: Document,
     ) -> Result<(), SnapshotError> {
-        let retain_draft = self
-            .doc(document)
-            .directory_metadata_ref()
-            .and_then(|source| source.draft.as_ref())
-            .is_some_and(|draft| {
-                !matches!(
-                    draft.phase,
-                    crate::editor::filesystem::draft::Phase::Reloading
-                )
-            });
+        // Pending edits survive a reload; a clean listing is replaced.
+        let retain_draft = self.doc(document).buf.is_dirty()
+            && self
+                .doc(document)
+                .directory_metadata_ref()
+                .and_then(|source| source.draft.as_ref())
+                .is_some_and(|draft| {
+                    !matches!(
+                        draft.phase,
+                        crate::editor::filesystem::draft::Phase::Reloading
+                    )
+                });
         if retain_draft {
             let fresh = replacement
                 .directory_metadata_ref()
@@ -51,7 +53,7 @@ impl Editor {
                 entries: fresh.entries.clone(),
                 state: fresh.state.clone(),
             });
-            source.stale = Some("filesystem listing refreshed; filename draft retained and sources will be revalidated".into());
+            source.stale = Some("the folder changed on disk under pending edits".into());
             return Ok(());
         }
         let before = self.doc(document).buf.snapshot();
@@ -68,7 +70,7 @@ impl Editor {
                     old.restoration_location(strop_core::id::LineIndex::new(line))
                         .and_then(|location| new.line_for(&location))
                         .map(|line| line.get())
-                        .unwrap_or(line.min(1))
+                        .unwrap_or(line)
                 } else {
                     line
                 };
@@ -114,11 +116,11 @@ impl Editor {
             doc.buf.readonly = replacement.buf.readonly;
             doc.buf.mark_clean();
             let revision = doc.buf.revision();
-            if let Some(source) = doc.directory_metadata_mut() {
-                source.view_revision = revision;
-                if let Some(draft) = source.draft.as_mut() {
-                    draft.revision = revision;
-                }
+            if let Some(draft) = doc
+                .directory_metadata_mut()
+                .and_then(|source| source.draft.as_mut())
+            {
+                draft.revision = revision;
             }
         }
         for (index, old_top) in views {

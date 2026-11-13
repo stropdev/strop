@@ -373,10 +373,10 @@ impl Editor {
             }
             Some(strop_core::ReadonlyReason::Output) => "transient output view — not a source",
             Some(strop_core::ReadonlyReason::DirectoryListing) => {
-                "directory listing — :fs edit opens filename drafts"
+                "folder over 512 entries — :filter first to edit names"
             }
             Some(strop_core::ReadonlyReason::DirectoryOperation) => {
-                "directory operation in flight — editing resumes when it lands"
+                "folder changes being applied — editing resumes when they land"
             }
             Some(strop_core::ReadonlyReason::CollectionProjection) => {
                 "collection projection failed — this stale view refuses edits"

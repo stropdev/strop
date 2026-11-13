@@ -24,7 +24,7 @@ machine only, the directory you last opened on each host (in
 `~/.local/state/strop`).
 
 ```vim
-:browse ssh://devbox/
+:e ssh://devbox/
 :filter app
 :remote connect ssh://devbox
 :remote list
@@ -32,8 +32,7 @@ machine only, the directory you last opened on each host (in
 :remote clear
 ```
 
-- `:browse ssh://HOST/DIR` lists a directory; `:filter TEXT` narrows the
-  listing.
+- `:e ssh://HOST/DIR/` opens a folder; `:filter TEXT` narrows it.
 - `:remote home` lists your home directory on the current host;
   `:remote root` goes to `/`.
 - `:remote connect` logs in and keeps the connection; `:remote disconnect`
@@ -56,11 +55,11 @@ connection closes when strop exits. After a crash it closes by itself after
 ten idle minutes. (It is an OpenSSH `ControlMaster`; its socket is in a
 private directory under `$XDG_RUNTIME_DIR`.)
 
-A directory listing is an ordinary buffer: move and search in it as usual.
-Each row shows the name, the size, and the kind and permissions; `?` stands
-for something the host did not report. Hidden files are shown, and
-`.gitignore` is not applied. Enter opens an entry; `-`, Backspace or `../`
-goes up and puts the cursor back on the directory you came from. Tab
+A folder on a host is the same buffer of names as one on your machine (see
+[filesystem.md](filesystem.md)): size and age beside each name, blank for
+something the host did not report. Hidden files are shown, and
+`.gitignore` is not applied. Enter opens an entry; `-` goes up and puts
+the cursor back on the folder you came from. Tab
 completes host names and paths without logging in; paths on a host complete
 only once you are connected or have listed that directory before. In an
 `ssh://` address write a space as `%20`, `#` as `%23`, `?` as `%3F` and `%`
@@ -90,12 +89,11 @@ you.
 
 ## File management
 
-`:fs create`, `:fs mkdir`, `:fs rename`/`move`, `:fs copy` and `:fs remove`
-(and renaming by editing the list) work on the host as they do on your
-machine: a review first, then `Enter` to do it. See
-[filesystem.md](filesystem.md#ssh-hosts). On a host there is no trash
-(removal is for good), an existing file is never overwritten, a directory
-is not copied, and if a later step fails the earlier ones stay done.
+Edit a folder's names and `:w` on the host as on your machine: the list of
+changes first, then `y` to make them. See
+[filesystem.md](filesystem.md#ssh-hosts). On a host there is no Trash (a
+delete is for good), an existing file is never overwritten, a folder is
+not copied, and if a later change fails the earlier ones stay made.
 
 ## Search, Git, language servers, terminal
 

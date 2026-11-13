@@ -85,9 +85,9 @@ section of that list.
   the host. Once connected you can edit and save; a save is refused if the
   file changed on the host; search, Git, language servers and terminals run
   there → **[docs/remote.md](docs/remote.md)**
-- **Files and directories**: browse a directory, and create, rename, move,
-  copy and delete files, on your machine and over SSH. Every change is
-  shown for review before it happens →
+- **Folders**: a folder is a buffer of names. Rename, create, delete and
+  copy files by editing the names, then `:w` shows the changes and `y`
+  makes them, on your machine and over SSH →
   **[docs/filesystem.md](docs/filesystem.md)**
 - **Terminals**: `Space t` opens a shell in a split below; `Ctrl-\ Ctrl-N`
   leaves it, and its output is a buffer you can search and yank from →

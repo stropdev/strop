@@ -1,6 +1,6 @@
    1 //! The╭ space ───────────────────────────────────────────────╮            
    2 //!    │  |  pipe line/selection through shell (:! runs)      │            
-   3 //! Eve│  e  show this file in its directory                  │            
+   3 //! Eve│  e  this file's folder, cursor on the file           │            
    4        │  f  file finder                                      │            
    5 use std│  o  open remote destination                          │            
    6        │  t  terminal in a split below (TERMINAL mode)        │            
@@ -14,7 +14,7 @@
   14 impl Mo│  P  paste clipboard before                           │            
   15 │   fn │  d  diagnostics picker                               │            
   16 │   │  │  k  hover docs                                       │            
-  17 │   │  │  a  actions here (fixes and code; files in a direct… │            
+  17 │   │  │  a  actions here (fixes and code; in a folder: sear… │            
   18 │   │  │  s  document symbols picker                          │            
   19 │   }  │  S  workspace symbols picker                         │            
   20 }      │  j  jumplist picker                                  │            
@@ -25,7 +25,7 @@
 
   0: 1:#656d7b/#efeadf+b 4:#8a510f/#efeadf 7:#696d77/#efeadf+i 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 48:#656d7b/#fdfbf6 11:#efeadf/#efeadf 1:reset/reset
   1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 4:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 44:#262a30/#fdfbf6 6:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
-  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 32:#262a30/#fdfbf6 18:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 39:#262a30/#fdfbf6 11:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 12:#262a30/#fdfbf6 38:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 3:#1f6e5c/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 24:#262a30/#fdfbf6 26:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   5: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#e5dfd0+b 42:#262a30/#fdfbf6 8:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset

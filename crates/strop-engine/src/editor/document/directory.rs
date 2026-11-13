@@ -1,12 +1,9 @@
 //! One real Directory buffer for every supported filesystem namespace.
 use super::{Document, DocumentSource, JumpRecord};
 use imbl::OrdMap;
-use std::fmt::Write;
 use std::sync::Arc;
 use strop_core::{id::LineIndex, Buffer};
-use strop_workspace::{
-    DirectoryEntry, EntryKind, EntryName, ListingState, Observation, ResourceLocation,
-};
+use strop_workspace::{DirectoryEntry, EntryKind, EntryName, ListingState, ResourceLocation};
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -15,12 +12,13 @@ pub struct Directory {
     pub entries: Arc<[DirectoryEntry]>,
     pub visible: Arc<[usize]>,
     pub filter: String,
-    pub summary: String,
+    /// Dotfiles are listed (`g.` flips it; remembered per folder).
+    pub show_hidden: bool,
+    /// Where the metadata column starts, measured once per listing so it
+    /// does not move while scrolling.
+    pub name_width: usize,
     pub state: ListingState,
     pub stale: Option<String>,
-    pub view_revision: strop_core::id::BufferRevision,
-    #[serde(with = "entry_map")]
-    pub marked: OrdMap<EntryName, Observation>,
     /// Verified name changes used only to restore positions on the next snapshot.
     /// Navigation continues to describe the displayed (possibly stale) listing.
     #[serde(with = "entry_map")]
@@ -41,21 +39,90 @@ impl Directory {
         source
     }
     pub fn new(snapshot: strop_workspace::DirectorySnapshot) -> Self {
-        Self {
+        let mut directory = Self {
             location: snapshot.location,
             visible: (0..snapshot.entries.len()).collect(),
             entries: snapshot.entries,
             state: snapshot.state,
             filter: String::new(),
+            show_hidden: true,
+            name_width: 0,
             stale: None,
-            marked: OrdMap::new(),
             restoration: OrdMap::new(),
             connection: None,
             return_to: None,
             draft: None,
-            view_revision: strop_core::id::BufferRevision::new(0),
-            summary: "folder · hidden on · no ignores".into(),
+        };
+        directory.measure();
+        directory
+    }
+
+    /// The metadata column: two cells past the longest visible name,
+    /// between 26 and 50 cells.
+    pub(crate) fn measure(&mut self) {
+        let longest = self
+            .visible
+            .iter()
+            .map(|&index| {
+                let entry = &self.entries[index];
+                UnicodeWidthStr::width(entry.name.display().as_str())
+                    + usize::from(entry.observation.kind == EntryKind::Directory)
+            })
+            .max()
+            .unwrap_or(0);
+        self.name_width = (longest + 2).clamp(26, 50);
+    }
+
+    /// One buffer line per visible entry: its name, a folder with a
+    /// trailing `/`. The filename draft projects exactly this text.
+    pub fn row_text(entry: &DirectoryEntry) -> String {
+        let mut name = entry.name.display();
+        if entry.observation.kind == EntryKind::Directory {
+            name.push('/');
         }
+        name
+    }
+
+    /// `location` as seen from the folder `root`: `notes.txt`,
+    /// `sub/inner.txt`, `../docs/notes.txt`; its full label when the
+    /// namespaces differ.
+    pub fn relative_label(root: &ResourceLocation, location: &ResourceLocation) -> String {
+        use std::path::{Component, PathBuf};
+        if root.filesystem != location.filesystem {
+            return location.label();
+        }
+        let from: Vec<Component> = root.path.components().collect();
+        let to: Vec<Component> = location.path.components().collect();
+        let common = from
+            .iter()
+            .zip(&to)
+            .take_while(|(left, right)| left == right)
+            .count();
+        let mut path = PathBuf::new();
+        for _ in common..from.len() {
+            path.push("..");
+        }
+        for part in &to[common..] {
+            path.push(part);
+        }
+        if path.as_os_str().is_empty() {
+            path.push(".");
+        }
+        strop_workspace::directory::display_path(&path)
+    }
+
+    /// The buffer for this listing: editable (with its filename draft)
+    /// when the visible rows fit one batch, read-only otherwise.
+    pub fn into_document(mut self, id: strop_core::worker::WorkerId) -> Result<Document, String> {
+        let text = if self.visible.len() <= crate::editor::filesystem::draft::ROW_LIMIT {
+            let (draft, rope) = crate::editor::filesystem::draft::Draft::new(id, &self)?;
+            self.draft = Some(draft);
+            rope
+        } else {
+            self.draft = None;
+            ropey::Rope::from_str(&self.text())
+        };
+        Ok(Document::directory(Buffer::from_snapshot(text), self))
     }
 
     pub(crate) fn record_relocation(
@@ -101,62 +168,11 @@ impl Directory {
             .unwrap_or_else(|| Some(self.location_of(entry)))
     }
     /// Worker-side projection. Filenames are escaped for display, never decoded
-    /// back into resources by navigation, marks or operation admission.
+    /// back into resources by navigation or operation admission.
     pub fn text(&self) -> String {
         let mut text = String::new();
-        let _ = writeln!(
-            text,
-            "{} — {} / {} entries{}",
-            self.location.label(),
-            self.visible.len(),
-            self.entries.len(),
-            match self.state {
-                ListingState::Complete => "",
-                ListingState::Limited { .. } => " — LIMITED",
-                ListingState::Failed { .. } => " — INCOMPLETE",
-            }
-        );
-        text.push_str("../\n");
-        let names: Vec<_> = self
-            .visible
-            .iter()
-            .map(|&index| {
-                let entry = &self.entries[index];
-                let mut name = entry.name.display();
-                match entry.observation.kind {
-                    EntryKind::Directory => name.push('/'),
-                    EntryKind::SymbolicLink => name.push('@'),
-                    _ => {}
-                }
-                let width = UnicodeWidthStr::width(name.as_str());
-                (name, width)
-            })
-            .collect();
-        let name_width = names
-            .iter()
-            .map(|(_, width)| *width)
-            .max()
-            .unwrap_or(0)
-            .clamp(24, 64);
-        for (&index, (name, width)) in self.visible.iter().zip(names) {
-            let entry = &self.entries[index];
-            text.push_str(&name);
-            for _ in width..name_width {
-                text.push(' ');
-            }
-            text.push_str("  ");
-            write_size(&mut text, entry.observation.size);
-            text.push_str("  ");
-            text.push(entry.observation.kind.marker());
-            match entry.observation.permissions {
-                Some(permissions) => {
-                    let _ = write!(text, "{permissions}");
-                }
-                None => text.push_str("?????????"),
-            }
-            if entry.error.is_some() {
-                text.push_str("  unavailable");
-            }
+        for &index in self.visible.iter() {
+            text.push_str(&Self::row_text(&self.entries[index]));
             text.push('\n');
         }
         text
@@ -165,9 +181,8 @@ impl Directory {
         strop_fs::parent(&self.location)
     }
     pub fn entry(&self, line: LineIndex) -> Option<&DirectoryEntry> {
-        line.get()
-            .checked_sub(2)
-            .and_then(|row| self.visible.get(row))
+        self.visible
+            .get(line.get())
             .and_then(|&index| self.entries.get(index))
     }
     pub fn entry_location(&self, line: LineIndex) -> Option<ResourceLocation> {
@@ -191,9 +206,9 @@ impl Directory {
         self.visible
             .binary_search(&self.entry_index(location)?)
             .ok()
-            .map(|row| LineIndex::new(row + 2))
+            .map(LineIndex::new)
     }
-    pub(crate) fn entry_index(&self, location: &ResourceLocation) -> Option<usize> {
+    pub fn entry_index(&self, location: &ResourceLocation) -> Option<usize> {
         if location.filesystem != self.location.filesystem
             || location.path.parent() != Some(self.location.path.as_path())
         {
@@ -211,17 +226,6 @@ impl Directory {
             }
         }
         None
-    }
-    pub fn toggle_mark(&mut self, line: LineIndex) -> bool {
-        let Some(entry) = self.entry(line) else {
-            return false;
-        };
-        let name = entry.name.clone();
-        let observation = entry.observation.clone();
-        if self.marked.remove(&name).is_none() {
-            self.marked.insert(name, observation);
-        }
-        true
     }
     pub fn validate(&self) -> bool {
         self.location.path.is_absolute()
@@ -253,38 +257,14 @@ impl Directory {
     }
 }
 
-/// Ten-cell binary units keep metadata legible without materializing per-row
-/// formatting strings. Unknown and a measured zero remain distinct.
-fn write_size(text: &mut String, size: Option<u64>) {
-    let Some(size) = size else {
-        text.push_str("         ?");
-        return;
-    };
-    if size < 1024 {
-        let _ = write!(text, "{size:>8} B");
-        return;
-    }
-    let units = ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
-    let mut unit = 0;
-    let mut scale = 1024u64;
-    while size / scale >= 1024 && unit + 1 < units.len() {
-        scale *= 1024;
-        unit += 1;
-    }
-    let whole = size / scale;
-    let tenth = (size % scale) * 10 / scale;
-    let _ = write!(text, "{whole:>4}.{tenth} {}", units[unit]);
-}
-
 impl Document {
-    pub fn directory(mut buffer: Buffer, mut source: Directory) -> Self {
+    pub fn directory(mut buffer: Buffer, source: Directory) -> Self {
         debug_assert!(
             source.validate(),
             "directory rows have one native identity each"
         );
-        source.view_revision = buffer.revision();
         buffer.path = None;
-        buffer.name = Some(format!("directory {}", source.location.label()));
+        buffer.name = Some(source.location.label());
         if source.draft.as_ref().is_none_or(|draft| !draft.editable()) {
             buffer.set_readonly(strop_core::ReadonlyReason::DirectoryListing);
         }

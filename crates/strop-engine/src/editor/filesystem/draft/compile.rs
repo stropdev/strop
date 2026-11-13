@@ -46,14 +46,9 @@ impl Draft {
                 }
                 continue;
             }
-            let decoded =
-                names::decode(name).map_err(|error| format!("draft line {}: {error}", line + 1))?;
-            let directory = decoded.as_os_str().as_encoded_bytes().last() == Some(&b'/');
-            let relative: std::path::PathBuf = decoded.components().collect();
-            let destination = ResourceLocation {
-                filesystem: self.root.filesystem.clone(),
-                path: self.root.path.join(relative),
-            };
+            let (destination, directory) = self
+                .destination(name)
+                .map_err(|error| format!("draft line {}: {error}", line + 1))?;
             if let Some(previous) = destinations.insert(destination.clone(), line) {
                 return Err(format!(
                     "draft lines {} and {} name one destination",
@@ -96,7 +91,7 @@ impl Draft {
                             line + 1
                         ));
                     }
-                    if destination != source.location {
+                    if matches!(self.row_change(line, name), RowChange::Renamed(_)) {
                         supported(source, line)?;
                         result.intents.push(OperationIntent {
                             kind: OperationKind::Rename,
@@ -123,7 +118,7 @@ impl Draft {
                         kind: OperationKind::Copy,
                         source: Some(source.location.clone()),
                         destination: Some(destination),
-                        copy_version: self.copy_version.unwrap_or(CopyVersion::Stored),
+                        copy_version: CopyVersion::Stored,
                         expected_content: None,
                         store: None,
                     });
@@ -136,10 +131,12 @@ impl Draft {
                 continue;
             }
             supported(source, index)?;
-            let kind = match self.removal {
-                Removal::Trash => OperationKind::Trash,
-                Removal::Permanent => OperationKind::Remove,
-                Removal::Unchosen => return Err("removed entries need a disposition: remote Trash is unavailable; choose :fs deletes permanent explicitly".into()),
+            // A local delete goes to the Trash; a remote folder has none,
+            // so its delete is permanent and the confirm says so.
+            let kind = if self.root.filesystem == strop_workspace::Filesystem::Local {
+                OperationKind::Trash
+            } else {
+                OperationKind::Remove
             };
             result.intents.push(OperationIntent {
                 kind,

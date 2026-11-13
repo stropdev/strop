@@ -32,7 +32,6 @@ pub(crate) struct SavedDirectoryView {
 pub(crate) enum DirectoryTask {
     Filter,
     Reload,
-    EditNames,
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FilterKey {
@@ -106,21 +105,65 @@ impl Editor {
             .get(self.current())
             .and_then(|doc| doc.directory_metadata_ref())
     }
-    pub fn directory_visibility_summary(&self) -> Option<&str> {
+    /// The modeline's muted readout for the folder in view: `27 items`,
+    /// `3 of 9 · filter rs`, `22 items · dotfiles hidden`.
+    pub fn directory_summary(&self) -> Option<String> {
         let source = self.directory()?;
-        Some(if source.stale.is_some() {
-            "stale directory — refresh required"
-        } else if !source.state.is_complete() {
-            "incomplete directory listing"
+        let items = |count: usize| {
+            if count == 1 {
+                "1 item".to_string()
+            } else {
+                format!("{count} items")
+            }
+        };
+        let mut text = if source.filter.is_empty() {
+            items(source.visible.len())
         } else {
-            &source.summary
-        })
+            format!(
+                "{} of {} · filter {}",
+                source.visible.len(),
+                source.entries.len(),
+                source.filter
+            )
+        };
+        if !source.show_hidden {
+            text.push_str(" · dotfiles hidden");
+        }
+        if source.stale.is_some() {
+            text.push_str(" · out of date");
+        }
+        match source.state {
+            strop_workspace::ListingState::Complete => {}
+            strop_workspace::ListingState::Limited { .. } => text.push_str(" · listing cut short"),
+            strop_workspace::ListingState::Failed { .. } => text.push_str(" · listing incomplete"),
+        }
+        Some(text)
+    }
+    /// A folder named the way files are: relative to the working
+    /// directory (`crates/strop-engine/`, `strop/` for the root itself),
+    /// absolute outside it or on another machine.
+    pub fn folder_label(&self, location: &ResourceLocation) -> String {
+        let mut label = match location.local_path() {
+            Some(path) if path == self.cwd => path.file_name().map_or_else(
+                || "/".into(),
+                |name| strop_workspace::directory::display_path(name.as_ref()),
+            ),
+            Some(path) => match path.strip_prefix(&self.cwd) {
+                Ok(relative) => strop_workspace::directory::display_path(relative),
+                Err(_) => location.label(),
+            },
+            None => location.label(),
+        };
+        if !label.ends_with('/') {
+            label.push('/');
+        }
+        label
     }
     pub(crate) fn remember_directory_view(&mut self) {
         let Some(source) = self.directory() else {
             return;
         };
-        if source.draft.is_some() || source.view_revision != self.buf().revision() {
+        if self.buf().is_dirty() {
             return;
         }
         let location = source.location.clone();
@@ -166,7 +209,7 @@ impl Editor {
                         .restoration_location(LineIndex::new(line))
                         .and_then(|location| source.line_for(&location))
                         .map(|line| line.get())
-                        .unwrap_or(line.min(1))
+                        .unwrap_or(line)
                 };
                 let row = locate(saved.row);
                 let top = locate(saved.top);
@@ -180,13 +223,11 @@ impl Editor {
                 view.view_top = buffer.line_start(top);
             }
             self.jump_to(view);
-        } else if source.entry(LineIndex::new(2)).is_some() {
-            self.set_head(self.buf().line_start(2));
         } else {
-            self.set_head(self.buf().line_start(1));
+            self.set_head(0);
         }
     }
-    /// The base a relative Ex operand (`:e`, `:sp`, `:browse`, their
+    /// The base a relative Ex operand (`:e`, `:sp`, their
     /// completion) resolves against. Local operands follow Vim: the editor's
     /// cwd, even from a local Directory buffer (0088 U2 — browsing never
     /// changes where `:e path` lands). A remote Directory has no cwd in
@@ -221,9 +262,6 @@ impl Editor {
             }
         }
         ResourceLocation::local(self.cwd.clone())
-    }
-    pub(crate) fn directory_operand(&self, value: &str) -> Result<FileTarget, String> {
-        Self::directory_operand_from(self.directory_context(), value)
     }
     pub(crate) fn directory_operand_from(
         mut context: ResourceLocation,
@@ -295,23 +333,18 @@ impl Editor {
         }
         true
     }
+    /// `-` and `Enter` in a folder: the parent (cursor on the folder you
+    /// left), or the entry under the cursor. Pending edits stay with the
+    /// folder's buffer; a row typed fresh is not on disk yet.
     pub(crate) fn directory_key(&mut self, key: Key) -> bool {
-        if !matches!(key, Key::Enter | Key::Backspace | Key::Char('-')) {
+        if !matches!(key, Key::Enter | Key::Char('-')) {
             return false;
         }
         let Some(source) = self.directory() else {
             return false;
         };
-        if source.draft.is_some() || !self.buf().readonly {
-            return false;
-        }
-        if source.view_revision != self.buf().revision() {
-            self.message = "directory presentation changed; refresh before navigating".into();
-            return true;
-        }
         let line = self.buf().line_of(self.head());
-        let parent = matches!(key, Key::Backspace | Key::Char('-')) || line == 1;
-        let (location, intent) = if parent {
+        let (location, intent) = if key == Key::Char('-') {
             (
                 source.parent(),
                 OpenIntent::DirectoryParent {
@@ -319,17 +352,32 @@ impl Editor {
                 },
             )
         } else {
-            let entry = source.entry(LineIndex::new(line));
-            (
-                entry.map(|entry| source.location_of(entry)),
-                if entry.is_some_and(|entry| {
-                    entry.observation.kind == strop_workspace::EntryKind::Directory
-                }) {
-                    OpenIntent::Browse
+            let entry = match &source.draft {
+                // `location`, not the source: right after an apply the
+                // row already names its new path while the folder
+                // lists again.
+                Some(draft) => draft
+                    .source(line)
+                    .zip(draft.location(line))
+                    .map(|(source, location)| (location, source.observation.kind)),
+                None => source
+                    .entry(LineIndex::new(line))
+                    .map(|entry| (source.location_of(entry), entry.observation.kind)),
+            };
+            let Some((location, kind)) = entry else {
+                self.message = if self.buf().line_start(line) == self.buf().line_end(line) {
+                    "no entry on this line".into()
                 } else {
-                    OpenIntent::Switch { readonly: false }
-                },
-            )
+                    "not on disk yet; :w creates it".into()
+                };
+                return true;
+            };
+            let intent = if kind == strop_workspace::EntryKind::Directory {
+                OpenIntent::Browse
+            } else {
+                OpenIntent::Switch { readonly: false }
+            };
+            (Some(location), intent)
         };
         match location.map(|location| FileTarget::from_location(&location)) {
             Some(Ok(target)) => {
@@ -337,8 +385,26 @@ impl Editor {
                 self.request_target(target, intent);
             }
             Some(Err(error)) => self.message = error.to_string(),
-            None => self.message = "no directory entry at this position".into(),
+            None => self.message = "this folder has no parent".into(),
         }
         true
+    }
+    /// `g.`: show or hide dotfiles in this folder.
+    pub(crate) fn toggle_directory_hidden(&mut self) {
+        if self.directory().is_none() {
+            self.message = "g. shows or hides dotfiles in a folder".into();
+            return;
+        }
+        if self.buf().is_dirty() {
+            self.message = "write (:w) or drop (:e!) the pending changes first".into();
+            return;
+        }
+        let document = self.current();
+        if let Some(source) = self.doc_mut(document).directory_metadata_mut() {
+            source.show_hidden = !source.show_hidden;
+        }
+        if let Err(error) = self.start_directory_task(document, DirectoryTask::Filter, None) {
+            self.message = error;
+        }
     }
 }

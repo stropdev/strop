@@ -600,6 +600,11 @@ Modeline and commit/diff presentation polish shipped separately in 0.15.1 (0032)
   implemented for 0.17.0 in [0036](0036-remote-workspace-execution.md).
 - Dev Container provisioning complements the same workspace/transport interfaces;
   the researched later-stage plan is [0037](0037-devcontainers-and-workspace-contexts.md).
+- Folder follow-ups from [0102](0102-folder-view.md): a git status mark per
+  entry (needs a status snapshot held outside the status view, delivered as
+  a job); a folder's row limit (512) is the batch step limit, so a larger
+  folder is read-only until filtered; a remote write cannot copy and
+  rename one file together.
 
 ### Final GUI arc — native Windows presentation, WSL execution (0061)
 

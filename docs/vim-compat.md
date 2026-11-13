@@ -156,7 +156,7 @@ does not is listed at the end, under Missing and Reassigned.
 ## Leader (space)
 
 - `✓ space |` — pipe line/selection through shell (:! runs)
-- `✓ space e` — show this file in its directory
+- `✓ space e` — this file's folder, cursor on the file
 - `✓ space f` — file finder
 - `✓ space o` — open remote destination
 - `✓ space t` — terminal in a split below (TERMINAL mode)
@@ -170,7 +170,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ space P` — paste clipboard before
 - `✓ space d` — diagnostics picker
 - `✓ space k` — hover docs
-- `✓ space a` — actions here (fixes and code; files in a directory)
+- `✓ space a` — actions here (fixes and code; in a folder: search, terminal, copy path)
 - `✓ space s` — document symbols picker
 - `✓ space S` — workspace symbols picker
 - `✓ space j` — jumplist picker
@@ -214,6 +214,14 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ]f [f` — next / prev file in commit diff
 - `✓ enter` — open the commit that last changed this line (blame)
 - `✓ q` — close this view (read-only buffers)
+
+## Folder
+
+- `✓ enter -` — open the file or folder under the cursor / the parent folder
+- `✓ g.` — show or hide dotfiles
+- `✓ cw dd o yy p` — rename / delete / new (name/ for a folder) / copy: edit the names, then :w
+- `✓ :w :e!` — show the changes (y applies, q cancels) / drop them and list the folder again
+- `✓ :filter :e` — narrow to matching names (:filter alone clears) / list the folder again
 
 ## Pickers
 
@@ -264,7 +272,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
 - `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
 - `✓ :tab-size :indent-style` — indent width and tabs or spaces for this file
-- `✓ :fs :browse :filter :remote :terminal-local` — file operations, browse a directory (local or ssh://), filter its listing, SSH hosts, a local shell
+- `✓ :remote :terminal-local` — SSH hosts / a local shell even from an SSH context
 - `✓ :copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo` — the collection's hits (quickfix): show it, step hits, run a command at each hit line or file
 
 ## Missing

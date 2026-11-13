@@ -13,11 +13,14 @@ use std::sync::Arc;
 use strop_workspace::{DirectorySnapshot, Observation};
 pub const ROW_LIMIT: usize = strop_fs::batch::STEP_LIMIT;
 const TEXT_LIMIT: usize = 1024 * 1024;
+pub const OVER_LIMIT: &str = "more than 512 entries; :filter first to edit names";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FileReference {
     pub draft: WorkerId,
     pub entry: usize,
+    /// The row text the listing projected for this entry.
+    pub text: String,
     pub location: ResourceLocation,
     pub observation: Observation,
 }
@@ -53,11 +56,21 @@ pub enum Phase {
     Reloading,
     Unconfirmed(WorkerId),
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Removal {
-    Trash,
-    Permanent,
-    Unchosen,
+/// What one draft row will do when written; the renderer labels rows
+/// with it and the compiler classifies rows with it, so the preview and
+/// the batch cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowChange<'a> {
+    /// An existing entry, name unchanged.
+    Unchanged(&'a FileReference),
+    /// An existing entry under a new name.
+    Renamed(&'a FileReference),
+    /// A copy of a file, from this folder or another.
+    Copy(&'a FileReference),
+    /// A name typed fresh: created on write.
+    New,
+    /// A blank row: no effect.
+    Blank,
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Stamp {
@@ -82,8 +95,6 @@ pub struct Draft {
     pub revision: BufferRevision,
     pub phase: Phase,
     pub intent_epoch: u64,
-    pub copy_version: Option<CopyVersion>,
-    pub removal: Removal,
     base: Arc<[Arc<FileReference>]>,
     pub(crate) targets: HashMap<u64, ResourceLocation>,
     geometry: Geometry,
@@ -99,7 +110,7 @@ impl Draft {
         source: &super::super::Directory,
     ) -> Result<(Self, ropey::Rope), String> {
         if source.visible.len() > ROW_LIMIT {
-            return Err("filter the Directory to at most 512 entries before editing names".into());
+            return Err(OVER_LIMIT.into());
         }
         let mut text = String::new();
         let mut rows = Vector::new();
@@ -109,10 +120,7 @@ impl Draft {
                 .entries
                 .get(*visible)
                 .ok_or("directory row identity is invalid")?;
-            let mut name = entry.name.display();
-            if entry.observation.kind == strop_workspace::EntryKind::Directory {
-                name.push('/');
-            }
+            let name = super::super::Directory::row_text(entry);
             if text.len().saturating_add(name.len()).saturating_add(1) > TEXT_LIMIT {
                 return Err("filename draft exceeds its 1 MiB projection bound".into());
             }
@@ -126,6 +134,7 @@ impl Draft {
             base.push(Arc::new(FileReference {
                 draft: id,
                 entry: index,
+                text: name,
                 location: source.location_of(entry),
                 observation: entry.observation.clone(),
             }));
@@ -152,13 +161,7 @@ impl Draft {
                 hint: None,
                 latest: None,
                 intent_epoch: 0,
-                copy_version: None,
                 targets: HashMap::new(),
-                removal: if source.location.filesystem == strop_workspace::Filesystem::Local {
-                    Removal::Trash
-                } else {
-                    Removal::Unchosen
-                },
             },
             ropey::Rope::from_str(&text),
         ))
@@ -171,6 +174,44 @@ impl Draft {
             Origin::Original(index) => self.base.get(*index).map(AsRef::as_ref),
             Origin::Copy(source) => Some(source.as_ref()),
         }
+    }
+    /// What row `line`, now reading `name`, does when written.
+    pub fn row_change(&self, line: usize, name: &str) -> RowChange<'_> {
+        if name.is_empty() {
+            return RowChange::Blank;
+        }
+        let Some(row) = self.geometry.rows.get(line) else {
+            return RowChange::New;
+        };
+        match &row.origin {
+            None => RowChange::New,
+            Some(Origin::Copy(source)) => RowChange::Copy(source),
+            Some(Origin::Original(index)) => match self.base.get(*index) {
+                Some(source)
+                    if source.text == name
+                        || self
+                            .destination(name)
+                            .is_ok_and(|(destination, _)| destination == source.location) =>
+                {
+                    RowChange::Unchanged(source)
+                }
+                Some(source) => RowChange::Renamed(source),
+                None => RowChange::New,
+            },
+        }
+    }
+    /// The location a row's text names, and whether it names a folder.
+    pub(super) fn destination(&self, name: &str) -> Result<(ResourceLocation, bool), String> {
+        let decoded = names::decode(name)?;
+        let directory = decoded.as_os_str().as_encoded_bytes().last() == Some(&b'/');
+        let relative: std::path::PathBuf = decoded.components().collect();
+        Ok((
+            ResourceLocation {
+                filesystem: self.root.filesystem.clone(),
+                path: self.root.path.join(relative),
+            },
+            directory,
+        ))
     }
     pub fn location(&self, line: usize) -> Option<ResourceLocation> {
         if self.phase == Phase::Reloading {

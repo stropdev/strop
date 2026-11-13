@@ -84,6 +84,7 @@ pub use completion::{
 };
 pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
+pub use filesystem::draft::RowChange;
 pub use git_memory::log_text::LogColumns;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, FilesRow, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};

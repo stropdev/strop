@@ -37,6 +37,9 @@ pub(crate) struct Painted<'a> {
     pub cut: bool,
     /// One ink for the whole row's text (the review buffer's rows).
     pub row_fg: Option<Color>,
+    /// Virtual text after the line's end, not part of the buffer: a
+    /// folder row's size and age, or what `:w` will do with it (0102).
+    pub note: Option<(String, ratatui::style::Style)>,
 }
 
 impl Painted<'_> {

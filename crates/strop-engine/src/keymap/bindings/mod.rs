@@ -5,6 +5,7 @@ use super::{Binding, Handler};
 
 mod editing;
 mod ex;
+mod folder;
 mod git;
 mod insert;
 mod leader;
@@ -23,6 +24,7 @@ const TOTAL: usize = moving::ROWS.len()
     + leader::ROWS.len()
     + panes::ROWS.len()
     + git::ROWS.len()
+    + folder::ROWS.len()
     + pickers::ROWS.len()
     + terminal::ROWS.len()
     + ex::ROWS.len();
@@ -63,6 +65,7 @@ pub static BINDINGS: &[Binding] = &concat(&[
     leader::ROWS,
     panes::ROWS,
     git::ROWS,
+    folder::ROWS,
     pickers::ROWS,
     terminal::ROWS,
     ex::ROWS,

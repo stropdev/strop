@@ -1,16 +1,16 @@
 //! `Space a`: one list of what can be done here, titled "actions". Every
 //! row is a typed owner computed as data — retained feedback recoveries,
 //! terminal controls, a review's apply/revert/cancel and, as they arrive,
-//! the language server's code actions. Filesystem operations are rows only
-//! in a Directory buffer (and under `:fs`): on a source file the list is
-//! what can be done to the code (0094 §3.4). No branch order decides which
+//! the language server's code actions. A folder adds three rows (search
+//! in it, a terminal in it, copy its path); changing files is editing the
+//! folder's names (0102). On a source file the list is what can be done
+//! to the code (0094 §3.4). No branch order decides which
 //! list you get (0089 §5): every owner contributes its valid rows.
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_picker::{Item, Kind, Payload, Picker};
 use strop_workspace::ResourceLocation;
 
-use super::filesystem::actions::ACTIONS;
 use super::Editor;
 
 /// One row's owner.
@@ -18,8 +18,8 @@ pub(crate) enum Entry {
     Feedback(super::feedback::actions::FeedbackChoice),
     Terminal(super::terminal::actions::TerminalAction),
     Review(ReviewAction),
-    /// An index into the filesystem table.
-    Filesystem(usize),
+    /// Something to do with the folder in view.
+    Folder(FolderAction),
     /// An index into the language server's pending action list.
     Code(usize),
 }
@@ -30,6 +30,25 @@ pub(crate) enum ReviewAction {
     Apply,
     Revert,
     Cancel,
+}
+
+/// What `Space a` offers in a folder.
+#[derive(Clone, Copy)]
+pub(crate) enum FolderAction {
+    Search,
+    Terminal,
+    CopyPath,
+}
+
+impl FolderAction {
+    const ALL: [Self; 3] = [Self::Search, Self::Terminal, Self::CopyPath];
+    fn title(self) -> &'static str {
+        match self {
+            Self::Search => "Search in this folder",
+            Self::Terminal => "Terminal in this folder",
+            Self::CopyPath => "Copy path",
+        }
+    }
 }
 
 impl ReviewAction {
@@ -49,7 +68,7 @@ impl Entry {
         match self {
             Self::Feedback(_) | Self::Terminal(_) | Self::Review(_) => 0,
             Self::Code(_) => 1,
-            Self::Filesystem(_) => 2,
+            Self::Folder(_) => 2,
         }
     }
 }
@@ -84,18 +103,7 @@ impl Editor {
             self.lsp_code_actions();
             return;
         }
-        let filesystem = entries
-            .iter()
-            .any(|entry| matches!(entry, Entry::Filesystem(_)));
-        let message = if filesystem {
-            format!(
-                "filesystem scope: {} — mutations always require review",
-                self.directory_context().label()
-            )
-        } else {
-            "actions".into()
-        };
-        self.open_actions(entries, code, &message);
+        self.open_actions(entries, code, "actions");
         if code {
             self.lsp_code_actions();
         }
@@ -110,7 +118,7 @@ impl Editor {
             .collect();
         entries.extend(self.context_entries());
         if self.directory().is_some() {
-            entries.extend(self.filesystem_entries().into_iter().map(Entry::Filesystem));
+            entries.extend(FolderAction::ALL.into_iter().map(Entry::Folder));
         }
         entries
     }
@@ -130,20 +138,6 @@ impl Editor {
             })
             .collect();
         self.deliver_code_actions(actions, strop_lsp::PositionEncoding::Utf16);
-    }
-
-    /// `:fs` without a verb: the filesystem rows only.
-    pub(crate) fn open_filesystem_actions(&mut self) {
-        let entries: Vec<Entry> = self
-            .filesystem_entries()
-            .into_iter()
-            .map(Entry::Filesystem)
-            .collect();
-        let message = format!(
-            "filesystem scope: {} — mutations always require review",
-            self.directory_context().label()
-        );
-        self.open_actions(entries, false, &message);
     }
 
     /// Retained feedback and terminal controls for this view. A feedback
@@ -168,31 +162,6 @@ impl Editor {
         entries
     }
 
-    /// The filesystem table rows valid for this view and its namespace.
-    fn filesystem_entries(&self) -> Vec<usize> {
-        let scope = self.directory_context();
-        let directory = self.directory().is_some();
-        let draft = self.filename_draft(self.current()).is_some();
-        let local = scope.filesystem == strop_workspace::Filesystem::Local;
-        ACTIONS
-            .iter()
-            .enumerate()
-            .filter(|(_, action)| match action.command {
-                "trash" => local && !draft,
-                "deletes trash" => local && draft,
-                ":w" | "discard" | "copies stored" | "copies buffer" | "deletes permanent" => draft,
-                "operations" | "verify" | "path" => true,
-                "refresh" => directory,
-                "terminal" => directory && !draft,
-                ":terminal-local" => !draft && !local,
-                "search" => directory,
-                "mark" | "unmark" | "edit" => directory && !draft,
-                _ => !draft,
-            })
-            .map(|(index, _)| index)
-            .collect()
-    }
-
     fn action_stamp(&self) -> Stamp {
         Stamp {
             revision: self.buf().revision(),
@@ -210,7 +179,7 @@ impl Editor {
             Entry::Feedback(choice) => choice.title.clone(),
             Entry::Terminal(action) => self.terminal_action_title(action),
             Entry::Review(action) => action.title().into(),
-            Entry::Filesystem(index) => ACTIONS[*index].title.into(),
+            Entry::Folder(action) => action.title().into(),
             Entry::Code(index) => self
                 .changes
                 .pending_actions
@@ -321,31 +290,33 @@ impl Editor {
             Entry::Review(ReviewAction::Revert) => self.review_revert(),
             Entry::Review(ReviewAction::Cancel) => self.review_cancel_pub(),
             Entry::Code(index) => self.accept_code_action(index),
-            Entry::Filesystem(_) if !fresh => {
-                self.message = "the view changed since actions were listed; reopen actions".into();
-            }
-            Entry::Filesystem(index) => self.run_filesystem_action(index),
+            Entry::Folder(action) => self.run_folder_action(action),
         }
     }
 
-    fn run_filesystem_action(&mut self, index: usize) {
-        let action = &ACTIONS[index];
-        if action.command == ":w" {
-            self.request_save_document(self.current(), None, false, false);
+    fn run_folder_action(&mut self, action: FolderAction) {
+        let Some(location) = self.directory().map(|source| source.location.clone()) else {
+            self.message = "this action needs a folder".into();
             return;
-        }
-        if let Some(command) = action.command.strip_prefix(':') {
-            self.run_ex(command);
-            return;
-        }
-        if action.operand {
-            self.begin_text_line(':', Default::default());
-            self.feed_pending_event(super::pending::PendingEvent::Paste(format!(
-                "fs {} ",
-                action.command
-            )));
-        } else {
-            self.run_filesystem_ex(action.command, None);
+        };
+        match action {
+            FolderAction::Search => {
+                self.open_search_in(super::picker::SearchScope { root: location }, false)
+            }
+            FolderAction::Terminal => self.launch_terminal_at(location, ""),
+            FolderAction::CopyPath => {
+                let path = match location.local_path() {
+                    Some(path) => Ok(path.display().to_string()),
+                    None => location.uri().map_err(|error| error.to_string()),
+                };
+                match path {
+                    Ok(path) => {
+                        self.yank_register(Some('+'), super::Register::characterwise(path));
+                        self.message = "path copied".into();
+                    }
+                    Err(error) => self.message = error,
+                }
+            }
         }
     }
 }

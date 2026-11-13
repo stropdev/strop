@@ -20,18 +20,6 @@ impl Editor {
         };
         draft.sync(&doc.buf);
     }
-    pub(crate) fn begin_filename_draft(&mut self) -> Result<(), String> {
-        let source = self
-            .directory()
-            .ok_or("Edit names requires a Directory; use Space e or :browse first")?;
-        if source.stale.is_some() {
-            return Err("refresh the stale Directory before editing names".into());
-        }
-        if self.filesystem.blocks(&source.location) {
-            return Err("filesystem operations must settle or verify before editing names".into());
-        }
-        self.start_directory_task(self.current(), DirectoryTask::EditNames, None)
-    }
     pub(crate) fn discard_filename_draft(&mut self) -> Result<(), String> {
         let document = self.current();
         let phase = self
@@ -60,7 +48,6 @@ impl Editor {
                     handle.cancel(worker::CancelReason::Dismissed);
                 }
             }
-            self.filesystem.preparing_copies.clear();
         }
         if let Some(doc) = self.docs.get_mut(document) {
             if let Some(draft) = doc
@@ -75,59 +62,6 @@ impl Editor {
         }
         self.start_directory_task(document, DirectoryTask::Reload, None)
     }
-    pub(crate) fn filename_copy_policy(&mut self, argument: &str) -> Result<(), String> {
-        let policy = match argument {
-            "stored" => CopyVersion::Stored,
-            "buffer" => CopyVersion::Buffer,
-            _ => return Err("use :fs copies stored or :fs copies buffer".into()),
-        };
-        let document = self.current();
-        let draft = self
-            .docs
-            .get_mut(document)
-            .and_then(|doc| doc.directory_metadata_mut())
-            .and_then(|source| source.draft.as_mut())
-            .ok_or("copy policy requires a filename draft")?;
-        if !draft.editable() {
-            return Err("filename draft is waiting for an admitted operation".into());
-        }
-        draft.intent_epoch = draft
-            .intent_epoch
-            .checked_add(1)
-            .ok_or("filename intent identity exhausted")?;
-        draft.copy_version = Some(policy);
-        self.message = format!("filename draft copies use {policy:?} contents");
-        Ok(())
-    }
-    pub(crate) fn filename_removal_policy(&mut self, argument: &str) -> Result<(), String> {
-        let policy = match argument {
-            "trash" => Removal::Trash,
-            "permanent" => Removal::Permanent,
-            _ => return Err("use :fs deletes trash or :fs deletes permanent".into()),
-        };
-        let document = self.current();
-        let draft = self
-            .docs
-            .get_mut(document)
-            .and_then(|doc| doc.directory_metadata_mut())
-            .and_then(|source| source.draft.as_mut())
-            .ok_or("deletion policy requires a filename draft")?;
-        if !draft.editable() {
-            return Err("filename draft is waiting for an admitted operation".into());
-        }
-        if policy == Removal::Trash && draft.root.filesystem != strop_workspace::Filesystem::Local {
-            return Err(
-                "remote Trash is unavailable; permanent removal must be chosen explicitly".into(),
-            );
-        }
-        draft.intent_epoch = draft
-            .intent_epoch
-            .checked_add(1)
-            .ok_or("filename intent identity exhausted")?;
-        draft.removal = policy;
-        self.message = format!("filename draft deletions use {policy:?}");
-        Ok(())
-    }
     pub(crate) fn prepare_filename_draft(&mut self, document: DocumentId) -> Result<(), String> {
         let draft = self
             .filename_draft(document)
@@ -136,7 +70,8 @@ impl Editor {
         if !draft.editable() {
             return Err("filename draft is waiting for its admitted operation".into());
         }
-        let mut copies = HashMap::new();
+        // A copy copies the file on disk; a source with unsaved edits
+        // would copy something other than what its buffer shows.
         let mut seen = std::collections::HashSet::new();
         for row in &draft.geometry.rows {
             let Some(Origin::Copy(source)) = &row.origin else {
@@ -147,27 +82,21 @@ impl Editor {
             }
             let target = crate::files::FileTarget::from_location(&source.location)
                 .map_err(|error| error.to_string())?;
-            let open = self
+            if self
                 .docs
                 .iter()
-                .find_map(|(_, doc)| doc.matches_target(&target).then_some(doc));
-            if draft.copy_version.is_none() && open.is_some_and(|doc| doc.buf.is_dirty()) {
-                return Err("draft copies include unsaved sources; choose :fs copies stored or :fs copies buffer before :w".into());
-            }
-            if draft.copy_version == Some(CopyVersion::Buffer) {
-                let open = open.ok_or(
-                    "copy current buffer requires that source to be open; choose stored otherwise",
-                )?;
-                copies.insert(source.location.clone(), open.buf.snapshot());
+                .any(|(_, doc)| doc.matches_target(&target) && doc.buf.is_dirty())
+            {
+                return Err(format!(
+                    "{} has unsaved changes; write it first",
+                    source.text
+                ));
             }
         }
         let key = FsKey {
             origin: document,
             revision: self.doc(document).buf.revision(),
             focus: self.focus_epoch,
-            open_created: false,
-            intents: Arc::new(Vec::new()),
-            recovery: None,
             draft: Some(Stamp {
                 id: draft.id,
                 intent: draft.intent_epoch,
@@ -178,7 +107,7 @@ impl Editor {
         let environment = self.filesystem.environment.clone();
         let local = self.filesystem.local().clone();
         let client = self.remote_client();
-        self.start_filesystem_preparation(key, copies, move |token| {
+        self.start_filesystem_preparation(key, move |token| {
             let work = || -> Result<PreparedFilesystem, String> {
                 let compiled = draft.compile(&text, &token)?;
                 let batch = crate::editor::namespace::prepare(&local, &client, &compiled.intents, &environment, &token).map_err(|error| error.to_string())?;

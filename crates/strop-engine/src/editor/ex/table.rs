@@ -422,22 +422,9 @@ pub(crate) const COMMANDS: &[ExCommand] = &[
     own("theme", "choose a built-in interface palette", |e, c| {
         e.theme_command(c.arg)
     }),
-    own("fs", "filesystem actions on the listed files", |e, c| {
-        e.run_filesystem_ex(c.arg, c.range.map(super::range::LineRange::lines))
-    })
-    .lines(),
-    own(
-        "browse",
-        "browse remote directory: :browse [URI]",
-        |e, c| {
-            if let Err(error) = e.browse_directory(c.arg.trim()) {
-                e.message = error;
-            }
-        },
-    ),
     own(
         "filter",
-        "filter remote directory by literal filename",
+        "narrow the folder to matching names; :filter alone clears",
         |e, c| {
             if let Err(error) = e.filter_directory(c.arg.to_owned()) {
                 e.message = error;

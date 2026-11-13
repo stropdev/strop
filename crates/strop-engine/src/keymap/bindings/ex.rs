@@ -120,8 +120,8 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Contextual,
     },
     Binding {
-        keys: ":fs :browse :filter :remote :terminal-local",
-        desc: "file operations, browse a directory (local or ssh://), filter its listing, SSH hosts, a local shell",
+        keys: ":remote :terminal-local",
+        desc: "SSH hosts / a local shell even from an SSH context",
         sections: &["ex"],
         live: true,
         id: "filesystem",
