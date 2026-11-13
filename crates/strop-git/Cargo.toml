@@ -8,9 +8,9 @@ license.workspace = true
 [dependencies]
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
-strop-core = { path = "../strop-core", version = "0.63.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.63.0" }
-strop-remote = { path = "../strop-remote", version = "0.63.0" }
+strop-core = { path = "../strop-core", version = "0.64.0" }
+strop-workspace = { path = "../strop-workspace", version = "0.64.0" }
+strop-remote = { path = "../strop-remote", version = "0.64.0" }
 
 [dev-dependencies]
 tempfile = "3"
