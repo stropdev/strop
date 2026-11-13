@@ -1023,3 +1023,57 @@ Departures, with reasons:
   names and dates.
 - **Found on the way**: `plans/STATUS.md` carried a stray merge marker
   (`||||||| 476f9d9`); removed with this plan's move to "in force".
+
+### 11.1 Step B and the commit view (0.64, on 0101's typed data)
+
+Merged onto 0101, which typed the rows §7 asked for. What landed:
+
+- **Log step B** (§4.3): the buffer row is `graph sha  (refs) subject`
+  (`git_memory/log_text.rs`); author and age are the row's render-only
+  fact (`render/diff/log.rs`), the age one unit (`1s 5m 3h 2d 4w 6mo 1y`)
+  from the commit time against the editor's clock (`Tape::now`, as the
+  blame column reads it). Refs bold `fg.secondary`, the branch `HEAD`
+  points to in the accent; the frame property's one-accent rule allows
+  that branch as it allows the status's `Head:`. The goldens set the clock,
+  so their ages are fixed (L7).
+- **The commit view** (§4.4, second picture): `PreparedFiles` owns the
+  commit summary and a typed row table (`FilesRow`); `Surface::ChangedFiles`
+  lost its `sha` and `commit` fields (the files carry both), and the dive's
+  payload is one value. The adapter is `render/diff/files.rs`;
+  `render/diff/list.rs` is now only the list dispatch and its per-frame
+  `ListLayout`.
+- **`binary`** on file rows and on a binary file's diff heading, from the
+  commit's list; `no line changes` stays for a mode change or a pure rename,
+  which have no line changes and are not binary. The first departure of §11
+  is resolved.
+- **Status file rows** end in the entry's `+N -M` or `binary`
+  (`StatusView::stat`), which §4.2 left undrawn for want of data.
+
+Departures, with reasons:
+
+- **The graph and sha are padded in the buffer text**, not only drawn: the
+  caret-truth rule (§3.8) forbids padding inside a row's painted text. Pages
+  only widen the columns; a page with a wider graph or sha re-spells the
+  rows above it with the new padding (line count and the cursor's row
+  kept). 0101 §2.2's "nothing above the cursor moves" holds for rows, not
+  for their columns.
+- **git's `%ar` and `LogRow::text` are gone**: the text is no longer git's
+  wording, so nothing read them.
+- **The age column is 4 cells**, not 3: `11mo` is four.
+- **The author column** is as wide as the widest author among the loaded
+  rows, at most 16 cells (longer names end in `…`); it leaves under 60
+  columns, as §3.9 says (§4.3's 48-column picture agrees).
+- **The commit view opens on its first file**, as §4.4's picture shows the
+  cursor; the heading and message rows above it are not files.
+- **The commit heading's age is in words** (`3 days ago`, the picture's
+  wording); the log's is the short unit.
+- **A heading whose fact leaves keeps its leader**: the commit view has two
+  headings with different facts, and at narrow widths one fact left while
+  the other's name filled the row, so their rules ended apart. The allocator
+  no longer ties the leader to the fact; the `grep-*` goldens did not
+  change, `git-diff-binary-*-48x16` gained its rule. The frame property
+  "every heading ends in the same column" exempts a heading that is only
+  its (possibly cut) name with no room for a leader.
+- **Blame keeps its own age** (`strop-git`'s `rel_age`, worded at parse time
+  against the wall clock, no `s`/`w` units): unifying it with the log's is
+  left for later.
