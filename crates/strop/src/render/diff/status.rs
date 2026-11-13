@@ -1,16 +1,17 @@
 //! The status buffer's adapter (0096 §2.1, drawn by 0100 §4.2): its typed
 //! `StatusRow`s become block rows. Sections are ruled headings with their
-//! count as the fact; file rows carry the change letter in its ink and
-//! the path in the list idiom; an expanded file's rows carry the rail and
-//! draw their diff as the diff view does. The text spans are the buffer
-//! line's own bytes, so search, yank and the caret read real text.
+//! count as the fact; file rows carry the change letter in its ink, the
+//! path in the list idiom and the entry's `+N -M` as their fact; an
+//! expanded file's rows carry the rail and draw their diff as the diff
+//! view does. The text spans are the buffer line's own bytes, so
+//! search, yank and the caret read real text.
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use crate::editor::{StatusRow, StatusView};
 use crate::render::block::gutter::{self, Sign};
-use crate::render::block::{diff_line, heading, Painted};
+use crate::render::block::{self, diff_line, heading, Painted};
 use strop_git::Change;
 
 use super::super::style::Tokens;
@@ -124,7 +125,14 @@ pub(crate) fn painted<'a>(
                 crate::render::file_name::Role::Row,
                 t,
             ));
-            list(spans)
+            // the entry's `+N -M` (or `binary`) at the right edge, once
+            // the counts follow the snapshot (0101 §11)
+            let fact = match view.stat(index) {
+                Some(stat) if stat.binary => vec![Span::styled("binary", quiet)],
+                Some(stat) => heading::stats(t, stat.added, stat.deleted),
+                None => Vec::new(),
+            };
+            list(block::fact_row(spans, fact, text_cells))
         }
         StatusRow::Note(index) => {
             let binary = matches!(

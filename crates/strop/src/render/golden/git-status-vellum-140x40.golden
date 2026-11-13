@@ -1,13 +1,13 @@
   Head: main                                                                                                                                
                                                                                                                                             
 ─ Staged ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 1 
-  A docs/git.md                                                                                                                             
+  A docs/git.md                                                                                                                       +1 -0 
                                                                                                                                             
 ─ Unstaged ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 3 
-  M logo.bin                                                                                                                                
+  M logo.bin                                                                                                                         binary 
 │   binary file                                                                                                                             
-  M notes.md                                                                                                                                
-  M src/lib.rs                                                                                                                              
+  M notes.md                                                                                                                          +2 -0 
+  M src/lib.rs                                                                                                                        +2 -2 
 │ @@ -1,5 +1,5 @@                                                                                                                           
 │  line 1                                                                                                                                   
 │ -line 2                                                                                                                                   
@@ -24,7 +24,7 @@
 │  line 20                                                                                                                                  
                                                                                                                                             
 ─ Untracked ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 1 
-  ? scratch.txt                                                                                                                             
+  ? scratch.txt                                                                                                                       +1 -0 
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
@@ -42,13 +42,13 @@
   0: 2:reset/#f6f2e9 6:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 127:reset/#f6f2e9 1:reset/reset
   1: 139:reset/#f6f2e9 1:reset/reset
   2: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 6:#4b525c/#f6f2e9+b 130:#aeb3ba/#f6f2e9 1:#4b525c/#f6f2e9 1:reset/reset
-  3: 2:reset/#f6f2e9 2:#3f7a3a/#f6f2e9 5:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
+  3: 2:reset/#f6f2e9 2:#3f7a3a/#f6f2e9 5:#4b525c/#f6f2e9 125:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:reset/reset
   4: 139:reset/#f6f2e9 1:reset/reset
   5: 1:#656d7b/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9+b 128:#656d7b/#f6f2e9 1:#4b525c/#f6f2e9 1:reset/reset
-  6: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 8:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 129:#262a30/#f6f2e9 6:#656d7b/#f6f2e9 1:reset/reset
   7: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 13:#656d7b/#f6f2e9+i 124:reset/#f6f2e9 1:reset/reset
-  8: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 8:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
-  9: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 4:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 125:reset/#f6f2e9 1:reset/reset
+  8: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 130:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:reset/reset
+  9: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 4:#4b525c/#f6f2e9 126:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:reset/reset
  10: 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 3:#656d7b/#fdfbf6 4:#b8323f/#fdfbf6 1:#656d7b/#fdfbf6 4:#3f7a3a/#fdfbf6 3:#656d7b/#fdfbf6 122:#fdfbf6/#fdfbf6 1:reset/reset
  11: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#262a30/#f6f2e9 130:reset/#f6f2e9 1:reset/reset
  12: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 1:#b8323f/#f3dcd8 5:#262a30/#f3dcd8 1:#262a30/#e8bfba+b 130:#f3dcd8/#f3dcd8 1:reset/reset
@@ -65,7 +65,7 @@
  23: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9 129:reset/#f6f2e9 1:reset/reset
  24: 139:reset/#f6f2e9 1:reset/reset
  25: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 9:#4b525c/#f6f2e9+b 127:#aeb3ba/#f6f2e9 1:#4b525c/#f6f2e9 1:reset/reset
- 26: 2:reset/#f6f2e9 2:#656d7b/#f6f2e9 11:#262a30/#f6f2e9 124:reset/#f6f2e9 1:reset/reset
+ 26: 2:reset/#f6f2e9 2:#656d7b/#f6f2e9 130:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:reset/reset
  27: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  28: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  29: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset

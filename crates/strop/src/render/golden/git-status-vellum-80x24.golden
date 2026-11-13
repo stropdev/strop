@@ -1,13 +1,13 @@
   Head: main                                                                   ▮
                                                                                ▮
 ─ Staged ──────────────────────────────────────────────────────────────────── 1▮
-  A docs/git.md                                                                ▮
+  A docs/git.md                                                           +1 -0▮
                                                                                ▮
 ─ Unstaged ────────────────────────────────────────────────────────────────── 3▮
-  M logo.bin                                                                   ▮
+  M logo.bin                                                             binary▮
 │   binary file                                                                ▮
-  M notes.md                                                                   ▮
-  M src/lib.rs                                                                 ▮
+  M notes.md                                                              +2 -0▮
+  M src/lib.rs                                                            +2 -2▮
 │ @@ -1,5 +1,5 @@                                                              ▮
 │  line 1                                                                      ▮
 │ -line 2                                                                      ▮
@@ -26,13 +26,13 @@
   0: 2:reset/#f6f2e9 6:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 67:reset/#f6f2e9 1:#656d7b/#f6f2e9
   1: 79:reset/#f6f2e9 1:#656d7b/#f6f2e9
   2: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 6:#4b525c/#f6f2e9+b 70:#aeb3ba/#f6f2e9 1:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9
-  3: 2:reset/#f6f2e9 2:#3f7a3a/#f6f2e9 5:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 64:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  3: 2:reset/#f6f2e9 2:#3f7a3a/#f6f2e9 5:#4b525c/#f6f2e9 65:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:#656d7b/#f6f2e9
   4: 79:reset/#f6f2e9 1:#656d7b/#f6f2e9
   5: 1:#656d7b/#f6f2e9 1:reset/#f6f2e9 8:#262a30/#f6f2e9+b 68:#656d7b/#f6f2e9 1:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9
-  6: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 8:#262a30/#f6f2e9 67:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  6: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 69:#262a30/#f6f2e9 7:#656d7b/#f6f2e9
   7: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 13:#656d7b/#f6f2e9+i 64:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  8: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 8:#262a30/#f6f2e9 67:reset/#f6f2e9 1:#656d7b/#f6f2e9
-  9: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 4:#4b525c/#f6f2e9 6:#262a30/#f6f2e9 65:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  8: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 70:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:#656d7b/#f6f2e9
+  9: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 4:#4b525c/#f6f2e9 66:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:#656d7b/#f6f2e9
  10: 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 3:#656d7b/#fdfbf6 4:#b8323f/#fdfbf6 1:#656d7b/#fdfbf6 4:#3f7a3a/#fdfbf6 3:#656d7b/#fdfbf6 62:#fdfbf6/#fdfbf6 1:#656d7b/#f6f2e9
  11: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#262a30/#f6f2e9 70:reset/#f6f2e9 1:#656d7b/#f6f2e9
  12: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 1:#b8323f/#f3dcd8 5:#262a30/#f3dcd8 1:#262a30/#e8bfba+b 70:#f3dcd8/#f3dcd8 1:#656d7b/#f6f2e9
