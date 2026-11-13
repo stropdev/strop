@@ -1,13 +1,13 @@
      search modeline — 5 hits in 2 files                                                                                                    
                                                                                                                                             
-──── docs/remote.md ● ────────────────────────────────────────────────────────────────────────────────────────────────────────────── 2 hits 
+━━━━ docs/remote.md ● ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2 hits 
    1 # Remote                                                                                                                               
    2                                                                                                                                        
    3 The modeline dentifies the endpoint.                                                                                                   
    4                                                                                                                                        
    5 The modeline names the fixed root.                                                                                                     
                                                                                                                                             
-──── src/render/statusline.rs ────────────────────────────────────────────────────────────────────────────────────────────────────── 3 hits 
+━━━━ src/render/statusline.rs ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3 hits 
    1 //! The modeline: one quiet row at the bottom edge.                                                                                    
    2 //!                                                                                                                                    
    3 //! Every width is a display cell, never a character.                                                                                  
@@ -48,7 +48,7 @@
   6: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
   7: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 8:#8a510f/#f6f2e9+b 22:#262a30/#f6f2e9 100:reset/#f6f2e9 1:reset/reset
   8: 139:reset/#f6f2e9 1:reset/reset
-  9: 4:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 11:#4b525c/#f6f2e9 13:#4b525c/#f6f2e9+b 104:#aeb3ba/#f6f2e9 6:#4b525c/#f6f2e9 1:reset/reset
+  9: 4:#656d7b/#f6f2e9 1:reset/#f6f2e9 11:#4b525c/#f6f2e9 13:#4b525c/#f6f2e9+b 104:#656d7b/#f6f2e9 6:#4b525c/#f6f2e9 1:reset/reset
  10: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 8:#696d77/#f6f2e9+i 8:#8a510f/#f6f2e9+b+i 35:#696d77/#f6f2e9+i 83:reset/#f6f2e9 1:reset/reset
  11: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 131:reset/#f6f2e9 1:reset/reset
  12: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 53:#696d77/#f6f2e9+i 81:reset/#f6f2e9 1:reset/reset

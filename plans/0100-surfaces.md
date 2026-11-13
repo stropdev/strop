@@ -277,6 +277,8 @@ each kind.
 
 ### 3.2 The heading
 
+*Amended by [0103](0103-seams-and-splits.md): a collection's file heading is a seam, ruled `━` in `fg.muted`.*
+
 ```
 ──── src/b.rs ● ──────────────────────────────────────────────────────── 2 hits
 └gutter┘└name┘└marks┘└──────────────── leader ────────────────────────┘ └fact─┘

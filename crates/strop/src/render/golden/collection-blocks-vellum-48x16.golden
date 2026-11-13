@@ -12,7 +12,7 @@
   59     let value_59 = compute(59);            
   60     let token_60 = parse_token(input, 60); 
                                                 
-──── src/b.rs ────────────────────────── 2 hits 
+━━━━ src/b.rs ━━━━━━━━━━━━━━━━━━━━━━━━━━ 2 hits 
   NORMAL    collection: search token      30:1  
 
   0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 10:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 2:#9c4a22/#f6f2e9 2:#656d7b/#f6f2e9 11:reset/#f6f2e9 1:reset/reset

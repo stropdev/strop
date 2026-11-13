@@ -476,7 +476,7 @@ fn one_card_per_file_with_gap_rows() {
         "one block for the file: {text}"
     );
     // the buffer holds words: no drawing characters anywhere
-    assert!(!text.contains(['╭', '╰', '─', '⋮']), "{text}");
+    assert!(!text.contains(['╭', '╰', '─', '━', '┬', '⋮']), "{text}");
     let gap_line = text.lines().position(|l| l == "2 lines not shown").unwrap();
     assert_eq!(rows[gap_line], crate::editor::CollectionRow::Gap);
     // the gap row, the heading and the blank row are protected
@@ -509,7 +509,10 @@ fn a_yank_of_a_block_is_its_words() {
     e.feed_text("ggVGy");
     let yanked = e.register(None).text.clone();
     assert!(yanked.contains("a.txt\n"), "{yanked}");
-    assert!(!yanked.contains(['╭', '╰', '─', '⋮', '│']), "{yanked}");
+    assert!(
+        !yanked.contains(['╭', '╰', '─', '━', '┬', '⋮', '│']),
+        "{yanked}"
+    );
 }
 
 /// 0049 §5: ]f/[f walk file cards.

@@ -141,8 +141,11 @@ themes are built into the binary: nothing to download or install.
 
 ## Pane titles and previews
 
-A pane title is the pane's number and the file's path inside the project.
-Two files with the same name are told apart by their directories. A file
+With two or more panes, each pane starts at a title line: the pane's
+number and the file's path inside the project, set into a thin rule that
+is brighter on the focused pane. Side-by-side panes are divided by one
+vertical line that meets the titles; stacked panes are divided by the
+lower pane's title line alone. Two files with the same name are told apart by their directories. A file
 outside the project shows its full path, and a file on an SSH host shows
 the host (`ssh:devbox /etc/app.conf`). `●` marks unsaved changes and `[RO]`
 a read-only buffer. In a narrow pane the directories are shortened first;

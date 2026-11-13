@@ -69,7 +69,7 @@ pub(crate) fn painted(
             let sha = files.sha();
             let heading = heading::Heading {
                 gutter: LIST_GUTTER,
-                ruled: true,
+                rule: heading::Rule::Light,
                 name: heading::Name::Words(vec![
                     Span::styled("commit ", Style::default().fg(t.muted)),
                     Span::styled(sha.get(..10).unwrap_or(sha).to_owned(), bold),
@@ -100,7 +100,7 @@ pub(crate) fn painted(
             fact.extend(heading::stats(t, added, deleted));
             let heading = heading::Heading {
                 gutter: LIST_GUTTER,
-                ruled: true,
+                rule: heading::Rule::Light,
                 name: heading::Name::Words(vec![Span::styled("Files", bold)]),
                 marks: Vec::new(),
                 fact,

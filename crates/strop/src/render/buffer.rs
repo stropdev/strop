@@ -12,9 +12,12 @@
 //! never scroll. Content columns stay `usize` end to end; narrowing to
 //! u16 happens only at the final terminal-coordinate conversion.
 //!
-//! Chrome (0088 §2 rule 4): with two or more panes each pane's identity
-//! sits in its top border (`╭ 1 statusline.rs ● ───╮`), focused border
-//! `fg.muted`, unfocused `fg.faint`; one divider idiom separates panes.
+//! Chrome (0088 §2 rule 4, 0103 §4): with two or more panes each pane's
+//! identity sits in its title rule (`─ 1 statusline.rs ● ────`), focused
+//! rule `fg.muted`, unfocused `fg.faint`. Corners are for cards only. Side
+//! by side, a `│` divider in `fg.faint` runs the full height and meets the
+//! title rules in a `┬`; stacked, the lower pane's title rule is the
+//! boundary.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -72,19 +75,13 @@ pub(crate) fn render_panes(editor: &Editor, t: &Tokens, frame: &mut Frame, area:
         return active_rect;
     }
     let is_row = editor.layout() == LayoutDir::Row;
-    let axis = if is_row {
-        usize::from(area.width)
-    } else {
-        usize::from(area.height.saturating_sub(1))
-    };
-    let mut offset = 0usize;
     for (i, window) in prepared.panes.iter().enumerate() {
         let rect = super::from_cells(window.rect);
         let active = i == prepared.active_pane;
         let w = usize::from(rect.width);
         let h = usize::from(rect.height);
         if n > 1 && h > 0 && w > 0 {
-            render_title_border(editor, t, frame, rect, i, window.doc, active);
+            render_title_rule(editor, t, frame, rect, i, window.doc, active);
         }
         if active {
             active_rect = rect;
@@ -116,12 +113,11 @@ pub(crate) fn render_panes(editor: &Editor, t: &Tokens, frame: &mut Frame, area:
                 }
             }
         }
-        let size = if is_row { w } else { h + usize::from(n > 1) };
-        let divider = offset.saturating_add(size);
-        if i + 1 < n && divider < axis {
-            render_divider(t, frame, area, rect, is_row, divider, active);
+        // the divider column is the one right of the prepared rect, so
+        // paint cannot disagree with preparation
+        if is_row && i + 1 < n && w > 0 {
+            render_divider(t, frame, area, rect);
         }
-        offset = divider.saturating_add(1);
     }
     active_rect
 }
@@ -132,7 +128,7 @@ pub(crate) fn render_panes(editor: &Editor, t: &Tokens, frame: &mut Frame, area:
 /// paths absolute, remote resources keeping their authority;
 /// never the active-document modeline projection for an inactive pane.
 #[allow(clippy::too_many_arguments)]
-fn render_title_border(
+fn render_title_rule(
     editor: &Editor,
     t: &Tokens,
     frame: &mut Frame,
@@ -157,7 +153,7 @@ fn render_title_border(
         strop_engine::editor::DocumentSource::Terminal(_)
     );
     let readonly = document.buf.readonly && !is_terminal;
-    // `╭ N ` + name + flags + ` ─╮`: the flags and corners are reserved
+    // `─ N ` + name + flags + ` ──`: the flags and the rule are reserved
     // before the name clips, so focus, dirty and read-only survive narrow.
     let flags = format!(
         "{}{}",
@@ -181,7 +177,7 @@ fn render_title_border(
     } else {
         super::file_name::Label::parse(&name)
     };
-    // the closing ` ─╮` is reserved only while the whole name fits; a
+    // the trailing ` ──` is reserved only while the whole name fits; a
     // tight pane spends every cell on identity instead
     let closes = fixed + label.width() + 3 <= w;
     let budget = w.saturating_sub(fixed + if closes { 3 } else { 0 });
@@ -207,7 +203,7 @@ fn render_title_border(
     } else {
         (ink, ink.add_modifier(Modifier::BOLD))
     };
-    let mut spans = vec![Span::styled("╭ ", border), Span::styled(number, ink)];
+    let mut spans = vec![Span::styled("─ ", border), Span::styled(number, ink)];
     if let Some(authority) = &label.authority {
         spans.push(Span::styled(
             format!("{authority} "),
@@ -228,14 +224,13 @@ fn render_title_border(
     }
     if closes {
         let used: usize = spans.iter().map(|span| span.width()).sum();
-        let rule = w.saturating_sub(used + 1);
+        let rule = w.saturating_sub(used);
         if rule > 0 {
             spans.push(Span::styled(
                 format!(" {}", "─".repeat(rule.saturating_sub(1))),
                 border,
             ));
         }
-        spans.push(Span::styled("╮", border));
     }
     let spans = fixed_spans(spans, w, document.indent.width.max(1));
     frame.render_widget(
@@ -249,47 +244,20 @@ fn render_title_border(
     );
 }
 
-/// The one divider idiom: a `│` column between side-by-side panes (blank
-/// on the title row, where the corners already separate the cards), and
-/// a `╰───╯` closing border under a stacked pane — the pane it belongs to
-/// decides the colour.
-#[allow(clippy::too_many_arguments)]
-fn render_divider(
-    t: &Tokens,
-    frame: &mut Frame,
-    area: Rect,
-    rect: Rect,
-    is_row: bool,
-    divider: usize,
-    active: bool,
-) {
-    let color = if active { t.muted } else { t.faint };
-    if is_row {
-        let dx = area.x + divider as u16;
-        let bottom = area.y + area.height.saturating_sub(1);
-        for dy in area.y..bottom {
-            let cell = &mut frame.buffer_mut()[(dx, dy)];
-            let symbol = if dy + 1 == rect.y { " " } else { "│" };
-            cell.set_symbol(symbol);
-            cell.set_fg(t.faint);
-            cell.set_bg(t.base);
-        }
-    } else {
-        let dy = area.y + divider as u16;
-        let right = area.x + area.width;
-        for dx in area.x..right {
-            let cell = &mut frame.buffer_mut()[(dx, dy)];
-            let symbol = if dx == area.x {
-                "╰"
-            } else if dx + 1 == right {
-                "╯"
-            } else {
-                "─"
-            };
-            cell.set_symbol(symbol);
-            cell.set_fg(color);
-            cell.set_bg(t.base);
-        }
+/// The divider between side-by-side panes: a `│` column the full height
+/// of the panes, a `┬` where it meets the title rules. It belongs to
+/// neither pane, so it is always `fg.faint` (0103 §4.3).
+fn render_divider(t: &Tokens, frame: &mut Frame, area: Rect, rect: Rect) {
+    let dx = rect.x + rect.width;
+    if dx >= area.x + area.width {
+        return;
+    }
+    let bottom = area.y + area.height.saturating_sub(1);
+    for dy in area.y..bottom {
+        let cell = &mut frame.buffer_mut()[(dx, dy)];
+        cell.set_symbol(if dy + 1 == rect.y { "┬" } else { "│" });
+        cell.set_fg(t.faint);
+        cell.set_bg(t.base);
     }
 }
 

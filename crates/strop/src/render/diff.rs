@@ -67,7 +67,7 @@ pub(crate) fn painted<'a>(
             };
             let heading = heading::Heading {
                 gutter: gutter_cells,
-                ruled: true,
+                rule: heading::Rule::Light,
                 name: heading::Name::Path(&label),
                 marks: Vec::new(),
                 fact,

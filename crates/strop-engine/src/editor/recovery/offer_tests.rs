@@ -167,3 +167,24 @@ fn read_only_keeps_the_draft_and_a_changed_file_is_flagged() {
     editor.wait_io().unwrap();
     assert_eq!(fixture.stored_labels().len(), 1, "the draft is kept");
 }
+
+/// `:q` before the startup read lands: the read finishes against an
+/// editor with no documents and no panes, and must not reach for a
+/// current file (CI caught this as a panic on exit).
+#[test]
+fn the_startup_read_can_land_after_the_session_closed() {
+    let fixture = fixture();
+    let file = fixture.crashed_draft();
+    let mut editor = Editor::new_in(Buffer::from_text(""), fixture.cwd.clone());
+    editor.state_dir = Some(fixture.state.clone());
+    editor.recovery_read_prior();
+    editor.feed_text(":q\r");
+    assert!(editor.should_quit());
+    editor.wait_io().unwrap();
+    let labels = fixture.stored_labels();
+    assert_eq!(
+        labels,
+        vec![file.display().to_string()],
+        "the draft survives"
+    );
+}

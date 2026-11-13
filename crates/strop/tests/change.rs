@@ -205,7 +205,7 @@ fn collect_waits_for_the_search_and_enter_opens_the_hit() {
     let heading = |name: &str, count: &str| {
         frames[1].lines().any(|row| {
             let row = row.trim_end_matches([' ', '▮']);
-            row.contains(name) && row.contains(" ─") && row.ends_with(count)
+            row.contains(name) && row.contains(" ━") && row.ends_with(count)
         })
     };
     assert!(heading("a.rs", " 1 hit"), "{}", frames[1]);

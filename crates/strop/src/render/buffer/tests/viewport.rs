@@ -121,9 +121,9 @@ fn split_titles_show_the_space_w_jump_numbers() {
     let mut terminal = viewport_terminal(50, 6);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let titles = row_symbols(terminal.backend().buffer(), 0, 0, 50).join("");
-    assert!(titles.contains("╭ 1 [scratch]"), "{titles:?}");
-    assert!(titles.contains("╭ 2 [scratch]"), "{titles:?}");
-    assert!(titles.contains('╮'), "{titles:?}");
+    assert!(titles.contains("─ 1 [scratch]"), "{titles:?}");
+    assert!(titles.contains("─ 2 [scratch]"), "{titles:?}");
+    assert!(titles.contains('┬'), "{titles:?}");
 }
 
 #[test]

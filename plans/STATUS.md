@@ -31,6 +31,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0060](0060-debugger-workflow-and-architecture.md) | debugger workflow; supersedes the 0019 sketch |
 | [0101](0101-history-and-limits.md) | in force (0.64): a private commit-graph and streamed rows for the log and file history (no row cache, the user's repository untouched); the LSP reply bound restated as a decode-memory budget, an over-budget reply failing one request instead of the server, `UNASKED_LINES` deleted; collections close the files they loaded that were never shown or edited. No kernel change. Amends 0099 §4.2 and §8, 0097 §6, 0094 §5 |
 | [0102](0102-folder-view.md) | in force (0.65): a folder is one editable buffer of names (line N is entry N); vim edits plus `:w` change files through a confirm buffer (`y` applies, `q` cancels) that renders the prepared batch itself; size and age are virtual text; `g.` dotfiles; `:fs`, `:browse`, marks, receipts and the copy/delete policies deleted; unconfirmed changes verified by themselves; lock files removed on release. Amends 0054, 0089 item 2, 0091 §5.1 |
+| [0103](0103-seams-and-splits.md) | in force (0.66): a collection's file heading is a heavy `━` seam in `fg.muted`; pane titles are rules with no corners; side-by-side panes share one full-height `│` divider meeting the titles in `┬`; stacked panes lose the closing row (the lower title is the boundary). Amends 0088 rule 4, 0100 §3.2 |
 
 ## Retired or superseded
 

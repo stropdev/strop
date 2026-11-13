@@ -144,7 +144,7 @@ pub(super) fn painted(
             };
             let heading = heading::Heading {
                 gutter: gutter_cells,
-                ruled: true,
+                rule: heading::Rule::Seam,
                 name: heading::Name::Path(&label),
                 marks: heading::marks(t, info.source_dirty, info.source_readonly),
                 fact: heading::fact(t, hits),

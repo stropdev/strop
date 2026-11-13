@@ -1,4 +1,4 @@
-╭ 1 src/render/statusline.rs ──────────────────────────────────────────────────╮
+─ 1 src/render/statusline.rs ───────────────────────────────────────────────────
    1 //! The modeline: one quiet row at the bottom edge.                       ▮
    2 //!                                                                       ▮
    3 //! Every width is a display cell, never a character.                     ▮
@@ -9,8 +9,7 @@
    8 pub struct Modeline {                                                      
    9 │   chip: String,                                                          
   10 │   dirty: bool,                                                           
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭ 2 term:///work//1:sh ────────────────────────────────────────────────────────╮
+─ 2 term:///work//1:sh ─────────────────────────────────────────────────────────
 $ cargo test                                                                    
    Compiling demo v0.1.0                                                        
 running 3 tests                                                                 
@@ -18,6 +17,7 @@ test render::chip ... ok
 test render::echo ... ok                                                        
 test result: ok. 3 passed                                                       
 $                                                                               
+                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -34,15 +34,15 @@ $
   8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 3:#c99ce0/#15171c 1:#e6e1d6/#15171c 6:#c99ce0/#15171c 1:#e6e1d6/#15171c 8:#8ecdb8/#15171c 1:#e6e1d6/#15171c 1:#9da3af/#15171c 53:reset/#15171c 1:reset/reset
   9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 7:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c 1:#9da3af/#15171c 57:reset/#15171c 1:reset/reset
  10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#2b2f38/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e6e1d6/#15171c 4:#8ecdb8/#15171c 1:#9da3af/#15171c 58:reset/#15171c 1:reset/reset
- 11: 80:#4a5160/#15171c
- 12: 2:#858c9a/#15171c 2:#e6e1d6/#15171c 18:#e6e1d6/#15171c+b 58:#858c9a/#15171c
- 13: 12:#e6e1d6/#15171c+b 13:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
+ 11: 2:#858c9a/#15171c 2:#e6e1d6/#15171c 18:#e6e1d6/#15171c+b 58:#858c9a/#15171c
+ 12: 12:#e6e1d6/#15171c+b 13:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
+ 13: 25:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
  14: 25:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
- 15: 25:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
+ 15: 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
  16: 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
- 17: 24:#8fc48a/#15171c 1:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
- 18: 25:#8fc48a/#15171c 54:reset/#15171c 1:reset/reset
- 19: 25:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
+ 17: 25:#8fc48a/#15171c 54:reset/#15171c 1:reset/reset
+ 18: 25:#e6e1d6/#15171c 54:reset/#15171c 1:reset/reset
+ 19: 79:reset/#15171c 1:reset/reset
  20: 79:reset/#15171c 1:reset/reset
  21: 79:reset/#15171c 1:reset/reset
  22: 79:reset/#15171c 1:reset/reset
