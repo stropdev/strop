@@ -255,7 +255,7 @@ fn real_pty_space_t_splits_below_in_terminal_mode_and_re_entry_is_normal() {
     editor.feed_text(" t");
     assert_eq!(editor.panes.len(), 2);
     assert_eq!(editor.active_pane, 1);
-    assert_eq!(editor.layout, crate::editor::LayoutDir::Column);
+    assert_eq!(editor.layout.outline().to_string(), r#"["col",[1,2]]"#);
     assert_eq!(editor.panes[0].doc, origin);
     let terminal = editor.current();
     assert!(editor.terminal_document(terminal).is_some());

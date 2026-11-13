@@ -88,7 +88,7 @@ impl Editor {
                 "last_search":self.last_search.as_ref().map(|search|json!({
                     "pattern":capture_content().then(||search.query.source()),"backward":search.backward,
                     "whole_word":search.query.whole_word()})),
-                "cursor":cursor,"documents":documents,"panes":self.panes,"active_pane":self.active_pane,
+                "cursor":cursor,"documents":documents,"panes":self.panes,"layout":self.layout,"active_pane":self.active_pane,
                 "view_rows":self.view_rows,"message":(!self.tape.content_omitted()).then_some(self.message.as_str()),"should_quit":self.should_quit,
                 "picker":self.picker.as_ref().map(|glue|json!({"id":glue.id.0.get(),
                     "request":glue.active.as_ref().map(|ticket|ticket.request.get()),"query":(!self.tape.content_omitted()).then_some(glue.picker.input.text()),

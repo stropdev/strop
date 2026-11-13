@@ -25,16 +25,15 @@ use std::hash::{Hash, Hasher};
 
 use strop_core::id::{BufferRevision, DisplayColumn, DocumentId};
 
-use super::panes::LayoutDir;
 use super::{Editor, Mode, Surface};
 
 pub mod geometry;
 #[cfg(test)]
 mod picker_tests;
 pub use geometry::{
-    pane_cells, picker_card, picker_field_split, picker_inner, picker_input_height,
-    picker_owns_frame, picker_rows_per_result, picker_split, preview_source_lines, preview_window,
-    text_budget, CellRect, Gutter, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, LIST_GUTTER,
+    picker_card, picker_field_split, picker_inner, picker_input_height, picker_owns_frame,
+    picker_rows_per_result, picker_split, preview_source_lines, preview_window, text_budget,
+    CellRect, Gutter, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, LIST_GUTTER,
     STANDARD_GUTTER,
 };
 
@@ -107,6 +106,8 @@ pub struct PreparedView {
     pub geometry: ViewGeometry,
     pub active_pane: usize,
     pub panes: Vec<PreparedPane>,
+    /// The divider columns between side-by-side panes (plans/0104 §5.1).
+    pub dividers: Vec<CellRect>,
     pub picker: Option<PreparedPicker>,
 }
 
@@ -120,6 +121,7 @@ impl PreparedView {
             },
             active_pane: 0,
             panes: Vec::new(),
+            dividers: Vec::new(),
             picker: None,
         }
     }
@@ -179,11 +181,8 @@ impl Editor {
             // admit new work. Render-safe: pure checks and registration;
             // the diff itself runs on a worker.
             self.refresh_hunks();
-            let rects = pane_cells(
-                self.panes.len(),
-                self.layout == LayoutDir::Row,
-                CellRect::from(geometry),
-            );
+            let placed = self.layout.place(CellRect::from(geometry));
+            let rects = placed.panes;
             let settled = self.adjust_active_viewport(&rects);
             // Visible-window analysis and pair admission for every pane,
             // after the viewport settled. Paint reads the same windows
@@ -218,6 +217,7 @@ impl Editor {
                 geometry,
                 active_pane: self.active_pane,
                 panes,
+                dividers: placed.dividers,
                 picker,
             };
             if settled {
@@ -490,6 +490,7 @@ impl Editor {
         let mut stamp = std::collections::hash_map::DefaultHasher::new();
         (geometry.columns, geometry.rows).hash(&mut stamp);
         self.panes.len().hash(&mut stamp);
+        self.layout.hash(&mut stamp);
         self.active_pane.hash(&mut stamp);
         self.focus_epoch.hash(&mut stamp);
         usize::from(matches!(self.mode, Mode::Insert)).hash(&mut stamp);

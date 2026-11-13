@@ -90,7 +90,7 @@ pub use git_memory::{git_channel, BlameGutter, GitJob};
 pub use git_memory::{CommitFiles, FilesRow, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
 pub use git_work::{StatusRow, StatusView};
 pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
-pub use panes::{LayoutDir, Pane};
+pub use panes::{Axis, Layout, Pane, Placement};
 pub use picker::{
     checked_hit_range, PickerGlue, PreviewKey, PreviewResult, PreviewSource, PreviewTitle,
     Previews, ReplacementHit, SearchScope,
@@ -326,7 +326,8 @@ pub struct Editor {
     /// [`Editor::layout`] and act through admitted actions (0056 AR02).
     pub(crate) panes: Vec<Pane>,
     pub(crate) active_pane: usize,
-    pub(crate) layout: LayoutDir,
+    /// The window tree: leaf `k` is `panes[k]` (plans/0104).
+    pub(crate) layout: Layout,
     /// User config (0005-lite: TOML, embedded defaults, never bricks).
     /// Frontends read [`Editor::config`] and replace it through
     /// [`Editor::set_config`].
@@ -547,7 +548,7 @@ impl Editor {
                 jumps,
             }],
             active_pane: 0,
-            layout: LayoutDir::Row,
+            layout: Layout::Leaf,
             config: crate::config::Config::default(),
             state_dir: None,
             session_policy: crate::session::SessionPolicy::Automatic,
@@ -711,6 +712,7 @@ pub fn state_json(editor: &Editor) -> String {
         "extra_cursors": editor.extra_selections().iter().map(|s| s.head).collect::<Vec<_>>(),
         "panes": editor.panes.len(),
         "active_pane": editor.active_pane,
+        "layout": editor.layout.outline(),
         "picker": editor.picker_open(),
         "picker_input": editor.picker.as_ref().map(|g| g.picker.input.text().to_string()),
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),

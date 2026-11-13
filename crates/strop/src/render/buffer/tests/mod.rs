@@ -5,6 +5,7 @@ mod collection;
 mod diagnostics;
 mod documentation;
 mod identity;
+mod junctions;
 #[path = "../matching_tests.rs"]
 mod matching;
 mod syntax_0083;

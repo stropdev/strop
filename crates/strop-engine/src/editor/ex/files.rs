@@ -181,14 +181,5 @@ pub(crate) fn ex_close(editor: &mut Editor) {
 
 /// `:on[ly]`: this window becomes the only one.
 pub(crate) fn ex_only(editor: &mut Editor) {
-    if editor.panes.len() < 2 {
-        return;
-    }
-    editor.cancel_pending();
-    let pane = editor.panes.swap_remove(editor.active_pane);
-    editor.panes = vec![pane];
-    editor.active_pane = 0;
-    editor.focus_epoch += 1;
-    editor.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
-    editor.discover_git();
+    editor.keep_only_active_pane();
 }
