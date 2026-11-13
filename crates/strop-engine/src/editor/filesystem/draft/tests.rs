@@ -1,9 +1,8 @@
 use super::*;
 use crate::editor::filesystem::tests::{command, fixture};
 fn open_draft(editor: &mut Editor) -> DocumentId {
-    command(editor, ":browse<cr>");
+    command(editor, ":e .<cr>");
     let document = editor.current();
-    command(editor, ":fs edit<cr>");
     assert!(
         editor.filename_draft(document).is_some_and(Draft::editable),
         "{}",
@@ -35,13 +34,13 @@ fn modal_names_review_cancel_and_apply_one_shared_filesystem_plan() {
     let draft_head = editor.head();
     command(&mut editor, ":w<cr>");
     assert!(editor.filesystem.pending.is_some(), "{}", editor.message);
-    command(&mut editor, ":fs cancel<cr>");
+    command(&mut editor, "q");
     assert_eq!(editor.current(), document);
     assert!(editor.filename_draft(document).is_some_and(Draft::editable));
     assert_eq!(editor.buf().text().to_string(), draft_text);
     assert_eq!(editor.head(), draft_head);
     command(&mut editor, ":w<cr>");
-    command(&mut editor, ":fs apply<cr>");
+    command(&mut editor, "y");
     assert!(!root.path().join("a.txt").exists());
     assert!(!root.path().join("b.txt").exists());
     assert_eq!(
@@ -49,8 +48,15 @@ fn modal_names_review_cancel_and_apply_one_shared_filesystem_plan() {
         "A\n"
     );
     assert_eq!(std::fs::read(root.path().join("added.txt")).unwrap(), b"");
-    assert!(editor.filename_draft(document).is_none());
-    assert!(editor.doc(document).buf.readonly);
+    assert_eq!(editor.current(), document, "the folder comes back");
+    // `data/` is the fixture's Trash home, beside the files.
+    assert_eq!(
+        editor.buf().text().to_string(),
+        "data/\nadded.txt\nrenamed.txt\n"
+    );
+    assert!(!editor.buf().is_dirty());
+    assert!(editor.filename_draft(document).is_some_and(Draft::editable));
+    assert_eq!(editor.message, "3 changes applied");
 }
 
 #[test]
@@ -60,10 +66,10 @@ fn browsing_an_open_filename_draft_keeps_its_text_history_and_provenance() {
     let document = open_draft(&mut editor);
     editor.feed_text("ccrenamed.txt<esc>");
     let text = editor.buf().text().to_string();
-    command(
-        &mut editor,
-        &format!(":browse {}<cr>", root.path().display()),
-    );
+    editor
+        .browse_directory(&root.path().display().to_string())
+        .unwrap();
+    editor.wait_io().unwrap();
     assert_eq!(editor.current(), document);
     assert_eq!(editor.buf().text().to_string(), text);
     assert!(editor.buf().is_dirty());
@@ -73,7 +79,7 @@ fn browsing_an_open_filename_draft_keeps_its_text_history_and_provenance() {
     editor.feed(strop_core::frontend_input::Key::CtrlR);
     assert_eq!(editor.buf().text().to_string(), text);
     command(&mut editor, ":w<cr>");
-    command(&mut editor, ":fs apply<cr>");
+    command(&mut editor, "y");
     assert!(!root.path().join("a.txt").exists());
     assert_eq!(
         std::fs::read(root.path().join("renamed.txt")).unwrap(),
@@ -99,7 +105,7 @@ fn whole_entry_yank_paste_keeps_copy_provenance_without_text_inference() {
             .kind,
         OperationKind::Copy
     );
-    command(&mut editor, ":fs apply<cr>");
+    command(&mut editor, "y");
     assert_eq!(
         std::fs::read_to_string(root.path().join("copy.txt")).unwrap(),
         "source data\n"
@@ -125,7 +131,7 @@ fn delete_paste_and_history_restore_the_original_entry_identity() {
     let proposal = editor.filesystem.pending.as_ref().unwrap();
     assert_eq!(proposal.batch.steps.len(), 1);
     assert_eq!(proposal.batch.steps[0].intent.kind, OperationKind::Rename);
-    command(&mut editor, ":fs apply<cr>");
+    command(&mut editor, "y");
     assert_eq!(
         std::fs::read_to_string(root.path().join("moved.txt")).unwrap(),
         "A\n"
@@ -168,7 +174,9 @@ fn refresh_keeps_edited_names_and_records_new_source_observations() {
     editor.feed_text("ccwanted.txt<esc>");
     let before = editor.buf().snapshot();
     std::fs::write(root.path().join("a.txt"), "external data\n").unwrap();
-    command(&mut editor, ":fs refresh<cr>");
+    // What the folder watcher does on an outside change.
+    assert!(editor.refresh_directory());
+    editor.wait_io().unwrap();
     assert_eq!(editor.buf().text(), &before);
     assert!(editor.filename_draft(document).unwrap().latest.is_some());
     command(&mut editor, ":w<cr>");
@@ -193,7 +201,7 @@ fn external_text_creates_a_name_not_a_copied_source() {
             .kind,
         OperationKind::CreateFile
     );
-    command(&mut editor, ":fs apply<cr>");
+    command(&mut editor, "y");
     assert_eq!(std::fs::read(root.path().join("new.txt")).unwrap(), b"");
     assert_eq!(
         std::fs::read_to_string(root.path().join("a.txt")).unwrap(),

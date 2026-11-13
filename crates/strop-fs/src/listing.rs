@@ -71,6 +71,9 @@ pub fn assemble(
     let mut state = ListingState::Complete;
     let mut bytes = 0;
     for entry in source {
+        if crate::guard::reserved(Path::new(&entry.name)) {
+            continue;
+        }
         bytes += entry.name.as_encoded_bytes().len();
         if entries.len() == ENTRY_LIMIT || bytes > NAME_BYTES_LIMIT {
             state = ListingState::Limited {
@@ -123,6 +126,9 @@ fn list_local(
             }
         };
         let native_name = entry.file_name();
+        if crate::guard::reserved(Path::new(&native_name)) {
+            continue;
+        }
         bytes += native_name.as_encoded_bytes().len();
         if entries.len() == ENTRY_LIMIT || bytes > NAME_BYTES_LIMIT {
             state = ListingState::Limited {

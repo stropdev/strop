@@ -137,32 +137,6 @@ fn host_candidates_apply_then_cycle_without_new_requests() {
 }
 
 #[test]
-fn browse_completes_its_uri_operand() {
-    let mut e = editor();
-    suppress(&mut e);
-    // :browse completes paths like :e does.
-    e.feed_text(":browse ssh://build/var/l");
-    e.feed_text("<tab>");
-    let ticket = ticket_for(
-        &e,
-        ":browse ssh://build/var/l",
-        RemoteCompletionQuery::Path {
-            authority: "build".into(),
-            directory: "/var".into(),
-            segment: "l".into(),
-        },
-    );
-    deliver(
-        &mut e,
-        ticket,
-        RemoteCompletionResult::ConnectRequired {
-            endpoint: "ssh://build".into(),
-        },
-    );
-    assert!(e.message.contains("never connects"));
-}
-
-#[test]
 fn late_results_cannot_replace_edited_input() {
     let mut e = editor();
     suppress(&mut e);

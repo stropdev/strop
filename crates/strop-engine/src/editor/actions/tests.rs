@@ -1,7 +1,6 @@
 //! `Space a` is one list of typed owners, titled "actions" (0090 §3).
 use super::{Editor, Entry};
 use strop_core::Buffer;
-use strop_picker::Kind;
 
 fn titles(editor: &Editor) -> Vec<String> {
     editor
@@ -55,43 +54,32 @@ fn space_a_on_a_source_file_offers_no_filesystem_rows() {
     assert_eq!(titles(&editor), ["Import Thing", "Inline variable"]);
 }
 
+/// 0102: a folder offers three rows; changing files is editing names.
 #[test]
-fn filesystem_rows_live_in_the_directory_buffer_and_under_fs() {
+fn a_folder_offers_search_terminal_and_copy_path() {
     let (dir, mut editor) = file_editor();
-    editor.feed_text(":fs<cr>");
-    let glue = editor.picker.as_ref().expect(":fs opens its rows");
-    assert_eq!(glue.picker.kind, Kind::Actions);
-    assert_eq!(glue.picker.kind.title().trim(), "actions");
-    let rows = titles(&editor);
-    assert!(rows.iter().any(|row| row == "Rename"), "{rows:?}");
-    assert!(
-        !rows.iter().any(|row| row == "Refresh directory"),
-        "directory rows need a directory: {rows:?}"
-    );
-    editor.close_picker();
-
     editor
         .browse_directory(&dir.path().display().to_string())
         .unwrap();
     editor.wait_io().unwrap();
     assert!(editor.directory().is_some());
     editor.feed_text(" a");
-    let rows = titles(&editor);
-    assert!(rows.iter().any(|row| row == "New file"), "{rows:?}");
-    assert!(
-        rows.iter().any(|row| row == "Refresh directory"),
-        "{rows:?}"
+    assert_eq!(
+        titles(&editor),
+        [
+            "Search in this folder",
+            "Terminal in this folder",
+            "Copy path"
+        ]
     );
+    editor.accept_action(2);
+    assert_eq!(editor.message(), "path copied");
 }
 
 #[test]
 fn code_actions_join_the_open_list_first() {
     let (_dir, mut editor) = file_editor();
-    let entries = editor
-        .filesystem_entries()
-        .into_iter()
-        .map(Entry::Filesystem)
-        .collect();
+    let entries = vec![Entry::Folder(super::FolderAction::CopyPath)];
     editor.open_actions(entries, true, "actions");
     assert!(editor.picker.as_ref().unwrap().picker.streaming);
     editor.deliver_code_actions(
@@ -100,9 +88,9 @@ fn code_actions_join_the_open_list_first() {
     );
     let rows = titles(&editor);
     assert_eq!(&rows[..2], ["Import Thing", "Inline variable"], "{rows:?}");
-    assert!(rows.iter().any(|row| row == "Rename"), "{rows:?}");
+    assert!(rows.iter().any(|row| row == "Copy path"), "{rows:?}");
     assert!(!editor.picker.as_ref().unwrap().picker.streaming);
-    // accepting a code row runs the code action, not a filesystem row
+    // accepting a code row runs the code action, not a folder row
     editor.accept_action(1);
     assert!(editor.picker.is_none());
     assert!(
@@ -122,21 +110,4 @@ fn an_empty_answer_to_an_empty_list_says_so_and_a_late_one_is_dropped() {
     // a reply after the user closed the list never reopens it
     editor.deliver_code_actions(vec![code("Late")], strop_lsp::PositionEncoding::Utf16);
     assert!(editor.picker.is_none());
-}
-
-#[test]
-fn a_filesystem_row_refuses_once_the_view_moved() {
-    let (_dir, mut editor) = file_editor();
-    let path = super::ACTIONS
-        .iter()
-        .position(|action| action.command == "path")
-        .unwrap();
-    editor.open_actions(vec![Entry::Filesystem(path)], false, "actions");
-    editor.buf_mut().insert(0, "x");
-    editor.accept_action(0);
-    assert!(
-        editor.message().contains("view changed"),
-        "{}",
-        editor.message()
-    );
 }

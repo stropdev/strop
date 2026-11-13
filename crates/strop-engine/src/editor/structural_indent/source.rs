@@ -115,7 +115,8 @@ fn request(document: &Document, trigger: Trigger) -> Request {
     });
     let syntax_path = if supported {
         Some(path.unwrap_or(std::path::Path::new("")).to_path_buf())
-    } else if path.is_none() && detected.is_none() {
+    } else if path.is_none() && detected.is_none() && document.directory_metadata_ref().is_none() {
+        // A scratch indents like code; a folder's names never do.
         Some(std::path::PathBuf::from("scratch.rs"))
     } else {
         None

@@ -15,6 +15,8 @@ pub(super) struct OpenRead {
     pub local: crate::editor::namespace::LocalFs,
     pub previous_directories: Vec<super::super::Directory>,
     pub reveal: Option<ResourceLocation>,
+    /// Names the folder's filename draft when the target is a folder.
+    pub request: strop_core::worker::WorkerId,
 }
 impl OpenRead {
     pub fn run(self, cancel: &CancelToken) -> Outcome<Opened> {
@@ -152,6 +154,7 @@ impl OpenRead {
                                 listed,
                                 &self.previous_directories,
                                 self.reveal.as_ref(),
+                                self.request,
                                 cancel,
                             ),
                             Err(error) => Outcome::failed(FailureKind::Protocol, error.to_string()),
@@ -171,6 +174,7 @@ impl OpenRead {
                 listed,
                 &self.previous_directories,
                 self.reveal.as_ref(),
+                self.request,
                 cancel,
             ),
             Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),
@@ -187,6 +191,7 @@ fn directory_opened(
     listed: super::super::namespace::Listed,
     previous: &[super::super::Directory],
     reveal: Option<&ResourceLocation>,
+    request: strop_core::worker::WorkerId,
     cancel: &CancelToken,
 ) -> Outcome<Opened> {
     let canonical = match FileTarget::from_location(&listed.directory.snapshot.location) {
@@ -198,23 +203,8 @@ fn directory_opened(
     if let Some(old) = previous.iter().find(|old| old.location == source.location) {
         source.filter = old.filter.clone();
         source.return_to = old.return_to.clone();
-        for (name, before) in &old.marked {
-            let location = ResourceLocation {
-                filesystem: source.location.filesystem.clone(),
-                path: source.location.path.join(name.as_path()),
-            };
-            if let Some(entry) = source
-                .line_for(&location)
-                .and_then(|line| source.entry(line))
-            {
-                if before.same_object(&entry.observation) || before == &entry.observation {
-                    source
-                        .marked
-                        .insert(name.clone(), entry.observation.clone());
-                }
-            }
-        }
-        if !source.filter.is_empty() {
+        source.show_hidden = old.show_hidden;
+        if !source.filter.is_empty() || !source.show_hidden {
             if let Err(error) = super::super::directory::apply_filter(&mut source, cancel) {
                 return if cancel.is_cancelled() {
                     Outcome::Cancelled(CancelReason::OwnerClosed)
@@ -223,25 +213,22 @@ fn directory_opened(
                 };
             }
         }
-        let lost = old.marked.len().saturating_sub(source.marked.len());
-        if lost > 0 {
-            source
-                .summary
-                .push_str(&format!(" · {lost} marks not retained"));
-        }
     }
-    if let Some(reveal) = reveal
-        .filter(|reveal| source.entry_index(reveal).is_some() && source.line_for(reveal).is_none())
-    {
+    if reveal.is_some_and(|reveal| {
+        source.entry_index(reveal).is_some() && source.line_for(reveal).is_none()
+    }) {
         source.visible = all_rows;
         source.filter.clear();
-        source.summary = format!("folder · filter cleared to reveal {}", reveal.label());
+        source.show_hidden = true;
+        source.measure();
     }
-    let buffer = Buffer::from_text(&source.text());
-    Outcome::Success(Opened {
-        document: Document::directory(buffer, source),
-        canonical,
-    })
+    match source.into_document(request) {
+        Ok(document) => Outcome::Success(Opened {
+            document,
+            canonical,
+        }),
+        Err(error) => Outcome::failed(FailureKind::InvalidInput, error),
+    }
 }
 
 /// Exact mtime evidence conversion: the kernel's FileTime and std's

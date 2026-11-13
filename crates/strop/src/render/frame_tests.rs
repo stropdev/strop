@@ -345,14 +345,9 @@ fn directory_metadata_preserves_unknown_zero_and_native_row_identity() {
     let frame = crate::headless::frame_string(&mut editor, 80, 10).unwrap();
     let missing = frame.lines().find(|line| line.contains("missing")).unwrap();
     let zero = frame.lines().find(|line| line.contains("zero")).unwrap();
-    assert!(
-        missing.contains('?') && !missing.contains("  0"),
-        "{missing}"
-    );
-    assert!(
-        zero.contains("----------") && zero.contains("  0") && !zero.contains('?'),
-        "{zero}"
-    );
+    // unknown size and age read blank; a measured zero reads 0
+    assert!(missing.trim_end().ends_with("missing"), "{missing}");
+    assert!(zero.contains("  0  "), "{zero}");
     let text = editor.buf().text().to_string();
     let link = text.find("line\\nbreak").unwrap();
     editor.set_head(link);

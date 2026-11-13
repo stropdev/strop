@@ -87,7 +87,7 @@ impl Editor {
                     }
                 };
             }
-            self.message = "Directory buffers have no file write binding; use :fs edit".into();
+            self.message = crate::editor::filesystem::draft::OVER_LIMIT.into();
             return false;
         }
         if self.docs.get(document).is_some_and(|doc| {

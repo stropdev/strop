@@ -3,7 +3,7 @@
 //! preparation edits apply to the open buffer, the mutation commits,
 //! and a cancelled stage applies nothing. The wire half of the
 //! exchange is covered in strop-lsp's client tests.
-use super::tests::{command, fixture};
+use super::tests::{fixture, rename};
 use super::*;
 use crate::editor::lsp::state::Binding;
 use strop_lsp::{
@@ -56,7 +56,7 @@ fn will_rename_reply_applies_preparation_edits_then_commits_the_rename() {
     let renamed = root.path().join("renamed.txt");
     std::fs::write(&original, "import a;\n").unwrap();
     let document = editor.open_fixture(&original).unwrap();
-    command(&mut editor, ":fs rename renamed.txt<cr>");
+    rename(&mut editor, root.path(), "original.txt", "renamed.txt");
     let stamp = staged_rename(&root, &mut editor, document);
     editor.handle_lsp_event(LspEvent::WorkspaceEdits {
         context: ReplyContext {
@@ -80,7 +80,7 @@ fn will_rename_reply_applies_preparation_edits_then_commits_the_rename() {
         )],
     });
     // The reply both applied the preparation edit and resumed the
-    // parked filesystem apply (focus sits on the review report).
+    // parked filesystem apply (focus sits on the confirm buffer).
     assert_eq!(editor.doc(document).buf.text().to_string(), "import b;\n");
     assert!(editor.filesystem.will_rename.is_none());
     editor.wait_io().unwrap();
@@ -97,9 +97,10 @@ fn cancelling_a_staged_will_rename_applies_nothing() {
     let original = root.path().join("original.txt");
     std::fs::write(&original, "import a;\n").unwrap();
     let document = editor.open_fixture(&original).unwrap();
-    command(&mut editor, ":fs rename renamed.txt<cr>");
+    rename(&mut editor, root.path(), "original.txt", "renamed.txt");
     let stamp = staged_rename(&root, &mut editor, document);
-    command(&mut editor, ":fs cancel<cr>");
+    // No wait: the fake server bound above never answers.
+    editor.feed_text("q");
     assert!(editor.filesystem.will_rename.is_none());
     assert!(editor.filesystem.pending.is_none());
     assert!(original.exists());

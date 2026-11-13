@@ -204,8 +204,8 @@ whichever file has focus. Following go-to-definition into the Rust standard
 library, a cargo registry crate or a system header does not change the
 project: that file opens read-only, and the project's language server keeps
 serving it (no second server is started in the library's directory).
-Browsing a directory on purpose (`:browse DIR`) makes Files and Search work
-in that directory while it has focus.
+Opening a folder on purpose (`:e DIR`) makes Files and Search work in that
+folder while it has focus.
 
 When a file changes on disk, a buffer with no unsaved edits reloads and
 says so. A buffer with unsaved edits keeps them and tells you the file

@@ -1,13 +1,10 @@
 //! Filesystem proposal and mutation lifetime is independent of its originating view.
-pub(crate) mod actions;
-mod commands;
-pub(crate) mod draft;
+pub mod draft;
 mod lsp_rename;
 #[cfg(test)]
 mod lsp_rename_tests;
 mod prepare;
 mod reconcile;
-mod recovery;
 mod render;
 mod shutdown;
 #[cfg(test)]
@@ -26,9 +23,6 @@ pub struct FsKey {
     pub origin: DocumentId,
     pub revision: BufferRevision,
     pub focus: u64,
-    pub open_created: bool,
-    pub intents: std::sync::Arc<Vec<OperationIntent>>,
-    pub recovery: Option<recovery::RecoveryGuard>,
     pub draft: Option<draft::Stamp>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -51,7 +45,6 @@ pub enum FsEvent {
 pub(crate) struct Proposal {
     ticket: Ticket<FsKey>,
     batch: strop_fs::batch::PreparedBatch,
-    copies: HashMap<usize, ropey::Rope>,
     report: DocumentId,
     view_revision: BufferRevision,
 }
@@ -69,7 +62,6 @@ pub(crate) struct Attempt {
     batch: strop_fs::batch::PreparedBatch,
     report: DocumentId,
     receipts: Vec<StepReceipt>,
-    apply_focus: u64,
     /// Original publication evidence survives later verification observations.
     publication: Vec<Option<strop_workspace::Observation>>,
     warning: Option<String>,
@@ -81,7 +73,6 @@ pub(crate) struct FsState {
     local: super::namespace::LocalFs,
     environment: strop_fs::Environment,
     preparing: Option<Ticket<FsKey>>,
-    preparing_copies: HashMap<ResourceLocation, ropey::Rope>,
     pending: Option<Proposal>,
     will_rename: Option<WillRenameStage>,
     running: Option<WorkerId>,
@@ -95,7 +86,6 @@ impl Default for FsState {
             local: super::namespace::LocalFs::default(),
             environment: strop_fs::Environment::capture(),
             preparing: None,
-            preparing_copies: HashMap::new(),
             pending: None,
             will_rename: None,
             running: None,
@@ -117,10 +107,12 @@ impl FsState {
             || self.running.is_some()
             || self.verifying.is_some()
     }
-    /// `document` shows the review awaiting apply or cancel.
+    /// `document` shows changes awaiting apply or cancel (also while
+    /// language servers prepare a rename).
     pub(crate) fn reviews(&self, document: DocumentId) -> bool {
         self.pending
             .as_ref()
+            .or(self.will_rename.as_ref().map(|stage| &stage.proposal))
             .is_some_and(|proposal| proposal.report == document)
     }
     pub(crate) fn mutation_pending(&self, request: WorkerId) -> bool {
@@ -188,16 +180,12 @@ impl Editor {
                     handle.cancel(worker::CancelReason::OwnerClosed);
                 }
             }
-            self.filesystem.preparing_copies.clear();
         }
     }
     pub(crate) fn retire_filesystem_review(&mut self, reason: &str) {
         if let Some(proposal) = self.filesystem.pending.take() {
             if self.docs.get(proposal.report).is_some() {
-                let text = format!(
-                    "filesystem review {} — {reason}\nnothing applied\n",
-                    proposal.ticket.request.get()
-                );
+                let text = format!("{reason}\nnothing changed\n");
                 if let Err(error) = self.replace_system(proposal.report, &text) {
                     self.message = error.to_string();
                 }
@@ -235,7 +223,7 @@ impl Editor {
             .is_none_or(|document| document.buf.revision() != proposal.view_revision)
         {
             self.filesystem.pending = Some(proposal);
-            self.message = "filesystem review changed; prepare a new review".into();
+            self.message = "these changes went stale; :w in the folder again".into();
             return true;
         }
         if proposal.ticket.key.draft.as_ref().is_some_and(|stamp| {
@@ -246,7 +234,7 @@ impl Editor {
             )
         }) {
             self.filesystem.pending = Some(proposal);
-            self.message = "filename draft changed; cancel this review and prepare it again".into();
+            self.message = "the folder changed since :w; q, then :w again".into();
             return true;
         }
         let intents: Vec<_> = proposal
@@ -292,11 +280,11 @@ impl Editor {
             .sum::<usize>();
         if unresolved + proposal.batch.steps.len() > 1024 {
             self.filesystem.pending = Some(proposal);
-            self.message = "unconfirmed operation history reached its bound; verify before admitting more work".into();
+            self.message = "too many unconfirmed changes; reopen the folders they touched".into();
             return true;
         }
         if proposal.batch.steps.is_empty() {
-            self.message = "filesystem review has no applicable steps".into();
+            self.message = "nothing to apply".into();
             self.filesystem.pending = Some(proposal);
             return true;
         }
@@ -333,7 +321,6 @@ impl Editor {
             batch: proposal.batch.clone(),
             report: proposal.report,
             receipts: Vec::new(),
-            apply_focus: self.focus_epoch,
             publication: Vec::new(),
             warning: None,
             lsp_renames,
@@ -360,10 +347,7 @@ impl Editor {
                 break;
             }
         }
-        self.message = format!(
-            "applying {} reviewed filesystem step(s)",
-            proposal.batch.steps.len()
-        );
+        self.message = format!("applying {}", changes(proposal.batch.steps.len()));
         match self.tape.request("filesystem.apply", &ticket) {
             Ok(false) => return,
             Ok(true) => {}
@@ -390,7 +374,7 @@ impl Editor {
                     &local,
                     &client,
                     &proposal.batch,
-                    &proposal.copies,
+                    &HashMap::new(),
                     &token,
                 ))
             },
@@ -412,7 +396,7 @@ impl Editor {
             if let Some(handle) = self.worker_handles.remove(&request) {
                 handle.cancel(worker::CancelReason::Dismissed);
             }
-            self.message = "filesystem cancellation requested; the receipt will retain committed or unconfirmed outcomes".into();
+            self.message = "stopping; changes already made are kept".into();
             return true;
         }
         if self
@@ -426,36 +410,11 @@ impl Editor {
         let Some(proposal) = self.filesystem.pending.take() else {
             return false;
         };
-        let draft_return = proposal
-            .ticket
-            .key
-            .draft
-            .as_ref()
-            .filter(|stamp| {
-                self.filename_draft(proposal.ticket.key.origin)
-                    .is_some_and(|draft| draft.id == stamp.id)
-            })
-            .map(|_| {
-                (
-                    proposal.ticket.key.origin,
-                    self.doc(proposal.report).return_point().cloned(),
-                )
-            });
-        let text = format!(
-            "filesystem review {} — cancelled\nnothing applied\n",
-            proposal.ticket.request.get()
-        );
-        if let Err(error) = self.replace_system(proposal.report, &text) {
-            self.message = error.to_string();
-        } else {
-            self.message = "filesystem review cancelled; nothing applied".into();
-        }
-        if let Some((document, point)) = draft_return {
-            if let Some(point) = point.filter(|point| point.document == document) {
-                self.jump_to(point);
-            } else {
-                self.switch_to(document);
-            }
+        // Cancelling is closing the confirm buffer: the folder comes back
+        // with its edits still pending.
+        self.message = "nothing changed; the edits are still pending".into();
+        if proposal.report == self.current() {
+            self.close_buffer(true);
         }
         true
     }
@@ -469,7 +428,6 @@ impl Editor {
                 }
                 self.filesystem.preparing = None;
                 self.worker_handles.remove(&ticket.request);
-                let copies = std::mem::take(&mut self.filesystem.preparing_copies);
                 match outcome {
                     Outcome::Success(PreparedFilesystem {
                         batch,
@@ -483,12 +441,7 @@ impl Editor {
                             // A dropped review must never be silent: the
                             // user asked for this operation and gets no
                             // other signal.
-                            self.message = format!(
-                                "filesystem review dropped as stale (origin moved: {}, focus moved: {}, revision moved: {})",
-                                self.current() != ticket.key.origin,
-                                self.focus_epoch != ticket.key.focus,
-                                self.buf().revision() != ticket.key.revision,
-                            );
+                            self.message = "the folder changed while preparing; :w again".into();
                             return;
                         }
                         if let Some(stamp) = &ticket.key.draft {
@@ -509,47 +462,32 @@ impl Editor {
                             }
                         }
                         if batch.steps.is_empty() && batch.refused.is_empty() {
-                            self.message = "filename draft has no filesystem changes".into();
+                            self.message = "no changes to write".into();
                             return;
                         }
                         self.retire_text_review_for_filesystem();
-                        let (text, rows) = render::proposal(ticket.request, &batch);
+                        let root = ticket.key.draft.as_ref().map(|stamp| stamp.root.clone());
+                        let label = root
+                            .as_ref()
+                            .map_or_else(|| "changes".into(), |root| self.folder_label(root));
+                        let (text, rows) = render::proposal(&label, root.as_ref(), &batch);
                         let mut buffer = strop_core::Buffer::from_text(&text);
-                        buffer.name = Some("filesystem change review".into());
+                        buffer.name = Some(format!("changes in {label}"));
                         let Some(report) = self.open_temporary_output(buffer) else {
                             return; // message set; the batch stays unapplied
                         };
                         self.set_filesystem_review_rows(report, rows);
-                        let copies = batch
-                            .steps
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, step)| {
-                                step.intent.kind == OperationKind::Copy
-                                    && step.intent.copy_version == CopyVersion::Buffer
-                            })
-                            .filter_map(|(index, step)| {
-                                step.intent
-                                    .source
-                                    .as_ref()
-                                    .and_then(|source| copies.get(source))
-                                    .map(|rope| (index, rope.clone()))
-                            })
-                            .collect();
+                        let count = batch.steps.len();
                         self.filesystem.pending = Some(Proposal {
                             ticket,
-                            copies,
                             batch,
                             report,
                             view_revision: self.doc(report).buf.revision(),
                         });
-                        self.message =
-                            "review exact filesystem steps; :fs apply or :fs cancel".into();
+                        self.message = format!("{} — y applies, q cancels", changes(count));
                     }
                     Outcome::Failed { failure, .. } => self.message = failure.message,
-                    Outcome::Cancelled(_) => {
-                        self.message = "filesystem preparation cancelled; nothing applied".into()
-                    }
+                    Outcome::Cancelled(_) => self.message = "nothing changed".into(),
                 }
             }
             FsEvent::Applied(completion) => {
@@ -630,9 +568,8 @@ impl Editor {
                     self.reconcile_filesystem_step(&receipt);
                 }
                 self.notify_did_rename(index);
-                self.publish_filesystem_receipt(index);
                 self.finish_filesystem_draft_attempt(index);
-                self.open_created_filesystem_resource(index);
+                self.settle_filesystem_attempt(index);
             }
             FsEvent::Verified(completion) => self.filesystem_verified(*completion),
         }
@@ -656,70 +593,34 @@ impl Editor {
         self.finish_filename_draft(document, &stamp, operation, committed, unconfirmed);
     }
 
-    fn open_created_filesystem_resource(&mut self, index: usize) {
-        let attempt = &self.filesystem.history[index];
-        if !attempt.ticket.key.open_created
-            || self.docs.is_empty()
-            || self.current() != attempt.report
-            || self.focus_epoch != attempt.apply_focus
-        {
-            return;
-        }
-        let target = attempt
-            .receipts
-            .iter()
-            .rev()
-            .find(|receipt| {
-                receipt.outcome.is_committed()
-                    && matches!(
-                        receipt.operation.intent.kind,
-                        OperationKind::CreateFile | OperationKind::CreateDirectory
-                    )
-            })
-            .and_then(|receipt| {
-                receipt.operation.destination.as_ref().map(|destination| {
-                    (destination.location.clone(), receipt.operation.intent.kind)
-                })
-            });
-        if let Some((location, kind)) = target {
-            match crate::files::FileTarget::from_location(&location) {
-                Ok(target) => {
-                    self.push_jump();
-                    self.request_target(
-                        target,
-                        if kind == OperationKind::CreateDirectory {
-                            super::io::OpenIntent::Browse
-                        } else {
-                            super::io::OpenIntent::Switch { readonly: false }
-                        },
-                    );
-                }
-                Err(error) => {
-                    self.message = format!("creation committed, but opening failed: {error}")
-                }
-            }
-        }
-    }
-
-    fn publish_filesystem_receipt(&mut self, index: usize) {
+    /// After an apply (or a verification): every change made closes the
+    /// confirm buffer and says so; otherwise the buffer shows each
+    /// change's result, and an unconfirmed change is checked against the
+    /// disk — no change is ever retried.
+    pub(super) fn settle_filesystem_attempt(&mut self, index: usize) {
         let attempt = &self.filesystem.history[index];
         let report = attempt.report;
-        let (text, rows) = render::receipt(
-            attempt.ticket.request,
-            &attempt.batch,
-            &attempt.receipts,
-            attempt.warning.as_deref(),
-        );
-        let committed = attempt
+        let total = attempt.receipts.len();
+        let done = attempt
             .receipts
             .iter()
             .filter(|receipt| receipt.outcome.is_committed())
             .count();
-        let unknown = attempt
+        let unconfirmed = attempt
             .receipts
             .iter()
-            .filter(|receipt| receipt.outcome.is_unconfirmed())
-            .count();
+            .position(|receipt| receipt.outcome.is_unconfirmed());
+        let operation = attempt.ticket.request;
+        if done == total {
+            self.message = format!("{} applied", changes(done));
+            if self.current() == report {
+                self.close_buffer(true);
+            }
+            return;
+        }
+        let root = attempt.ticket.key.draft.as_ref().map(|stamp| &stamp.root);
+        let label = root.map_or_else(|| "changes".into(), |root| self.folder_label(root));
+        let (text, rows) = render::outcome(&label, root, &attempt.batch, &attempt.receipts);
         if self.docs.get(report).is_some() {
             if let Err(error) = self.replace_system(report, &text) {
                 self.message = error.to_string();
@@ -727,8 +628,20 @@ impl Editor {
             }
             self.set_filesystem_review_rows(report, rows);
         }
-        self.message = format!(
-            "filesystem: {committed} committed, {unknown} unconfirmed; :fs operations retains receipts"
-        );
+        self.message = format!("{done} of {} applied", changes(total));
+        if let Some(step) = unconfirmed {
+            if let Err(error) = self.verify_filesystem_step(operation, step) {
+                self.message = error;
+            }
+        }
+    }
+}
+
+/// `1 change`, `7 changes`.
+pub(super) fn changes(count: usize) -> String {
+    if count == 1 {
+        "1 change".into()
+    } else {
+        format!("{count} changes")
     }
 }

@@ -135,7 +135,7 @@ impl Editor {
         }
         if !force && self.docs.len() == 1 && self.filesystem.unconfirmed() > 0 {
             self.message =
-                "filesystem outcomes are unconfirmed; :fs verify before quitting, or :q! to force"
+                "some file changes are still unconfirmed; wait for the check, or :q! to force"
                     .into();
             return false;
         }

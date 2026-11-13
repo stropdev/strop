@@ -201,6 +201,7 @@ impl Parent {
 
 pub(crate) struct NameLock {
     file: File,
+    directory: File,
     parent: PathBuf,
     name: OsString,
     identity: ObjectId,
@@ -214,8 +215,10 @@ impl NameLock {
             let _ = write!(lock_name, "{byte:02x}");
         }
         let (file, identity) = open_lock(parent, std::ffi::OsStr::new(&lock_name), true)?;
+        let directory = parent.file.try_clone().map_err(io_failure)?;
         let lock = Self {
             file,
+            directory,
             parent: parent.path.clone(),
             name: lock_name.into(),
             identity,
@@ -228,11 +231,23 @@ impl NameLock {
         }
         Ok(lock)
     }
-    /// Closing alone is insufficient: a concurrent fork may hold the same
-    /// open-file description until exec. End our ownership explicitly.
+    /// Remove the lock's name while still holding it, then end ownership.
+    /// A competitor that opened the old file before the unlink fails its
+    /// own `revalidate` (the name no longer names that file), so the name is
+    /// never shared. Only a crash leaves a lock file behind; removing the
+    /// folder prunes those. Closing alone is insufficient to end ownership:
+    /// a concurrent fork may hold the same open-file description until exec.
     pub fn release(self) -> Result<(), FsFailure> {
+        let unlinked = match self.revalidate() {
+            Ok(()) => {
+                rustix::fs::unlinkat(&self.directory, &*self.name, rustix::fs::AtFlags::empty())
+                    .map_err(|error| io_failure(error.into()))
+            }
+            Err(error) => Err(error),
+        };
         rustix::fs::flock(&self.file, rustix::fs::FlockOperation::Unlock)
-            .map_err(|error| io_failure(error.into()))
+            .map_err(|error| io_failure(error.into()))?;
+        unlinked
     }
     pub fn revalidate(&self) -> Result<(), FsFailure> {
         let current = observation::metadata(

@@ -13,9 +13,12 @@ fn search_here_preserves_ssh_identity_through_preview_open_collection_and_replay
     let source = scope.join(std::ffi::OsStr::from_bytes(b"source \xff '$;.txt"));
     std::fs::write(&source, "REMOTE needle 日本語\n").unwrap();
     let remote = uri("fixture", &scope);
-    let steps = fixture.script("search.steps", &format!(
-        "settle\nkeys ggccLOCAL DIRTY ONLY<esc>\nkeys :browse {remote}<cr>\nsettle\nkeys :fs search<cr>\npaste \"needle\"\nsettle\nframe\nkeys <c-r>\nstate\nkeys <c-o>\nsettle\nframe\nkeys :browse {remote}<cr>\nsettle\nkeys :fs search<cr>\nsettle\nkeys <cr>\nsettle\nkeys yy\nstate\nkeys :qa!<cr>\nsettle\n"
-    ));
+    // `:vs` + `Ctrl-W o` opens the remote folder and keeps the dirty
+    // local buffer, hidden.
+    let steps = fixture.script(
+        "search.steps",
+        &format!("settle\nkeys ggccLOCAL DIRTY ONLY<esc>\nkeys :vs {remote}/<cr>\nsettle\nkeys <c-w>o\nsettle\nkeys  a<cr>\npaste \"needle\"\nsettle\nframe\nkeys <c-r>\nstate\nkeys <c-o>\nsettle\nframe\nkeys :vs {remote}/<cr>\nsettle\nkeys <c-w>o\nsettle\nkeys  a<cr>\nsettle\nkeys <cr>\nsettle\nkeys yy\nstate\nkeys :qa!<cr>\nsettle\n"),
+    );
     let trace = fixture.root().join("search.jsonl");
     let output = fixture.run(&[
         "--headless".into(),

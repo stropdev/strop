@@ -12,28 +12,12 @@ pub(crate) fn apply_filter(
         return Err("Directory snapshots include ignored entries and do not evaluate ignore rules; use Search or an explicit path/glob filter".into());
     }
     let content = ContentPlan::compile(&query).map_err(|error| error.message)?;
-    directory.summary = format!(
-        "folder · {} · hidden {} · no ignores",
-        if matches!(
-            query.content,
-            Some(strop_picker::query::ContentExpr::Regex(_))
-        ) {
-            "regex"
-        } else {
-            "literal"
-        },
-        if selection.hidden == Some(false) {
-            "off"
-        } else {
-            "on"
-        }
-    );
     let mut visible = Vec::new();
     for (index, entry) in directory.entries.iter().enumerate() {
         if token.is_cancelled() {
             return Err("directory filter cancelled".into());
         }
-        if selection.hidden == Some(false)
+        if (!directory.show_hidden || selection.hidden == Some(false))
             && entry
                 .name
                 .as_path()
@@ -54,6 +38,7 @@ pub(crate) fn apply_filter(
         }
     }
     directory.visible = visible.into();
+    directory.measure();
     Ok(())
 }
 
@@ -61,12 +46,12 @@ impl Editor {
     pub(crate) fn filter_directory(&mut self, query: String) -> Result<(), String> {
         let source = self
             .directory()
-            .ok_or(":filter requires a Directory buffer")?;
-        if source.draft.is_some()
-            || !self.buf().readonly
-            || source.view_revision != self.buf().revision()
-        {
-            return Err("finish the filename draft or refresh before filtering".into());
+            .ok_or(":filter narrows a folder; open one with :e dir or Space e")?;
+        if self.buf().is_dirty() {
+            return Err("write (:w) or drop (:e!) the pending changes first".into());
+        }
+        if source.filter == query {
+            return Ok(());
         }
         self.start_directory_task(self.current(), DirectoryTask::Filter, Some(query))
     }
@@ -108,37 +93,27 @@ impl Editor {
         }
         let focused = self.current() == key.document && self.focus_epoch == key.focus;
         match completion.outcome {
-            Outcome::Success(mut opened) => {
-                let retained = self
-                    .doc(key.document)
-                    .directory_metadata_ref()
-                    .and_then(|source| source.draft.as_ref())
-                    .is_some_and(|draft| {
-                        !matches!(
-                            draft.phase,
-                            super::super::filesystem::draft::Phase::Reloading
-                        )
-                    });
+            Outcome::Success(opened) => {
+                let retained = self.doc(key.document).buf.is_dirty()
+                    && self
+                        .doc(key.document)
+                        .directory_metadata_ref()
+                        .and_then(|source| source.draft.as_ref())
+                        .is_some_and(|draft| {
+                            !matches!(
+                                draft.phase,
+                                super::super::filesystem::draft::Phase::Reloading
+                            )
+                        });
                 if key.task == DirectoryTask::Reload && !retained {
                     if let Some(doc) = self.docs.get_mut(key.document) {
                         doc.buf.mark_clean();
                     }
                 }
-                let marks = self
-                    .doc(key.document)
-                    .directory_metadata_ref()
-                    .map(|source| source.marked.clone());
-                if let (Some(source), Some(marks)) =
-                    (opened.document.directory_metadata_mut(), marks)
-                {
-                    source.marked = marks;
-                }
                 match self.publish_source_snapshot(key.document, opened.document) {
                     Err(error) if focused => self.message = error.to_string(),
                     Ok(()) if retained && focused => {
-                        self.message =
-                            "filename draft retained; refreshed source observations are available"
-                                .into();
+                        self.message = "reloaded; your pending changes are kept".into();
                     }
                     _ => {}
                 }

@@ -159,8 +159,7 @@ the way `rg` does.
 Opening a result hides Search. `Space /` brings it back with your query
 and results. It searches again in the directory (and on the host) it was
 first opened for, even if you are now in a file somewhere else. In a
-directory listing, `:fs search` or **Space a → Search here** searches only
-that directory. The project root stays where it is.
+folder, **Space a → Search in this folder** searches only that folder. The project root stays where it is.
 
 A search stops with an error when it passes 100,000 files, or meets a line
 longer than 1 MiB or with more than 4,096 hits in it. Past 100,000 result

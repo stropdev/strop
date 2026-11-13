@@ -72,10 +72,7 @@ pub(super) fn render_pane(
     };
     let buf = &editor.doc(view.doc).buf;
     let surface = editor.doc(view.doc).surface_payload();
-    let directory = editor
-        .doc(view.doc)
-        .directory_metadata_ref()
-        .filter(|source| source.draft.is_none());
+    let directory = editor.doc(view.doc).directory_metadata_ref();
     let mut style = overlays::pane_style(editor, view, syn_spans, search_hits, pair);
 
     // 0011 left-margin columns: the commit file sidebar (Diff surfaces
@@ -166,15 +163,7 @@ pub(super) fn render_pane(
             ));
         }
         if line_idx > buf.last_content_line() {
-            if let Some(directory) = directory {
-                if line_idx == 2 && directory.visible.is_empty() {
-                    left.push(Span::raw(" ".repeat(number_width)));
-                    left.push(Span::styled(
-                        directory::empty_message(directory),
-                        Style::default().fg(t.muted),
-                    ));
-                }
-            } else {
+            if directory.is_none() {
                 left.push(Span::styled("~", Style::default().fg(t.faint)));
             }
             lines.push(pad_row(Line::from(left), area.width));
@@ -220,9 +209,11 @@ pub(super) fn render_pane(
             None => (None, None),
         };
         style.ellipsis = painted.cut;
-        style.note = cursor
-            .then(|| overlays::cursor_note(editor, t, view, line_idx))
-            .flatten();
+        style.note = painted.note.or_else(|| {
+            cursor
+                .then(|| overlays::cursor_note(editor, t, view, line_idx))
+                .flatten()
+        });
         if owner.band_covers_gutter(cursor) {
             if let Some(bg) = style.row_bg {
                 for span in &mut left {

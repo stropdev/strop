@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.65.0 — 2026-11-13
+
+### Changed
+
+- **A folder is a buffer of names** (plans/0102). `strop .`, `:e DIR` and `Space e` open a folder whose lines are its entries, one name per line, folders first and ending in `/`. Line 5 is the fifth entry: `5G`, counts and `dd` mean what they say. There is no heading row and no `../` row any more.
+- **Change files by editing the names.** `cw` renames, `o name` creates (`name/` makes a folder, `a/b.txt` creates `a/` too), `dd` deletes, `yyp` then a new name copies. Each changed row says what writing will do: `was main.rs`, `new`, `copy of lib.rs`. `:w` lists the changes, relative to the folder (`rename  main.rs → main.rx`); `y` makes them and `q` goes back with your edits kept. `u` undoes an edit, `:e!` drops them all.
+- **After the changes are made the folder comes back by itself**, listed again, with the cursor still on its entry, and the message says `3 changes applied`. Only when one fails does the list stay, saying `done` or `failed: …` beside each change.
+- **Size and age beside each name** (`8.5K   1d`), in one column measured per folder so it does not move as you scroll. Folder sizes and permissions are gone.
+- **The folder's path reads like a file's**: relative to the project (`crates/strop-engine/`) in the status line and pane title, with `27 items`, `3 of 9 · filter rs` or `· dotfiles hidden` where the indent setting would be.
+- **`Space a` in a folder** offers three things: search in it, a terminal in it, copy its path.
+- **`?` has a Folder section** listing `Enter`, `-`, `g.`, the edits, `:w`, `:e!` and `:filter`.
+
+### Added
+
+- **`g.` hides or shows dotfiles**, remembered per folder.
+- **An empty folder says so** (`empty folder  ·  o adds a name, :w creates it`), and so does a filter that matches nothing.
+
+### Removed
+
+- **`:fs` and every one of its verbs, and `:browse`.** Open a folder with `:e DIR` (or `:e ssh://host/dir/`) and edit its names instead. Marks, receipts, `:fs operations`, `:fs verify` and `:fs undo` are gone; an unconfirmed change is checked on disk by itself. `Backspace` no longer goes up (`-` does), and `q` in a folder records a macro as in any buffer.
+- **The copy and delete choices.** A copy copies the file on disk and asks you to write it first if it has unsaved changes; a delete goes to the Trash, and on an SSH host is permanent and says `delete`.
+
+### Fixed
+
+- **Lock files no longer pile up beside your files.** Every file operation left a `.strop-lock-…` file behind, and the folder view listed them. They are now removed when the operation finishes, and never listed.
+- **`Ctrl-W v`, `Ctrl-W s`, `Ctrl-W o` and `Ctrl-W =` work in read-only views**; they answered "readonly buffer".
+- **Pressing `Enter` on a just-renamed row** opens the file under its new name, even while the folder is still being listed again.
+- **`o` in a folder opens a line at once**; it no longer waits on the code indenter.
+
 ## 0.64.0 — 2026-11-13
 
 ### Changed

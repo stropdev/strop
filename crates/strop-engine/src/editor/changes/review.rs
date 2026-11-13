@@ -111,7 +111,7 @@ impl Editor {
             return;
         }
         if self.is_filesystem_report(self.current()) {
-            self.message = "this filesystem report has no pending proposal to apply".into();
+            self.message = "already applied; q returns to the folder".into();
             return;
         }
         let Some(mut proposal) = self.review.pending.take() else {
@@ -336,7 +336,8 @@ impl Editor {
             return;
         }
         if self.is_filesystem_report(self.current()) {
-            self.message = "this filesystem report has no pending proposal to cancel".into();
+            // A result buffer: q returns to the folder.
+            self.close_buffer(true);
             return;
         }
         if let Some(stamp) = self
@@ -399,12 +400,19 @@ impl Editor {
         }
     }
 
-    /// Keys a review buffer owns: `Enter` applies, `u` reverts.
+    /// Keys a review buffer owns: `Enter` applies, `u` reverts; a
+    /// folder's confirm buffer also takes `y`, `n` and `q`.
     pub(crate) fn review_key(&mut self, key: strop_core::frontend_input::Key) -> bool {
         use strop_core::frontend_input::Key;
         let current = self.current();
         let filesystem = self.filesystem.reviews(current);
         match key {
+            // The folder's confirm buffer (0102): y or Enter applies, q or
+            // n cancels.
+            Key::Char('y') if filesystem => self.review_apply_pub(),
+            Key::Char('q' | 'n') if filesystem => {
+                self.review_cancel_pub();
+            }
             Key::Enter if filesystem || self.review.live(current) => self.review_apply_pub(),
             Key::Char('u') if self.review.live(current) => self.review_revert(),
             _ => return false,

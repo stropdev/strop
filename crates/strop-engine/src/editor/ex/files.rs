@@ -96,6 +96,12 @@ pub(crate) fn quit_after_writes(editor: &mut Editor) {
 pub(crate) fn ex_edit(editor: &mut Editor, call: &ExCall<'_>) {
     if editor.buf().is_dirty() && !call.bang {
         editor.message = "unsaved changes — :e! to force".into();
+    } else if call.arg.is_empty() && editor.buf().is_dirty() && editor.directory().is_some() {
+        // A folder's pending edits are its unsaved changes: `:e!` drops
+        // them and lists the folder again.
+        if let Err(error) = editor.discard_filename_draft() {
+            editor.message = error;
+        }
     } else if call.arg.is_empty() {
         if !editor.refresh_current_resource() {
             editor.message = "no file or directory to reload".into();
@@ -135,8 +141,7 @@ pub(crate) fn ex_set(editor: &mut Editor, call: &ExCall<'_>) {
                 .directory()
                 .is_some_and(|source| source.draft.as_ref().is_none_or(|draft| !draft.editable()))
             {
-                editor.message =
-                    "Directory listings are read-only; use :fs edit for filename drafts".into();
+                editor.message = crate::editor::filesystem::draft::OVER_LIMIT.into();
                 return;
             }
             editor.buf_mut().clear_readonly();

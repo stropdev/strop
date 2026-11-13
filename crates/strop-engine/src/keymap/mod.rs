@@ -160,6 +160,10 @@ pub const SECTIONS: &[Section] = &[
         title: "Git",
     },
     Section {
+        id: "folder",
+        title: "Folder",
+    },
+    Section {
         id: "pickers",
         title: "Pickers",
     },

@@ -12,9 +12,6 @@ impl Editor {
             .and_then(|document| document.directory_metadata_ref())
             .cloned()
             .ok_or("operation requires a Directory buffer")?;
-        if task == DirectoryTask::EditNames && source.draft.is_some() {
-            return Err("filename draft is already active".into());
-        }
         if let Some(query) = query {
             source.filter = query;
         }
@@ -58,35 +55,25 @@ impl Editor {
             },
             move |token| {
                 let work = || -> Result<Opened, String> {
-                    let rope = if task == DirectoryTask::EditNames {
-                        let (draft, rope) =
-                            super::super::filesystem::draft::Draft::new(request, &source)?;
-                        source.draft = Some(draft);
-                        source.summary = "filename draft · :w reviews · blank new rows are separators · visible backslash escapes".into();
-                        rope
-                    } else {
-                        if task == DirectoryTask::Reload {
-                            let listed = crate::editor::namespace::list(
-                                &local,
-                                &source.location,
-                                &client,
-                                &token,
-                            )
-                            .map_err(|error| error.to_string())?;
-                            let filter = std::mem::take(&mut source.filter);
-                            source = Directory::from_listing(listed.directory, listed.connection);
-                            source.filter = filter;
-                        }
-                        apply_filter(&mut source, &token)?;
-                        ropey::Rope::from_str(&source.text())
-                    };
+                    if task == DirectoryTask::Reload {
+                        let listed = crate::editor::namespace::list(
+                            &local,
+                            &source.location,
+                            &client,
+                            &token,
+                        )
+                        .map_err(|error| error.to_string())?;
+                        let filter = std::mem::take(&mut source.filter);
+                        let show_hidden = source.show_hidden;
+                        source = Directory::from_listing(listed.directory, listed.connection);
+                        source.filter = filter;
+                        source.show_hidden = show_hidden;
+                    }
+                    apply_filter(&mut source, &token)?;
                     let canonical = FileTarget::from_location(&source.location)
                         .map_err(|error| error.to_string())?;
                     Ok(Opened {
-                        document: super::super::Document::directory(
-                            strop_core::Buffer::from_snapshot(rope),
-                            source,
-                        ),
+                        document: source.into_document(request)?,
                         canonical,
                     })
                 };

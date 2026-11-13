@@ -34,7 +34,7 @@ const CACHE_DIRS: usize = 32;
 fn takes_remote_operand(command: &str) -> bool {
     matches!(
         command,
-        "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit" | "browse"
+        "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit"
     )
 }
 
@@ -226,26 +226,6 @@ impl Editor {
         let Some((cmd, rest)) = body.split_once(' ') else {
             return false;
         };
-        let filesystem = cmd == "fs";
-        let (cmd, rest) = if filesystem {
-            let Some((operation, destination)) = rest.split_once(' ') else {
-                return false;
-            };
-            if !matches!(operation, "create" | "mkdir" | "rename" | "move" | "copy") {
-                return false;
-            }
-            let destination = if operation == "copy" {
-                destination
-                    .strip_prefix("stored ")
-                    .or_else(|| destination.strip_prefix("buffer "))
-                    .unwrap_or(destination)
-            } else {
-                destination
-            };
-            (operation, destination)
-        } else {
-            (cmd, rest)
-        };
         let tokens = rest.split(' ').filter(|token| !token.is_empty());
         let remote = rest.starts_with("ssh://");
         let (query, prefix_body) = if remote {
@@ -261,7 +241,7 @@ impl Editor {
                 self.message = "remote save-as completion is unsupported".into();
                 return true;
             }
-            if !filesystem && !takes_remote_operand(cmd) {
+            if !takes_remote_operand(cmd) {
                 return false;
             }
             if tokens.count() > 1 {
@@ -274,25 +254,10 @@ impl Editor {
                 prefix,
             )
         } else {
-            if !filesystem
-                && !matches!(
-                    cmd,
-                    "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit" | "browse"
-                )
-            {
+            if !matches!(cmd, "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit") {
                 return false;
             }
-            let context = if filesystem {
-                match self.filesystem_completion_context(cmd, rest) {
-                    Ok(context) => context,
-                    Err(error) => {
-                        self.message = error;
-                        return true;
-                    }
-                }
-            } else {
-                self.open_context()
-            };
+            let context = self.open_context();
             (
                 directory::classify(rest, context),
                 body[..body.len() - rest.len()].to_owned(),
@@ -484,7 +449,7 @@ impl Editor {
             Outcome::Success(RemoteCompletionResult::ConnectRequired { endpoint }) => {
                 self.message = format!(
                     "no live connection to {endpoint}; completion never connects \
-                     — open or browse the remote first"
+                     — open the remote first"
                 );
             }
             Outcome::Failed { failure, .. } => self.message = failure.message,

@@ -19,7 +19,7 @@ impl Editor {
                 }
                 if self.filesystem.blocks(location) {
                     return Err(format!(
-                        "filesystem operation pending or unconfirmed for {}; verify its receipt first",
+                        "a change to {} is still being applied or checked",
                         location.label()
                     ));
                 }
@@ -70,14 +70,17 @@ impl Editor {
                     .iter()
                     .chain(intent.destination.iter())
                     .any(|resource| intersects(resource, &location));
+                // Another folder's pending edits (or its apply in flight)
+                // name these paths; a clean listing just lists again.
                 if affected
                     && own_draft != Some(document)
                     && entry
                         .directory_metadata_ref()
-                        .is_some_and(|source| source.draft.is_some())
+                        .and_then(|source| source.draft.as_ref())
+                        .is_some_and(|draft| entry.buf.is_dirty() || !draft.editable())
                 {
                     return Err(format!(
-                        "{} has an active filename draft; finish or discard it first",
+                        "{} has pending edits; write (:w) or drop (:e!) them first",
                         location.label()
                     ));
                 }
@@ -179,25 +182,34 @@ impl Editor {
             if let Some(destination) = destination {
                 let directory = self.doc(*document).directory_metadata_ref().is_some();
                 if directory {
-                    let header = format!("{}\n", destination.label());
-                    let end = self.doc(*document).buf.line_start(1);
-                    let result = self
-                        .doc_mut(*document)
-                        .buf
-                        .system_edit()
-                        .replace(strop_core::Range::charwise(0, end), &header);
-                    if let Err(error) = result {
-                        self.message = format!("directory header update failed: {error}");
-                    }
-                    if let Some(entry) = self.docs.get_mut(*document) {
+                    // A folder that moved lists again at its new path. Its
+                    // rows named the old one, so pending edits go with it.
+                    let dropped = {
+                        let mut entry = self.doc_mut(*document);
+                        let dropped = entry.buf.is_dirty();
                         if let Some(source) = entry.directory_metadata_mut() {
                             source.location = destination.clone();
+                            source.draft = None;
                         }
-                        let revision = entry.buf.revision();
-                        if let Some(source) = entry.directory_metadata_mut() {
-                            source.view_revision = revision;
-                        }
-                        entry.buf.name = Some(format!("directory {}", destination.label()));
+                        entry.buf.name = Some(destination.label());
+                        entry
+                            .buf
+                            .set_readonly(strop_core::ReadonlyReason::DirectoryOperation);
+                        entry.buf.mark_clean();
+                        dropped
+                    };
+                    if dropped {
+                        self.message = format!(
+                            "{} moved; its pending edits were dropped",
+                            destination.label()
+                        );
+                    }
+                    if let Err(error) = self.start_directory_task(
+                        *document,
+                        crate::editor::directory::DirectoryTask::Reload,
+                        None,
+                    ) {
+                        self.message = error;
                     }
                 } else if destination.filesystem == Filesystem::Local {
                     let stamp = if source == Some(old) {

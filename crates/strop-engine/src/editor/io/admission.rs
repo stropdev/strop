@@ -15,7 +15,7 @@ impl Editor {
             .resource_location()
             .is_some_and(|location| self.filesystem.blocks(&location))
         {
-            self.message = "filesystem operation pending or unconfirmed; verify before reopening this resource".into();
+            self.message = "a change to this path is still being applied or checked".into();
             return;
         }
         if matches!(intent, OpenIntent::Refresh) && self.directory().is_some() {
@@ -136,6 +136,7 @@ impl Editor {
                 OpenIntent::DirectoryParent { child } => Some(child.clone()),
                 _ => None,
             },
+            request,
         };
         let handle = worker::spawn(
             "strop-open",
@@ -168,10 +169,15 @@ impl Editor {
         // origin cannot be edited: its revision moves only when the
         // editor refreshes it (a status buffer after the index changed),
         // which says nothing about where the user is.
+        // A folder listed again under the request (after `:w` applied, or
+        // an outside change) moved its rows, not the user: still fresh
+        // while it holds no edits of theirs.
         !self.docs.is_empty()
             && self.current() == key.origin
             && self.focus_epoch == key.focus
-            && (self.buf().readonly || self.buf().revision() == key.revision)
+            && (self.buf().readonly
+                || self.buf().revision() == key.revision
+                || (self.directory().is_some() && !self.buf().is_dirty()))
     }
 
     fn finish_open(&mut self, document: DocumentId, intent: OpenIntent) {
@@ -201,7 +207,7 @@ impl Editor {
             intent => {
                 self.switch_to(document);
                 if self.doc(document).directory_metadata_ref().is_some()
-                    && self.filename_draft(document).is_none()
+                    && !self.doc(document).buf.is_dirty()
                 {
                     self.restore_directory_view(document);
                 } else if self.doc(document).directory_metadata_ref().is_none() {
