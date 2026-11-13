@@ -360,6 +360,22 @@ impl Drop for Tui {
 }
 /// 0064 §1: every pane reserves its last column for the scrollbar
 /// track (`│`/`▮`/`▎`), so full-row comparisons ignore that cell.
+/// A row of a list surface (status, log, files: 0100 §3.5): no line
+/// numbers, only a sign column — the cursor's `▌` or a nested row's `│`.
+pub(crate) fn list_row(screen: &str, expected: &str) -> bool {
+    screen
+        .lines()
+        .any(|row| strip_track(row).trim_start_matches(['▌', '│']).trim_start() == expected)
+}
+/// A ruled heading (0100 §3.2): `─ Name ──────── fact`.
+pub(crate) fn heading_row(screen: &str, name: &str, fact: &str) -> bool {
+    screen.lines().any(|row| {
+        let row = strip_track(row);
+        row.starts_with('─')
+            && row.contains(&format!(" {name} ─"))
+            && row.ends_with(&format!("─ {fact}"))
+    })
+}
 pub(crate) fn strip_track(row: &str) -> &str {
     let trimmed = row.trim();
     trimmed

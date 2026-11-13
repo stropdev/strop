@@ -149,7 +149,7 @@ impl RebuildPositions {
                 return 0;
             }
         }
-        // Chrome belongs to the following body (or the final card footer).
+        // Chrome belongs to the following body (or the end of the last block).
         if let Some((old, new)) = self.excerpts.get(index).zip(next.get(index)) {
             let lower = index
                 .checked_sub(1)

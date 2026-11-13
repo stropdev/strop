@@ -1,4 +1,4 @@
-   1 docs: say how staging works                                                
+   1 docs: say how staging works, one key per file or hunk, and what a commit b 
    2                                                                            
    3 # Write the message above; lines starting with # are left out.             
    4 # :wq commits, :q! aborts.                                                 
@@ -21,18 +21,18 @@
 ~                                                                               
 ~                                                                               
 ~                                                                               
-  INSERT    main  .git/COMMIT_EDITMSG ●                              10%   1:28 
+  NORMAL    main  .git/COMMIT_EDITMSG ●                              10%   1:1  
 
-  0: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 27:#e6e1d6/#1b1e24 47:#1b1e24/#1b1e24 1:reset/reset
+  0: 1:#858c9a/#1b1e24+b 4:#e8a848/#1b1e24 72:#e6e1d6/#1b1e24+b 2:#d9a85a/#1b1e24+b 1:reset/reset
   1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
-  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 62:#838a97/#15171c 12:reset/#15171c 1:reset/reset
-  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#838a97/#15171c 48:reset/#15171c 1:reset/reset
-  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#838a97/#15171c 73:reset/#15171c 1:reset/reset
-  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 16:#838a97/#15171c 58:reset/#15171c 1:reset/reset
-  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#838a97/#15171c 48:reset/#15171c 1:reset/reset
-  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 17:#838a97/#15171c 57:reset/#15171c 1:reset/reset
-  8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#838a97/#15171c 73:reset/#15171c 1:reset/reset
-  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 46:#838a97/#15171c 28:reset/#15171c 1:reset/reset
+  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 62:#838a97/#15171c+i 12:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#838a97/#15171c+i 48:reset/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#838a97/#15171c+i 73:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 16:#838a97/#15171c+i 58:reset/#15171c 1:reset/reset
+  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 26:#838a97/#15171c+i 48:reset/#15171c 1:reset/reset
+  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 17:#838a97/#15171c+i 57:reset/#15171c 1:reset/reset
+  8: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#838a97/#15171c+i 73:reset/#15171c 1:reset/reset
+  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 46:#838a97/#15171c+i 28:reset/#15171c 1:reset/reset
  10: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  11: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  12: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
@@ -46,4 +46,4 @@
  20: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  21: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  22: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
- 23: 10:#15171c/#8fc48a+b 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25 14:#e6e1d6/#1c1f25 2:#d9a85a/#1c1f25 29:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25 14:#e6e1d6/#1c1f25 2:#d9a85a/#1c1f25 29:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

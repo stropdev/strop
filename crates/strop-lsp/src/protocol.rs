@@ -385,6 +385,14 @@ pub enum LspEvent {
         name: String,
         hint: String,
     },
+    /// A notification from the server was over the decode budget and was
+    /// dropped unread (0101 §4.2). Sent once per connection: the first one
+    /// is what the user is told about; the rest go to the trace.
+    NotificationDropped {
+        server: ServerId,
+        name: String,
+        tokens: usize,
+    },
     /// A server-initiated `window/showMessage`: user-facing, from the
     /// owning server. `window/logMessage` stays in the trace — it is
     /// logging, not a message.

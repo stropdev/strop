@@ -26,7 +26,7 @@ use self::keys::{Action, Step};
 use super::document::Surface;
 use super::git_memory::{
     git_failure, repo_or_unavailable, BranchKey, DraftKey, GitJob, GitMutation, MutationKey,
-    MutationOp, PorcelainKey, StatusData, StatusKey,
+    MutationOp, PorcelainKey, StatusCounts, StatusData, StatusKey,
 };
 use super::io::OpenIntent;
 use super::{trace, Editor};
@@ -70,6 +70,8 @@ pub(crate) struct GitWork {
     commit: Option<porcelain::CommitSession>,
     porcelain: Option<Ticket<PorcelainKey>>,
     branches: Option<Ticket<BranchKey>>,
+    /// strop's private commit-graph builds (0101 §2.1).
+    pub(crate) graph: super::git_memory::graph::GraphState,
 }
 
 impl GitWork {
@@ -82,6 +84,7 @@ impl GitWork {
             || self.draft.is_some()
             || self.porcelain.is_some()
             || self.branches.is_some()
+            || self.graph.building()
     }
 
     /// An accepted write that shutdown must let finish: a commit the
@@ -226,6 +229,8 @@ impl Editor {
         });
         let args = (ticket.clone(), expanded.clone());
         let workdir = repo.workdir().to_path_buf();
+        let tx = self.git_tx.clone();
+        let snapshot_ticket = ticket.clone();
         self.launch_git_job(
             "git-status",
             "git.status",
@@ -258,14 +263,47 @@ impl Editor {
                         Err(error) => return failed(git_failure("diff", error)),
                     }
                 }
-                Outcome::Success(StatusData { tree, deltas })
+                // the list first; every entry's `+N -M` (0100 §7) after it,
+                // from two whole-tree diffs — a status of thousands of
+                // changed files is not held up by counting them
+                let counted = tree.clone();
+                let _ = tx.send(GitJob::StatusSnapshot(
+                    snapshot_ticket,
+                    StatusData { tree, deltas },
+                ));
+                let counts = match repo.line_stats() {
+                    Ok(counts) => counts,
+                    Err(error) => return failed(git_failure("diff", error)),
+                };
+                Outcome::Success(
+                    counted
+                        .entries
+                        .iter()
+                        .map(|entry| (!entry.is_directory()).then(|| counts.of(entry)).flatten())
+                        .collect(),
+                )
             },
         );
     }
 
+    /// The list of a snapshot still being counted: published now.
+    pub(crate) fn handle_status_snapshot(&mut self, ticket: Ticket<StatusKey>, data: StatusData) {
+        let document = ticket.key.document;
+        let owned = self
+            .git_work
+            .status
+            .get(&document)
+            .is_some_and(|running| running.ticket == ticket);
+        if !owned || self.status_view_mut(document).is_none() {
+            trace::services::rejected("git", "status snapshot superseded or buffer closed");
+            return;
+        }
+        self.publish_status(document, data);
+    }
+
     pub(crate) fn handle_status_completion(
         &mut self,
-        completion: Completion<StatusKey, StatusData>,
+        completion: Completion<StatusKey, StatusCounts>,
     ) {
         let document = completion.ticket.key.document;
         let Some(again) = self
@@ -285,7 +323,14 @@ impl Editor {
             return;
         }
         match completion.outcome {
-            Outcome::Success(data) => self.publish_status(document, data),
+            Outcome::Success(counts) => {
+                if let Some(view) = self.status_view_mut(document) {
+                    // the counts are of the snapshot this request published
+                    if view.loaded && counts.len() == view.tree.entries.len() {
+                        view.stats = counts;
+                    }
+                }
+            }
             Outcome::Failed { failure, .. } => {
                 let loaded = self
                     .status_view_mut(document)

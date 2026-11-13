@@ -106,7 +106,10 @@ fn historical_permalink_uses_the_rendered_source_coordinate() {
             repo,
             sha: "0123456789abcdef0123456789abcdef01234567".into(),
             files: crate::editor::git_memory::PreparedFiles::new(
-                "0123456789abcdef0123456789abcdef01234567".into(),
+                strop_git::memory::CommitSummary {
+                    sha: "0123456789abcdef0123456789abcdef01234567".into(),
+                    ..Default::default()
+                },
                 Vec::new(),
             ),
             current: "app.log".into(),

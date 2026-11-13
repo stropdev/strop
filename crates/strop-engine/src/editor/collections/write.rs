@@ -358,7 +358,7 @@ impl Editor {
             .collect()
     }
 
-    /// The distinct sources a collection shows, in card order.
+    /// The distinct sources a collection shows, in block order.
     pub(crate) fn collection_source_documents(&self, document: DocumentId) -> Vec<DocumentId> {
         let mut sources: Vec<DocumentId> = self
             .collections

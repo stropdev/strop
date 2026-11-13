@@ -1,7 +1,7 @@
 //! Folder decoration preserves the real buffer prefix byte-for-byte. Metadata
 //! comes from the listing; selection/search/caret keep the shared text renderer.
 use crate::editor::Directory;
-use crate::render::diff;
+use crate::render::block::Painted;
 use crate::render::file_name;
 use crate::render::style::Tokens;
 use ratatui::{
@@ -20,7 +20,7 @@ pub(super) fn row(
     line: usize,
     text: ropey::RopeSlice<'_>,
     focused: bool,
-) -> Option<diff::RowDecoration> {
+) -> Option<Painted<'static>> {
     if directory.draft.is_some() {
         return None;
     }
@@ -38,8 +38,8 @@ pub(super) fn row(
         });
         // the listing's own path in the heading idiom (0088 §2 "File
         // names"): parents secondary, the leaf bold
-        return Some(diff::RowDecoration {
-            spans: vec![
+        return Some(Painted {
+            text: vec![
                 Span::styled(path[..leaf].to_owned(), file_name::dir_style(t)),
                 Span::styled(
                     path[leaf..].to_owned(),
@@ -48,6 +48,7 @@ pub(super) fn row(
                 Span::styled(count.to_owned(), quiet),
             ],
             row_bg: Some(t.surface),
+            ..Default::default()
         });
     }
     if line == 1 {
@@ -64,9 +65,10 @@ pub(super) fn row(
             quiet,
         ));
         spans.push(Span::styled("   ·   Enter open   Space a actions", quiet));
-        return Some(diff::RowDecoration {
-            spans,
+        return Some(Painted {
+            text: spans,
             row_bg: focused.then_some(t.cursorline),
+            ..Default::default()
         });
     }
     let entry = directory.entry(LineIndex::new(line))?;
@@ -91,12 +93,13 @@ pub(super) fn row(
     } else {
         Style::default().fg(color)
     };
-    Some(diff::RowDecoration {
-        spans: vec![
+    Some(Painted {
+        text: vec![
             Span::styled(label.to_owned(), label_style),
             Span::styled(metadata.to_owned(), quiet),
         ],
         row_bg: (focused || marked).then_some(t.cursorline),
+        ..Default::default()
     })
 }
 

@@ -8,6 +8,7 @@ use strop_picker::{Item, Kind, Payload};
 mod convergence;
 mod flow;
 mod live;
+mod loans;
 mod ownership;
 mod quickfix;
 mod write;
@@ -87,7 +88,7 @@ fn collection_builds_from_picker_hits() {
     let text = current_text(&e);
     assert!(text.contains("alpha one"), "{text}");
     assert!(text.contains("beta two"), "{text}");
-    assert!(text.contains("╭─ a.txt"), "card top: {text}");
+    assert!(text.lines().any(|row| row == "a.txt"), "heading: {text}");
 }
 
 /// 0056 AR14: a stale collection explains its readonly reason from the
@@ -351,8 +352,8 @@ fn occurrence_selection_skips_collection_chrome() {
     let (mut e, _, _) = fixture();
     e.feed(strop_core::frontend_input::Key::CtrlO);
     // caret on the header's "txt" (in "a.txt") — seeds "txt"
-    let header_start = e.buf().line_start(1);
-    let header = e.buf().line_text(1);
+    let header_start = e.buf().line_start(2);
+    let header = e.buf().line_text(2);
     let at_txt = header_start + header.find("txt").unwrap();
     e.set_head(at_txt);
     e.occurrence_all_pub();
@@ -367,7 +368,7 @@ fn occurrence_selection_skips_collection_chrome() {
         "no occurrence was selected from chrome"
     );
     // a body needle DOES select across excerpts
-    e.set_head(e.buf().line_start(2) + 1);
+    e.set_head(e.buf().line_start(3) + 1);
     e.occurrence_all_pub();
     assert!(
         e.sels().heads().len() > 1 || e.message.contains("occurrence"),
@@ -466,24 +467,49 @@ fn one_card_per_file_with_gap_rows() {
     ]);
     e.feed(strop_core::frontend_input::Key::CtrlO);
     let text = current_text(&e);
+    let rows = e.collections.get(&e.current()).unwrap().rows.clone();
     assert_eq!(
-        text.matches("╭─").count(),
+        rows.iter()
+            .filter(|row| matches!(row, crate::editor::CollectionRow::Heading(_)))
+            .count(),
         1,
-        "one card for the file: {text}"
+        "one block for the file: {text}"
     );
-    assert!(text.contains("⋮ 2 lines not shown"), "gap row: {text}");
-    // the gap row is protected chrome
-    let gap_line = text.lines().position(|l| l.starts_with('⋮')).unwrap();
-    e.set_head(e.buf().line_start(gap_line));
-    e.feed_text("x");
-    assert!(
-        e.message.contains("not text"),
-        "gap row refuses: {}",
-        e.message
-    );
-    assert_eq!(current_text(&e), text);
-    // and the bottom border closes the card
-    assert!(text.contains('╰'), "card closes: {text}");
+    // the buffer holds words: no drawing characters anywhere
+    assert!(!text.contains(['╭', '╰', '─', '⋮']), "{text}");
+    let gap_line = text.lines().position(|l| l == "2 lines not shown").unwrap();
+    assert_eq!(rows[gap_line], crate::editor::CollectionRow::Gap);
+    // the gap row, the heading and the blank row are protected
+    for line in [gap_line, 2, 1] {
+        e.set_head(e.buf().line_start(line));
+        // `x` on a word, `iq` on the empty row: both edit chrome
+        e.feed_text(if line == 1 { "iq" } else { "x" });
+        assert!(
+            e.message.contains("not text"),
+            "row {line} refuses: {}",
+            e.message
+        );
+        assert_eq!(current_text(&e), text);
+    }
+    // nothing closes the block but the end of the buffer
+    assert_eq!(rows.last(), Some(&crate::editor::CollectionRow::Body));
+}
+
+/// 0100 §9: `yy` on a heading yanks the path, on a gap its words; a
+/// visual yank over a block holds no drawing character.
+#[test]
+fn a_yank_of_a_block_is_its_words() {
+    let (mut e, _, _) = fixture();
+    e.feed(strop_core::frontend_input::Key::CtrlO);
+    let text = current_text(&e);
+    let heading = text.lines().position(|l| l == "a.txt").unwrap();
+    e.set_head(e.buf().line_start(heading));
+    e.feed_text("yy");
+    assert_eq!(e.register(None).text, "a.txt\n");
+    e.feed_text("ggVGy");
+    let yanked = e.register(None).text.clone();
+    assert!(yanked.contains("a.txt\n"), "{yanked}");
+    assert!(!yanked.contains(['╭', '╰', '─', '⋮', '│']), "{yanked}");
 }
 
 /// 0049 §5: ]f/[f walk file cards.
@@ -499,7 +525,7 @@ fn file_card_navigation_steps_between_cards() {
         .iter()
         .enumerate()
         .filter_map(|(row, kind)| {
-            matches!(kind, crate::editor::CollectionRow::CardTop(_)).then_some(row)
+            matches!(kind, crate::editor::CollectionRow::Heading(_)).then_some(row)
         })
         .collect();
     assert_eq!(tops.len(), 2, "two file cards");

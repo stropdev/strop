@@ -5,7 +5,7 @@
 
 use super::JumpRecord;
 use crate::editor::git_memory::{CommitFiles, HunkOrigin};
-use strop_git::memory::LogRow;
+use strop_git::log::LogRow;
 use strop_git::Hunk;
 
 /// What backs a document. Derived facts (readonly, save refusal) come
@@ -41,19 +41,21 @@ pub struct GitSurface {
 pub enum Surface {
     CommitLog {
         rows: Vec<LogRow>,
+        /// What the rows' leading columns are padded to in the text.
+        columns: crate::editor::git_memory::log_text::LogColumns,
         /// Sha to land the cursor on once rows arrive (the blame dive
         /// opens the browser *at* a commit, 0011 §3).
         focus: Option<String>,
         return_to: Option<JumpRecord>,
     },
+    /// A commit: its message and the files it changed (0100 §4.4).
     ChangedFiles {
-        sha: String,
         files: crate::editor::git_memory::PreparedFiles,
         return_to: Option<JumpRecord>,
     },
     /// A diff as a readonly buffer (0010 §2): the file's delta at a
     /// commit, or the `Space g p` hunk preview. The buffer's rows mirror
-    /// the rendered layout — a stats row, then per hunk a `@@` header
+    /// the rendered layout — a heading row, then per hunk a `@@` header
     /// row and unprefixed content rows — so motions, `/` and yank see
     /// exactly what's on screen. `origin` names the working buffer a
     /// hunk preview belongs to, so `Space g X`/`g s` act on the file;
@@ -80,7 +82,8 @@ pub enum Surface {
 
 /// One canonical row projection shared by rendering and source navigation.
 pub enum DiffRow<'a> {
-    Stats,
+    /// Row 0: the file's heading.
+    Heading,
     HunkHeader(&'a Hunk),
     Line(&'a strop_git::DiffLine),
 }

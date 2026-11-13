@@ -4,6 +4,7 @@
 //! in-process — the commit and the branch switch themselves run the
 //! `git` CLI (hooks, signing, config), see [`crate::exec`].
 
+use std::collections::HashMap;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
@@ -114,6 +115,68 @@ pub enum FileDelta {
     Binary,
 }
 
+/// The lines one change adds and removes: the fact on a status row
+/// (0100 §7). A binary change has no line counts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LineStat {
+    pub added: usize,
+    pub deleted: usize,
+    pub binary: bool,
+}
+
+/// Every changed path's [`LineStat`] on both edges, from one whole-tree
+/// diff per edge — not one diff per entry, so a status of thousands of
+/// files costs two passes.
+#[derive(Debug, Default)]
+pub struct LineStats {
+    staged: HashMap<PathBuf, LineStat>,
+    worktree: HashMap<PathBuf, LineStat>,
+}
+
+impl LineStats {
+    /// The entry's lines on its section's edge; none for a conflict.
+    pub fn of(&self, entry: &StatusEntry) -> Option<LineStat> {
+        match entry.section {
+            Section::Staged => self.staged.get(&entry.rel).copied(),
+            Section::Unstaged | Section::Untracked => self.worktree.get(&entry.rel).copied(),
+            Section::Conflicts => None,
+        }
+    }
+}
+
+/// Per path, what one diff adds and removes. A delta with no text patch
+/// is binary content.
+fn stats_of(diff: &git2::Diff) -> Result<HashMap<PathBuf, LineStat>, GitError> {
+    let mut stats = HashMap::new();
+    for index in 0..diff.deltas().len() {
+        let Some(delta) = diff.get_delta(index) else {
+            continue;
+        };
+        let Some(path) = delta.new_file().path().or(delta.old_file().path()) else {
+            continue;
+        };
+        let path = path.to_path_buf();
+        let patch = git2::Patch::from_diff(diff, index).map_err(|error| native("diff", error))?;
+        let stat = match patch {
+            Some(patch) if !patch.delta().flags().is_binary() => {
+                let (_, added, deleted) =
+                    patch.line_stats().map_err(|error| native("diff", error))?;
+                LineStat {
+                    added,
+                    deleted,
+                    binary: false,
+                }
+            }
+            _ => LineStat {
+                binary: true,
+                ..LineStat::default()
+            },
+        };
+        stats.insert(path, stat);
+    }
+    Ok(stats)
+}
+
 /// One row of the branch list.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Branch {
@@ -195,6 +258,34 @@ impl Repo {
             head: self.head_name(),
             tracking: self.tracking(),
             entries,
+        })
+    }
+
+    /// `+N -M` of every changed path: HEAD against the index, and the
+    /// index against the worktree with untracked files as all added.
+    pub fn line_stats(&self) -> Result<LineStats, GitError> {
+        let head = self
+            .inner
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_tree().ok());
+        let index = self.inner.index().map_err(|error| native("index", error))?;
+        let staged = self
+            .inner
+            .diff_tree_to_index(head.as_ref(), Some(&index), None)
+            .map_err(|error| native("diff", error))?;
+        let mut options = git2::DiffOptions::new();
+        options
+            .include_untracked(true)
+            .recurse_untracked_dirs(false)
+            .show_untracked_content(true);
+        let worktree = self
+            .inner
+            .diff_index_to_workdir(Some(&index), Some(&mut options))
+            .map_err(|error| native("diff", error))?;
+        Ok(LineStats {
+            staged: stats_of(&staged)?,
+            worktree: stats_of(&worktree)?,
         })
     }
 

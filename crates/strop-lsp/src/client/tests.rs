@@ -74,10 +74,13 @@ impl Wire {
         let (input, output) = tokio::io::split(client_io);
         let outbound = Arc::new(super::outbound::Outbound::default());
         let outbound_writer = outbound.clone();
+        let report = super::process::dropped(&tx, id, "in-memory");
         let task = tokio::spawn(async move {
             let _ = mainloop
                 .run_buffered(
-                    super::frame_limits::BoundedFrames::new(input).compat(),
+                    super::frame_limits::BoundedFrames::new(input)
+                        .reporting(report)
+                        .compat(),
                     super::outbound::FramedWriter::new(output, outbound_writer).compat_write(),
                 )
                 .await;
@@ -664,3 +667,5 @@ mod startup;
 mod responses;
 
 mod changes;
+
+mod budget;

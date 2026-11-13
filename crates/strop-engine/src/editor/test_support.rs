@@ -373,11 +373,18 @@ pub mod git {
         std::fs::write(root.join("notes.md"), "# notes\n").unwrap();
         git(&["add", "."]);
         git(&["commit", "-qm", "base"]);
-        let mut e = Editor::new(Buffer::open(root.join("src/lib.rs").to_str().unwrap()).unwrap());
+        let e = editor_in(root, "src/lib.rs");
+        (dir, e)
+    }
+
+    /// An editor on `file` of the repository at `root`, with discovery
+    /// settled: for tests that build their own history.
+    pub fn editor_in(root: &std::path::Path, file: &str) -> Editor {
+        let mut e = Editor::new(Buffer::open(root.join(file).to_str().unwrap()).unwrap());
         e.cwd = root.to_path_buf();
         e.discover_git();
         settle(&mut e, |editor| editor.git.is_some());
-        (dir, e)
+        e
     }
 
     /// Settle every working-tree job: status snapshots, mutations, the
@@ -417,19 +424,45 @@ pub mod git {
         }
     }
 
-    /// Settle discovery, then the open log surface's rows.
+    /// Settle discovery, then the open log surface's rows — every page,
+    /// up to the read's end.
     pub fn pump(e: &mut Editor) {
         settle(e, |e| e.git.is_some());
         settle(e, |e| {
             matches!(
                 e.surface(),
                 Some(Surface::CommitLog { rows, .. }) if !rows.is_empty()
-            )
+            ) && !e.log_requests.contains_key(&e.current())
         });
     }
 
     pub fn pump_ready(e: &mut Editor, ready: impl Fn(&Editor) -> bool) {
         settle(e, ready);
+    }
+
+    /// The gutter is async: settle discovery, then refresh and settle
+    /// the diff to a terminal Load state.
+    pub fn pump_hunks(e: &mut Editor) {
+        settle(e, |e| e.git.is_some());
+        e.refresh_hunks();
+        let terminal = |e: &Editor| !matches!(e.hunk_load, strop_core::worker::Load::Running(_));
+        settle(e, terminal);
+        e.refresh_hunks(); // a failed load re-enqueues only via commands
+        settle(e, terminal);
+    }
+
+    /// Settle every dive the surfaces asked for (files, deltas, hunks).
+    pub fn settle_dives(e: &mut Editor) {
+        settle(e, |e| e.dive_requests.is_empty());
+    }
+
+    /// Put fixed rows in the open log surface, as a finished `git log`
+    /// would: frames that show ages stay the same from day to day.
+    pub fn log_rows_fixture(e: &mut Editor, rows: Vec<strop_git::log::LogRow>) {
+        let doc = e.current();
+        assert!(crate::editor::git_memory::publish_log_rows(
+            e, doc, rows, false
+        ));
     }
 
     pub fn git_out(root: &std::path::Path, args: &[&str]) -> String {

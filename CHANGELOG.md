@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.64.0 — 2026-11-13
+
+### Changed
+
+- **The log and a file's history are fast on huge repositories** (plans/0101). The first `Space g l` or `Space g h` that takes more than a tenth of a second has strop write a commit-graph for that repository in the background; after that the log opens in about 10 ms on 150,000 commits instead of half a second, and a file's history shows its first rows at once and the rest as git finds them. The file lives in strop's state directory (`~/.local/state/strop/graphs/`); your repository is not touched.
+- **Closing a collection closes the files it opened that you never looked at** (plans/0101). Files you opened from it, edited through it, or had open before stay; a file with unsaved changes is never closed, and the message says how many stayed for that reason. `:q` on a collection now returns the cursor to where you pressed `Ctrl-O`.
+- **One look for the collection and the git buffers** (plans/0100). A file, a status section or a commit now starts with a rule across the pane that names it, with its count or `+N -M` at the right edge. One empty row separates two of them. A jump inside one — the lines a collection leaves out, a diff's `@@` row — is a band, with `⋮` where the line numbers jump. The cards with corners and no sides are gone.
+- **The collection's rows hold words only.** A file's row holds its path and a gap's row `12 lines not shown`; the rule, the hit count and the marks are drawn. `yy` on a file's row yanks its path, and a yank across a collection carries no box-drawing characters. A modified file is marked `●` and a read-only one `[RO]`, as in the status line, instead of `· modified` and `· read-only`. The cursor line is painted in a collection as in a file.
+- **Status, log, file history and a commit's files have no line numbers**: their rows are entries, not lines. The cursor row is marked with `▌` and a band, as in a directory listing. Section rows hold `Staged` and the count is drawn beside the rule.
+- **An expanded diff in the status buffer reads like the diff view**: the changed text on a quiet tint, the changed part of a line emphasised, and a `│` down the rows that belong to the file. `M` is drawn in the change colour, no longer the same grey as `?`.
+- **The log is in columns** (plans/0100): the graph, the sha, the branch and tag names in parentheses, the subject, and at the right edge the author and a short age (`2d`, `5m`, `6mo`). The shas and subjects line up however wide the graph; under 60 columns the author leaves, and a subject that does not fit ends in `…`. The log has one accent: the sha is grey, the graph lanes keep their colours, and only the branch you are on is in the accent colour. A row's text is `graph sha  (refs) subject`, so `yy` yanks the sha and subject; the author and age are drawn, not text.
+- **A file's history is named for the file**: `git log · src/lib.rs`.
+- **`enter` on a commit shows the commit** (plans/0100): a rule naming it with its author and age, the subject in bold and the rest of the message, then the files under a rule that counts them and their lines. Each file has git's status letter, `R old → new` for a rename, and `+N -M` — or `binary` — beside its name at any width. The view opens on the first file, and `yy` on a file yanks its letter and path.
+- **The status buffer shows each file's `+N -M`** (or `binary`) at the right edge of its row.
+- **The diff and hunk views start with the file's rule** and `+N -M`; a binary file says `binary`, and any other file with no line changes (a mode change, a pure rename) says `no line changes`, instead of `+0 -0`. The hunk preview (`Space g p`) is named for its file instead of "hunk", and has the file's syntax colours.
+- **The commit message shows its two common mistakes**: past column 72 the subject turns the warning colour, and so does a second line that is not empty. The subject is bold, and `#` lines are italic like every other comment.
+- **Search's file headings and the collection's are drawn by the same code.** In a narrow search list a long directory is now cut from the left before the rule beside the name goes.
+
+### Fixed
+
+- **A huge symbol list no longer restarts the language server** (plans/0101). A reply too large to read now fails only the request that asked for it, and the server keeps running; before, `Space s` on a file with more than about 6,000 symbols dropped the connection and restarted the server. Lists of up to 20,000 symbols are read and kept, and very long files get their symbols fetched ahead of the key like any other.
+
 ## 0.63.0 — 2026-11-12
 
 ### Changed

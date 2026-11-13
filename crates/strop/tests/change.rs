@@ -202,16 +202,23 @@ fn collect_waits_for_the_search_and_enter_opens_the_hit() {
         "{}",
         frames[1]
     );
-    assert!(frames[1].contains("a.rs ── 1 hit "), "{}", frames[1]);
-    assert!(frames[1].contains("b.rs ── 2 hits "), "{}", frames[1]);
+    let heading = |name: &str, count: &str| {
+        frames[1].lines().any(|row| {
+            let row = row.trim_end_matches([' ', '▮']);
+            row.contains(name) && row.contains(" ─") && row.ends_with(count)
+        })
+    };
+    assert!(heading("a.rs", " 1 hit"), "{}", frames[1]);
+    assert!(heading("b.rs", " 2 hits"), "{}", frames[1]);
     assert_eq!(
         states[0]["message"],
         "3 hits in 2 files — ]q next, Enter opens the file, :w writes"
     );
-    // on the first hit's matched text: title, border, `fn first`, the hit
+    // on the first hit's matched text: title, blank, heading, `fn first`,
+    // the hit
     assert_eq!(
         (&states[0]["line"], &states[0]["col"]),
-        (&4.into(), &5.into())
+        (&5.into(), &5.into())
     );
     // two steps on: still the collection, on the second hit of b.rs
     assert!(frames[2].contains("search needle_"), "{}", frames[2]);

@@ -15,7 +15,9 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use strop_core::process::{capture_with, CaptureError, CapturePolicy, StdinPolicy};
+use strop_core::process::{
+    capture_with, stream_with, CaptureError, CapturePolicy, StdinPolicy, StreamError, StreamPolicy,
+};
 use strop_core::worker::CancelToken;
 use strop_remote::exec::ExecHost;
 
@@ -178,6 +180,60 @@ impl<'a> GitExec<'a> {
         }
         Ok(run.stdout)
     }
+
+    /// A `git` run whose stdout reaches `consume` as it is printed — a
+    /// long history walk shows its first rows while git is still walking
+    /// (0101 §2.2). `env` is set on a local run only (a private
+    /// commit-graph lives on this machine); a remote run is captured and
+    /// handed over whole. Nonzero exits are typed errors with git's
+    /// stderr, as in [`Self::run_records`].
+    pub fn stream_records(
+        &self,
+        op: &str,
+        argv: &[OsString],
+        env: &[(&str, &OsStr)],
+        cancel: &CancelToken,
+        mut consume: impl FnMut(&[u8]),
+    ) -> Result<(), String> {
+        let Self::Local { workdir } = self else {
+            debug_assert!(env.is_empty(), "a remote run takes no local environment");
+            let stdout = self.run_records(op, argv, cancel)?;
+            consume(&stdout);
+            return Ok(());
+        };
+        let mut command = Command::new("git");
+        command.arg("-C").arg(workdir).args(argv);
+        for (name, value) in env {
+            command.env(name, value);
+        }
+        let policy = StreamPolicy {
+            stderr_limit: STDERR_LIMIT,
+            stderr_tail: 0,
+            deadline: DEADLINE,
+            hold_stdin: false,
+        };
+        let output = stream_with(&mut command, cancel, &policy, |bytes| {
+            consume(bytes);
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .map_err(|error| {
+            let error = match error {
+                StreamError::Spawn(message) => GitExecError::Spawn(format!("spawn git: {message}")),
+                StreamError::Cancelled => GitExecError::Cancelled,
+                StreamError::TimedOut(after) => GitExecError::TimedOut(after),
+                StreamError::Failure(failure) => GitExecError::Failed(failure.message),
+                StreamError::Consumer(never) => match never {},
+            };
+            format!("{op}: {error}")
+        })?;
+        if !output.status.success() {
+            return Err(format!(
+                "{op}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// `program argv…` on `host` in `workdir`.
@@ -192,6 +248,23 @@ pub(crate) fn run_program(
     let mut words: Vec<&OsStr> = vec![OsStr::new(program)];
     words.extend(argv.iter().map(OsString::as_os_str));
     let mut command = host.command(&words, Some(workdir));
+    capture(&mut command, deadline, cancel)
+}
+
+/// A local `git` run with extra environment, captured: the private
+/// commit-graph build (`graph.rs`) is the one caller.
+pub(crate) fn local_run(
+    workdir: &Path,
+    argv: &[OsString],
+    env: &[(&str, &OsStr)],
+    deadline: Duration,
+    cancel: &CancelToken,
+) -> Result<GitRun, GitExecError> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(workdir).args(argv);
+    for (name, value) in env {
+        command.env(name, value);
+    }
     capture(&mut command, deadline, cancel)
 }
 

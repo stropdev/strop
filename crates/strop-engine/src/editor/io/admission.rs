@@ -336,7 +336,12 @@ impl Editor {
                     }
                     // Identity admission is the last fallible
                     // step (0056 AR13): no view/mru state moves early.
-                    let admitted = self.docs.try_insert(opened.document);
+                    let mut document = opened.document;
+                    if !takes_focus {
+                        // On loan until the user takes it (0101 §6.1).
+                        document.loan = Some(document.buf.revision());
+                    }
+                    let admitted = self.docs.try_insert(document);
                     let Ok(id) = admitted else {
                         if let OpenIntent::CollectionSource { owner } = key.intent {
                             self.collection_source_ready(owner);

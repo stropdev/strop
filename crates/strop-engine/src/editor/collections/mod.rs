@@ -1,13 +1,15 @@
 //! Source-backed collections (0094): the editable multibuffer and the quickfix
 //! list. An edit inside an excerpt writes through to its source (`write.rs`);
 //! a source edit made anywhere else is projected into every view of it
-//! (`updates.rs`). Card borders, gap rows and the title are not text.
+//! (`updates.rs`). Headings, gap rows, blank rows and the title are not
+//! source text: an edit touching them is refused.
 //! `Ctrl-O` in a results list makes one (`build.rs`); its hits are stepped
 //! and opened from `quickfix.rs` (0097).
 
 mod build;
 mod context;
 mod journal;
+pub(crate) mod loans;
 mod navigation;
 mod projection;
 mod quickfix;
@@ -27,13 +29,15 @@ use strop_core::id::{BufferRevision, DocumentId};
 /// from this — never by parsing row text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CollectionRow {
+    /// What was collected and how much.
     Title,
-    /// A file card's top border; carries the excerpt index it precedes.
-    CardTop(usize),
+    /// The one empty row under the title and between two files' blocks.
+    Blank,
+    /// A file's heading (its text is the path); carries the excerpt index
+    /// it precedes.
+    Heading(usize),
     /// An omitted-lines gap between two excerpts of one file.
     Gap,
-    /// A file card's bottom border.
-    CardBottom,
     Body,
 }
 
@@ -145,8 +149,10 @@ pub struct CollectionRowInfo {
     pub source: Option<(strop_core::id::DocumentId, usize, usize)>,
     /// Query hit spans within the row, in SOURCE bytes (0050 §7).
     pub source_matches: Vec<(usize, usize)>,
-    /// The caret sits inside this row's card (focus chrome).
-    pub card_active: bool,
+    /// The caret sits inside this row's block (the heading's focus).
+    pub block_active: bool,
+    /// Heading rows: the hits in that file.
+    pub hits: usize,
     pub source_dirty: bool,
     pub source_readonly: bool,
 }

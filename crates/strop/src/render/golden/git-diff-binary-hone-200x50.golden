@@ -1,0 +1,101 @@
+ crates/                │──────── logo.bin ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── binary 
+   strop-engine/        │~                                                                                                                                                                              
+     src/               │~                                                                                                                                                                              
+       editor/          │~                                                                                                                                                                              
+         collections/   │~                                                                                                                                                                              
+           tests/       │~                                                                                                                                                                              
+             a_very_lo… │~                                                                                                                                                                              
+▌logo.bin               │~                                                                                                                                                                              
+ src/                   │~                                                                                                                                                                              
+   lib.rs               │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+  NORMAL    @c1b9c8ba  logo.bin [RO]                                                                                                                                                         100%  1:1  
+
+  0: 8:#858c9a/#1b1e24 16:reset/#1b1e24 1:#4a5160/#1b1e24 8:#858c9a/#1b1e24 1:reset/#1b1e24 8:#e6e1d6/#1b1e24+b 157:#858c9a/#1b1e24 1:reset/reset
+  1: 16:#858c9a/#15171c 8:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  2: 9:#858c9a/#15171c 15:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  3: 14:#858c9a/#15171c 10:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  4: 21:#858c9a/#15171c 3:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  5: 17:#858c9a/#15171c 7:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  6: 23:#e6e1d6/#15171c 1:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  7: 9:#e8a848/#23272f+b 15:reset/#23272f 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  8: 5:#858c9a/#15171c 19:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+  9: 9:#e6e1d6/#15171c 15:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 10: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 11: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 12: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 13: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 14: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 15: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 16: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 17: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 18: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 19: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 20: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 21: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 22: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 23: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 24: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 25: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 26: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 27: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 28: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 29: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 30: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 31: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 32: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 33: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 34: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 35: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 36: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 37: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 38: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 39: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 40: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 41: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 42: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 43: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 44: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 45: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 46: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 47: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 48: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 49: 10:#15171c/#e8a848+b 2:reset/#1c1f25 9:#858c9a/#1c1f25 2:reset/#1c1f25 8:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 153:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25

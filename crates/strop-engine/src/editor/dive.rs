@@ -55,18 +55,17 @@ impl Editor {
         let line = self.buf().line_of(self.head());
         let target = match self.surface() {
             Some(Surface::CommitLog { rows, .. }) => {
-                let Some(sha) = rows.get(line).and_then(|r| r.sha.clone()) else {
+                let Some(sha) = rows.get(line).and_then(|r| r.sha()).map(str::to_string) else {
                     return;
                 };
                 DiveTarget::CommitFiles { sha }
             }
-            Some(Surface::ChangedFiles { sha, files, .. }) => {
-                // row 0/1 are the header
-                let Some(file) = line.checked_sub(2).and_then(|i| files.get(i)) else {
+            Some(Surface::ChangedFiles { files, .. }) => {
+                let Some(file) = files.file_at_row(line) else {
                     return;
                 };
                 DiveTarget::FileDelta {
-                    sha: sha.clone(),
+                    sha: files.sha().to_owned(),
                     path: file.path.clone(),
                 }
             }
@@ -153,6 +152,15 @@ impl Editor {
         let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
         let captured_hunks = self.hunks.clone();
+        // a hunk preview is named for its file (0100 §4.5): the heading
+        // says which file, and the path gives the preview its syntax
+        let hunk_label = match &target {
+            DiveTarget::HunkPreview { .. } => self
+                .current_buffer_rel(&repo)
+                .map(|path| strop_core::layout::printable_text(path.to_string_lossy()).into_owned())
+                .unwrap_or_else(|| self.cur().label(&self.cwd)),
+            _ => String::new(),
+        };
         let client = self.remote_client();
         self.launch_git_job(
             "git-dive",
@@ -167,7 +175,7 @@ impl Editor {
                 match &target {
                     DiveTarget::HunkPreview { index, .. } => match captured_hunks.get(*index) {
                         Some(hunk) => Outcome::Success(DiveData::Delta(PreparedDiff::new(
-                            "hunk".into(),
+                            hunk_label.clone(),
                             vec![hunk.as_ref().clone()],
                         ))),
                         None => Outcome::failed(
@@ -190,10 +198,10 @@ impl Editor {
                                 );
                             }
                         };
-                        match strop_git::memory::show_stat(&exec, &cancel, sha) {
-                            Ok(files) => Outcome::Success(DiveData::Files(PreparedFiles::new(
-                                sha.clone(),
-                                files,
+                        match strop_git::memory::show_commit(&exec, &cancel, sha) {
+                            Ok(detail) => Outcome::Success(DiveData::Files(PreparedFiles::new(
+                                detail.summary,
+                                detail.files,
                             ))),
                             Err(message) => {
                                 Outcome::failed(strop_core::worker::FailureKind::Exit, message)

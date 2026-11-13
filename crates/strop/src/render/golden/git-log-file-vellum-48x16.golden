@@ -1,0 +1,33 @@
+▌ *   0d21f9e  (HEAD -> main) notes: rev…    2d 
+  *   fd21dde  notes: revision 4             2d 
+  *   19b4e9a  rename the doc, change th…    3d 
+  *   0d964a0  Merge branch 'feature/sur…    3d 
+  |\                                            
+  | * e8c1034  (feature/surfaces) layout…    4d 
+  | * ff9ea27  surfaces: parse tokens in…    4d 
+  * | c756836  notes: main moved on          3d 
+  |/                                            
+  *   8cc6dd6  base: the first commit of…    5d 
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+  NORMAL    git log · src/lib.rs [RO]      1:1  
+
+  0: 1:#8a510f/#efeadf 1:reset/#efeadf 1:#4e6f22/#efeadf+b 3:#262a30/#efeadf 7:#4b525c/#efeadf 2:#262a30/#efeadf 9:#4b525c/#efeadf+b 4:#8a510f/#efeadf+b 2:#4b525c/#efeadf+b 13:#262a30/#efeadf 4:#656d7b/#efeadf 1:reset/reset
+  1: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 30:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  2: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 30:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  3: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 30:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  4: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
+  5: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 2:#262a30/#f6f2e9 19:#4b525c/#f6f2e9+b 9:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 30:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  7: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 30:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  8: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 43:reset/#f6f2e9 1:reset/reset
+  9: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 30:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 11: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 12: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 14: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 15: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 20:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 5:reset/#fdfbf6 6:#4b525c/#fdfbf6

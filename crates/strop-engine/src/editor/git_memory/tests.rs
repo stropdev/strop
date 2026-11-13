@@ -10,9 +10,32 @@ use crate::editor::{Editor, GitJob, Surface};
 use strop_core::frontend_input::Key;
 use strop_core::worker::{Completion, FailureKind, Outcome};
 use strop_core::Buffer;
-use strop_git::memory::LogRow;
+use strop_git::log::LogRow;
 use strop_git::LineOrigin;
 use strop_trace::replay::Tape;
+
+/// A log row naming `sha`, its text ending in `subject`.
+pub(super) fn commit_row(sha: &str, subject: &str) -> LogRow {
+    LogRow {
+        graph: "* ".into(),
+        commit: Some(strop_git::log::LogCommit {
+            sha: sha.into(),
+            short: sha.chars().take(4).collect(),
+            refs: Vec::new(),
+            subject: subject.into(),
+            author: "t".into(),
+            time: 0,
+        }),
+    }
+}
+
+/// A finished history read with these rows.
+pub(super) fn log_done(rows: Vec<LogRow>) -> crate::editor::git_memory::types::LogDone {
+    crate::editor::git_memory::types::LogDone {
+        rows,
+        took: std::time::Duration::ZERO,
+    }
+}
 
 #[test]
 fn commit_browser_dives_to_delta() {
@@ -32,21 +55,37 @@ fn commit_browser_dives_to_delta() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
+    // the commit's words, then each file's letter and path (0100 §4.4)
     let text = e.buf().text().to_string();
-    assert!(text.contains("commit"), "{text}");
-    assert!(text.contains("f.rs"), "{text}");
-    assert!(matches!(e.surface(), Some(Surface::ChangedFiles { .. })));
+    assert!(text.starts_with("commit "), "{text}");
+    assert!(text.ends_with("\nadd b\n\nFiles\nM f.rs\n"), "{text}");
+    let Some(Surface::ChangedFiles { files, .. }) = e.surface() else {
+        panic!("changed files");
+    };
+    let commit = files.summary();
+    assert_eq!(
+        (commit.subject.as_str(), commit.author.as_str()),
+        ("add b", "t")
+    );
+    assert!(commit.body.is_empty() && commit.time > 0);
+    assert_eq!(files[0].status, strop_git::memory::FileStatus::Modified);
+    assert_eq!((files[0].added, files[0].binary), (1, false));
+    // the view opens on its first file; yy yanks its letter and path
+    assert_eq!(e.buf().line_of(e.head()), 4);
+    e.feed_text("yy");
+    assert_eq!(e.register(None).text, "M f.rs\n");
 
     // Enter on the file row → the diff surface
-    e.feed_text("j");
-    e.feed_text("j");
     e.feed(Key::Enter);
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::Diff { .. }))
     });
     let text = e.buf().text().to_string();
     assert!(text.contains("fn b() {}"), "{text}");
-    assert!(text.starts_with("f.rs +1 -0\n"), "{text}");
+    assert!(
+        text.starts_with("f.rs\n"),
+        "the heading row is the file: {text}"
+    );
     assert!(!text.contains("diff --git"), "no raw patch noise: {text}");
     assert!(text.contains("@@ -1,1 +1,2 @@"), "hunk header row: {text}");
 
@@ -67,7 +106,7 @@ fn diff_surface_rows_carry_line_numbers() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter);
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::Diff { .. }))
@@ -424,15 +463,15 @@ fn stale_log_results_are_dropped() {
     let stale_ticket = e
         .log_requests
         .get(&dead_surface)
-        .cloned()
+        .map(|request| request.ticket.clone())
         .expect("request registered");
     e.feed_text("q"); // closes the surface
     e.handle_git_job(GitJob::Log(strop_core::worker::Completion {
         ticket: stale_ticket,
-        outcome: strop_core::worker::Outcome::Success(vec![LogRow {
-            text: "POISON ROW".into(),
-            sha: None,
-        }]),
+        outcome: strop_core::worker::Outcome::Success(log_done(vec![LogRow {
+            graph: "POISON ROW".into(),
+            commit: None,
+        }])),
     }));
     for (i, (_, d)) in e.docs.iter().enumerate() {
         let text = d.buf.text().to_string();
@@ -485,8 +524,7 @@ fn commit_file_nav_walks_files() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
-    e.feed(Key::Enter); // a.rs → delta
+    e.feed(Key::Enter); // the view opens on a.rs → its delta
     settle(&mut e, |e| {
         matches!(
             e.surface(),
@@ -513,7 +551,7 @@ fn commit_file_nav_walks_files() {
         |e| matches!(e.surface(), Some(Surface::Diff { hunks, .. }) if hunks.label() == "b.rs"),
     );
     let text = e.buf().text().to_string();
-    assert!(text.starts_with("b.rs +1 -0\n"), "{text}");
+    assert!(text.starts_with("b.rs\n"), "{text}");
     assert!(text.contains("dos"), "{text}");
     assert!(e.message.contains("b.rs · 2/2"), "{}", e.message);
 
@@ -545,7 +583,7 @@ fn tab_cycles_focus_between_sidebar_and_diff() {
     settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
-    e.feed_text("jj");
+    e.feed_text("j");
     e.feed(Key::Enter); // a.rs delta
     settle(&mut e, |e| {
         matches!(
@@ -620,6 +658,7 @@ fn hunk_discard_undoes_byte_exact() {
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
 
+mod history;
 #[cfg(unix)]
 mod native_paths;
 mod ownership;

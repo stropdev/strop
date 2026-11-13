@@ -420,7 +420,7 @@ fn printable(text: String) -> String {
 /// A historical view names its captured commit, not today's worktree branch.
 fn historical_commit(editor: &Editor) -> Option<&str> {
     match editor.surface() {
-        Some(crate::editor::Surface::ChangedFiles { sha, .. }) => Some(sha),
+        Some(crate::editor::Surface::ChangedFiles { files, .. }) => Some(files.sha()),
         Some(crate::editor::Surface::Diff {
             commit: Some(commit),
             ..

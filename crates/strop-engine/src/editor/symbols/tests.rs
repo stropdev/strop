@@ -474,16 +474,52 @@ fn the_warm_check_decides_once_per_state() {
 }
 
 #[test]
-fn a_server_is_not_asked_unasked_about_a_huge_buffer() {
-    let server = Some(Producer::Server(SERVER));
-    assert_eq!(super::unasked(server, 5_000), server);
-    assert_eq!(super::unasked(server, 5_001), None);
-    // the outline is local: its size costs a thread some time, nothing else
+fn a_failed_background_build_of_a_huge_buffer_says_nothing_and_is_not_asked_again() {
+    // An oversized reply costs one failed request, never the server (0101
+    // §4.2), so a buffer of any length is fetched ahead of the key; the
+    // binary journey `tests/symbols.rs` shows the ask on a live server.
+    let mut e = editor("lib.rs", &"fn f() {}\n".repeat(6_000));
+    serve(&mut e);
+    e.message = "before".into();
+    warm(&mut e);
+    let decided = e.analysis.symbols.settled;
     assert_eq!(
-        super::unasked(Some(Producer::Outline), 1_000_000),
-        Some(Producer::Outline)
+        decided.map(|(_, _, source)| source),
+        Some(Some(Producer::Server(SERVER))),
+        "the server is the source, whatever the length"
     );
-    assert_eq!(super::unasked(None, 1), None);
+    // the background request as `start_server` owns it, then its error
+    let context = request(&mut e, 0, false);
+    e.handle_lsp_event(LspEvent::Note {
+        context,
+        text: "document symbols failed: reply too large to decode: 2580006 tokens, \
+               limit 1315860 (512 MiB) (jsonrpc error -32603)"
+            .into(),
+    });
+    assert_eq!(e.message, "before", "a background failure says nothing");
+    assert!(!e.analysis.symbols.pending());
+    let (document, revision) = (e.current(), e.buf().revision());
+    assert!(!e
+        .analysis
+        .symbols
+        .store
+        .has(document, Producer::Server(SERVER), revision));
+    warm(&mut e);
+    assert_eq!(e.analysis.symbols.settled, decided);
+    assert!(
+        !e.analysis.symbols.pending(),
+        "not asked again at this revision"
+    );
+}
+
+#[test]
+fn the_largest_kept_list_fits_the_decode_budget() {
+    // rust-analyzer's shape: 43 structure tokens per symbol (0101 §4.1).
+    // The budget and the store's bound cannot drift apart.
+    let one = r#"{"name":"function_number_0","detail":"fn(&self, value: usize) -> usize","kind":12,"tags":[],"deprecated":false,"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":1}},"selectionRange":{"start":{"line":0,"character":7},"end":{"line":0,"character":24}},"children":[]}"#;
+    let list = format!("[{}]", vec![one; super::store::SYMBOL_LIMIT].join(","));
+    let reply = format!(r#"{{"jsonrpc":"2.0","id":1,"result":{list}}}"#);
+    assert!(strop_lsp::structure_tokens(reply.as_bytes()) <= strop_lsp::MAX_DECODE_TOKENS);
 }
 
 #[test]

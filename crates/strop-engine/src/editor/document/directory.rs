@@ -296,6 +296,7 @@ impl Document {
             detection: None,
             source: DocumentSource::Directory(Box::new(source)),
             external_change: false,
+            loan: None,
         }
     }
     pub fn directory_metadata_ref(&self) -> Option<&Directory> {

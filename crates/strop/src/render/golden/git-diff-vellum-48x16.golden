@@ -1,0 +1,33 @@
+ crates/                │──────── lib.rs  +3 -2▮
+   strop-engine/        │   ⋮   ⋮ @@ -1,5 +1,5…▮
+     src/               │   1   1     let value▮
+       editor/          │▎  2         let value▮
+         collections/   │▎      2     let secon▮
+           tests/       │   3   3     let value▮
+             a_very_lo… │   4   4     let value▮
+ logo.bin               │   5   5     let value▮
+ src/                   │   ⋮   ⋮ @@ -56,5 +56…▮
+▌  lib.rs               │  56  56     let value▮
+                        │  57  57     let value▮
+                        │  58  58     let value▮
+                        │▎ 59         let value▮
+                        │▎     59     let token 
+                        │  60  60     let value 
+  NORMAL    @c1b9c8ba  lib.rs [RO]    6%   1:1  
+
+  0: 8:#656d7b/#efeadf 16:reset/#efeadf 1:#aeb3ba/#efeadf 8:#656d7b/#efeadf 1:reset/#efeadf 6:#262a30/#efeadf+b 1:#262a30/#efeadf 1:#656d7b/#efeadf 2:#3f7a3a/#efeadf 1:#262a30/#efeadf 2:#b8323f/#efeadf 1:#656d7b/#f6f2e9
+  1: 16:#656d7b/#f6f2e9 8:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 3:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 3:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 3:#656d7b/#fdfbf6 4:#b8323f/#fdfbf6 1:#656d7b/#fdfbf6 4:#3f7a3a/#fdfbf6 1:#656d7b/#fdfbf6 1:#656d7b/#f6f2e9
+  2: 9:#656d7b/#f6f2e9 15:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+  3: 14:#656d7b/#f6f2e9 10:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#b8323f/#f6f2e9+b 3:#656d7b/#f6f2e9 5:reset/#f6f2e9 4:#b8323f/#f3dcd8 3:#6f3aa8/#f3dcd8 1:#b8323f/#f3dcd8 5:#262a30/#e8bfba+b 1:#656d7b/#f6f2e9
+  4: 21:#656d7b/#f6f2e9 3:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#3f7a3a/#f6f2e9+b 4:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#3f7a3a/#dfeadb 3:#6f3aa8/#dfeadb 1:#3f7a3a/#dfeadb 5:#262a30/#c3dbbb+b 1:#656d7b/#f6f2e9
+  5: 17:#656d7b/#f6f2e9 7:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+  6: 23:#262a30/#f6f2e9 1:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+  7: 9:#262a30/#f6f2e9 15:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+  8: 5:#656d7b/#f6f2e9 19:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 3:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 3:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 3:#656d7b/#fdfbf6 5:#b8323f/#fdfbf6 1:#656d7b/#fdfbf6 4:#3f7a3a/#fdfbf6 1:#656d7b/#f6f2e9
+  9: 9:#8a510f/#e5dfd0+b 15:reset/#e5dfd0 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+ 10: 24:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+ 11: 24:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9
+ 12: 24:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#b8323f/#f6f2e9+b 3:#656d7b/#f6f2e9 5:reset/#f6f2e9 4:#b8323f/#f3dcd8 3:#6f3aa8/#f3dcd8 1:#b8323f/#f3dcd8 5:#262a30/#e8bfba+b 1:#656d7b/#f6f2e9
+ 13: 24:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#3f7a3a/#f6f2e9+b 4:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#3f7a3a/#dfeadb 3:#6f3aa8/#dfeadb 1:#3f7a3a/#dfeadb 5:#262a30/#c3dbbb+b 1:reset/reset
+ 14: 24:reset/#f6f2e9 1:#aeb3ba/#f6f2e9 1:#656d7b/#f6f2e9+b 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 3:#656d7b/#f6f2e9 1:reset/#f6f2e9 4:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:reset/reset
+ 15: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 9:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

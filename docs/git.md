@@ -22,23 +22,32 @@ The same letters mean the same thing everywhere: `s` stages, `u` unstages,
 ## Status — `Space g g`
 
 ```text
-Head: main
-Upstream: origin/main, ahead 1
+  Head: main
+  Upstream: origin/main, ahead 1
 
-Staged (1)
-A docs/notes.md
+─ Staged ──────────────────────────────────────────────────────────────────── 1
+  A docs/notes.md                                                          +12 -0
 
-Unstaged (2)
-M src/lib.rs
-@@ -1,3 +1,4 @@
- fn a() {}
-+fn b() {}
- fn c() {}
-M src/main.rs
+─ Unstaged ────────────────────────────────────────────────────────────────── 2
+▌ M src/lib.rs                                                              +1 -0
+│ @@ -1,3 +1,4 @@
+│  fn a() {}
+│ +fn b() {}
+│  fn c() {}
+  M src/main.rs                                                             +3 -1
 
-Untracked (1)
-? scratch.txt
+─ Untracked ───────────────────────────────────────────────────────────────── 1
+  ? scratch.txt
 ```
+
+Each section starts with a rule that names it and counts its files; each
+file row ends in its own `+N -M` (or `binary`). The rows are entries, not
+lines, so there are no line numbers: `▌` marks the cursor's
+row, and a `│` runs down the rows of a file you expanded with `=`. An
+expanded diff reads like the diff view: the changed text on a quiet tint,
+the changed part of a line emphasised. The buffer holds the words — a
+section's row holds `Staged`, a diff row its `+` or `-` and the line — so a
+yank of a hunk is still a patch.
 
 The keys act on the row under the cursor. On a file row that is the file; on
 a diff row it is that hunk; on a section heading it is every file in the
@@ -75,7 +84,10 @@ section.
 
 The message is edited in `.git/COMMIT_EDITMSG`, an ordinary file buffer. It
 opens with an empty first line for the message and `#` lines that list what
-the commit will hold; `#` lines are left out of the message.
+the commit will hold; `#` lines are left out of the message, and are drawn
+as comments. The first line, the subject, is bold; past column 72 it turns
+the warning colour, and so does a second line that is not empty — the two
+mistakes `git log` shows worst.
 
 - `:wq` commits. So does `:w` followed by `:q`.
 - `:q!` without writing aborts.
@@ -114,16 +126,71 @@ first.
 
 ## Log, history, blame
 
-- `Space g l` is the commit graph. `enter` on a commit lists its files;
-  `enter` on a file shows its diff, with the commit's other files in a
-  sidebar (`tab` moves focus, `]f` / `[f` step through files).
-- `Space g h` is the log of the current file; from a visual selection, the
-  history of those lines.
+- `Space g l` is the commit graph: one row per commit, in columns — the
+  graph, the sha in grey, the branch and tag names in parentheses (the
+  branch you are on in the accent), the subject, and at the right edge
+  the author and the age (`2d`, `5m`, `6mo`). The shas and subjects line
+  up; under 60 columns the author leaves, and a subject that does not fit
+  ends in `…`. The buffer holds `graph sha  (refs) subject`, so a yanked
+  row is the commit's sha and subject; the author and age are drawn.
+
+  ```text
+  ▌ *   0d21f9e  (HEAD -> main) notes: revision 5        Ada Example   2d
+    *   0d964a0  Merge branch 'feature/surfaces'         Ada Example   3d
+    |\
+    | * e8c1034  (feature/surfaces) layout: one token    Ada Example   4d
+    * | c756836  notes: main moved on                    Ada Example   3d
+    |/
+  ```
+- `enter` on a commit opens it: a rule naming the commit with its author
+  and age, the subject in bold and the rest of the message, then the
+  files under a rule that counts them and their lines. Each file row has
+  git's status letter, `R old → new` for a rename, and `+N -M` — or
+  `binary` — beside its name. The view opens on the first file; `enter`
+  on a file shows its diff, with the commit's other files in a sidebar
+  (`tab` moves focus, `]f` / `[f` step through files).
+
+  ```text
+  ─ commit 19b4e9aec5 ──────────────────── Ada Example · 3 days ago
+    rename the doc, change the logo
+
+  ─ Files ────────────────────────────────────── 3 files  +2 -0
+  ▌ R docs/old-name.md → docs/new-name.md                +0 -0
+    M logo.bin                                          binary
+    M src/lib.rs                                         +2 -0
+  ```
+- A diff starts with a rule naming the file and its `+N -M`; each `@@`
+  row is a band, with `⋮` where the line numbers jump. A binary file says
+  `binary` on its rule; any other file with no line changes (a mode
+  change, a pure rename) says `no line changes`.
+- `Space g h` is the log of the current file, named for it
+  (`git log · src/lib.rs`); from a visual selection, the history of those
+  lines.
 - `Space g B` shows who last changed each line, in the gutter; press it
   again to hide it. `enter` on a line opens the log at that commit. The
   gutter hides while the buffer has edits made after blame ran. In a
   read-only buffer (a file opened with `-R`, a git view) there is no
   gutter; a card shows the blame for the current line instead.
+
+### Large repositories
+
+Without a commit-graph file, `git log --graph` reads every commit before it
+shows the first: about half a second on 150,000 commits, and twice that
+for one file's history. The first time the log or a file's history takes
+longer than a tenth of a second, strop writes a commit-graph for that
+repository in the background, and every later log is fast — about 10 ms,
+with a file's history showing its first rows within tens of milliseconds
+and the rest as git finds them.
+
+The file goes in strop's own state directory,
+`$XDG_STATE_HOME/strop/graphs/` (`~/.local/state/strop/graphs/` when that
+is not set). Your repository is not modified: nothing is written into
+`.git`, no lock is taken. It is used only for the log and file history;
+git checks it against the repository, so an out-of-date one never changes
+what the log shows. strop keeps graphs for the 16 repositories used most
+recently. A repository with a commit-graph of its own (`git gc` writes
+one) gets none from strop. Setting `GIT_ALTERNATE_OBJECT_DIRECTORIES`
+yourself turns this off.
 
 ## SSH projects
 

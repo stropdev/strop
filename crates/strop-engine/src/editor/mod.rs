@@ -84,8 +84,9 @@ pub use completion::{
 };
 pub use document::Document;
 pub use document::{DiffRow, Directory, DocumentSource, RemoteDocument, Surface};
+pub use git_memory::log_text::LogColumns;
 pub use git_memory::{git_channel, BlameGutter, GitJob};
-pub use git_memory::{CommitFiles, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
+pub use git_memory::{CommitFiles, FilesRow, PreparedDiff, PreparedFiles, Sidebar, SidebarRow};
 pub use git_work::{StatusRow, StatusView};
 pub use jumps::{JumpList, JumpRecord, JUMP_LIST_CAP};
 pub use panes::{LayoutDir, Pane};
@@ -177,8 +178,7 @@ pub struct Editor {
     pub(crate) git_discovery: strop_core::worker::Load<git_memory::ContextKey>,
     pub(crate) hunk_load: strop_core::worker::Load<git_memory::HunkKey>,
     pub(crate) hunks_untracked: bool,
-    pub(crate) log_requests:
-        HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::LogKey>>,
+    pub(crate) log_requests: HashMap<strop_core::id::DocumentId, git_memory::LogRequest>,
     pub(crate) card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
     pub(crate) dive_requests:
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,

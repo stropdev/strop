@@ -1,0 +1,101 @@
+ crates/                │──────── src/lib.rs ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── +3 -2 
+   strop-engine/        │   ⋮   ⋮ @@ -1,5 +1,5 @@                                                                                                                                                       
+     src/               │   1   1     let value_1 = compute(1);                                                                                                                                         
+       editor/          │▎  2         let value_2 = compute(2);                                                                                                                                         
+         collections/   │▎      2     let second = compute(2);                                                                                                                                          
+           tests/       │   3   3     let value_3 = compute(3);                                                                                                                                         
+             a_very_lo… │   4   4     let value_4 = compute(4);                                                                                                                                         
+ logo.bin               │   5   5     let value_5 = compute(5);                                                                                                                                         
+ src/                   │   ⋮   ⋮ @@ -56,5 +56,6 @@                                                                                                                                                     
+▌  lib.rs               │  56  56     let value_56 = compute(56);                                                                                                                                       
+                        │  57  57     let value_57 = compute(57);                                                                                                                                       
+                        │  58  58     let value_58 = compute(58);                                                                                                                                       
+                        │▎ 59         let value_59 = compute(59);                                                                                                                                       
+                        │▎     59     let token_59 = parse_token(input, 59);                                                                                                                            
+                        │  60  60     let value_60 = compute(60);                                                                                                                                       
+                        │▎     61     let token_61 = parse_token(input, 61);                                                                                                                            
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+                        │~                                                                                                                                                                              
+  NORMAL    @c1b9c8ba  src/lib.rs [RO]                                                                                                                                                        6%   1:1  
+
+  0: 8:#858c9a/#1b1e24 16:reset/#1b1e24 1:#4a5160/#1b1e24 8:#858c9a/#1b1e24 1:reset/#1b1e24 4:#a8adb8/#1b1e24 6:#e6e1d6/#1b1e24+b 150:#858c9a/#1b1e24 2:#8fc48a/#1b1e24 1:#e6e1d6/#1b1e24 2:#e8707c/#1b1e24 1:reset/reset
+  1: 16:#858c9a/#15171c 8:reset/#15171c 1:#4a5160/#15171c 3:reset/#1c1f25 1:#4a5160/#1c1f25 3:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 4:#e8707c/#1c1f25 1:#858c9a/#1c1f25 4:#8fc48a/#1c1f25 3:#858c9a/#1c1f25 150:#1c1f25/#1c1f25 1:reset/reset
+  2: 9:#858c9a/#15171c 15:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 9:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e39a7b/#15171c 2:#9da3af/#15171c 136:reset/#15171c 1:reset/reset
+  3: 14:#858c9a/#15171c 10:reset/#15171c 1:#4a5160/#15171c 1:#e8707c/#15171c+b 3:#858c9a/#15171c 5:reset/#15171c 4:#e8707c/#331f24 3:#c99ce0/#331f24 1:#e8707c/#331f24 7:#e6e1d6/#5a2c35+b 1:#e8707c/#331f24 1:#b4b8c2/#331f24 1:#e8707c/#331f24 7:#e6e1d6/#331f24 1:#9da3af/#331f24 1:#e39a7b/#331f24 2:#9da3af/#331f24 136:#331f24/#331f24 1:reset/reset
+  4: 21:#858c9a/#15171c 3:reset/#15171c 1:#4a5160/#15171c 1:#8fc48a/#15171c+b 4:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#8fc48a/#1e2d22 3:#c99ce0/#1e2d22 1:#8fc48a/#1e2d22 6:#e6e1d6/#2b4a33+b 1:#8fc48a/#1e2d22 1:#b4b8c2/#1e2d22 1:#8fc48a/#1e2d22 7:#e6e1d6/#1e2d22 1:#9da3af/#1e2d22 1:#e39a7b/#1e2d22 2:#9da3af/#1e2d22 137:#1e2d22/#1e2d22 1:reset/reset
+  5: 17:#858c9a/#15171c 7:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 9:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e39a7b/#15171c 2:#9da3af/#15171c 136:reset/#15171c 1:reset/reset
+  6: 23:#e6e1d6/#15171c 1:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 9:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e39a7b/#15171c 2:#9da3af/#15171c 136:reset/#15171c 1:reset/reset
+  7: 9:#e6e1d6/#15171c 15:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 9:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 1:#e39a7b/#15171c 2:#9da3af/#15171c 136:reset/#15171c 1:reset/reset
+  8: 5:#858c9a/#15171c 19:reset/#15171c 1:#4a5160/#15171c 3:reset/#1c1f25 1:#4a5160/#1c1f25 3:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 3:#858c9a/#1c1f25 5:#e8707c/#1c1f25 1:#858c9a/#1c1f25 5:#8fc48a/#1c1f25 3:#858c9a/#1c1f25 148:#1c1f25/#1c1f25 1:reset/reset
+  9: 9:#e8a848/#23272f+b 15:reset/#23272f 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 10:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 2:#e39a7b/#15171c 2:#9da3af/#15171c 134:reset/#15171c 1:reset/reset
+ 10: 24:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 10:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 2:#e39a7b/#15171c 2:#9da3af/#15171c 134:reset/#15171c 1:reset/reset
+ 11: 24:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 10:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 2:#e39a7b/#15171c 2:#9da3af/#15171c 134:reset/#15171c 1:reset/reset
+ 12: 24:reset/#15171c 1:#4a5160/#15171c 1:#e8707c/#15171c+b 3:#858c9a/#15171c 5:reset/#15171c 4:#e8707c/#331f24 3:#c99ce0/#331f24 1:#e8707c/#331f24 8:#e6e1d6/#5a2c35+b 1:#e8707c/#5a2c35+b 1:#b4b8c2/#5a2c35+b 1:#e8707c/#5a2c35+b 7:#e6e1d6/#5a2c35+b 1:#9da3af/#5a2c35+b 2:#e39a7b/#331f24 2:#9da3af/#331f24 134:#331f24/#331f24 1:reset/reset
+ 13: 24:reset/#15171c 1:#4a5160/#15171c 1:#8fc48a/#15171c+b 4:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#8fc48a/#1e2d22 3:#c99ce0/#1e2d22 1:#8fc48a/#1e2d22 8:#e6e1d6/#2b4a33+b 1:#8fc48a/#2b4a33+b 1:#b4b8c2/#2b4a33+b 1:#8fc48a/#2b4a33+b 11:#e6e1d6/#2b4a33+b 1:#9da3af/#2b4a33+b 5:#e6e1d6/#2b4a33+b 1:#9da3af/#2b4a33+b 1:#8fc48a/#2b4a33+b 2:#e39a7b/#1e2d22 2:#9da3af/#1e2d22 123:#1e2d22/#1e2d22 1:reset/reset
+ 14: 24:reset/#15171c 1:#4a5160/#15171c 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#e6e1d6/#15171c 3:#c99ce0/#15171c 10:#e6e1d6/#15171c 1:#b4b8c2/#15171c 8:#e6e1d6/#15171c 1:#9da3af/#15171c 2:#e39a7b/#15171c 2:#9da3af/#15171c 134:reset/#15171c 1:reset/reset
+ 15: 24:reset/#15171c 1:#4a5160/#15171c 1:#8fc48a/#15171c+b 4:reset/#15171c 3:#858c9a/#15171c 1:reset/#15171c 4:#8fc48a/#1e2d22 3:#c99ce0/#1e2d22 1:#8fc48a/#1e2d22 8:#e6e1d6/#1e2d22 1:#8fc48a/#1e2d22 1:#b4b8c2/#1e2d22 1:#8fc48a/#1e2d22 11:#e6e1d6/#1e2d22 1:#9da3af/#1e2d22 5:#e6e1d6/#1e2d22 1:#9da3af/#1e2d22 1:#8fc48a/#1e2d22 2:#e39a7b/#1e2d22 2:#9da3af/#1e2d22 123:#1e2d22/#1e2d22 1:reset/reset
+ 16: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 17: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 18: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 19: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 20: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 21: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 22: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 23: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 24: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 25: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 26: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 27: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 28: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 29: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 30: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 31: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 32: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 33: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 34: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 35: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 36: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 37: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 38: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 39: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 40: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 41: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 42: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 43: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 44: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 45: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 46: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 47: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 48: 24:reset/#15171c 2:#4a5160/#15171c 173:reset/#15171c 1:reset/reset
+ 49: 10:#15171c/#e8a848+b 2:reset/#1c1f25 9:#858c9a/#1c1f25 2:reset/#1c1f25 4:#a8adb8/#1c1f25 6:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 150:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

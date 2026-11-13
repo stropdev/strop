@@ -24,7 +24,7 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 /// One staged new file, two modified files and one untracked file.
-fn change(root: &Path) {
+pub(super) fn change(root: &Path) {
     let lines: String = (1..=20)
         .map(|n| match n {
             2 => "line two\n".to_string(),
@@ -40,7 +40,7 @@ fn change(root: &Path) {
     git(root, &["add", "docs/git.md"]);
 }
 
-fn keys(editor: &mut Editor, text: &str) {
+pub(super) fn keys(editor: &mut Editor, text: &str) {
     editor.feed_text(text);
     settle_work(editor);
 }
@@ -60,19 +60,32 @@ fn each(name: &str, scene: impl Fn(&Path, &mut Editor) -> Settle) {
     }
 }
 
-/// `Space g g` with one file's diff expanded and the cursor in a hunk.
+/// A committed binary file, then changed: the status shows it and its
+/// expansion is a note, not a diff.
+pub(super) fn change_binary(root: &Path) {
+    std::fs::write(root.join("logo.bin"), [0u8, 1, 2, 3, 0, 255]).unwrap();
+    git(root, &["add", "logo.bin"]);
+    git(root, &["commit", "-qm", "logo"]);
+    std::fs::write(root.join("logo.bin"), [0u8, 9, 9, 9, 0, 255, 7]).unwrap();
+}
+
+/// `Space g g` with two files expanded — one of them binary — and the
+/// cursor in the second hunk (0100 §9).
 #[test]
 fn status_buffer() {
     each("git-status", |root, editor| {
+        change_binary(root);
         change(root);
         keys(editor, " gg");
-        keys(editor, "4j=");
-        keys(editor, "]c");
+        keys(editor, "3j=");
+        keys(editor, "3j=");
+        keys(editor, "]c]c");
         settle_analysis()
     });
 }
 
-/// `cc` from the status buffer: the message file with its summary.
+/// `cc` from the status buffer: the message file with its summary and a
+/// subject too long for `git log`.
 #[test]
 fn commit_buffer() {
     each("git-commit", |root, editor| {
@@ -80,7 +93,12 @@ fn commit_buffer() {
         keys(editor, " gg");
         keys(editor, "cc");
         editor.feed_text("i");
-        editor.paste_bracketed("docs: say how staging works");
+        // 80 cells: the subject runs past column 72 and says so
+        editor.paste_bracketed(
+            "docs: say how staging works, one key per file or hunk, and what a commit buffer.",
+        );
+        // back to the subject's start, so the frame shows all of it
+        editor.feed_text("<esc>0");
         settle_analysis()
     });
 }

@@ -1,4 +1,4 @@
-//! Where a view row is in its file, and file-card navigation. Hits are in
+//! Where a view row is in its file, and file navigation. Hits are in
 //! `quickfix.rs`.
 use super::{CollectionRow, Editor};
 use strop_core::id::DocumentId;
@@ -18,10 +18,8 @@ impl Editor {
             .find(|excerpt| excerpt.view_line == line)
             .map(|excerpt| (excerpt.source, excerpt.start))
     }
-}
 
-impl Editor {
-    /// `]f` / `[f` in a collection: next / previous file card (0049 §5's
+    /// `]f` / `[f` in a collection: next / previous file (0049 §5's
     /// excerpt navigation through the command registry).
     pub fn collection_file_step_pub(&mut self, forward: bool) {
         self.collection_file_step(forward);
@@ -36,7 +34,7 @@ impl Editor {
         let caret = self.buf().line_of(self.head());
         let mut tops: Vec<usize> = Vec::new();
         for (row, kind) in collection.rows.iter().enumerate() {
-            if matches!(kind, CollectionRow::CardTop(_)) {
+            if matches!(kind, CollectionRow::Heading(_)) {
                 tops.push(row);
             }
         }

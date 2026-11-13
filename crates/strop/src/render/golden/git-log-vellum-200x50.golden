@@ -1,0 +1,101 @@
+▌ *   0d21f9e  (HEAD -> main) notes: revision 5                                                                                                                                       Ada Example    2d 
+  *   fd21dde  notes: revision 4                                                                                                                                                      Ada Example    2d 
+  *   19b4e9a  rename the doc, change the logo, add a token, and say in one long subject line why every surface is a block now                                                        Ada Example    3d 
+  *   0d964a0  Merge branch 'feature/surfaces'                                                                                                                                        Ada Example    3d 
+  |\                                                                                                                                                                                                    
+  | * e8c1034  (feature/surfaces) layout: one token                                                                                                                                   Ada Example    4d 
+  | * ff9ea27  surfaces: parse tokens in three places with care                                                                                                                       Ada Example    4d 
+  * | c756836  notes: main moved on                                                                                                                                                   Ada Example    3d 
+  |/                                                                                                                                                                                                    
+  *   8cc6dd6  base: the first commit of the project                                                                                                                                  Ada Example    5d 
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+~                                                                                                                                                                                                       
+  NORMAL    main  git log [RO]                                                                                                                                                               10%   1:1  
+
+  0: 1:#8a510f/#efeadf 1:reset/#efeadf 1:#4e6f22/#efeadf+b 3:#262a30/#efeadf 7:#4b525c/#efeadf 2:#262a30/#efeadf 9:#4b525c/#efeadf+b 4:#8a510f/#efeadf+b 2:#4b525c/#efeadf+b 152:#262a30/#efeadf 11:#656d7b/#efeadf 2:#262a30/#efeadf 4:#656d7b/#efeadf 1:reset/reset
+  1: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  2: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  3: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  4: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 195:reset/#f6f2e9 1:reset/reset
+  5: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 2:#262a30/#f6f2e9 19:#4b525c/#f6f2e9+b 148:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  7: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  8: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 195:reset/#f6f2e9 1:reset/reset
+  9: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 11: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 12: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 14: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 15: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 16: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 17: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 18: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 19: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 20: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 21: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 22: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 23: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 24: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 25: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 26: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 27: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 28: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 29: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 30: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 31: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 32: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 33: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 34: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 35: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 36: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 37: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 38: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 39: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 40: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 41: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 42: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 43: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 44: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 45: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 46: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 47: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 48: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
+ 49: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 158:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6

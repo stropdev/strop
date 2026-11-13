@@ -1,5 +1,5 @@
-//! Git memory (M3, 0001 pillar 3.2/3.3): log graph, blame, changed-file
-//! stats. Reads run through [`GitExec`] — local `git` or bounded remote
+//! Git memory (M3, 0001 pillar 3.2/3.3): blame and a commit with its
+//! changed files (the log is `log.rs`). Reads run through [`GitExec`] — local `git` or bounded remote
 //! `git` over the shared execution boundary (0036 RW8) — with one argv
 //! builder and one structured parser per query, so both backends admit
 //! exactly the same machine formats. Permalinks and remote
@@ -11,82 +11,6 @@ use std::path::{Path, PathBuf};
 use strop_core::worker::CancelToken;
 
 use crate::exec::GitExec;
-
-/// One log line from `git log --graph`, with the commit hash extracted.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LogRow {
-    /// The rendered graph+summary line (what the buffer shows).
-    pub text: String,
-    /// Full SHA when the line names a commit (graph-only lines: None).
-    pub sha: Option<String>,
-}
-
-/// `git log --graph` for the browser. One bounded run — the log is not
-/// a per-keystroke path (0001 §3). Caller decides threading.
-pub fn log_graph(
-    exec: &GitExec,
-    cancel: &CancelToken,
-    max: usize,
-    file: Option<&Path>,
-) -> Result<Vec<LogRow>, String> {
-    log_graph_range(exec, cancel, max, file, None)
-}
-
-/// `git log -L start,end:path` — the history of a line range (0014 wave
-/// 4: selection archaeology). The graph flag is meaningless with -L;
-/// rows come straight from the patch headers.
-pub fn log_graph_range(
-    exec: &GitExec,
-    cancel: &CancelToken,
-    max: usize,
-    file: Option<&Path>,
-    range: Option<(usize, usize)>,
-) -> Result<Vec<LogRow>, String> {
-    let (marker_fmt, ranged) = match range {
-        Some(_) => ("%x01%h %an · %ar · %s%x00%H", true),
-        None => ("%h %an · %ar · %s%x00%H", false),
-    };
-    // file operands pass as OsStr: a non-UTF8 tracked filename must
-    // reach git byte-for-byte, not via a lossy display() rendering
-    let mut argv: Vec<OsString> = vec![
-        "log".into(),
-        format!("--format={marker_fmt}").into(),
-        "-n".into(),
-        max.to_string().into(),
-    ];
-    match (file, range) {
-        (Some(f), Some((a, b))) => {
-            // -L embeds the path in one argument; compose the OsString
-            // instead of formatting through display()
-            let mut spec = OsString::from(format!("-L{a},{b}:"));
-            spec.push(f);
-            argv.push(spec);
-        }
-        (Some(f), None) => {
-            argv.push("--graph".into());
-            argv.push("--".into());
-            argv.push(f.as_os_str().into());
-        }
-        (None, None) => argv.push("--graph".into()),
-        (None, Some(_)) => return Err("-L needs a file".into()),
-    }
-    let stdout = exec.run_records("git log", &argv, cancel)?;
-    let text = String::from_utf8_lossy(&stdout);
-    Ok(text
-        .lines()
-        // -L output carries patch text; only marked lines are commits
-        .filter(|line| !ranged || line.starts_with('\x01'))
-        .map(|line| {
-            let line = line.strip_prefix('\x01').unwrap_or(line);
-            // the format hides the full SHA after a NUL
-            let (vis, sha) = match line.split_once('\0') {
-                Some((v, s)) => (v.to_string(), Some(s.trim().to_string())),
-                None => (line.to_string(), None),
-            };
-            LogRow { text: vis, sha }
-        })
-        .collect())
-}
 
 /// A blame card for one line (0001 pillar 3.3).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -227,33 +151,139 @@ pub fn blame_file(
     Ok(lines)
 }
 
-/// Files changed by a commit: `path | +N -M` rows for the dive view.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// What happened to a file in a commit, as git's status letter says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum FileStatus {
+    Added,
+    Copied,
+    Deleted,
+    #[default]
+    Modified,
+    Renamed,
+    TypeChanged,
+    Unmerged,
+    /// A letter git has and strop does not know (`X`, `B`).
+    Other,
+}
+
+impl FileStatus {
+    pub(crate) fn from_letter(letter: u8) -> Self {
+        match letter {
+            b'A' => Self::Added,
+            b'C' => Self::Copied,
+            b'D' => Self::Deleted,
+            b'M' => Self::Modified,
+            b'R' => Self::Renamed,
+            b'T' => Self::TypeChanged,
+            b'U' => Self::Unmerged,
+            _ => Self::Other,
+        }
+    }
+
+    /// The one-letter column git prints.
+    pub fn letter(self) -> char {
+        match self {
+            Self::Added => 'A',
+            Self::Copied => 'C',
+            Self::Deleted => 'D',
+            Self::Modified => 'M',
+            Self::Renamed => 'R',
+            Self::TypeChanged => 'T',
+            Self::Unmerged => 'U',
+            Self::Other => 'X',
+        }
+    }
+}
+
+/// One file a commit changed: a row of the commit's file list (0100 §7).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ChangedFile {
+    /// The file's path after the commit — its identity.
     #[serde(with = "strop_core::path_serde")]
     pub path: PathBuf,
     pub added: usize,
     pub deleted: usize,
+    pub status: FileStatus,
+    /// Where a renamed or copied file came from.
+    #[serde(default, with = "strop_core::path_serde::option")]
+    pub old_path: Option<PathBuf>,
+    /// Line counts do not apply: `added` and `deleted` are 0.
+    pub binary: bool,
 }
 
-/// Files changed by a commit: `path | +N -M` rows for the dive view.
-/// Paths come from numstat's NUL-delimited machine form, so native —
-/// never C-quoted, possibly non-UTF8 — names arrive as the worktree
-/// identities `commit_file_diff` expects.
-pub fn show_stat(
+/// What a commit says about itself (0100 §7).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CommitSummary {
+    pub sha: String,
+    pub author: String,
+    /// Author date, unix seconds.
+    pub time: i64,
+    pub subject: String,
+    /// The message after the subject and its blank line; empty when the
+    /// message is one line.
+    pub body: String,
+}
+
+/// A commit and the files it changed: the dive from the log.
+#[derive(Debug, Clone, Default)]
+pub struct CommitDetail {
+    pub summary: CommitSummary,
+    pub files: Vec<ChangedFile>,
+}
+
+/// A commit's message and changed files. Paths come from the
+/// NUL-delimited machine forms, so native — never C-quoted, possibly
+/// non-UTF8 — names arrive as the worktree identities `commit_file_diff`
+/// expects. Two bounded runs: the message, then the raw and numstat
+/// records.
+pub fn show_commit(
     exec: &GitExec,
     cancel: &CancelToken,
     sha: &str,
-) -> Result<Vec<ChangedFile>, String> {
+) -> Result<CommitDetail, String> {
     let argv: Vec<OsString> = vec![
         "show".into(),
+        "-s".into(),
+        "--format=%H%x00%an%x00%at%x00%s%x00%b".into(),
+        sha.into(),
+    ];
+    let header = exec.run_records("git show", &argv, cancel)?;
+    let summary = parse_summary(&header)?;
+    let argv: Vec<OsString> = vec![
+        "show".into(),
+        "--raw".into(),
         "--numstat".into(),
         "-z".into(),
         "--format=".into(),
         sha.into(),
     ];
     let stdout = exec.run_records("git show", &argv, cancel)?;
-    crate::numstat::parse_numstat(&stdout)
+    Ok(CommitDetail {
+        summary,
+        files: crate::numstat::parse_show(&stdout)?,
+    })
+}
+
+/// `%H %an %at %s %b`, NUL-separated; the body is last, so nothing in
+/// it can shift a field.
+fn parse_summary(bytes: &[u8]) -> Result<CommitSummary, String> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut fields = text.splitn(5, '\0');
+    let mut next = || fields.next().ok_or("git show: malformed commit header");
+    let sha = next()?.to_string();
+    let author = next()?.to_string();
+    let time = next()?
+        .parse()
+        .map_err(|_| "git show: malformed author date".to_string())?;
+    let subject = next()?.to_string();
+    let body = next()?.trim_end().to_string();
+    Ok(CommitSummary {
+        sha,
+        author,
+        time,
+        subject,
+        body,
+    })
 }
 
 /// Relative age, human short form ("3h", "2d", "5mo").
@@ -354,77 +384,169 @@ mod tests {
         String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 
+    /// A repository with the identity set and one commit per call.
+    fn commit_all(root: &Path, message: &str) -> String {
+        git_here(root, &["add", "-A"]);
+        git_here(root, &["commit", "-qm", message]);
+        git_here(root, &["rev-parse", "HEAD"])
+    }
+
+    fn init(root: &Path) {
+        git_here(root, &["init", "-q", "-b", "main"]);
+        git_here(root, &["config", "user.email", "t@t.t"]);
+        git_here(root, &["config", "user.name", "t"]);
+    }
+
+    fn files_of(root: &Path, sha: &str) -> Vec<ChangedFile> {
+        with_token(|token| show_commit(&local(root), &token, sha))
+            .unwrap()
+            .files
+    }
+
     /// The review-repo bug: `src/日本語.rs` reached ChangedFiles as a
     /// C-quoted octal escape and renames as `old => new`, neither a
     /// worktree identity. Under `-z` the native names must come back —
-    /// ordinary, Unicode, rename (destination only) and binary rows all
-    /// present.
+    /// ordinary, Unicode, rename (destination, with where it came from)
+    /// and binary rows all present, each with git's status letter.
     #[test]
-    fn show_stat_keeps_native_paths() {
+    fn commit_files_keep_native_paths_and_say_what_happened() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        git_here(root, &["init", "-q"]);
-        git_here(root, &["config", "user.email", "t@t.t"]);
-        git_here(root, &["config", "user.name", "t"]);
+        init(root);
         std::fs::create_dir(root.join("src")).unwrap();
         std::fs::write(root.join("a.rs"), "one\n").unwrap();
         std::fs::write(root.join("src/日本語.rs"), "fn x() {}\n").unwrap();
-        std::fs::write(root.join("ren.txt"), "old\n").unwrap();
+        std::fs::write(root.join("ren.txt"), "old\nlines\nkept\n").unwrap();
         std::fs::write(root.join("bin.dat"), b"\0\x01binary\0").unwrap();
-        git_here(root, &["add", "."]);
-        git_here(root, &["commit", "-qm", "first"]);
+        std::fs::write(root.join("gone.txt"), "bye\n").unwrap();
+        commit_all(root, "first");
         git_here(root, &["mv", "ren.txt", "new.txt"]);
         std::fs::write(root.join("a.rs"), "one\ntwo\nthree\n").unwrap();
         std::fs::write(root.join("src/日本語.rs"), "fn x() {}\nfn y() {}\n").unwrap();
         std::fs::write(root.join("bin.dat"), b"\0\x01changed\0").unwrap();
-        git_here(root, &["add", "."]);
-        git_here(root, &["commit", "-qm", "second"]);
-        let sha = git_here(root, &["rev-parse", "HEAD"]);
+        std::fs::write(root.join("fresh.txt"), "hi\n").unwrap();
+        std::fs::remove_file(root.join("gone.txt")).unwrap();
+        let sha = commit_all(root, "second");
 
-        let files = with_token(|token| show_stat(&local(root), &token, &sha)).unwrap();
-        assert_eq!(files.len(), 4, "{files:?}");
+        let files = files_of(root, &sha);
+        assert_eq!(files.len(), 6, "{files:?}");
         let row = |p: &str| {
             files
                 .iter()
                 .find(|f| f.path == Path::new(p))
                 .unwrap_or_else(|| panic!("missing {p} in {files:?}"))
         };
-        assert_eq!(row("a.rs").added, 2);
-        assert_eq!(row("a.rs").deleted, 0);
+        assert_eq!((row("a.rs").added, row("a.rs").deleted), (2, 0));
+        assert_eq!(row("a.rs").status, FileStatus::Modified);
         // the Unicode identity arrives native, never `"src/\346..."`
         assert_eq!(row("src/日本語.rs").added, 1);
-        // rename: only the destination is a row
-        assert_eq!(row("new.txt").added, 0);
+        // rename: the destination is the row, and it knows its source
+        assert_eq!(row("new.txt").status, FileStatus::Renamed);
+        assert_eq!(
+            row("new.txt").old_path.as_deref(),
+            Some(Path::new("ren.txt"))
+        );
         assert!(!files.iter().any(|f| f.path == Path::new("ren.txt")));
-        // binary: the row survives with deliberate 0/0 counts
+        // binary: the row survives, flagged, with 0/0 counts
+        assert!(row("bin.dat").binary);
         assert_eq!((row("bin.dat").added, row("bin.dat").deleted), (0, 0));
+        assert!(!row("a.rs").binary);
+        assert_eq!(row("fresh.txt").status, FileStatus::Added);
+        assert_eq!(row("gone.txt").status, FileStatus::Deleted);
+        assert_eq!(row("gone.txt").status.letter(), 'D');
         assert!(files
             .iter()
             .all(|f| !f.path.to_string_lossy().starts_with('"')));
     }
 
-    /// show_stat's paths are real identities: hand one straight to the
-    /// git2-based diff the dive opens next.
+    /// The commit's own words come with its files: subject, body,
+    /// author and author date.
     #[test]
-    fn show_stat_paths_feed_commit_file_diff() {
+    fn a_commit_says_who_when_and_why() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        git_here(root, &["init", "-q"]);
-        git_here(root, &["config", "user.email", "t@t.t"]);
-        git_here(root, &["config", "user.name", "t"]);
+        init(root);
+        std::fs::write(root.join("f.txt"), "one\n").unwrap();
+        git_here(root, &["add", "-A"]);
+        git_here(
+            root,
+            &[
+                "commit",
+                "-qm",
+                "the subject",
+                "-m",
+                "a body\n\nin two paragraphs",
+            ],
+        );
+        let sha = git_here(root, &["rev-parse", "HEAD"]);
+        let time: i64 = git_here(root, &["log", "-1", "--format=%at"])
+            .parse()
+            .unwrap();
+        let detail = with_token(|token| show_commit(&local(root), &token, &sha)).unwrap();
+        assert_eq!(
+            detail.summary,
+            CommitSummary {
+                sha: sha.clone(),
+                author: "t".into(),
+                time,
+                subject: "the subject".into(),
+                body: "a body\n\nin two paragraphs".into(),
+            }
+        );
+        assert_eq!(detail.files.len(), 1);
+        assert_eq!(detail.files[0].status, FileStatus::Added);
+    }
+
+    /// A merge's files are the ones today's list showed (numstat lists
+    /// the rows); its combined raw records only add the letters.
+    #[test]
+    fn a_merge_lists_its_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init(root);
+        std::fs::write(root.join("m.txt"), "a\n").unwrap();
+        commit_all(root, "one");
+        git_here(root, &["checkout", "-qb", "side"]);
+        std::fs::write(root.join("z.txt"), "z\n").unwrap();
+        commit_all(root, "side");
+        git_here(root, &["checkout", "-q", "main"]);
+        std::fs::write(root.join("m.txt"), "a\nb\n").unwrap();
+        commit_all(root, "main moves");
+        git_here(root, &["merge", "-q", "--no-edit", "side"]);
+        let sha = git_here(root, &["rev-parse", "HEAD"]);
+        let argv: Vec<OsString> = vec![
+            "show".into(),
+            "--numstat".into(),
+            "-z".into(),
+            "--format=".into(),
+            sha.clone().into(),
+        ];
+        let numstat =
+            with_token(|token| local(root).run_records("git show", &argv, &token)).unwrap();
+        let today = crate::numstat::parse_numstat(&numstat).unwrap();
+        let files = files_of(root, &sha);
+        let paths = |rows: &[ChangedFile]| rows.iter().map(|f| f.path.clone()).collect::<Vec<_>>();
+        assert_eq!(paths(&files), paths(&today));
+    }
+
+    /// The file list's paths are real identities: hand one straight to
+    /// the git2-based diff the dive opens next.
+    #[test]
+    fn commit_file_paths_feed_commit_file_diff() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init(root);
         std::fs::create_dir(root.join("src")).unwrap();
         std::fs::write(root.join("src/日本語.rs"), "fn x() {}\n").unwrap();
-        git_here(root, &["add", "."]);
-        git_here(root, &["commit", "-qm", "first"]);
+        commit_all(root, "first");
         std::fs::write(
             root.join("src/日本語.rs"),
             "fn x() {}\nfn y() {}\nfn z() {}\n",
         )
         .unwrap();
-        git_here(root, &["commit", "-qam", "second"]);
-        let sha = git_here(root, &["rev-parse", "HEAD"]);
+        let sha = commit_all(root, "second");
 
-        let files = with_token(|token| show_stat(&local(root), &token, &sha)).unwrap();
+        let files = files_of(root, &sha);
         let uni = files
             .iter()
             .find(|f| f.path == Path::new("src/日本語.rs"))
@@ -439,49 +561,19 @@ mod tests {
     /// not through a quoted or lossy spelling.
     #[cfg(unix)]
     #[test]
-    fn show_stat_preserves_non_utf8_paths() {
+    fn commit_files_preserve_non_utf8_paths() {
         use std::os::unix::ffi::OsStrExt;
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        git_here(root, &["init", "-q"]);
-        git_here(root, &["config", "user.email", "t@t.t"]);
-        git_here(root, &["config", "user.name", "t"]);
+        init(root);
         std::fs::create_dir(root.join("src")).unwrap();
         let name = std::ffi::OsStr::from_bytes(b"src/\xff\xfe.rs");
         std::fs::write(root.join(name), "fn x() {}\n").unwrap();
-        git_here(root, &["add", "."]);
-        git_here(root, &["commit", "-qm", "first"]);
-        let sha = git_here(root, &["rev-parse", "HEAD"]);
+        let sha = commit_all(root, "first");
 
-        let files = with_token(|token| show_stat(&local(root), &token, &sha)).unwrap();
+        let files = files_of(root, &sha);
         assert_eq!(files.len(), 1, "{files:?}");
         assert_eq!(files[0].path.as_os_str().as_bytes(), b"src/\xff\xfe.rs");
         assert_eq!(files[0].added, 1);
-    }
-
-    /// The log query runs through the same two-backend seam: local
-    /// log_graph_range still returns marked rows with full shas.
-    #[test]
-    fn log_graph_returns_marked_rows() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        git_here(root, &["init", "-q"]);
-        git_here(root, &["config", "user.email", "t@t.t"]);
-        git_here(root, &["config", "user.name", "t"]);
-        std::fs::write(root.join("f.rs"), "one\n").unwrap();
-        git_here(root, &["add", "."]);
-        git_here(root, &["commit", "-qm", "only"]);
-        let sha = git_here(root, &["rev-parse", "HEAD"]);
-
-        let rows = with_token(|token| log_graph(&local(root), &token, 10, None)).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].sha.as_deref(), Some(sha.as_str()));
-        assert!(rows[0].text.contains("only"));
-
-        // a bad revision is an honest error through the same seam
-        assert!(with_token(|token| {
-            log_graph_range(&local(root), &token, 10, None, Some((1, 1)))
-        })
-        .is_err());
     }
 }

@@ -1,0 +1,33 @@
+─ commit c1b9c8ba0e    Ada Example · 1 week ago 
+  rename the doc, change the logo, add a token… 
+                                                
+─ Files ──────────────────────── 3 files  +4 -2 
+▌ A …_long_module_name_for_projection.rs  +1 -0 
+  M logo.bin                             binary 
+  M src/lib.rs                            +3 -2 
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+~                                               
+  NORMAL    git files [RO]            71%  5:1  
+
+  0: 1:#aeb3ba/#f6f2e9 1:reset/#f6f2e9 7:#656d7b/#f6f2e9 10:#4b525c/#f6f2e9+b 4:#262a30/#f6f2e9 24:#4b525c/#f6f2e9 1:reset/reset
+  1: 2:reset/#f6f2e9 45:#262a30/#f6f2e9+b 1:reset/reset
+  2: 47:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9 1:reset/#f6f2e9 5:#262a30/#f6f2e9+b 26:#656d7b/#f6f2e9 7:#4b525c/#f6f2e9 2:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:reset/reset
+  4: 1:#8a510f/#efeadf 1:reset/#efeadf 2:#3f7a3a/#efeadf 38:#262a30/#efeadf 2:#3f7a3a/#efeadf 1:#262a30/#efeadf 2:#b8323f/#efeadf 1:reset/reset
+  5: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 37:#262a30/#f6f2e9 6:#656d7b/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 2:#8a5d13/#f6f2e9 4:#4b525c/#f6f2e9 34:#262a30/#f6f2e9 2:#3f7a3a/#f6f2e9 1:#262a30/#f6f2e9 2:#b8323f/#f6f2e9 1:reset/reset
+  7: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+  8: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+  9: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 11: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 12: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 13: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 14: 1:#aeb3ba/#f6f2e9 46:reset/#f6f2e9 1:reset/reset
+ 15: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 9:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 11:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6

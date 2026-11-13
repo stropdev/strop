@@ -278,19 +278,26 @@ fn log_results_need_the_registered_request() {
     let (_directory, mut e) = editor_with_context();
     e.open_log(false);
     let doc = e.current();
-    let real = e.log_requests[&doc].clone();
+    let real = e.log_requests[&doc].ticket.clone();
     let owner = Ticket {
         request: e.worker_ids.allocate().unwrap(),
         key: real.key.clone(),
     };
-    e.log_requests.insert(doc, owner.clone());
+    e.log_requests.insert(
+        doc,
+        crate::editor::git_memory::LogRequest {
+            ticket: owner.clone(),
+            expected: real.key.revision,
+            published: false,
+        },
+    );
     // the superseded request's rows must not land
     e.handle_git_job(GitJob::Log(Completion {
         ticket: real,
-        outcome: Outcome::Success(vec![LogRow {
-            text: "POISON".into(),
-            sha: None,
-        }]),
+        outcome: Outcome::Success(super::log_done(vec![LogRow {
+            graph: "POISON".into(),
+            commit: None,
+        }])),
     }));
     assert!(
         !e.doc(doc).buf.text().to_string().contains("POISON"),
@@ -304,16 +311,10 @@ fn log_results_need_the_registered_request() {
     }
     e.handle_git_job(GitJob::Log(Completion {
         ticket: owner,
-        outcome: Outcome::Success(vec![
-            LogRow {
-                text: "row a".into(),
-                sha: Some("0123".into()),
-            },
-            LogRow {
-                text: "row b".into(),
-                sha: Some("f1d0".into()),
-            },
-        ]),
+        outcome: Outcome::Success(super::log_done(vec![
+            super::commit_row("0123", "row a"),
+            super::commit_row("f1d0", "row b"),
+        ])),
     }));
     let text = e.doc(doc).buf.text().to_string();
     assert!(text.contains("row a") && text.contains("row b"), "{text}");
@@ -472,10 +473,11 @@ fn dive_results_need_their_surface() {
         Some("git log"),
         ropey::Rope::from_str("loading log…\n"),
         Surface::CommitLog {
-            rows: vec![LogRow {
-                text: "c0".into(),
-                sha: Some("0123456789abcdef0123456789abcdef01234567".into()),
-            }],
+            rows: vec![super::commit_row(
+                "0123456789abcdef0123456789abcdef01234567",
+                "c0",
+            )],
+            columns: Default::default(),
             focus: None,
             return_to: None,
         },
@@ -510,7 +512,10 @@ fn dive_results_need_their_surface() {
         ticket: foreign,
         outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(
             crate::editor::git_memory::PreparedFiles::new(
-                "0123456789abcdef0123456789abcdef01234567".into(),
+                strop_git::memory::CommitSummary {
+                    sha: "0123456789abcdef0123456789abcdef01234567".into(),
+                    ..Default::default()
+                },
                 vec![],
             ),
         )),
@@ -521,12 +526,16 @@ fn dive_results_need_their_surface() {
         path: "f.rs".into(),
         added: 1,
         deleted: 0,
+        ..Default::default()
     };
     e.handle_git_job(GitJob::Dive(Completion {
         ticket: owner,
         outcome: Outcome::Success(crate::editor::git_memory::DiveData::Files(
             crate::editor::git_memory::PreparedFiles::new(
-                "0123456789abcdef0123456789abcdef01234567".into(),
+                strop_git::memory::CommitSummary {
+                    sha: "0123456789abcdef0123456789abcdef01234567".into(),
+                    ..Default::default()
+                },
                 vec![file],
             ),
         )),
@@ -546,7 +555,11 @@ fn failed_log_settles_the_surface() {
     let (_d, mut e) = editor_with_context();
     e.open_log(false);
     let doc = e.current();
-    let owner = e.log_requests.get(&doc).cloned().expect("registered");
+    let owner = e
+        .log_requests
+        .get(&doc)
+        .map(|request| request.ticket.clone())
+        .expect("registered");
     // an unrelated document with a message must keep it
     let other = e
         .docs

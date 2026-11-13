@@ -16,7 +16,10 @@ pub mod protocol;
 pub mod registry;
 
 pub use caps::ServerCaps;
-pub use client::{Client, SpawnError};
+pub use client::{
+    structure_tokens, Client, SpawnError, DECODE_BYTES_PER_TOKEN, MAX_DECODE_BYTES,
+    MAX_DECODE_TOKENS,
+};
 pub use protocol::*;
 pub use target::Workspace;
 #[cfg(test)]

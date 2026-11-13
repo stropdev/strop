@@ -2,7 +2,9 @@
 //! they can not disagree: line `n` of the buffer is `rows[n]`. Pure —
 //! no editor, no git handle.
 
-use strop_git::{DiffLine, FileDelta, Hunk, LineOrigin, Section, StatusEntry, WorkingTree};
+use strop_git::{
+    DiffLine, FileDelta, Hunk, LineOrigin, LineStat, Section, StatusEntry, WorkingTree,
+};
 
 /// What one buffer line is. Indices point into the view's tree and
 /// deltas; rendering and the key verbs both read rows, never the text.
@@ -59,6 +61,10 @@ pub struct StatusView {
     pub tree: WorkingTree,
     /// Diffs of the expanded entries, as of `tree`.
     pub deltas: Vec<(StatusEntry, FileDelta)>,
+    /// Lines added and removed per entry, `stats[n]` for
+    /// `tree.entries[n]` (0100 §7). They land just after their snapshot,
+    /// and are empty until then.
+    pub stats: Vec<Option<LineStat>>,
     /// What `=` opened; carried into every refresh.
     pub expanded: Vec<StatusEntry>,
     pub rows: Vec<StatusRow>,
@@ -73,6 +79,12 @@ impl StatusView {
 
     pub fn entry(&self, index: usize) -> Option<&StatusEntry> {
         self.tree.entries.get(index)
+    }
+
+    /// `+N -M` of entry `index`: none for a conflict, an untracked
+    /// directory, or a file that moved under the read.
+    pub fn stat(&self, index: usize) -> Option<LineStat> {
+        self.stats.get(index).copied().flatten()
     }
 
     pub fn delta(&self, entry: &StatusEntry) -> Option<&FileDelta> {
@@ -93,6 +105,12 @@ impl StatusView {
         self.hunk(entry, hunk)?.lines.get(line)
     }
 
+    /// The changed byte range of a diff line's text against the line it
+    /// pairs with, as the diff view emphasises it.
+    pub fn emphasis(&self, entry: usize, hunk: usize, line: usize) -> Option<(usize, usize)> {
+        crate::editor::git_memory::line_emphasis(&self.hunk(entry, hunk)?.lines, line)
+    }
+
     /// How many entries a section holds (its heading's count).
     pub fn count(&self, section: Section) -> usize {
         self.tree.section(section).count()
@@ -107,6 +125,10 @@ impl StatusView {
     /// whose entry left the tree are dropped.
     pub fn install(&mut self, tree: WorkingTree, deltas: Vec<(StatusEntry, FileDelta)>) -> String {
         self.expanded.retain(|entry| tree.entries.contains(entry));
+        if self.tree != tree {
+            // counts belong to the snapshot they were taken of
+            self.stats.clear();
+        }
         self.tree = tree;
         self.deltas = deltas;
         self.loaded = true;
@@ -159,10 +181,7 @@ pub fn build(tree: &WorkingTree, deltas: &[(StatusEntry, FileDelta)]) -> (String
             continue;
         }
         push("", StatusRow::Blank);
-        push(
-            &format!("{} ({})", section.title(), members.len()),
-            StatusRow::Section(section),
-        );
+        push(section.title(), StatusRow::Section(section));
         for index in members {
             let entry = &tree.entries[index];
             push(
@@ -235,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn sections_come_in_order_with_counts_and_inline_hunks() {
+    fn sections_come_in_order_with_inline_hunks() {
         let unstaged = entry(Section::Unstaged, Change::Modified, "src/lib.rs");
         let tree = WorkingTree {
             head: Some("main".into()),
@@ -273,16 +292,16 @@ mod tests {
             "Head: main\n\
              Upstream: origin/main, ahead 2\n\
              \n\
-             Staged (1)\n\
+             Staged\n\
              A new.rs\n\
              \n\
-             Unstaged (1)\n\
+             Unstaged\n\
              M src/lib.rs\n\
              @@ -1,1 +1,2 @@\n \
              fn a() {}\n\
              +fn b() {}\n\
              \n\
-             Untracked (1)\n\
+             Untracked\n\
              ? notes.txt\n"
         );
         assert_eq!(rows.len(), text.lines().count());

@@ -452,11 +452,15 @@ fn historical_delta_names_its_revision_and_file_not_the_worktree() {
             },
             sha: "abcdef1234567890".into(),
             files: crate::editor::PreparedFiles::new(
-                "abcdef1234567890".into(),
+                strop_git::memory::CommitSummary {
+                    sha: "abcdef1234567890".into(),
+                    ..Default::default()
+                },
                 vec![strop_git::memory::ChangedFile {
                     path: "src/reader.rs".into(),
                     added: 1,
                     deleted: 0,
+                    ..Default::default()
                 }],
             ),
             current: "src/reader.rs".into(),

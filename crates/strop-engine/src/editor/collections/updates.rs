@@ -191,5 +191,6 @@ impl Editor {
         }
         self.collections.remove(&id);
         self.message = format!("collection projection failed: {error}; source edits are retained");
+        crate::editor::collections::loans::release_unheld(self);
     }
 }
