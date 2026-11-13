@@ -1,6 +1,7 @@
 # 0104 — The window tree: splits that nest, as in vim
 
-- Status: **in force** (0.67). Every default in §13 was taken.
+- Status: **in force** (0.67). Every default in §13 was taken; T1–T4 are proved
+  (`proofs/Kernel/Layout.lean`), 7 mutants calibrated.
 - Source: the owner — "I did a horizontal split so now two windows, then doing
   a vertical split produced a third window but flipped everything into
   vertical. I feel it is buggy."
@@ -701,19 +702,19 @@ def tileFrom (cells unit gap : Nat) : Nat → Nat → Nat → List Nat → List 
 written into `out` (mechanical: one loop invariant). Everything below is then
 ordinary induction over a list, with no Aeneas monad in sight.
 
-Hypotheses shared by all (`Bounded`): `cells ≤ 65535`, `tracks.sum ≤ 65535`,
+Hypotheses shared by all (`TileBounded`; `Bounded` is taken by `Cache.lean`): `cells ≤ 65535`, `tracks.sum ≤ 65535`,
 `unit ≤ 2`, `gap ≤ 1` — so no product or sum can overflow even a 32-bit
 `usize` (`65535² < 2³²`). Production satisfies them: cells are `u16`, a tree
 has fewer leaves than cells that matter, and the engine passes only `(1, 1)`
-and `(2, 0)`. `Fits` is `minSpec tracks.sum unit gap ≤ cells ∧ ∀ t ∈ tracks,
+and `(2, 0)`. `TileFits` is `minSpec tracks.sum unit gap ≤ cells ∧ ∀ t ∈ tracks,
 1 ≤ t ∧ tracks ≠ []`.
 
 | # | Claim (name in `Audit.lean`) | Statement | What it means on screen |
 |---|---|---|---|
-| T1 | `tile_in_bounds` | Under `Bounded`, for every `k`: `out[k].at + out[k].len ≤ cells`, and `out[k].at + out[k].len ≤ out[k+1].at`. No `Fits` needed. | Panes never overlap and nothing is drawn past the frame — so nothing reaches the modeline — at any terminal size. |
-| T2 | `tile_exact` | Under `Fits`: `out[0].at = 0`; `out[k+1].at = out[k].at + out[k].len + gap`; the last span ends at `cells`. | Children and their dividers partition the parent exactly: no stray column, no lost row. Closing a child and re-tiling therefore hands its cells back to the others. |
-| T3 | `tile_minimum` | Under `Fits`: `out[k].len ≥ minSpec tracks[k] unit gap`. | When the terminal is big enough, every window gets at least one column, and a title plus one row. |
-| T4 | `tile_fair` | Under `Fits`, with `q = (cells − minSpec tracks.sum unit gap) / tracks.sum`: `minSpec tracks[k] unit gap + tracks[k]·q ≤ out[k].len ≤ minSpec tracks[k] unit gap + tracks[k]·(q+1)`. Corollary `tile_fair_leaves`: if every `tracks[k] = 1`, any two lengths differ by at most 1. | `ctrl-w =` holds by construction: side-by-side windows of one split differ by at most one cell, and a nested group gets its share by window count. |
+| T1 | `tile_in_bounds` | Under `TileBounded`, for every `k`: `out[k].at + out[k].len ≤ cells`, and `out[k].at + out[k].len ≤ out[k+1].at`. No `TileFits` needed. | Panes never overlap and nothing is drawn past the frame — so nothing reaches the modeline — at any terminal size. |
+| T2 | `tile_exact` | Under `TileFits`: `out[0].at = 0`; `out[k+1].at = out[k].at + out[k].len + gap`; the last span ends at `cells`. | Children and their dividers partition the parent exactly: no stray column, no lost row. Closing a child and re-tiling therefore hands its cells back to the others. |
+| T3 | `tile_minimum` | Under `TileFits`: `out[k].len ≥ minSpec tracks[k] unit gap`. | When the terminal is big enough, every window gets at least one column, and a title plus one row. |
+| T4 | `tile_fair` | Under `TileFits`, with `q = (cells − minSpec tracks.sum unit gap) / tracks.sum`: `minSpec tracks[k] unit gap + tracks[k]·q ≤ out[k].len ≤ minSpec tracks[k] unit gap + tracks[k]·(q+1)`. Corollary `tile_fair_leaves`: if every `tracks[k] = 1`, any two lengths differ by at most 1. | `ctrl-w =` holds by construction: side-by-side windows of one split differ by at most one cell, and a nested group gets its share by window count. |
 
 Also audited, small: `minimum_spec` (`= minSpec`), `total_spec` (the sum),
 `share_spec` (`= tracks * room / weight`, 0 when `weight = 0`).
