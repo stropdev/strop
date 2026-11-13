@@ -86,12 +86,12 @@ pub(super) struct Row<'t> {
 }
 
 /// The widths a row is laid out in: the number gutter, the text column
-/// and the commit files' block.
+/// and a list surface's layout.
 #[derive(Clone, Copy)]
 pub(super) struct Cells {
     pub gutter: usize,
     pub text: usize,
-    pub files_block: usize,
+    pub list: diff::ListLayout,
 }
 
 impl<'a> Owner<'a> {
@@ -124,7 +124,7 @@ impl<'a> Owner<'a> {
                     .unwrap_or_else(|| list_blank(t, row.cursor))
             }
             Owner::Block(Block::List(surface)) => {
-                diff::list_painted(t, surface, line, row.cursor, cells.files_block, cells.text)
+                diff::list_painted(t, surface, line, row.cursor, cells.list, cells.text)
                     .unwrap_or_else(|| list_blank(t, row.cursor))
             }
             Owner::Directory(directory) => {

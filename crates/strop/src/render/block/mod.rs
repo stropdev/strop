@@ -99,6 +99,29 @@ impl Painted<'_> {
     }
 }
 
+/// The fewest cells a row's words keep before its fact gives way.
+const LEAD_FLOOR: usize = 8;
+
+/// A list row with its fact at the right edge (0100 §3.8): the words,
+/// cut with `…` to leave two cells before the fact, then padding, then
+/// the fact ending at `cells`. Too narrow for both, the fact goes and
+/// the words are cut at `cells`.
+pub(crate) fn fact_row(
+    lead: Vec<Span<'static>>,
+    fact: Vec<Span<'static>>,
+    cells: usize,
+) -> Vec<Span<'static>> {
+    let fact_cells = heading::spans_width(&fact);
+    if fact.is_empty() || cells < fact_cells + 2 + LEAD_FLOOR {
+        return heading::clip_spans(lead, cells);
+    }
+    let mut spans = heading::clip_spans(lead, cells - fact_cells - 2);
+    let used = heading::spans_width(&spans);
+    spans.push(Span::raw(" ".repeat(cells - fact_cells - used)));
+    spans.extend(fact);
+    spans
+}
+
 /// A break's label ink.
 pub(crate) fn muted(t: &Tokens, text: impl Into<String>) -> Span<'static> {
     Span::styled(text.into(), Style::default().fg(t.muted))

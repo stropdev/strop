@@ -1,8 +1,10 @@
 //! The commit browser and a file's history (`Space g l`, `Space g h`,
 //! the line-range history): one streamed job per surface. Rows arrive
-//! in pages and are only ever appended, in git's order, so nothing above
-//! the cursor moves and no row is replaced (0101 §2.2). The first page
-//! replaces `loading log…`.
+//! in pages and are only ever appended, in git's order, so no row above
+//! the cursor moves (0101 §2.2). The first page replaces `loading log…`.
+//! A page whose graph or sha is wider than any before re-pads the rows
+//! above it so the columns stay aligned (0100 §4.3); their lines and the
+//! cursor's row stay put.
 
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -12,6 +14,7 @@ use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket}
 use strop_git::exec::GitExec;
 use strop_git::log::{self, HistoryRead, LogRow};
 
+use super::log_text::{self, LogColumns};
 use super::types::{GitJob, LogDone, LogKey, LogRequest};
 use super::{graph, jobs, Surface};
 use crate::editor::{trace, Editor};
@@ -83,6 +86,7 @@ pub(super) fn open(
         ropey::Rope::from_str("loading log…"),
         Surface::CommitLog {
             rows: vec![],
+            columns: LogColumns::default(),
             focus,
             return_to: None,
         },
@@ -214,15 +218,38 @@ pub(super) fn handle_page(editor: &mut Editor, ticket: Ticket<LogKey>, rows: Vec
 }
 
 /// Land rows in the surface buffer: the first rows replace the
-/// loading text, later ones are appended. An empty successful log
-/// is a completed empty list. Returns false when the buffer refused.
-fn publish_rows(editor: &mut Editor, doc: DocumentId, rows: Vec<LogRow>, append: bool) -> bool {
-    let mut text = String::new();
-    for row in &rows {
-        text.push_str(&row.text);
-        text.push('\n');
-    }
-    let landed = if append {
+/// loading text, later ones are appended — unless they widen the
+/// columns, when every row is spelled again at the new widths and the
+/// cursor keeps its row. An empty successful log is a completed empty
+/// list. Returns false when the buffer refused.
+pub(crate) fn publish_rows(
+    editor: &mut Editor,
+    doc: DocumentId,
+    rows: Vec<LogRow>,
+    append: bool,
+) -> bool {
+    let shown = match editor.docs.get(doc).and_then(|d| d.surface_payload()) {
+        Some(Surface::CommitLog { rows, columns, .. }) if append => Some((*columns, rows)),
+        _ => None,
+    };
+    let before = shown.map_or_else(LogColumns::default, |(columns, _)| columns);
+    let mut columns = before;
+    columns.fit(&rows);
+    let above = match shown {
+        Some((_, above)) if columns != before => Some(log_text::text(above, columns)),
+        _ => None,
+    };
+    let landed = if let Some(mut text) = above {
+        text.push_str(&log_text::text(&rows, columns));
+        let cursor_row = (editor.current() == doc).then(|| editor.buf().line_of(editor.head()));
+        let landed = editor.replace_system(doc, &text);
+        if let (Ok(()), Some(row)) = (&landed, cursor_row) {
+            let at = editor.buf().line_start(row);
+            editor.set_head(at);
+        }
+        landed
+    } else if append {
+        let text = log_text::text(&rows, columns);
         let end = editor.doc(doc).buf.len_bytes();
         editor
             .doc_mut(doc)
@@ -230,6 +257,7 @@ fn publish_rows(editor: &mut Editor, doc: DocumentId, rows: Vec<LogRow>, append:
             .system_edit()
             .replace(strop_core::Range::charwise(end, end), &text)
     } else {
+        let mut text = log_text::text(&rows, columns);
         if text.is_empty() {
             text.push('\n');
         }
@@ -242,9 +270,16 @@ fn publish_rows(editor: &mut Editor, doc: DocumentId, rows: Vec<LogRow>, append:
     }
     let mut focus_row = None;
     if let Some(Some(Surface::CommitLog {
-        rows: slot, focus, ..
+        rows: slot,
+        columns: widths,
+        focus,
+        ..
     })) = editor.docs.get_mut(doc).map(|d| d.surface_payload_mut())
     {
+        *widths = columns;
+        if !append {
+            slot.clear(); // the first rows replace whatever the surface held
+        }
         let before = slot.len();
         if let Some(found) = focus.as_deref().and_then(|sha| {
             rows.iter()
@@ -277,10 +312,11 @@ fn publish_status(editor: &mut Editor, doc: DocumentId, status: &str) {
         editor.message = format!("git log publish failed: {error}");
         return;
     }
-    if let Some(Some(Surface::CommitLog { rows, .. })) =
+    if let Some(Some(Surface::CommitLog { rows, columns, .. })) =
         editor.docs.get_mut(doc).map(|d| d.surface_payload_mut())
     {
         rows.clear();
+        *columns = LogColumns::default();
     }
 }
 

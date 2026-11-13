@@ -16,18 +16,17 @@ use strop_trace::replay::Tape;
 
 /// A log row naming `sha`, its text ending in `subject`.
 pub(super) fn commit_row(sha: &str, subject: &str) -> LogRow {
-    LogRow::new(
-        "* ".into(),
-        Some(strop_git::log::LogCommit {
+    LogRow {
+        graph: "* ".into(),
+        commit: Some(strop_git::log::LogCommit {
             sha: sha.into(),
             short: sha.chars().take(4).collect(),
             refs: Vec::new(),
             subject: subject.into(),
             author: "t".into(),
             time: 0,
-            age: "now".into(),
         }),
-    )
+    }
 }
 
 /// A finished history read with these rows.
@@ -466,10 +465,10 @@ fn stale_log_results_are_dropped() {
     e.feed_text("q"); // closes the surface
     e.handle_git_job(GitJob::Log(strop_core::worker::Completion {
         ticket: stale_ticket,
-        outcome: strop_core::worker::Outcome::Success(log_done(vec![LogRow::new(
-            "POISON ROW".into(),
-            None,
-        )])),
+        outcome: strop_core::worker::Outcome::Success(log_done(vec![LogRow {
+            graph: "POISON ROW".into(),
+            commit: None,
+        }])),
     }));
     for (i, (_, d)) in e.docs.iter().enumerate() {
         let text = d.buf.text().to_string();

@@ -15,7 +15,7 @@ pub(crate) fn git_here(root: &Path, args: &[&str]) -> String {
         .env("GIT_AUTHOR_EMAIL", "a@example.com")
         .env("GIT_COMMITTER_NAME", "C")
         .env("GIT_COMMITTER_EMAIL", "c@example.com")
-        // a fixed date: git's age wording holds still between two reads
+        // a fixed date: the rows hold still between two reads
         .env("GIT_AUTHOR_DATE", "2020-01-01T00:00:00Z")
         .env("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z")
         .output()
@@ -61,26 +61,31 @@ fn read(root: &Path, file: Option<&Path>, range: Option<(usize, usize)>) -> Vec<
     .unwrap()
 }
 
-/// Today's row text, as git spelled it before the rows were typed: the
-/// derived text must equal it byte for byte.
+/// Each row as git prints it with `--graph`: the graph runes, then the
+/// commit's fields, whatever the merges and connector rows.
+fn spelled(rows: &[LogRow]) -> Vec<String> {
+    rows.iter()
+        .map(|row| match &row.commit {
+            Some(commit) => format!("{}{} {}", row.graph, commit.short, commit.subject),
+            None => row.graph.clone(),
+        })
+        .collect()
+}
+
 #[test]
-fn the_derived_text_is_the_row_git_printed() {
+fn the_typed_rows_are_the_rows_git_printed() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     repository(root);
     let rows = read(root, None, None);
-    let printed = git_here(
-        root,
-        &["log", "--format=%h %an · %ar · %s", "-n", "200", "--graph"],
-    );
-    let texts: Vec<&str> = rows.iter().map(|row| row.text.as_str()).collect();
-    assert_eq!(texts, printed.lines().collect::<Vec<_>>());
+    let printed = git_here(root, &["log", "--format=%h %s", "-n", "200", "--graph"]);
+    assert_eq!(spelled(&rows), printed.lines().collect::<Vec<_>>());
     let file = read(root, Some(Path::new("f.txt")), None);
     let printed = git_here(
         root,
         &[
             "log",
-            "--format=%h %an · %ar · %s",
+            "--format=%h %s",
             "-n",
             "200",
             "--graph",
@@ -88,8 +93,7 @@ fn the_derived_text_is_the_row_git_printed() {
             "f.txt",
         ],
     );
-    let texts: Vec<&str> = file.iter().map(|row| row.text.as_str()).collect();
-    assert_eq!(texts, printed.lines().collect::<Vec<_>>());
+    assert_eq!(spelled(&file), printed.lines().collect::<Vec<_>>());
 }
 
 #[test]
@@ -115,7 +119,7 @@ fn rows_carry_typed_fields() {
     assert_eq!(rows[0].graph, "*   ");
     // a connector row is graph only
     let connector = rows.iter().find(|row| row.commit.is_none()).unwrap();
-    assert_eq!(connector.text, connector.graph);
+    assert!(connector.graph.contains(['|', '/', '\\']));
     assert!(connector.sha().is_none());
     let first = rows
         .iter()
@@ -163,11 +167,10 @@ fn a_line_range_lists_only_its_commits() {
 /// one byte at a time — the rows are the rows of the whole stream.
 #[test]
 fn rows_do_not_depend_on_chunk_boundaries() {
-    let stream =
-        "*   \x1eaaaa\x1fa\x1fÅnne\x1f100\x1f2 days ago\x1fHEAD -> main, tag: v1\x1fmerge ·\n\
+    let stream = "*   \x1eaaaa\x1fa\x1fÅnne\x1f100\x1fHEAD -> main, tag: v1\x1fmerge ·\n\
                   |\\  \n\
-                  | * \x1ebbbb\x1fb\x1fZoë\x1f90\x1f3 days ago\x1f\x1fnaïve\n\
-                  * | \x1ecccc\x1fc\x1fX\x1f80\x1f4 days ago\x1f\x1flast without newline";
+                  | * \x1ebbbb\x1fb\x1fZoë\x1f90\x1f\x1fnaïve\n\
+                  * | \x1ecccc\x1fc\x1fX\x1f80\x1f\x1flast without newline";
     let bytes = stream.as_bytes();
     let whole = {
         let mut records = LogRecords::new(false);

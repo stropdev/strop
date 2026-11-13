@@ -15,9 +15,8 @@ use strop_core::worker::CancelToken;
 use crate::exec::GitExec;
 
 /// What a history read asks git for, after the graph: full and short
-/// sha, author, author date (unix seconds), git's relative wording of
-/// it, ref names, subject.
-const FIELDS: &str = "%H%x1f%h%x1f%an%x1f%at%x1f%ar%x1f%D%x1f%s";
+/// sha, author, author date (unix seconds), ref names, subject.
+const FIELDS: &str = "%H%x1f%h%x1f%an%x1f%at%x1f%D%x1f%s";
 /// Starts the fields of a commit row; never part of a graph.
 const RECORD: char = '\x1e';
 const FIELD: char = '\x1f';
@@ -34,12 +33,9 @@ pub struct LogCommit {
     pub refs: Vec<String>,
     pub subject: String,
     pub author: String,
-    /// Author date, unix seconds: the date the log's age is counted from.
+    /// Author date, unix seconds: the renderer words the log's age from
+    /// it against the editor's clock (0100 §4.3).
     pub time: i64,
-    /// git's own wording of that age (`%ar`, in the user's locale). Kept
-    /// only so [`LogRow::text`] spells today's row exactly; a renderer
-    /// words the age from [`Self::time`] against its own clock.
-    pub age: String,
 }
 
 /// One row of the log: a commit with the graph runes ahead of it, or a
@@ -50,28 +46,9 @@ pub struct LogRow {
     /// line-range history). For a connector row, the whole row.
     pub graph: String,
     pub commit: Option<LogCommit>,
-    /// The row as the buffer spells it today, derived from the fields
-    /// above by [`LogRow::new`]: `{graph}{short} {author} · {age} ·
-    /// {subject}`.
-    pub text: String,
 }
 
 impl LogRow {
-    pub fn new(graph: String, commit: Option<LogCommit>) -> Self {
-        let text = match &commit {
-            Some(commit) => format!(
-                "{graph}{} {} · {} · {}",
-                commit.short, commit.author, commit.age, commit.subject
-            ),
-            None => graph.clone(),
-        };
-        Self {
-            graph,
-            commit,
-            text,
-        }
-    }
-
     /// The full sha, when the row names a commit.
     pub fn sha(&self) -> Option<&str> {
         self.commit.as_ref().map(|commit| commit.sha.as_str())
@@ -120,32 +97,34 @@ impl LogRecords {
     fn row(&self, line: &[u8]) -> Option<LogRow> {
         let line = String::from_utf8_lossy(line);
         let Some((graph, fields)) = line.split_once(RECORD) else {
-            return (!self.ranged).then(|| LogRow::new(line.into_owned(), None));
+            return (!self.ranged).then(|| LogRow {
+                graph: line.into_owned(),
+                commit: None,
+            });
         };
         if self.ranged && !graph.is_empty() {
             return None; // patch text that happens to hold a separator
         }
-        let mut field = fields.splitn(7, FIELD);
+        let mut field = fields.splitn(6, FIELD);
         let mut next = || field.next().unwrap_or_default().to_string();
-        let (sha, short, author, time, age, refs, subject) =
-            (next(), next(), next(), next(), next(), next(), next());
+        let (sha, short, author, time, refs, subject) =
+            (next(), next(), next(), next(), next(), next());
         let refs = refs
             .split(", ")
             .filter(|name| !name.is_empty())
             .map(str::to_string)
             .collect();
-        Some(LogRow::new(
-            graph.to_string(),
-            Some(LogCommit {
+        Some(LogRow {
+            graph: graph.to_string(),
+            commit: Some(LogCommit {
                 sha,
                 short,
                 refs,
                 subject,
                 author,
                 time: time.parse().unwrap_or(0),
-                age,
             }),
-        ))
+        })
     }
 }
 

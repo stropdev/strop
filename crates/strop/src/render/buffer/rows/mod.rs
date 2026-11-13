@@ -105,13 +105,13 @@ pub(super) fn render_pane(
     let cells = Cells {
         gutter: number_width,
         text: width,
-        // a commit's files are one block as wide as its content (§3.9)
-        files_block: match surface {
-            Some(crate::editor::Surface::ChangedFiles { sha, files, .. }) => {
-                diff::files_block(files, sha, number_width + width)
-            }
-            _ => 0,
-        },
+        // a commit's files are one block as wide as its content (§3.9);
+        // the log's author column fits its authors
+        list: diff::ListLayout::measure(
+            surface,
+            number_width + width,
+            editor.tape().now().unix_seconds,
+        ),
     };
     let pane = Pane {
         gutter: gutter_kind,

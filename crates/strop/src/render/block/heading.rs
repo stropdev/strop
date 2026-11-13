@@ -180,7 +180,7 @@ pub(crate) struct Drawn {
     pub text: Vec<Span<'static>>,
 }
 
-fn spans_width(spans: &[Span<'_>]) -> usize {
+pub(crate) fn spans_width(spans: &[Span<'_>]) -> usize {
     spans.iter().map(|span| clip::width(&span.content)).sum()
 }
 

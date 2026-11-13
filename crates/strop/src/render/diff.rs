@@ -17,10 +17,11 @@ use crate::render::file_name::Label;
 use super::style::Tokens;
 
 mod list;
+mod log;
 mod margins;
 mod status;
 
-pub(crate) use list::{files_block, painted as list_painted};
+pub(crate) use list::{painted as list_painted, ListLayout};
 pub(crate) use margins::{blame_blank, blame_spans, sidebar_row_spans};
 pub(crate) use status::painted as status_painted;
 

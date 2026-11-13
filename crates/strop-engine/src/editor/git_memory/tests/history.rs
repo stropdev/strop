@@ -57,14 +57,21 @@ fn pages_append_and_nothing_above_the_cursor_moves() {
         vec![commit_row("aaaa", "one"), commit_row("bbbb", "two")],
     );
     let first = e.buf().text().to_string();
-    assert_eq!(first, "* aaaa t · now · one\n* bbbb t · now · two\n");
+    // author and age are drawn, not text (0100 §4.3 step B)
+    assert_eq!(first, "* aaaa  one\n* bbbb  two\n");
     // the cursor on the second row, the view where it is
     e.feed_text("j");
     let head = e.head();
     page(
         &mut e,
         &ticket,
-        vec![LogRow::new("|\\".into(), None), commit_row("cccc", "three")],
+        vec![
+            LogRow {
+                graph: "|\\".into(),
+                commit: None,
+            },
+            commit_row("cccc", "three"),
+        ],
     );
     assert!(e.buf().text().to_string().starts_with(&first), "appended");
     assert_eq!(e.head(), head, "the cursor stays");
@@ -76,12 +83,41 @@ fn pages_append_and_nothing_above_the_cursor_moves() {
     }));
     assert_eq!(rows(&e, doc), 5);
     assert_eq!(e.buf().len_lines(), 6, "five rows and the final newline");
-    assert!(e
-        .buf()
-        .text()
-        .to_string()
-        .ends_with("* dddd t · now · four\n"));
+    assert!(e.buf().text().to_string().ends_with("* dddd  four\n"));
     assert!(!e.log_requests.contains_key(&doc));
+}
+
+/// A page with a wider graph re-pads the rows above it, so the shas
+/// stay in one column; the rows keep their lines and the cursor its row.
+#[test]
+fn a_wider_page_keeps_the_columns_aligned() {
+    let (_d, mut e) = fixture();
+    let (doc, ticket) = surface(&mut e);
+    page(
+        &mut e,
+        &ticket,
+        vec![commit_row("aaaa", "one"), commit_row("bbbb", "two")],
+    );
+    e.feed_text("j");
+    let mut merge = commit_row("cccc", "merge");
+    merge.graph = "*   ".into();
+    page(
+        &mut e,
+        &ticket,
+        vec![
+            merge,
+            LogRow {
+                graph: "|\\".into(),
+                commit: None,
+            },
+        ],
+    );
+    assert_eq!(
+        e.buf().text().to_string(),
+        "*   aaaa  one\n*   bbbb  two\n*   cccc  merge\n|\\\n"
+    );
+    assert_eq!(e.buf().line_of(e.head()), 1, "the cursor keeps its row");
+    assert_eq!(rows(&e, doc), 4);
 }
 
 /// An empty log is a completed empty list — the loading text goes.
@@ -122,7 +158,14 @@ fn stale_pages_are_dropped() {
     let (doc, ticket) = surface(&mut e);
     page(&mut e, &ticket, vec![commit_row("aaaa", "one")]);
     e.feed_text("q");
-    page(&mut e, &ticket, vec![LogRow::new("POISON".into(), None)]);
+    page(
+        &mut e,
+        &ticket,
+        vec![LogRow {
+            graph: "POISON".into(),
+            commit: None,
+        }],
+    );
     for (_, document) in e.docs.iter() {
         assert!(!document.buf.text().to_string().contains("POISON"));
     }
@@ -144,7 +187,14 @@ fn stale_pages_are_dropped() {
         );
         (doc, newer)
     };
-    page(&mut e, &old, vec![LogRow::new("POISON".into(), None)]);
+    page(
+        &mut e,
+        &old,
+        vec![LogRow {
+            graph: "POISON".into(),
+            commit: None,
+        }],
+    );
     assert!(!e.buf().text().to_string().contains("POISON"));
     page(&mut e, &newer, vec![commit_row("aaaa", "live")]);
     assert!(e.buf().text().to_string().contains("live"));

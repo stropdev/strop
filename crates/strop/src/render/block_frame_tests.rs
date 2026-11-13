@@ -144,17 +144,22 @@ fn check(editor: &Editor, grid: &Buffer, accent_only_marks: bool, what: &str) {
                 if cut && kind == Kind::Other && gutter_kind == Gutter::List {
                     assert!(shown.contains('…'), "{what}: row {row} cut without …");
                 }
-                let prefix: String = visible
-                    .chars()
-                    .take(shown.chars().count().saturating_sub(1))
-                    .filter(|c| !c.is_control())
-                    .collect();
+                // a row cut to keep its fact (0100 §3.8) shows its words
+                // up to the `…`, then the fact
+                let prefix: String = match shown.split_once('…') {
+                    Some((words, _)) => words.to_owned(),
+                    None => visible
+                        .chars()
+                        .take(shown.chars().count().saturating_sub(1))
+                        .filter(|c| !c.is_control())
+                        .collect(),
+                };
                 // a commit file's path yields its start to keep its stats
                 // (0068 B4): the one row §3.8 lets paint less than its text
                 let clipped_path = shown.starts_with('…');
                 if !text.contains('\t') && text.is_ascii() && !clipped_path {
                     assert!(
-                        shown.starts_with(&prefix),
+                        shown.starts_with(&prefix) && text.starts_with(&prefix),
                         "{what}: row {row} shows {shown:?} for {text:?}"
                     );
                 }
@@ -167,7 +172,10 @@ fn check(editor: &Editor, grid: &Buffer, accent_only_marks: bool, what: &str) {
                 if cell.fg == t.accent && cell.symbol() != " " {
                     let row_text = cells(grid, y, 0, last + 1);
                     let mark = x == first && cell.symbol() == "▌";
-                    let branch = row_text.trim_start().starts_with("Head:");
+                    // the branch you are on: the status's `Head:`, the
+                    // log's `HEAD -> main`
+                    let branch =
+                        row_text.trim_start().starts_with("Head:") || row_text.contains("HEAD -> ");
                     assert!(mark || branch, "{what}: accent at {x},{row}: {row_text:?}");
                 }
             }

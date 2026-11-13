@@ -294,7 +294,10 @@ fn log_results_need_the_registered_request() {
     // the superseded request's rows must not land
     e.handle_git_job(GitJob::Log(Completion {
         ticket: real,
-        outcome: Outcome::Success(super::log_done(vec![LogRow::new("POISON".into(), None)])),
+        outcome: Outcome::Success(super::log_done(vec![LogRow {
+            graph: "POISON".into(),
+            commit: None,
+        }])),
     }));
     assert!(
         !e.doc(doc).buf.text().to_string().contains("POISON"),
@@ -474,6 +477,7 @@ fn dive_results_need_their_surface() {
                 "0123456789abcdef0123456789abcdef01234567",
                 "c0",
             )],
+            columns: Default::default(),
             focus: None,
             return_to: None,
         },

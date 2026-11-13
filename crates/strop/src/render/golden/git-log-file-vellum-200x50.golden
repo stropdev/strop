@@ -1,13 +1,13 @@
-▌ * 0d21f9e Ada Example · 2 days ago · notes: revision 5                                                                                                                                                
-  * fd21dde Ada Example · 2 days ago · notes: revision 4                                                                                                                                                
-  * 19b4e9a Ada Example · 3 days ago · rename the doc, change the logo, add a token, and say in one long subject line why every surface is a block now                                                  
-  *   0d964a0 Ada Example · 3 days ago · Merge branch 'feature/surfaces'                                                                                                                                
+▌ *   0d21f9e  (HEAD -> main) notes: revision 5                                                                                                                                       Ada Example    2d 
+  *   fd21dde  notes: revision 4                                                                                                                                                      Ada Example    2d 
+  *   19b4e9a  rename the doc, change the logo, add a token, and say in one long subject line why every surface is a block now                                                        Ada Example    3d 
+  *   0d964a0  Merge branch 'feature/surfaces'                                                                                                                                        Ada Example    3d 
   |\                                                                                                                                                                                                    
-  | * e8c1034 Ada Example · 4 days ago · layout: one token                                                                                                                                              
-  | * ff9ea27 Ada Example · 4 days ago · surfaces: parse tokens in three places with care                                                                                                               
-  * | c756836 Ada Example · 3 days ago · notes: main moved on                                                                                                                                           
+  | * e8c1034  (feature/surfaces) layout: one token                                                                                                                                   Ada Example    4d 
+  | * ff9ea27  surfaces: parse tokens in three places with care                                                                                                                       Ada Example    4d 
+  * | c756836  notes: main moved on                                                                                                                                                   Ada Example    3d 
   |/                                                                                                                                                                                                    
-  * 8cc6dd6 Ada Example · 5 days ago · base: the first commit of the project                                                                                                                            
+  *   8cc6dd6  base: the first commit of the project                                                                                                                                  Ada Example    5d 
 ~                                                                                                                                                                                                       
 ~                                                                                                                                                                                                       
 ~                                                                                                                                                                                                       
@@ -49,16 +49,16 @@
 ~                                                                                                                                                                                                       
   NORMAL    main  git log · src/lib.rs [RO]                                                                                                                                                  10%   1:1  
 
-  0: 1:#8a510f/#efeadf 1:reset/#efeadf 1:#4e6f22/#efeadf+b 1:#262a30/#efeadf 7:#4b525c/#efeadf 28:#656d7b/#efeadf 17:#262a30/#efeadf 143:#efeadf/#efeadf 1:reset/reset
-  1: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 17:#262a30/#f6f2e9 143:reset/#f6f2e9 1:reset/reset
-  2: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 111:#262a30/#f6f2e9 49:reset/#f6f2e9 1:reset/reset
-  3: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 31:#262a30/#f6f2e9 127:reset/#f6f2e9 1:reset/reset
+  0: 1:#8a510f/#efeadf 1:reset/#efeadf 1:#4e6f22/#efeadf+b 3:#262a30/#efeadf 7:#4b525c/#efeadf 2:#262a30/#efeadf 9:#4b525c/#efeadf+b 4:#8a510f/#efeadf+b 2:#4b525c/#efeadf+b 152:#262a30/#efeadf 11:#656d7b/#efeadf 2:#262a30/#efeadf 4:#656d7b/#efeadf 1:reset/reset
+  1: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  2: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  3: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
   4: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 195:reset/#f6f2e9 1:reset/reset
-  5: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 17:#262a30/#f6f2e9 141:reset/#f6f2e9 1:reset/reset
-  6: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 48:#262a30/#f6f2e9 110:reset/#f6f2e9 1:reset/reset
-  7: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 20:#262a30/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
+  5: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 2:#262a30/#f6f2e9 19:#4b525c/#f6f2e9+b 148:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  6: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
+  7: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 1:#235f8c/#f6f2e9 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
   8: 2:reset/#f6f2e9 2:#4e6f22/#f6f2e9 195:reset/#f6f2e9 1:reset/reset
-  9: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 1:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 28:#656d7b/#f6f2e9 37:#262a30/#f6f2e9 123:reset/#f6f2e9 1:reset/reset
+  9: 2:reset/#f6f2e9 1:#4e6f22/#f6f2e9+b 3:#262a30/#f6f2e9 7:#4b525c/#f6f2e9 169:#262a30/#f6f2e9 11:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 4:#656d7b/#f6f2e9 1:reset/reset
  10: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
  11: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset
  12: 1:#aeb3ba/#f6f2e9 198:reset/#f6f2e9 1:reset/reset

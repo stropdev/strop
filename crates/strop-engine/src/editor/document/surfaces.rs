@@ -42,6 +42,8 @@ pub struct GitSurface {
 pub enum Surface {
     CommitLog {
         rows: Vec<LogRow>,
+        /// What the rows' leading columns are padded to in the text.
+        columns: crate::editor::git_memory::log_text::LogColumns,
         /// Sha to land the cursor on once rows arrive (the blame dive
         /// opens the browser *at* a commit, 0011 §3).
         focus: Option<String>,

@@ -10,9 +10,12 @@ pub(crate) mod graph;
 mod history;
 pub mod hunk_set;
 mod jobs;
+pub mod log_text;
 mod presentation;
 mod sidebar;
 pub use file_list::PreparedFiles;
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use history::publish_rows as publish_log_rows;
 pub(crate) use hunk_set::HunkSet;
 pub(crate) use jobs::{git_failure, repo_host, repo_or_unavailable};
 pub(crate) use presentation::line_emphasis;

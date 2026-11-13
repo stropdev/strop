@@ -460,18 +460,9 @@ pub mod git {
     /// would: frames that show ages stay the same from day to day.
     pub fn log_rows_fixture(e: &mut Editor, rows: Vec<strop_git::log::LogRow>) {
         let doc = e.current();
-        let text = rows
-            .iter()
-            .map(|row| row.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n";
-        e.replace_system(doc, &text).unwrap();
-        if let Some(Surface::CommitLog { rows: slot, .. }) =
-            e.docs.get_mut(doc).and_then(|d| d.surface_payload_mut())
-        {
-            *slot = rows;
-        }
+        assert!(crate::editor::git_memory::publish_log_rows(
+            e, doc, rows, false
+        ));
     }
 
     pub fn git_out(root: &std::path::Path, args: &[&str]) -> String {

@@ -155,25 +155,30 @@ fn open_file_delta(editor: &mut Editor, keys: &str) {
     settle_dives(editor);
 }
 
-/// The log rows of §4.3, ages included: a merge, two lanes, a subject
-/// long enough to be cut.
+/// The log rows of §4.3 step B: a merge, two lanes, refs, a subject long
+/// enough to be cut, ages counted against [`LOG_NOW`].
 fn log_rows() -> Vec<strop_git::log::LogRow> {
     use strop_git::log::{LogCommit, LogRow};
-    let commit = |graph: &str, short: &str, days: i64, subject: &str| {
-        LogRow::new(
-            graph.to_owned(),
-            Some(LogCommit {
-                sha: format!("{short}{}", "0".repeat(40 - short.len())),
-                short: short.to_owned(),
-                refs: Vec::new(),
-                subject: subject.to_owned(),
-                author: "Ada Example".to_owned(),
-                time: LOG_NOW - days * 86_400,
-                age: format!("{days} days ago"),
-            }),
-        )
+    let refs = |short: &str| match short {
+        "0d21f9e" => vec!["HEAD -> main".to_owned()],
+        "e8c1034" => vec!["feature/surfaces".to_owned()],
+        _ => Vec::new(),
     };
-    let connector = |graph: &str| LogRow::new(graph.to_owned(), None);
+    let commit = |graph: &str, short: &str, days: i64, subject: &str| LogRow {
+        graph: graph.to_owned(),
+        commit: Some(LogCommit {
+            sha: format!("{short}{}", "0".repeat(40 - short.len())),
+            short: short.to_owned(),
+            refs: refs(short),
+            subject: subject.to_owned(),
+            author: "Ada Example".to_owned(),
+            time: LOG_NOW - days * 86_400,
+        }),
+    };
+    let connector = |graph: &str| LogRow {
+        graph: graph.to_owned(),
+        commit: None,
+    };
     vec![
         commit("* ", "0d21f9e", 2, "notes: revision 5"),
         commit("* ", "fd21dde", 2, "notes: revision 4"),
@@ -196,13 +201,23 @@ fn log_rows() -> Vec<strop_git::log::LogRow> {
 /// The clock the injected log rows' ages are counted against.
 const LOG_NOW: i64 = 1_794_916_800;
 
-/// `Space g l`: the commit log, step A of §4.3.
+/// The fixed rows, read at [`LOG_NOW`].
+fn inject_log(editor: &mut Editor) {
+    log_rows_fixture(editor, log_rows());
+    let tick = strop_trace::replay::Tick {
+        unix_seconds: LOG_NOW,
+        ..editor.tape().now()
+    };
+    editor.tape().set_tick(tick).unwrap();
+}
+
+/// `Space g l`: the commit log, step B of §4.3.
 #[test]
 fn commit_log() {
     each("git-log", |_, editor| {
         editor.feed_text(" gl");
         pump(editor);
-        log_rows_fixture(editor, log_rows());
+        inject_log(editor);
         settle_analysis()
     });
 }
@@ -213,7 +228,7 @@ fn file_history() {
     each("git-log-file", |_, editor| {
         editor.feed_text(" gh");
         pump(editor);
-        log_rows_fixture(editor, log_rows());
+        inject_log(editor);
         settle_analysis()
     });
 }
