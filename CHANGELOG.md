@@ -8,6 +8,10 @@
 - **Split panes lose their corners.** A pane title is a thin rule (`─ 1 src/main.rs ● ───`), brighter on the focused pane. Side by side, one vertical line runs the full height and meets the titles in a `┬`.
 - **Stacked panes get a row back.** The closing line under the upper pane is gone; the lower pane's title line is the boundary.
 
+### Fixed
+
+- **Quitting right after starting no longer crashes.** If `:q` came before strop finished reading an earlier session's unsaved drafts, the editor panicked on its way out. The drafts are kept for next time.
+
 ## 0.65.0 — 2026-11-13
 
 ### Changed

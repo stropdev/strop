@@ -78,13 +78,22 @@ impl Editor {
     /// every surface action is read-before-act.
     pub(crate) fn finish_recovery_load(&mut self, stored: Option<super::StoredCohort>) {
         let intent = self.recovery.intent.take().unwrap_or(SurfaceIntent::List);
+        // the read can land after the last document closed (`:q` while
+        // the startup read is in flight): there is no file to offer a
+        // draft for and no pane to show a surface in
+        let live = !self.docs.is_empty();
         if std::mem::take(&mut self.recovery.reading_prior) {
             self.recovery.prior = stored.clone().map(Inherited::adopt).unwrap_or_default();
             // the file the session opened with may have been waiting
-            self.recovery_offer_for(self.current());
+            if live {
+                self.recovery_offer_for(self.current());
+            }
             self.recovery_after_event();
         }
         self.recovery.loaded = stored;
+        if !live {
+            return;
+        }
         match intent {
             SurfaceIntent::Startup => {}
             SurfaceIntent::List => self.open_recovery_surface(),
