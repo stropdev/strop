@@ -1,7 +1,8 @@
 //! Tier 1 differential harness (0001 §5.10, 0006, 0095): the same key
 //! sequence drives strop (headless) and nvim (`-u NONE -i NONE -n`) — the
 //! Neovim of the Docker `test` image is the oracle (0095 §3); final text, cursor, mode, the unnamed register, the lifecycle
-//! registers (`"0 "1 "2 "- "a "b`, plan 0092) and 'modified' must agree.
+//! registers (`"0 "1 "2 "- "a "b`, plan 0092), 'modified' and the window
+//! tree with the current window (plan 0104) must agree.
 //!
 //! The corpus is five lists: `hand` (cases somebody once got wrong),
 //! `critique` (the everyday sequences of plan 0091 §2), `keys` (what
@@ -29,6 +30,7 @@ mod ex;
 mod generated;
 mod hand;
 mod keys;
+mod windows;
 
 /// A written case: name, initial buffer text, strop-token keys.
 type Case = (&'static str, &'static str, &'static str);
@@ -60,6 +62,7 @@ fn corpus() -> Vec<Run> {
     runs.extend(written("keys/", keys::CASES));
     runs.extend(written("ex/", ex::CASES));
     runs.extend(generated::cases());
+    runs.extend(windows::cases());
     runs
 }
 
@@ -114,14 +117,23 @@ struct State {
     register: String,
     registers: std::collections::BTreeMap<String, String>,
     modified: bool,
+    /// `[tree, current window]`, vim's `winlayout()` with window numbers.
+    windows: String,
 }
 
 impl std::fmt::Display for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "text={:?} cursor={}:{} mode={} register={:?} registers={:?} modified={}",
-            self.text, self.line, self.col, self.mode, self.register, self.registers, self.modified
+            "text={:?} cursor={}:{} mode={} register={:?} registers={:?} modified={} windows={}",
+            self.text,
+            self.line,
+            self.col,
+            self.mode,
+            self.register,
+            self.registers,
+            self.modified,
+            self.windows
         )
     }
 }
@@ -143,11 +155,22 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
     std::fs::write(&file, text).unwrap();
     std::fs::write(dir.join("keys.bin"), keys_to_bytes(keys)).unwrap();
     let driver = "call feedkeys(join(readfile('keys.bin', 'b'), \"\\n\"), 'xt')";
-    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'MODE:'.mode(), 'POS:'.line('.').':'.col('.'), 'REGS:'.json_encode({'0':getreg('0'),'1':getreg('1'),'2':getreg('2'),'-':getreg('-'),'a':getreg('a'),'b':getreg('b')}), 'REG:'.json_encode(getreg('\"'))], 'dump.txt')";
+    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'MODE:'.mode(), 'POS:'.line('.').':'.col('.'), 'REGS:'.json_encode({'0':getreg('0'),'1':getreg('1'),'2':getreg('2'),'-':getreg('-'),'a':getreg('a'),'b':getreg('b')}), 'REG:'.json_encode(getreg('\"')), 'WIN:'.json_encode([L(winlayout()), winnr()])], 'dump.txt')";
+    // the window tree with window numbers, as strop's `layout` outline
+    std::fs::write(
+        dir.join("win.vim"),
+        "function! L(l)\n  return a:l[0] ==# 'leaf' ? win_id2win(a:l[1]) : [a:l[0], map(copy(a:l[1]), 'L(v:val)')]\nendfunction\n",
+    )
+    .unwrap();
     let mut command = Command::new("timeout");
     command
         .args(["10", "nvim", "--headless", "-u", "NONE", "-i", "NONE", "-n"])
-        .args(["+set noswapfile", "+set shiftwidth=4 expandtab"])
+        .args([
+            "+set noswapfile",
+            "+set shiftwidth=4 expandtab",
+            "+set splitbelow splitright",
+            "+source win.vim",
+        ])
         .arg(format!("+{driver}"))
         .arg(format!("+{dump}"))
         .arg("+qa!")
@@ -164,6 +187,10 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
     // dump layout: text lines…, then "MOD:0|1", "MODE:m", "POS:L:C", the
     // JSON-encoded lifecycle registers and the unnamed register.
     let mut lines: Vec<&str> = dumped.lines().collect();
+    let windows = lines.pop().unwrap().strip_prefix("WIN:").unwrap();
+    let windows = serde_json::from_str::<serde_json::Value>(windows)
+        .unwrap()
+        .to_string();
     let register = lines.pop().unwrap().strip_prefix("REG:").unwrap();
     let register: String = serde_json::from_str(register).unwrap();
     let registers = lines.pop().unwrap().strip_prefix("REGS:").unwrap();
@@ -188,6 +215,7 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
         register,
         registers,
         modified,
+        windows,
     })
 }
 
@@ -228,6 +256,8 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
         register: v["register"].as_str().unwrap().to_owned(),
         registers: serde_json::from_value(v["registers"].clone()).unwrap(),
         modified: v["dirty"].as_bool().unwrap(),
+        windows: serde_json::json!([v["layout"], v["active_pane"].as_u64().unwrap() + 1])
+            .to_string(),
     })
 }
 
