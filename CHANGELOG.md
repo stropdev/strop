@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.66.0 — 2026-11-13
+
+### Changed
+
+- **Each file in a collection starts at a thick line** (plans/0103). Search results, collected hits and the quickfix list are one buffer of many files; where one file's lines end and the next file's begin is now drawn with a heavy rule (`━━━━ src/b.rs ━━━━ 2 hits`), bright in every file, not only the one the cursor is in. Status sections, the diff's file headings and the picker keep the thin rule.
+- **Split panes lose their corners.** A pane title is a thin rule (`─ 1 src/main.rs ● ───`), brighter on the focused pane. Side by side, one vertical line runs the full height and meets the titles in a `┬`.
+- **Stacked panes get a row back.** The closing line under the upper pane is gone; the lower pane's title line is the boundary.
+
 ## 0.65.0 — 2026-11-13
 
 ### Changed
