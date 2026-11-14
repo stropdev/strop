@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.67.0 — 2026-11-13
+
+### Changed
+
+- **Splits nest, as in Vim** (plans/0104). `:sp` then `:vs` divides the pane you are in and leaves the others where they were; before, the last split turned every pane the same way. The new pane opens next to the one you split, below or to the right, and panes are numbered in reading order.
+- **Closing a pane gives its space to its neighbour**, and the focus goes there, as in Vim.
+- **`Ctrl-W h/j/k/l` and `Space w h/j/k/l` go to the pane on that side**, at the cursor's line or column, and stop at the edge instead of wrapping around.
+- **Dividing lines join the title lines** where they meet: `┬ ├ ┤ ┼ ┴`.
+- **How a split's space is shared is proved.** The arithmetic lives in the kernel and Lean proofs show the panes never overlap or run into the status line, fill their space exactly when there is room, each get at least a line, and are shared fairly by the number of panes across.
+
+### Fixed
+
+- **A broken link in the git guide** to the lock files section.
+
 ## 0.66.0 — 2026-11-13
 
 ### Changed

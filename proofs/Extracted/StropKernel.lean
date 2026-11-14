@@ -614,4 +614,234 @@ def generation.index_for_len (len : Std.Usize) : Result (Option Std.U32) := do
   else let i1 ← lift (UScalar.cast .U32 len)
        ok (some i1)
 
+/-- [strop_kernel::layout::Span]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 28:0-31:1
+    Visibility: public -/
+structure layout.Span where
+  «at» : Std.Usize
+  len : Std.Usize
+
+/-- [strop_kernel::layout::{impl core::clone::Clone for strop_kernel::layout::Span}::clone]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:9-27:14
+    Visibility: public -/
+def layout.Span.Insts.CoreCloneClone.clone
+  (self : layout.Span) : Result layout.Span := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::layout::{impl core::clone::Clone for strop_kernel::layout::Span}]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:9-27:14 -/
+@[reducible]
+def layout.Span.Insts.CoreCloneClone : core.clone.Clone layout.Span := {
+  clone := layout.Span.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::layout::{impl core::marker::Copy for strop_kernel::layout::Span}]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:16-27:20 -/
+@[reducible]
+def layout.Span.Insts.CoreMarkerCopy : core.marker.Copy layout.Span := {
+  cloneInst := layout.Span.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [strop_kernel::layout::{impl core::marker::StructuralPartialEq for strop_kernel::layout::Span}]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:22-27:31 -/
+@[reducible]
+def layout.Span.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq layout.Span := {
+}
+
+/-- [strop_kernel::layout::{impl core::cmp::PartialEq<strop_kernel::layout::Span> for strop_kernel::layout::Span}::eq]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:22-27:31
+    Visibility: public -/
+def layout.Span.Insts.CoreCmpPartialEqSpan.eq
+  (self : layout.Span) (other : layout.Span) : Result Bool := do
+  if self.at = other.at
+  then ok (self.len = other.len)
+  else ok false
+
+/-- Trait implementation: [strop_kernel::layout::{impl core::cmp::PartialEq<strop_kernel::layout::Span> for strop_kernel::layout::Span}]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:22-27:31 -/
+@[reducible]
+def layout.Span.Insts.CoreCmpPartialEqSpan : core.cmp.PartialEq layout.Span
+  layout.Span := {
+  eq := layout.Span.Insts.CoreCmpPartialEqSpan.eq
+}
+
+/-- [strop_kernel::layout::{impl core::cmp::Eq for strop_kernel::layout::Span}::assert_fields_are_eq]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:33-27:35
+    Visibility: public -/
+def layout.Span.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : layout.Span) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [strop_kernel::layout::{impl core::cmp::Eq for strop_kernel::layout::Span}]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:33-27:35 -/
+@[reducible]
+def layout.Span.Insts.CoreCmpEq : core.cmp.Eq layout.Span := {
+  partialEqInst := layout.Span.Insts.CoreCmpPartialEqSpan
+  assert_fields_are_eq := layout.Span.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [strop_kernel::layout::{impl core::fmt::Debug for strop_kernel::layout::Span}::fmt]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:37-27:42
+    Visibility: public -/
+def layout.Span.Insts.CoreFmtDebug.fmt
+  (self : layout.Span) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  let dyn := Dyn.mk _ core.fmt.DebugUsize self.at
+  let dyn1 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugUsize) self.len
+  core.fmt.Formatter.debug_struct_field2_finish f (toStr "Span") (toStr "at")
+    dyn (toStr "len") dyn1
+
+/-- Trait implementation: [strop_kernel::layout::{impl core::fmt::Debug for strop_kernel::layout::Span}]
+    Source: 'crates/strop-kernel/src/layout.rs', lines 27:37-27:42 -/
+@[reducible]
+def layout.Span.Insts.CoreFmtDebug : core.fmt.Debug layout.Span := {
+  fmt := layout.Span.Insts.CoreFmtDebug.fmt
+}
+
+/-- [strop_kernel::layout::empty]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 34:0-36:1
+    Visibility: public -/
+def layout.empty : Result layout.Span := do
+  ok { «at» := 0#usize, len := 0#usize }
+
+/-- [strop_kernel::layout::least]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 38:0-44:1 -/
+def layout.least (a : Std.Usize) (b : Std.Usize) : Result Std.Usize := do
+  if a < b
+  then ok a
+  else ok b
+
+/-- [strop_kernel::layout::minimum]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 48:0-54:1
+    Visibility: public -/
+def layout.minimum
+  (tracks : Std.Usize) (unit : Std.Usize) (gap : Std.Usize) :
+  Result Std.Usize
+  := do
+  if tracks = 0#usize
+  then ok 0#usize
+  else
+    let i ← tracks * unit
+    let i1 ← tracks - 1#usize
+    let i2 ← i1 * gap
+    i + i2
+
+/-- [strop_kernel::layout::total]: loop body 0:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 60:4-63:5
+    Visibility: public -/
+@[rust_loop_body]
+def layout.total_loop.body
+  (tracks : Slice Std.Usize) (sum : Std.Usize) (k : Std.Usize) :
+  Result (ControlFlow (Std.Usize × Std.Usize) Std.Usize)
+  := do
+  let i := Slice.len tracks
+  if k < i
+  then
+    let i1 ← Slice.index_usize tracks k
+    let sum1 ← sum + i1
+    let k1 ← k + 1#usize
+    ok (cont (sum1, k1))
+  else ok (done sum)
+
+/-- [strop_kernel::layout::total]: loop 0:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 60:4-63:5
+    Visibility: public -/
+@[rust_loop]
+def layout.total_loop
+  (tracks : Slice Std.Usize) (sum : Std.Usize) (k : Std.Usize) :
+  Result Std.Usize
+  := do
+  loop
+    (fun (sum1, k1) => layout.total_loop.body tracks sum1 k1)
+    (sum, k)
+
+/-- [strop_kernel::layout::total]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 57:0-65:1
+    Visibility: public -/
+@[reducible]
+def layout.total (tracks : Slice Std.Usize) : Result Std.Usize := do
+  layout.total_loop tracks 0#usize 0#usize
+
+/-- [strop_kernel::layout::share]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 70:0-72:1
+    Visibility: public -/
+def layout.share
+  (room : Std.Usize) (tracks : Std.Usize) (weight : Std.Usize) :
+  Result Std.Usize
+  := do
+  let i ← tracks * room
+  let o ← lift (Usize.checked_div i weight)
+  ok (core.option.Option.unwrap_or o 0#usize)
+
+/-- [strop_kernel::layout::tile]: loop body 0:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 83:4-96:5
+    Visibility: public -/
+@[rust_loop_body]
+def layout.tile_loop.body
+  (cells : Std.Usize) (unit : Std.Usize) (gap : Std.Usize)
+  (tracks : Slice Std.Usize) (out : Slice layout.Span) (weight : Std.Usize)
+  (room : Std.Usize) («at» : Std.Usize) (k : Std.Usize) :
+  Result (ControlFlow ((Slice layout.Span) × Std.Usize × Std.Usize ×
+    Std.Usize × Std.Usize) (Slice layout.Span))
+  := do
+  let i := Slice.len tracks
+  if k < i
+  then
+    let i1 := Slice.len out
+    if k < i1
+    then
+      let left ← cells - «at»
+      let i2 ← k + 1#usize
+      let i3 := Slice.len tracks
+      let (weight1, room1, len) ←
+        if i2 = i3
+        then ok (weight, room, left)
+        else
+          do
+          let i4 ← Slice.index_usize tracks k
+          let extra ← layout.share room i4 weight
+          let room2 ← room - extra
+          let weight2 ← weight - i4
+          let i5 ← layout.minimum i4 unit gap
+          let i6 ← i5 + extra
+          let len1 ← layout.least i6 left
+          ok (weight2, room2, len1)
+      let s ← Slice.update out k ({ «at», len } : layout.Span)
+      let i4 ← «at» + len
+      let i5 ← i4 + gap
+      let at1 ← layout.least i5 cells
+      ok (cont (s, weight1, room1, at1, i2))
+    else ok (done out)
+  else ok (done out)
+
+/-- [strop_kernel::layout::tile]: loop 0:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 83:4-96:5
+    Visibility: public -/
+@[rust_loop]
+def layout.tile_loop
+  (cells : Std.Usize) (unit : Std.Usize) (gap : Std.Usize)
+  (tracks : Slice Std.Usize) (out : Slice layout.Span) (weight : Std.Usize)
+  (room : Std.Usize) («at» : Std.Usize) (k : Std.Usize) :
+  Result (Slice layout.Span)
+  := do
+  loop
+    (fun (out1, weight1, room1, at1, k1) => layout.tile_loop.body cells unit
+      gap tracks out1 weight1 room1 at1 k1)
+    (out, weight, room, «at», k)
+
+/-- [strop_kernel::layout::tile]:
+    Source: 'crates/strop-kernel/src/layout.rs', lines 77:0-97:1
+    Visibility: public -/
+def layout.tile
+  (cells : Std.Usize) (unit : Std.Usize) (gap : Std.Usize)
+  (tracks : Slice Std.Usize) (out : Slice layout.Span) :
+  Result (Slice layout.Span)
+  := do
+  let weight ← layout.total tracks
+  let need ← layout.minimum weight unit gap
+  let room ← lift (core.num.Usize.saturating_sub cells need)
+  layout.tile_loop cells unit gap tracks out weight room 0#usize 0#usize
+
 end strop_kernel

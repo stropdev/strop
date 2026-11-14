@@ -15,7 +15,8 @@ open Lean Elab Command
 /-- Lean's standard axioms. -/
 def allowedAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 
-/-- The headline claims (plans/0086 §4, ring 0; plans/0094 §3.1; plans/0099 §3.1). -/
+/-- The headline claims (plans/0086 §4, ring 0; plans/0094 §3.1; plans/0099 §3.1;
+plans/0104 §9). -/
 def claims : List Name := [
   ``Strop.Kernel.find_spec,
   ``Strop.Kernel.retire_spec,
@@ -42,6 +43,15 @@ def claims : List Name := [
   ``Strop.Kernel.source_edit_commutes,
   ``Strop.Kernel.next_generation_spec,
   ``Strop.Kernel.index_for_len_spec,
+  ``Strop.Kernel.minimum_spec,
+  ``Strop.Kernel.total_spec,
+  ``Strop.Kernel.share_spec,
+  ``Strop.Kernel.tile_spec,
+  ``Strop.Kernel.tile_in_bounds,
+  ``Strop.Kernel.tile_exact,
+  ``Strop.Kernel.tile_minimum,
+  ``Strop.Kernel.tile_fair,
+  ``Strop.Kernel.tile_fair_leaves,
 ]
 
 /-- Every theorem under `Strop.Kernel`, sorted by name. -/

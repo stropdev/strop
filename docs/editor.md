@@ -324,6 +324,17 @@ sizes. Holding Ctrl for the second key works too (`Ctrl-W Ctrl-V`). A key
 `Ctrl-W` does not bind is reported — `ctrl-w x is not bound` — and does
 nothing else. `Space w` remains, with `1`–`9` to focus a pane by number.
 
+Splits nest, as in Vim. `:sp` or `Ctrl-W s` divides the pane you are in,
+top and bottom; `:vs` or `Ctrl-W v` divides it left and right. The other
+panes stay where they were. The new pane opens below or to the right and
+takes the focus. Panes are numbered in reading order, top-left first, so a
+split in the middle renumbers the panes after it. Closing a pane gives its
+space to its neighbour, and the focus goes there. `h j k l` go to the pane
+on that side, at the cursor's line or column, and stop at the edge. Sizes
+are always shared equally by the number of panes across, so `=` has
+nothing to do. Where the dividing lines meet the title lines they join
+(`┬ ├ ┤ ┼ ┴`).
+
 ## Code completion
 
 In Insert mode strop suggests completions from the language server and

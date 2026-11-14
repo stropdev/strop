@@ -156,6 +156,7 @@ impl Editor {
         if self.docs.is_empty() {
             self.collection_build = None;
             self.panes.clear();
+            self.layout = super::super::Layout::Leaf;
             self.active_pane = 0;
             self.should_quit = true;
         } else {

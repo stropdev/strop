@@ -12,12 +12,13 @@ use strop_core::worker::{Load, WorkerId, WorkerIds};
 use strop_core::{Buffer, BufferSeed};
 
 use crate::editor::document::DocumentSource;
-use crate::editor::{Document, Editor, LayoutDir, Pane};
+use crate::editor::{Document, Editor, Layout, Pane};
 
 // Version 5 adds source-owned completion/control-key semantics. Older input
 // must never execute under a different command or acceptance contract.
 // Version 6 adds indexed per-pane jump histories.
-const SEMANTIC_VERSION: u32 = 6;
+// Version 7: the window tree; panes are in layout order (plans/0104).
+const SEMANTIC_VERSION: u32 = 7;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
@@ -35,7 +36,7 @@ pub struct Seed {
     panes: Vec<Pane>,
     mru: Vec<DocumentId>,
     active: usize,
-    layout: LayoutDir,
+    layout: Layout,
     #[serde(with = "strop_core::path_serde")]
     cwd: PathBuf,
     #[serde(with = "strop_core::path_serde::option")]
@@ -101,7 +102,7 @@ impl Seed {
             panes: editor.panes.clone(),
             mru: editor.mru.clone(),
             active: editor.active_pane,
-            layout: editor.layout,
+            layout: editor.layout.clone(),
             cwd: editor.cwd.clone(),
             state_dir: editor.state_dir.clone(),
             session_policy: editor.session_policy,
@@ -164,6 +165,8 @@ impl Seed {
         .map_err(io::Error::other)?;
         if docs.is_empty()
             || self.active >= self.panes.len()
+            || !self.layout.well_formed()
+            || self.layout.leaves() != self.panes.len()
             || self.panes.iter().any(|pane| docs.get(pane.doc).is_none())
             || self.mru.iter().any(|id| docs.get(*id).is_none())
         {

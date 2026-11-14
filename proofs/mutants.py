@@ -135,6 +135,42 @@ MUTANTS = (
            "    if len > u32::MAX as usize {",
            "    if len >= u32::MAX as usize {",
            ("Strop.Kernel.index_for_len_spec",)),
+    # T2: the next child starts after the divider, not on it
+    Mutant("layout-gap-dropped", "layout.rs",
+           "        at = least(at + len + gap, cells);\n",
+           "        at = least(at + len, cells);\n",
+           ("Strop.Kernel.tile_loop_body_spec",)),
+    # T3: every child first gets its minimum
+    Mutant("layout-minimum-forgotten", "layout.rs",
+           "            least(minimum(tracks[k], unit, gap) + extra, left)\n",
+           "            least(extra, left)\n",
+           # `unit` leaves the loop's signature, so the proofs that call it break too
+           ("Strop.Kernel.tile_loop_body_spec", "Strop.Kernel.tile_loop_spec", "Strop.Kernel.tile_spec")),
+    # T1: a span never passes the frame, even when the minimum does not fit
+    Mutant("layout-overrun", "layout.rs",
+           "            least(minimum(tracks[k], unit, gap) + extra, left)\n",
+           "            minimum(tracks[k], unit, gap) + extra\n",
+           ("Strop.Kernel.tile_loop_body_spec",)),
+    # T2: the last child takes what is left, so the frame's last cells are not lost
+    Mutant("layout-last-not-remainder", "layout.rs",
+           "{\n            left\n        } else {",
+           "{\n            least(minimum(tracks[k], unit, gap), left)\n        } else {",
+           ("Strop.Kernel.tile_loop_body_spec",)),
+    # the minimum counts the gaps between neighbours
+    Mutant("layout-minimum-no-gaps", "layout.rs",
+           "        tracks * unit + (tracks - 1) * gap\n",
+           "        tracks * unit\n",
+           ("Strop.Kernel.minimum_spec",)),
+    # T4: a child's share is by window count: a group of two gets two windows' share
+    Mutant("layout-share-unweighted", "layout.rs",
+           "    (tracks * room).checked_div(weight).unwrap_or(0)\n",
+           "    room.checked_div(weight).unwrap_or(0)\n",
+           ("Strop.Kernel.share_spec",)),
+    # the windows across all children include the first child's
+    Mutant("layout-total-skips-first", "layout.rs",
+           "    let mut sum = 0;\n    let mut k = 0;\n",
+           "    let mut sum = 0;\n    let mut k = 1;\n",
+           ("Strop.Kernel.total_spec",)),
 )
 
 # lake reports `error: <path>.lean:<line>:<col>: <message>`

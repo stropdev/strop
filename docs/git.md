@@ -77,8 +77,8 @@ section.
   window regains focus, and when you press `Space g g` again. The cursor stays on
   the same file or hunk.
 - Renames show as a deleted file and an added file.
-- The [lock files](filesystem.md#lock-files) strop leaves beside files it
-  saved are never listed.
+- The [lock files](filesystem.md#saves-in-progress-and-unconfirmed-changes)
+  strop keeps beside a file while it writes it are never listed.
 
 ## Commit — `Space g c`, or `cc` in the status buffer
 

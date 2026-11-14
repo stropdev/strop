@@ -15,9 +15,10 @@
 //! Chrome (0088 §2 rule 4, 0103 §4): with two or more panes each pane's
 //! identity sits in its title rule (`─ 1 statusline.rs ● ────`), focused
 //! rule `fg.muted`, unfocused `fg.faint`. Corners are for cards only. Side
-//! by side, a `│` divider in `fg.faint` runs the full height and meets the
-//! title rules in a `┬`; stacked, the lower pane's title rule is the
-//! boundary.
+//! by side, a `│` divider in `fg.faint` runs the height of its split and
+//! meets the title rules in junctions (`┬ ├ ┤ ┼`, and `┴` where it ends on a
+//! title below, plans/0104 §6); stacked, the lower pane's title rule is the
+//! boundary. The chrome lives in `buffer/chrome.rs`.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -28,11 +29,12 @@ use ratatui::Frame;
 use strop_core::id::{DisplayColumn, DocumentId};
 use strop_core::layout::{clip, RopeGraphemes};
 
-use crate::editor::{Editor, LayoutDir};
+use crate::editor::Editor;
 
 use super::diff;
 use super::style::Tokens;
 
+mod chrome;
 mod content;
 mod directory;
 mod rows;
@@ -74,14 +76,13 @@ pub(crate) fn render_panes(editor: &Editor, t: &Tokens, frame: &mut Frame, area:
     if n == 0 {
         return active_rect;
     }
-    let is_row = editor.layout() == LayoutDir::Row;
     for (i, window) in prepared.panes.iter().enumerate() {
         let rect = super::from_cells(window.rect);
         let active = i == prepared.active_pane;
         let w = usize::from(rect.width);
         let h = usize::from(rect.height);
         if n > 1 && h > 0 && w > 0 {
-            render_title_rule(editor, t, frame, rect, i, window.doc, active);
+            chrome::render_title_rule(editor, t, frame, rect, i, window.doc, active);
         }
         if active {
             active_rect = rect;
@@ -113,152 +114,10 @@ pub(crate) fn render_panes(editor: &Editor, t: &Tokens, frame: &mut Frame, area:
                 }
             }
         }
-        // the divider column is the one right of the prepared rect, so
-        // paint cannot disagree with preparation
-        if is_row && i + 1 < n && w > 0 {
-            render_divider(t, frame, area, rect);
-        }
     }
+    // after the titles: a junction reads the title rules it meets
+    chrome::render_dividers(t, frame, area, prepared);
     active_rect
-}
-
-/// The pane's identity in its top border: number, workspace-relative
-/// name, dirty `●` (warning) and `[RO]`. `Document::label` is the shared
-/// document-aware projection — local paths workspace-relative, outside
-/// paths absolute, remote resources keeping their authority;
-/// never the active-document modeline projection for an inactive pane.
-#[allow(clippy::too_many_arguments)]
-fn render_title_rule(
-    editor: &Editor,
-    t: &Tokens,
-    frame: &mut Frame,
-    rect: Rect,
-    index: usize,
-    doc: DocumentId,
-    active: bool,
-) {
-    let document = editor.doc(doc);
-    let root = document
-        .buf
-        .path
-        .as_deref()
-        .and_then(|path| editor.workspace_root_path(&strop_workspace::Filesystem::Local, path))
-        .unwrap_or(editor.cwd());
-    let name = document.label(root);
-    let w = usize::from(rect.width);
-    // A terminal buffer is read-only by nature, not by flag: `[RO]` would
-    // say nothing (0090 §4).
-    let is_terminal = matches!(
-        document.source,
-        strop_engine::editor::DocumentSource::Terminal(_)
-    );
-    let readonly = document.buf.readonly && !is_terminal;
-    // `─ N ` + name + flags + ` ──`: the flags and the rule are reserved
-    // before the name clips, so focus, dirty and read-only survive narrow.
-    let flags = format!(
-        "{}{}",
-        if document.buf.is_dirty() { " ●" } else { "" },
-        if readonly { " [RO]" } else { "" }
-    );
-    let number = format!("{} ", index + 1);
-    let fixed = 2 + super::clip::width(&number) + super::clip::width(&flags);
-    let outside_workspace = document
-        .buf
-        .path
-        .as_deref()
-        .is_some_and(|path| path.is_absolute() && path.strip_prefix(root).is_err());
-    let retain_authority = outside_workspace || document.remote_metadata().is_some() || is_terminal;
-    // The title is the pane's heading (0088 §2 "File names"): authority
-    // muted, directory secondary, name bold. An inactive pane is all
-    // muted, the name still bold; a terminal's `term://` identity is one
-    // name, clipped from its end.
-    let label = if is_terminal {
-        super::file_name::Label::local(name)
-    } else {
-        super::file_name::Label::parse(&name)
-    };
-    // the trailing ` ──` is reserved only while the whole name fits; a
-    // tight pane spends every cell on identity instead
-    let closes = fixed + label.width() + 3 <= w;
-    let budget = w.saturating_sub(fixed + if closes { 3 } else { 0 });
-    let label = if is_terminal {
-        super::file_name::Label::local(super::clip::clip_end(&label.path, budget))
-    } else if retain_authority {
-        label.clipped(budget)
-    } else {
-        super::file_name::Label::local(super::clip::path_suffix(&label.path, budget))
-    };
-    let (dir, leaf) = if is_terminal {
-        ("", label.path.as_str())
-    } else {
-        super::file_name::split(&label.path)
-    };
-    let border = Style::default().fg(if active { t.muted } else { t.faint });
-    let ink = Style::default().fg(if active { t.text } else { t.muted });
-    let (dir_ink, leaf_ink) = if active {
-        (
-            super::file_name::dir_style(t),
-            super::file_name::name_style(super::file_name::Role::Heading, t),
-        )
-    } else {
-        (ink, ink.add_modifier(Modifier::BOLD))
-    };
-    let mut spans = vec![Span::styled("─ ", border), Span::styled(number, ink)];
-    if let Some(authority) = &label.authority {
-        spans.push(Span::styled(
-            format!("{authority} "),
-            if active {
-                super::file_name::authority_style(t)
-            } else {
-                ink
-            },
-        ));
-    }
-    spans.push(Span::styled(dir.to_owned(), dir_ink));
-    spans.push(Span::styled(leaf.to_owned(), leaf_ink));
-    if document.buf.is_dirty() {
-        spans.push(Span::styled(" ●", Style::default().fg(t.warning)));
-    }
-    if readonly {
-        spans.push(Span::styled(" [RO]", Style::default().fg(t.warning)));
-    }
-    if closes {
-        let used: usize = spans.iter().map(|span| span.width()).sum();
-        let rule = w.saturating_sub(used);
-        if rule > 0 {
-            spans.push(Span::styled(
-                format!(" {}", "─".repeat(rule.saturating_sub(1))),
-                border,
-            ));
-        }
-    }
-    let spans = fixed_spans(spans, w, document.indent.width.max(1));
-    frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(Style::default().bg(t.base)),
-        Rect {
-            y: rect.y.saturating_sub(1),
-            height: 1,
-            width: rect.width,
-            x: rect.x,
-        },
-    );
-}
-
-/// The divider between side-by-side panes: a `│` column the full height
-/// of the panes, a `┬` where it meets the title rules. It belongs to
-/// neither pane, so it is always `fg.faint` (0103 §4.3).
-fn render_divider(t: &Tokens, frame: &mut Frame, area: Rect, rect: Rect) {
-    let dx = rect.x + rect.width;
-    if dx >= area.x + area.width {
-        return;
-    }
-    let bottom = area.y + area.height.saturating_sub(1);
-    for dy in area.y..bottom {
-        let cell = &mut frame.buffer_mut()[(dx, dy)];
-        cell.set_symbol(if dy + 1 == rect.y { "┬" } else { "│" });
-        cell.set_fg(t.faint);
-        cell.set_bg(t.base);
-    }
 }
 
 /// The single content-to-terminal coordinate conversion: project a byte

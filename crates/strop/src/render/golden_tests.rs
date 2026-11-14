@@ -226,6 +226,44 @@ fn split_three() {
     });
 }
 
+/// 0104 §6 (a): the owner's case — `:sp` then `:vs` divides the lower pane
+/// only; the divider starts at the lower titles with `┬`.
+#[test]
+fn split_nested() {
+    each("split-nested", |editor| {
+        editor.feed_text(":sp<cr>:vs<cr>");
+        settle_analysis()
+    });
+}
+
+/// 0104 §6 (b): an L — a stacked title leaves the divider in a `├`.
+#[test]
+fn split_ell() {
+    each("split-ell", |editor| {
+        editor.feed_text(":vs<cr>:sp<cr>");
+        settle_analysis()
+    });
+}
+
+/// 0104 §6 (c): four ways — two dividers meet in a `┼`.
+#[test]
+fn split_grid() {
+    each("split-grid", |editor| {
+        editor.feed_text(":sp<cr><c-w>k:vs<cr><c-w>j:vs<cr>");
+        settle_analysis()
+    });
+}
+
+/// 0104 §6 (d): three over two — the upper dividers end on the lower
+/// title rule in `┴`.
+#[test]
+fn split_offset() {
+    each("split-offset", |editor| {
+        editor.feed_text(":sp<cr>:vs<cr><c-w>k:vs<cr>:vs<cr>");
+        settle_analysis()
+    });
+}
+
 /// 0103 §5.5: a file beside a collection, the collection active — the
 /// light frame, the heavy seams and the bands at once.
 #[test]

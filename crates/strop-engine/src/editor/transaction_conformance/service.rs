@@ -128,8 +128,9 @@ fn step_service(
             let Some(id) = model.ids.get(*slot).copied().flatten() else {
                 return Ok(());
             };
-            model.panes.push(*slot);
-            model.active = model.panes.len() - 1;
+            // the new pane opens after the active one (plans/0104)
+            model.panes.insert(model.active + 1, *slot);
+            model.active += 1;
             if let Some(editor) = editor.as_deref_mut() {
                 editor.split_document(true, id);
                 must!(
@@ -148,8 +149,9 @@ fn step_service(
         }
         ServiceOp::ClosePane => {
             if model.panes.len() > 1 {
+                // the previous neighbour takes the cells and the focus
                 model.panes.remove(model.active);
-                model.active = model.active.min(model.panes.len() - 1);
+                model.active = model.active.saturating_sub(1);
                 if let Some(editor) = editor.as_deref_mut() {
                     editor.close_pane_or_buffer(true);
                     must!(

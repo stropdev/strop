@@ -3,7 +3,7 @@
 //! The list is capped: a new reason means retiring one first.
 
 /// The corpus may never shrink below this (0095 §4).
-pub const MINIMUM_CASES: usize = 600;
+pub const MINIMUM_CASES: usize = 743;
 
 pub const MAXIMUM_KNOWN: usize = 10;
 
