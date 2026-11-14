@@ -106,12 +106,13 @@ theme's name, as you would type it, and its description. In a small
 terminal the swatches and the description go first; the names and the
 search field stay.
 
-There are six themes. All six meet the same contrast minimums: main text at
+There are seven themes. All seven meet the same contrast minimums: main text at
 least 10:1, secondary text 7:1, comments and syntax colours 4.5:1.
 
 | Name | Character |
 | --- | --- |
-| `hone` | Graphite dark with an amber accent; the default |
+| `kiln` | Warm charcoal with a terracotta accent, after the Claude Code terminal look; the default |
+| `hone` | Graphite dark with an amber accent |
 | `slate` | Muted dark: syntax told apart by brightness, one brass accent |
 | `carbide` | High-contrast dark for projectors and bright rooms (every colour at least 7:1) |
 | `vellum` | Warm paper, graphite text, burnt-umber accent |
@@ -129,8 +130,8 @@ theme = "vellum"
 `--theme` wins over the config file, and the config file over the built-in
 default. `:theme` changes the running editor only; it does not rewrite the
 config. `:theme` with a name strop does not have keeps the current theme
-and lists the six names. A config file that names an unknown theme keeps
-the default theme and shows a warning with the six names; every other
+and lists the theme names. A config file that names an unknown theme keeps
+the default theme and shows a warning with the theme names; every other
 setting in the file still applies. The same goes for any key strop does
 not know or any value it cannot use: that one key is skipped and named.
 

@@ -20,6 +20,7 @@ fn editor() -> Editor {
     let mut buffer = Buffer::from_text(&text);
     buffer.path = Some("/w/crates/strop/src/render/statusline/layout.rs".into());
     let mut editor = Editor::new_in(buffer, "/w".into());
+    editor.set_theme(strop_core::theme::ThemeId::Hone);
     editor.fixture_set_git(Some(GitContext {
         repo: strop_git::RepoTarget::Local {
             workdir: "/w".into(),

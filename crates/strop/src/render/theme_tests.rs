@@ -156,7 +156,7 @@ fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
     editor.wait_picker();
     let grid = draw_at(&mut editor, 24, 10);
     let text = grid_text(&grid);
-    assert!(text.contains("Hone"), "tiny label: {text}");
+    assert!(text.contains("Kiln"), "tiny label: {text}");
     assert!(text.contains('●'), "tiny applied mark: {text}");
     assert!(text.contains('▌'), "tiny selection: {text}");
     assert!(text.contains('❯'), "input remains visible: {text}");
@@ -184,14 +184,14 @@ fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
 }
 
 /// `:theme NAME` with an unknown name keeps the session palette and
-/// names the six choices; a deleted theme is just an unknown name.
+/// names the choices; a deleted theme is just an unknown name.
 #[test]
 fn unknown_theme_names_keep_the_palette_and_list_the_choices() {
     let mut editor = Editor::new(Buffer::from_text("x\n"));
     editor.feed_text(":theme nord\r");
-    assert_eq!(editor.theme(), ThemeId::Hone);
+    assert_eq!(editor.theme(), ThemeId::default());
     assert!(editor
         .message()
-        .contains("hone, slate, carbide, vellum, paper, paper-dark"));
+        .contains("kiln, hone, slate, carbide, vellum, paper, paper-dark"));
     assert!(editor.message().contains("nord"));
 }

@@ -8,7 +8,7 @@
 //! indent_style = "spaces"   # or "tabs"
 //! indent_detect = true      # infer a document's indent from its content
 //! auto_format = true        # LSP format before :w (helix parity)
-//! theme = "vellum"          # built-in palette (default "hone"; :theme lists choices)
+//! theme = "vellum"          # built-in palette (default "kiln"; :theme lists choices)
 //! ```
 //!
 //! LSP server config is a separate file with its own layering —
@@ -127,7 +127,7 @@ impl Default for Config {
             search_respect_ignore: true,
             cursor_fade: true,
             completion: CompletionSettings::default(),
-            theme: strop_core::theme::ThemeId::Hone,
+            theme: strop_core::theme::ThemeId::default(),
             provenance: Provenance::default(),
         }
     }
