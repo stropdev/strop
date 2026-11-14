@@ -362,10 +362,25 @@ impl Drop for Tui {
 /// track (`│`/`▮`/`▎`), so full-row comparisons ignore that cell.
 /// A row of a list surface (status, log, files: 0100 §3.5): no line
 /// numbers, only a sign column — the cursor's `▌` or a nested row's `│`.
+/// A list row reading `expected`, its right-aligned diffstat (`+2 -0`)
+/// ignored: the stat arrives on its own, after the row is listed.
 pub(crate) fn list_row(screen: &str, expected: &str) -> bool {
-    screen
-        .lines()
-        .any(|row| strip_track(row).trim_start_matches(['▌', '│']).trim_start() == expected)
+    screen.lines().any(|row| {
+        let row = strip_track(row).trim_start_matches(['▌', '│']).trim_start();
+        row.strip_prefix(expected)
+            .is_some_and(|rest| rest.is_empty() || diffstat(rest.trim_start()))
+    })
+}
+/// `+N -M`, the status list's per-file stat.
+fn diffstat(text: &str) -> bool {
+    let count = |word: &str, sign: char| {
+        word.strip_prefix(sign)
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+    };
+    matches!(
+        text.split_whitespace().collect::<Vec<_>>()[..],
+        [added, removed] if count(added, '+') && count(removed, '-')
+    )
 }
 /// A ruled heading (0100 §3.2): `─ Name ──────── fact`.
 pub(crate) fn heading_row(screen: &str, name: &str, fact: &str) -> bool {
