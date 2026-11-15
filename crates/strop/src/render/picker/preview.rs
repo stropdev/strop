@@ -243,11 +243,8 @@ fn highlight_lines_owned(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::tokens;
     use strop_core::Buffer;
-
-    fn tokens() -> Tokens {
-        Tokens::new(strop_core::theme::ThemeId::Hone)
-    }
 
     #[test]
     fn file_and_search_previews_number_source_lines_and_mark_only_the_hit() {

@@ -6,6 +6,7 @@
 
 mod carbide;
 mod hone;
+mod kiln;
 mod paper;
 mod slate;
 #[cfg(test)]
@@ -14,6 +15,7 @@ mod vellum;
 
 pub use carbide::CARBIDE;
 pub use hone::HONE;
+pub use kiln::KILN;
 pub use paper::{PAPER, PAPER_DARK};
 pub use slate::SLATE;
 pub use vellum::VELLUM;
@@ -181,6 +183,7 @@ const fn cube_level(index: u8) -> u8 {
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeId {
     #[default]
+    Kiln,
     Hone,
     Slate,
     Carbide,
@@ -190,7 +193,8 @@ pub enum ThemeId {
 }
 
 impl ThemeId {
-    pub const ALL: [ThemeId; 6] = [
+    pub const ALL: [ThemeId; 7] = [
+        Self::Kiln,
         Self::Hone,
         Self::Slate,
         Self::Carbide,
@@ -201,6 +205,7 @@ impl ThemeId {
 
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Kiln => "kiln",
             Self::Hone => "hone",
             Self::Slate => "slate",
             Self::Carbide => "carbide",
@@ -212,6 +217,7 @@ impl ThemeId {
 
     pub const fn label(self) -> &'static str {
         match self {
+            Self::Kiln => "Kiln",
             Self::Hone => "Hone",
             Self::Slate => "Slate",
             Self::Carbide => "Carbide",
@@ -223,7 +229,8 @@ impl ThemeId {
 
     pub const fn description(self) -> &'static str {
         match self {
-            Self::Hone => "Graphite dark with the amber accent; the default",
+            Self::Kiln => "Warm charcoal with a terracotta accent; the default",
+            Self::Hone => "Graphite dark with the amber accent",
             Self::Slate => "Low-chroma dark: syntax by luminance, one brass accent",
             Self::Carbide => "High-contrast dark for projectors and bright rooms",
             Self::Vellum => "Warm paper with graphite ink and a burnt-umber accent",
@@ -243,7 +250,7 @@ impl ThemeId {
             .find(|id| id.name().eq_ignore_ascii_case(name.trim()))
     }
 
-    /// The six names, comma-separated, for refusals and warnings.
+    /// The names, comma-separated, for refusals and warnings.
     pub fn choices() -> String {
         Self::ALL
             .iter()
@@ -254,6 +261,7 @@ impl ThemeId {
 
     pub const fn palette(self) -> &'static Theme {
         match self {
+            Self::Kiln => &KILN,
             Self::Hone => &HONE,
             Self::Slate => &SLATE,
             Self::Carbide => &CARBIDE,

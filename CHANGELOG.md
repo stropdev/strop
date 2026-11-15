@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.68.0 — 2026-11-14
+
+### Changed
+
+- **A new default theme, `kiln`**: warm charcoal with a terracotta accent and cream text, after the Claude Code terminal look. It meets the same contrast minimums as every other palette. `hone` stays available with `:theme hone` or `theme = "hone"`.
+
 ## 0.67.0 — 2026-11-13
 
 ### Changed

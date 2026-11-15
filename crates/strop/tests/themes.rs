@@ -232,7 +232,7 @@ fn human_labels_and_canonical_names_choose_the_typed_registry_entry() {
 
 /// A deleted or misspelt theme: `--theme` refuses before editing; a
 /// config naming one falls back to the default with a warning that
-/// lists the six choices (0088 §3) and the editor stays usable.
+/// lists the choices (0088 §3) and the editor stays usable.
 #[test]
 fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable() {
     let dir = tempfile::tempdir().unwrap();
@@ -251,7 +251,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("hone, slate, carbide, vellum, paper, paper-dark"),
+        stderr.contains("kiln, hone, slate, carbide, vellum, paper, paper-dark"),
         "{stderr}"
     );
     assert_eq!(
@@ -262,14 +262,14 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
     let (output, frames) = capture(dir.path(), &format!("{SOURCE}state\n"), None);
     assert_eq!(
         cell(frames.last().unwrap(), 40, 5)[3],
-        color(ThemeId::Hone.palette().bg.base)
+        color(ThemeId::default().palette().bg.base)
     );
     assert!(
         output.contains("nord"),
         "the warning names the rejected theme: {output}"
     );
     assert!(
-        output.contains("hone"),
+        output.contains("kiln"),
         "the warning names the choices: {output}"
     );
 }

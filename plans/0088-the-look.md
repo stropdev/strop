@@ -104,6 +104,15 @@ steps in range, on-accent ≥ 4.5). The process-global `AtomicU8` theme and its
 re-exec tests are deleted: the theme id lives on the editor and `Tokens` is built
 once per frame.
 
+**Amendment 2026-11-14 — Kiln is the default.** A seventh palette, `kiln`,
+becomes the default and `hone` stays as an alternative. Kiln takes its
+character from the Claude Code terminal look — warm charcoal planes
+(`#1d1c1a` / `#252421` / `#2e2c29`), cream text, a terracotta accent
+(`#dc7a59`), periwinkle functions and info, sage additions — but is named
+for a material like its siblings and carries no other project's name or
+brand, per the rule above. It answers to the same §3 contrast tests as every
+palette; no rule was relaxed for it.
+
 ## 4. Adoption of 0087, finding by finding
 
 | Finding | Decision | Lands |
