@@ -6,10 +6,10 @@ use super::{hex, Backgrounds, Diagnostics, Diffs, Foregrounds, Modes, Syntax, Th
 
 pub const KILN: Theme = Theme {
     bg: Backgrounds {
-        base: hex(0x1d1c1a),
-        surface: hex(0x252421),
-        raised: hex(0x2e2c29),
-        cursorline: hex(0x242320),
+        base: hex(0x141312),
+        surface: hex(0x1c1b19),
+        raised: hex(0x262421),
+        cursorline: hex(0x1a1917),
         selection: hex(0x3f4266),
         preview: hex(0x4a2a1f),
         flash: hex(0x6e3b28),
@@ -20,12 +20,12 @@ pub const KILN: Theme = Theme {
         diff_del_strong: hex(0x6a2c36),
     },
     fg: Foregrounds {
-        text: hex(0xede9e0),
-        secondary: hex(0xb8b3a7),
+        text: hex(0xf2eee6),
+        secondary: hex(0xc4bfb3),
         muted: hex(0x928d83),
         faint: hex(0x5a564f),
         guide: hex(0x34322e),
-        on_accent: hex(0x1d1c1a),
+        on_accent: hex(0x141312),
     },
     accent: hex(0xdc7a59),
     mode: Modes {
@@ -57,7 +57,7 @@ pub const KILN: Theme = Theme {
         operator: hex(0xc4beb2),
         punctuation: hex(0xb3aea2),
         comment: hex(0x928c81),
-        variable: hex(0xede9e0),
+        variable: hex(0xf2eee6),
         property: hex(0xddd5c6),
         namespace: hex(0x8cc7b6),
         heading: hex(0xdc7a59),
@@ -65,7 +65,7 @@ pub const KILN: Theme = Theme {
         code: hex(0xa6c98a),
     },
     ansi16: [
-        hex(0x181715),
+        hex(0x0f0e0d),
         hex(0xff7a85),
         hex(0x7cc68a),
         hex(0xe8b45c),
