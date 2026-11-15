@@ -5,6 +5,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use crate::render::style::Tokens;
+use strop_engine::editor::prepare::NUMBER_GAP;
 use strop_git::{DiffLine, LineOrigin};
 
 /// What a list gutter's sign column shows.
@@ -27,8 +28,8 @@ pub(crate) fn list(t: &Tokens, sign: Sign) -> Vec<Span<'static>> {
     vec![mark, Span::raw(" ")]
 }
 
-/// The lines and source gutters: a sign, the number right-aligned, a
-/// space. No number (a title, a blank row) leaves the cells blank; the
+/// The lines and source gutters: a sign, the number right-aligned, the
+/// number gap. No number (a title, a blank row) leaves the cells blank; the
 /// cursor row's number is the accent.
 pub(crate) fn numbered(
     t: &Tokens,
@@ -37,11 +38,11 @@ pub(crate) fn numbered(
     cursor: bool,
     width: usize,
 ) -> Vec<Span<'static>> {
-    let digits = width.saturating_sub(2);
+    let digits = width.saturating_sub(1 + NUMBER_GAP);
     let ink = Style::default().fg(if cursor { t.accent } else { t.muted });
     let cell = match number {
-        Some(number) => format!("{number:>digits$} "),
-        None => " ".repeat(digits + 1),
+        Some(number) => format!("{number:>digits$}{:NUMBER_GAP$}", ""),
+        None => " ".repeat(digits + NUMBER_GAP),
     };
     vec![sign, Span::styled(cell, ink)]
 }
@@ -67,12 +68,12 @@ pub(crate) fn jump(t: &Tokens, width: usize, columns: &[usize]) -> Vec<Span<'sta
     spans
 }
 
-/// The source gutter's number column ends one cell before the space.
+/// The source gutter's number column ends one cell before the gap.
 pub(crate) fn source_jump(width: usize) -> [usize; 1] {
-    [width.saturating_sub(2)]
+    [width.saturating_sub(1 + NUMBER_GAP)]
 }
 
-/// The pair gutter's two number columns: `[sign][old] [new] `.
+/// The pair gutter's two number columns: `[sign][old] [new]` + the gap.
 pub(crate) fn pair_jump(width: usize) -> [usize; 2] {
     let digits = pair_digits(width);
     [digits, 2 * digits + 1]
@@ -80,7 +81,7 @@ pub(crate) fn pair_jump(width: usize) -> [usize; 2] {
 
 /// Digits per side of a pair gutter `width` cells wide.
 pub(crate) fn pair_digits(width: usize) -> usize {
-    width.saturating_sub(3) / 2
+    width.saturating_sub(2 + NUMBER_GAP) / 2
 }
 
 /// The pair gutter for one diff line: origin sign + both sides' numbers,
@@ -108,7 +109,7 @@ pub(crate) fn pair(t: &Tokens, line: &DiffLine, cursor: bool, width: usize) -> V
         number(line.old_lineno),
         Span::raw(" "),
         number(line.new_lineno),
-        Span::raw(" "),
+        Span::raw(" ".repeat(NUMBER_GAP)),
     ]
 }
 
@@ -131,19 +132,20 @@ mod tests {
                 strop_engine::editor::prepare::LIST_GUTTER
             );
         }
-        for cells in [5, 6, 9, 15] {
-            for number in [None, Some(1), Some(10usize.pow(cells as u32 - 2) - 1)] {
+        for cells in [6, 7, 10, 16] {
+            let largest = 10usize.pow((cells - 1 - NUMBER_GAP) as u32) - 1;
+            for number in [None, Some(1), Some(largest)] {
                 let sign = Span::raw(" ");
                 assert_eq!(width(&numbered(&t, sign, number, true, cells)), cells);
             }
             assert_eq!(width(&jump(&t, cells, &source_jump(cells))), cells);
             assert_eq!(width(&jump(&t, cells, &pair_jump(cells))), cells);
         }
-        let jumped: String = jump(&t, 9, &pair_jump(9))
+        let jumped: String = jump(&t, 10, &pair_jump(10))
             .iter()
             .map(|span| span.content.as_ref())
             .collect();
-        assert_eq!(jumped, "   ⋮   ⋮ ", "each mark at its column's last digit");
+        assert_eq!(jumped, "   ⋮   ⋮  ", "each mark at its column's last digit");
         for digits in 3..=6 {
             let line = DiffLine {
                 origin: LineOrigin::Addition,
@@ -152,7 +154,7 @@ mod tests {
                 text: Vec::new(),
                 has_newline: true,
             };
-            let cells = 2 * digits + 3;
+            let cells = 2 * digits + 2 + NUMBER_GAP;
             for cursor in [false, true] {
                 assert_eq!(width(&pair(&t, &line, cursor, cells)), cells);
             }

@@ -2,12 +2,12 @@
 │ ❯ Find render▏                                                               │
 │ match case · whole word                                                      │
 │  src/render/mod.rs ─────────────────────── 2  │ src/render/mod.rs:4          │
-│ ▌    4  pub fn render() {                     │  1 │ //! Rendering root.     │
-│      5      statusline::render();             │  2 │ pub mod statusline;     │
-│                                               │  3 │                         │
-│                                               │▌ 4 │ pub fn render() {       │
-│                                               │  5 │     statusline::render( │
-│                                               │  6 │ }                       │
+│ ▌    4  pub fn render() {                     │   1  //! Rendering root.     │
+│      5      statusline::render();             │   2  pub mod statusline;     │
+│                                               │   3                          │
+│                                               │▌  4  pub fn render() {       │
+│                                               │   5      statusline::render( │
+│                                               │   6  }                       │
 │                                               │                              │
 │                                               │                              │
 │                                               │                              │
@@ -27,12 +27,12 @@
   1: 1:#858c9a/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25 6:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 63:reset/#1c1f25 1:#858c9a/#1c1f25
   2: 1:#858c9a/#1c1f25 1:reset/#1c1f25 76:#858c9a/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25
   3: 1:#858c9a/#1c1f25 2:reset/#1c1f25 11:#a8adb8/#1c1f25 6:#e6e1d6/#1c1f25+b 25:#4a5160/#1c1f25 1:#a8adb8/#1c1f25 2:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 11:#a8adb8/#1c1f25 6:#e6e1d6/#1c1f25+b 3:#a8adb8/#1c1f25 9:reset/#1c1f25 1:#858c9a/#1c1f25
-  4: 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 7:#a8adb8/#23272f 7:#e6e1d6/#23272f 6:#e8a848/#23272f+b 4:#e6e1d6/#23272f 20:reset/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 19:#e6e1d6/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25
-  5: 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 16:#e6e1d6/#1c1f25 6:#e8a848/#1c1f25+b 3:#e6e1d6/#1c1f25 13:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 19:#e6e1d6/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25
-  6: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 24:reset/#1c1f25 1:#858c9a/#1c1f25
-  7: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:#e8a848/#23272f 2:#e6e1d6/#23272f+b 3:#4a5160/#23272f 7:#e6e1d6/#23272f 6:#e8a848/#23272f+b 4:#e6e1d6/#23272f 7:reset/#1c1f25 1:#858c9a/#1c1f25
-  8: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 23:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25
-  9: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 2:#858c9a/#1c1f25 3:#4a5160/#1c1f25 1:#e6e1d6/#1c1f25 23:reset/#1c1f25 1:#858c9a/#1c1f25
+  4: 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 7:#a8adb8/#23272f 7:#e6e1d6/#23272f 6:#e8a848/#23272f+b 4:#e6e1d6/#23272f 20:reset/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 5:#858c9a/#1c1f25 19:#e6e1d6/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25
+  5: 1:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 16:#e6e1d6/#1c1f25 6:#e8a848/#1c1f25+b 3:#e6e1d6/#1c1f25 13:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 5:#858c9a/#1c1f25 19:#e6e1d6/#1c1f25 5:reset/#1c1f25 1:#858c9a/#1c1f25
+  6: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 5:#858c9a/#1c1f25 24:reset/#1c1f25 1:#858c9a/#1c1f25
+  7: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:#e8a848/#23272f 5:#e6e1d6/#23272f+b 7:#e6e1d6/#23272f 6:#e8a848/#23272f+b 4:#e6e1d6/#23272f 7:reset/#1c1f25 1:#858c9a/#1c1f25
+  8: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 5:#858c9a/#1c1f25 23:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25
+  9: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 5:#858c9a/#1c1f25 1:#e6e1d6/#1c1f25 23:reset/#1c1f25 1:#858c9a/#1c1f25
  10: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 30:reset/#1c1f25 1:#858c9a/#1c1f25
  11: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 30:reset/#1c1f25 1:#858c9a/#1c1f25
  12: 1:#858c9a/#1c1f25 47:reset/#1c1f25 1:#4a5160/#1c1f25 30:reset/#1c1f25 1:#858c9a/#1c1f25

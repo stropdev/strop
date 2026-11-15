@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.69.0 — 2026-11-15
+
+### Changed
+
+- **Two cells between line numbers and text** (plans/0105), in files, collections and diffs, so the code no longer reads as part of the number. The picker preview drops its `│` and uses the same gutter as the buffer, so a preview row looks like the row you land on.
+
 ## 0.68.0 — 2026-11-14
 
 ### Changed

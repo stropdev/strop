@@ -8,6 +8,7 @@ mod identity;
 mod junctions;
 #[path = "../matching_tests.rs"]
 mod matching;
+mod number_gap;
 mod syntax_0083;
 mod syntax_stability;
 mod viewport;

@@ -31,10 +31,10 @@ pub mod geometry;
 #[cfg(test)]
 mod picker_tests;
 pub use geometry::{
-    picker_card, picker_field_split, picker_inner, picker_input_height, picker_owns_frame,
-    picker_rows_per_result, picker_split, preview_source_lines, preview_window, text_budget,
-    CellRect, Gutter, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, LIST_GUTTER,
-    STANDARD_GUTTER,
+    number_gutter, picker_card, picker_field_split, picker_inner, picker_input_height,
+    picker_owns_frame, picker_rows_per_result, picker_split, preview_source_lines, preview_window,
+    text_budget, CellRect, Gutter, PreparedPicker, ViewGeometry, BLAME_GUTTER_WIDTH, LIST_GUTTER,
+    NUMBER_GAP,
 };
 
 /// The identity of one accepted preparation: the generation bumps on

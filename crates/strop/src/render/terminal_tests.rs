@@ -107,7 +107,8 @@ fn search_and_hover_survive_tiny_resize_and_restore() {
         .get()
         - editor.view().hscroll.get();
     assert_eq!(
-        terminal.backend().buffer()[((5 + column) as u16, 0)].symbol(),
+        terminal.backend().buffer()[((editor.left_inset(editor.current()) + column) as u16, 0)]
+            .symbol(),
         "n"
     );
 }
@@ -122,7 +123,7 @@ fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
     config.tab_size = 4;
     editor.set_config(config);
     editor.set_head(10);
-    let mut screen = Screen::new(9, 4); // 5 gutter + 3 content + track
+    let mut screen = Screen::new(10, 4); // 6 gutter + 3 content + track
     screen.draw(&mut editor);
     assert_eq!(editor.view().hscroll.get(), 6);
     let cell = |screen: &Screen, col: u16| {
@@ -138,21 +139,21 @@ fn horizontal_clipping_does_not_emit_half_clusters_or_protocol_bytes() {
     // the e+combining cluster, the ESC replacement, Z — no half 界,
     // no protocol bytes reach the tty; the track column (0064 §1)
     // closes the pane
-    assert_eq!(cell(&screen, 5), "e\u{301}");
-    assert_eq!(cell(&screen, 6), "\u{fffd}");
-    assert_eq!(cell(&screen, 7), "Z");
+    assert_eq!(cell(&screen, 6), "e\u{301}");
+    assert_eq!(cell(&screen, 7), "\u{fffd}");
+    assert_eq!(cell(&screen, 8), "Z");
     assert!(
-        matches!(cell(&screen, 8).as_str(), "" | " "),
+        matches!(cell(&screen, 9).as_str(), "" | " "),
         "blank reserved column"
     );
     editor.set_head(0);
     screen.draw(&mut editor);
     screen.draw(&mut editor);
-    assert_eq!(cell(&screen, 5), "a");
-    assert_eq!(cell(&screen, 6), "b");
+    assert_eq!(cell(&screen, 6), "a");
+    assert_eq!(cell(&screen, 7), "b");
     // scrolled to the head: the reserved column stays blank
     assert!(
-        matches!(cell(&screen, 8).as_str(), "" | " "),
+        matches!(cell(&screen, 9).as_str(), "" | " "),
         "blank reserved column"
     );
 }

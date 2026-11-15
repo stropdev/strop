@@ -222,7 +222,7 @@ fn completion_payloads_obey_privacy_and_full_replay_needs_no_provider() {
     ));
     assert!(output
         .lines()
-        .any(|line| line.contains("2 privatecompletion7c3a80")));
+        .any(|line| line.contains("2  privatecompletion7c3a80")));
     let replayed = successful(
         Command::new(env!("CARGO_BIN_EXE_strop"))
             .current_dir(root)
@@ -265,7 +265,7 @@ fn asynchronous_completion_macros_keep_vim_order_in_native_free_replay() {
             "--log-content".as_ref(),
         ],
     ));
-    assert!(output.lines().any(|line| line.contains("3 result")));
+    assert!(output.lines().any(|line| line.contains("3  result")));
     let replayed = successful(
         Command::new(env!("CARGO_BIN_EXE_strop"))
             .current_dir(root)

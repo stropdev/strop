@@ -8,31 +8,31 @@ use super::*;
 
 #[test]
 fn narrower_than_the_gutter_keeps_the_margin_fixed() {
-    // R6: a 4-column pane cannot fit the 5-cell number gutter — the
+    // R6: a 4-column pane cannot fit the 6-cell number gutter — the
     // content width collapses to zero, nothing overwrites the gutter,
     // and restoring width brings the same origin back. Cells: 40 x's
     // (0..40), a=40, b=41, Z=42; origin 38, window 38..42 + track.
     let mut e = Editor::new(Buffer::from_text(&format!("{}abZ\n", "x".repeat(40))));
     e.set_head(42); // Z
-    let mut terminal = viewport_terminal(11, 4);
+    let mut terminal = viewport_terminal(12, 4);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let origin = e.view().hscroll.get();
     assert_eq!(origin, 38);
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 5, 0, 6),
+        row_symbols(terminal.backend().buffer(), 6, 0, 6),
         ["x", "x", "a", "b", "Z", " "],
         "Z at the caret, origin {origin}"
     );
-    terminal.backend_mut().assert_cursor_position((9, 0));
+    terminal.backend_mut().assert_cursor_position((10, 0));
     // shrink below the gutter: zero content width keeps the origin
     terminal.backend_mut().resize(4, 4);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(e.view().hscroll.get(), origin, "zero width must not scroll");
     // restore: same cells, same cursor
-    terminal.backend_mut().resize(11, 4);
+    terminal.backend_mut().resize(12, 4);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(e.view().hscroll.get(), origin);
-    terminal.backend_mut().assert_cursor_position((9, 0));
+    terminal.backend_mut().assert_cursor_position((10, 0));
 }
 
 #[test]
@@ -46,13 +46,14 @@ fn block_mode_highlights_the_rectangle() {
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     let buf = terminal.backend().buffer();
     let bg = |x: u16, y: u16| buf[(x, y)].bg;
-    // text starts after the 5-cell gutter ("▎  1 ")
+    // text starts after the 6-cell gutter ("▎  1  ")
     let sel = crate::render::tokens().selection;
-    assert_eq!(bg(5, 0), sel, "block corner");
-    assert_eq!(bg(6, 0), sel, "block col 2 row 0");
-    assert_eq!(bg(5, 1), sel, "block row 1");
-    assert_ne!(bg(7, 0), sel, "outside the rectangle");
-    assert_ne!(bg(5, 2), sel, "past the rectangle's last row");
+    assert_eq!(bg(6, 0), sel, "block corner");
+    assert_eq!(bg(7, 0), sel, "block col 2 row 0");
+    assert_eq!(bg(6, 1), sel, "block row 1");
+    assert_ne!(bg(8, 0), sel, "outside the rectangle");
+    assert_ne!(bg(6, 2), sel, "past the rectangle's last row");
+    assert_ne!(bg(5, 0), sel, "the number gap is not text");
 }
 
 #[test]
@@ -88,7 +89,7 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
         e.set_config(config);
         e.reresolve_indents(); // config changes re-resolve open documents
         e.set_head(70_010); // Z, after a CJK cluster, combining cluster and ESC
-        let mut terminal = viewport_terminal(11, 4); // 5 fixed + 5 content + track
+        let mut terminal = viewport_terminal(12, 4); // 6 fixed + 5 content + track
         terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
         e.wait_analysis();
         terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
@@ -96,20 +97,20 @@ fn long_line_tabs_unicode_and_native_caret_share_origin() {
         // one: the same caret visibility needs one more scroll step
         assert_eq!(e.view().hscroll.get(), origin + 1);
         assert_eq!(
-            row_symbols(terminal.backend().buffer(), 0, 0, 7),
-            [" ", " ", " ", "1", " ", "界", "x"]
+            row_symbols(terminal.backend().buffer(), 0, 0, 8),
+            [" ", " ", " ", "1", " ", " ", "界", "x"]
         );
         // TestBackend retains arbitrary old storage under wide glyphs; it is
         // not a visible cell. Assert the next visible positions, not that storage.
         assert_eq!(
-            row_symbols(terminal.backend().buffer(), 7, 0, 4),
+            row_symbols(terminal.backend().buffer(), 8, 0, 4),
             ["e\u{301}", "\u{fffd}", "Z", " "]
         );
         // the tab's clipped remainder is a blank, 界 renders whole (its
         // continuation cell stays untouched), ESC is the replacement
         // glyph — the native caret sits on Z and the track column
         // (0064 §1) closes the pane
-        terminal.backend_mut().assert_cursor_position((9, 0));
+        terminal.backend_mut().assert_cursor_position((10, 0));
         assert_eq!(e.buf().cell_col_with_tab(e.head(), tab).get(), origin + 5);
     }
 }
@@ -132,27 +133,27 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
     e.set_head(3);
     e.split(true, None); // :vs of the same document keeps the whole view
     e.set_head(20);
-    let mut terminal = viewport_terminal(31, 5);
+    let mut terminal = viewport_terminal(33, 5);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes()[0].hscroll.get(), e.panes()[1].hscroll.get()),
         (0, 12)
     );
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 5, 1, 10),
+        row_symbols(terminal.backend().buffer(), 6, 1, 10),
         ["0", "1", "2", "3", "4", "5", "6", "7", "8", " "]
     );
     // the inactive pane's saved cursor (head 3 → cell 3) paints a
     // muted block, pane-local, through its own zero origin
     assert_eq!(
-        terminal.backend().buffer()[(8, 1)].bg,
+        terminal.backend().buffer()[(9, 1)].bg,
         crate::render::tokens().faint
     );
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 21, 1, 10),
+        row_symbols(terminal.backend().buffer(), 23, 1, 10),
         ["C", "D", "E", "F", "G", "H", "I", "J", "K", " "]
     );
-    terminal.backend_mut().assert_cursor_position((29, 1));
+    terminal.backend_mut().assert_cursor_position((31, 1));
     // 0064 §1: pull the pane-1 caret one column inside the reserved
     // budget (a frozen-origin cursor at the old last column now clips
     // honestly rather than painting into the track).
@@ -166,32 +167,32 @@ fn split_resize_focus_preserves_independent_origins_and_static_caret() {
         (17, 12)
     );
     assert_eq!(
-        terminal.backend().buffer()[(28, 1)].bg,
+        terminal.backend().buffer()[(30, 1)].bg,
         crate::render::tokens().faint
     );
-    assert_eq!(terminal.backend().buffer()[(30, 1)].symbol(), " ");
-    terminal.backend_mut().resize(21, 5);
+    assert_eq!(terminal.backend().buffer()[(32, 1)].symbol(), " ");
+    terminal.backend_mut().resize(23, 5);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes()[0].hscroll.get(), e.panes()[1].hscroll.get()),
         (22, 12)
     );
-    terminal.backend_mut().assert_cursor_position((8, 1));
+    terminal.backend_mut().assert_cursor_position((9, 1));
     e.focus_pane(1);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes()[0].hscroll.get(), e.panes()[1].hscroll.get()),
         (22, 16)
     );
-    terminal.backend_mut().assert_cursor_position((19, 1));
-    terminal.backend_mut().resize(61, 5);
+    terminal.backend_mut().assert_cursor_position((21, 1));
+    terminal.backend_mut().resize(63, 5);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(
         (e.panes()[0].hscroll.get(), e.panes()[1].hscroll.get()),
         (22, 16)
     );
-    assert_eq!(terminal.backend().buffer()[(36, 1)].symbol(), "G");
-    terminal.backend_mut().assert_cursor_position((39, 1));
+    assert_eq!(terminal.backend().buffer()[(38, 1)].symbol(), "G");
+    terminal.backend_mut().assert_cursor_position((41, 1));
 }
 
 #[test]
@@ -220,19 +221,19 @@ fn extra_carets_and_vertical_bounds_do_not_alias() {
     let mut e = Editor::new(Buffer::from_text("abcdefghijk\nabcdefghijk\nabcdefghijk\n"));
     e.set_head(10);
     e.fixture_sels_mut().set_extras([0, 8]);
-    let mut terminal = viewport_terminal(10, 4);
+    let mut terminal = viewport_terminal(11, 4);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(e.view().hscroll.get(), 7);
-    assert_eq!(terminal.backend().buffer()[(6, 0)].symbol(), "i");
+    assert_eq!(terminal.backend().buffer()[(7, 0)].symbol(), "i");
     assert_eq!(
-        terminal.backend().buffer()[(6, 0)].bg,
+        terminal.backend().buffer()[(7, 0)].bg,
         crate::render::tokens().text
     );
     assert_ne!(
-        terminal.backend().buffer()[(4, 0)].bg,
+        terminal.backend().buffer()[(5, 0)].bg,
         crate::render::tokens().text
     );
-    let area = ratatui::layout::Rect::new(2, 3, 10, 2);
+    let area = ratatui::layout::Rect::new(2, 3, 11, 2);
     let origin = strop_core::id::DisplayColumn::new(6);
     // rows above the top and columns left of the origin are absent,
     // never aliased onto row 0 / column 0
@@ -242,7 +243,7 @@ fn extra_carets_and_vertical_bounds_do_not_alias() {
     );
     assert_eq!(
         super::super::caret_position(&e, area, e.current(), 34, 1, origin),
-        Some((11, 4))
+        Some((12, 4))
     );
     assert_eq!(
         super::super::caret_position(&e, area, e.current(), 12, 1, origin),
@@ -426,13 +427,13 @@ fn markdown_semantics_reach_the_real_cell_grid() {
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let grid = terminal.backend().buffer();
-    assert_eq!(grid[(7, 0)].symbol(), "H");
-    assert_eq!(grid[(7, 0)].fg, crate::render::tokens().accent);
-    assert!(grid[(7, 0)].modifier.contains(Modifier::BOLD));
-    assert_eq!(grid[(7, 2)].symbol(), "b");
-    assert!(grid[(7, 2)].modifier.contains(Modifier::BOLD));
-    assert_eq!(grid[(19, 2)].symbol(), "i");
-    assert!(grid[(19, 2)].modifier.contains(Modifier::ITALIC));
+    assert_eq!(grid[(8, 0)].symbol(), "H");
+    assert_eq!(grid[(8, 0)].fg, crate::render::tokens().accent);
+    assert!(grid[(8, 0)].modifier.contains(Modifier::BOLD));
+    assert_eq!(grid[(8, 2)].symbol(), "b");
+    assert!(grid[(8, 2)].modifier.contains(Modifier::BOLD));
+    assert_eq!(grid[(20, 2)].symbol(), "i");
+    assert!(grid[(20, 2)].modifier.contains(Modifier::ITALIC));
 }
 
 #[test]

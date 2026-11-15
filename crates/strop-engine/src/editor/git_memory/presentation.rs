@@ -52,7 +52,7 @@ impl PreparedDiff {
             emphasis,
             added,
             deleted,
-            gutter_width: 2 * digits + 3,
+            gutter_width: 1 + digits + 1 + digits + crate::editor::prepare::NUMBER_GAP,
         }))
     }
 

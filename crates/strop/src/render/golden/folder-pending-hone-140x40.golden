@@ -1,8 +1,8 @@
-   1 guide/                           now                                                                                                   
-▌  2 notes.txt                     6  now                                                                                                   
-   3 notes-copy.txt            copy of notes.txt                                                                                            
-   4 remote-notes.md           was remote.md                                                                                                
-   5 new/                      new                                                                                                          
+   1  guide/                           now                                                                                                  
+▌  2  notes.txt                     6  now                                                                                                  
+   3  notes-copy.txt            copy of notes.txt                                                                                           
+   4  remote-notes.md           was remote.md                                                                                               
+   5  new/                      new                                                                                                         
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             
@@ -39,11 +39,11 @@
                                                                                                                                             
   NORMAL    docs/ ●                                                                                                     4 items   40%  2:4  
 
-  0: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 6:#e8a848/#15171c+b 30:#858c9a/#15171c 98:reset/#15171c 1:reset/reset
-  1: 1:#e8a848/#1b1e24+b 4:#e8a848/#1b1e24 9:#e6e1d6/#1b1e24+b 27:#858c9a/#1b1e24 98:#1b1e24/#1b1e24 1:reset/reset
-  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 14:#e6e1d6/#15171c 29:#e8a848/#15171c 91:reset/#15171c 1:reset/reset
-  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 15:#e6e1d6/#15171c 24:#e8a848/#15171c 95:reset/#15171c 1:reset/reset
-  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 4:#e8a848/#15171c+b 25:#e8a848/#15171c 105:reset/#15171c 1:reset/reset
+  0: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 6:#e8a848/#15171c+b 30:#858c9a/#15171c 97:reset/#15171c 1:reset/reset
+  1: 1:#e8a848/#1b1e24+b 5:#e8a848/#1b1e24 9:#e6e1d6/#1b1e24+b 27:#858c9a/#1b1e24 97:#1b1e24/#1b1e24 1:reset/reset
+  2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 14:#e6e1d6/#15171c 29:#e8a848/#15171c 90:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 15:#e6e1d6/#15171c 24:#e8a848/#15171c 94:reset/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e8a848/#15171c+b 25:#e8a848/#15171c 104:reset/#15171c 1:reset/reset
   5: 139:reset/#15171c 1:reset/reset
   6: 139:reset/#15171c 1:reset/reset
   7: 139:reset/#15171c 1:reset/reset
