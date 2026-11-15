@@ -113,6 +113,13 @@ for a material like its siblings and carries no other project's name or
 brand, per the rule above. It answers to the same §3 contrast tests as every
 palette; no rule was relaxed for it.
 
+**Amendment 2026-11-15 — Kiln, darker.** The owner asked for more contrast.
+The planes drop to `#141312` / `#1c1b19` / `#262421` (cursor line
+`#1a1917`) and text and secondary lift to `#f2eee6` / `#c4bfb3`: text goes
+from 14:1 to 16:1, secondary from 8:1 to 10:1, comments from 5.1:1 to 5.6:1,
+selection from 1.77:1 to 1.93:1. The accent and syntax inks are unchanged;
+every ladder step stays within 1.07–1.30.
+
 ## 4. Adoption of 0087, finding by finding
 
 | Finding | Decision | Lands |
