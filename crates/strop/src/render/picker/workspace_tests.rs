@@ -363,7 +363,7 @@ fn jump_preview_marks_the_live_buffer_destination_line() {
     assert!(
         rendered
             .iter()
-            .any(|line| line.contains("▌ 42 │ fn dispatch")),
+            .any(|line| line.contains("▌ 42  fn dispatch")),
         "jump marker on the live destination line: {rendered:?}"
     );
     assert_eq!(

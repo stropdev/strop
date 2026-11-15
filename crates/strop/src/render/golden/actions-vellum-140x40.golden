@@ -1,23 +1,23 @@
-   1 //! The modeline: one quiet row at the bottom edge.                                                                                    
-   2 //!                                                                                                                                    
-   3 //! Every width is a display cell, never a character.                                                                                  
+   1  //! The modeline: one quiet row at the bottom edge.                                                                                   
+   2  //!                                                                                                                                   
+   3  //! Every width is a display cell, never a character.                                                                                 
    4                                                                                                                                        
-   5 use std::path::Path;                                                                                                                   
+   5  use std::path::Path;                                                                                                                  
    6                                                                                                                                        
-   7 /// Ga╭ actions ─────────────────────────────────────────────────────────────────────────────────────────────────────── 3 ╮            
-   8 pub st│ ❯ ▏                                                                                                               │            
-●  9 │   ch│                                                                                                                   │            
-  10 │   di│ ▌ Remove unused field `chip`                                                                                      │            
-  11 │   li│   Prefix with an underscore: `_chip`                                                                              │            
-  12 }     │   Allow `dead_code` on this struct                                                                                │            
+   7  /// G╭ actions ─────────────────────────────────────────────────────────────────────────────────────────────────────── 3 ╮            
+   8  pub s│ ❯ ▏                                                                                                               │            
+●  9  │   c│                                                                                                                   │            
+  10  │   d│ ▌ Remove unused field `chip`                                                                                      │            
+  11  │   l│   Prefix with an underscore: `_chip`                                                                              │            
+  12  }    │   Allow `dead_code` on this struct                                                                                │            
   13       │                                                                                                                   │            
-  14 impl M│                                                                                                                   │            
-  15 │   fn│                                                                                                                   │            
-  16 │   │ │                                                                                                                   │            
-  17 │   │ │                                                                                                                   │            
-  18 │   │ │                                                                                                                   │            
-  19 │   } │                                                                                                                   │            
-  20 }     │                                                                                                                   │            
+  14  impl │                                                                                                                   │            
+  15  │   f│                                                                                                                   │            
+  16  │   ││                                                                                                                   │            
+  17  │   ││                                                                                                                   │            
+  18  │   ││                                                                                                                   │            
+  19  │   }│                                                                                                                   │            
+  20  }    │                                                                                                                   │            
 ~          │                                                                                                                   │            
 ~          │                                                                                                                   │            
 ~          │                                                                                                                   │            
@@ -39,26 +39,26 @@
 ~                                                                                                                                           
   PICKER    src/render/statusline.rs                                                                                        ▲1   45%   9:1  
 
-  0: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 51:#b6b6b5/#f6f2e9+i 83:reset/#f6f2e9 1:reset/reset
-  1: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 3:#b6b6b5/#f6f2e9+i 131:reset/#f6f2e9 1:reset/reset
-  2: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 53:#b6b6b5/#f6f2e9+i 81:reset/#f6f2e9 1:reset/reset
-  3: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
-  4: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 3:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 3:#94b6a9/#f6f2e9 2:#b4b6b7/#f6f2e9 4:#989795/#f6f2e9 2:#b4b6b7/#f6f2e9 4:#94b6a9/#f6f2e9 1:#b4b6b7/#f6f2e9 114:reset/#f6f2e9 1:reset/reset
-  5: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 134:reset/#f6f2e9 1:reset/reset
-  6: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 6:#b6b6b5/#f6f2e9+i 1:#656d7b/#fdfbf6 9:#262a30/#fdfbf6+b 107:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
-  7: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 3:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 2:#b89fcb/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#fdfbf6 111:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
-  8: 1:#c5ae88/#f2eee4+b 4:#c5a986/#f2eee4 1:#e8e3da/#f2eee4 5:#989795/#f2eee4 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:#f2eee4/#f2eee4 1:reset/reset
-  9: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 5:#989795/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#8a510f/#e5dfd0 1:reset/#e5dfd0 26:#262a30/#e5dfd0 33:reset/#e5dfd0 53:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 10: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 5:#989795/#f6f2e9 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 34:#4b525c/#fdfbf6 78:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 11: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 5:reset/#f6f2e9 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 32:#4b525c/#fdfbf6 80:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 12: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 6:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 13: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 4:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 1:#94b6a9/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 14: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 2:#b89fcb/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 15: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#e8e3da/#f6f2e9 1:#989795/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 16: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#e8e3da/#f6f2e9 1:#989795/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 17: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#e8e3da/#f6f2e9 1:#989795/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 18: 1:#b4b6b7/#f6f2e9+b 4:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#b4b6b7/#f6f2e9 1:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 19: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 5:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  0: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 51:#b6b6b5/#f6f2e9+i 82:reset/#f6f2e9 1:reset/reset
+  1: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 3:#b6b6b5/#f6f2e9+i 130:reset/#f6f2e9 1:reset/reset
+  2: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 53:#b6b6b5/#f6f2e9+i 80:reset/#f6f2e9 1:reset/reset
+  3: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+  4: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 3:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 3:#94b6a9/#f6f2e9 2:#b4b6b7/#f6f2e9 4:#989795/#f6f2e9 2:#b4b6b7/#f6f2e9 4:#94b6a9/#f6f2e9 1:#b4b6b7/#f6f2e9 113:reset/#f6f2e9 1:reset/reset
+  5: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
+  6: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 5:#b6b6b5/#f6f2e9+i 1:#656d7b/#fdfbf6 9:#262a30/#fdfbf6+b 107:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  7: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 3:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 1:#b89fcb/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#fdfbf6 111:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  8: 1:#c5ae88/#f2eee4+b 5:#c5a986/#f2eee4 1:#e8e3da/#f2eee4 4:#989795/#f2eee4 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:#f2eee4/#f2eee4 1:reset/reset
+  9: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 4:#989795/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#8a510f/#e5dfd0 1:reset/#e5dfd0 26:#262a30/#e5dfd0 33:reset/#e5dfd0 53:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 10: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 4:#989795/#f6f2e9 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 34:#4b525c/#fdfbf6 78:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 11: 1:#b4b6b7/#f6f2e9+b 6:#b4b6b7/#f6f2e9 4:reset/#f6f2e9 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 32:#4b525c/#fdfbf6 80:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 12: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 5:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 13: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 4:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 14: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#b89fcb/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 15: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#e8e3da/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 16: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#e8e3da/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 17: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#e8e3da/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 18: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 3:#989795/#f6f2e9 1:#b4b6b7/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 19: 1:#b4b6b7/#f6f2e9+b 6:#b4b6b7/#f6f2e9 4:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  20: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  21: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  22: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset

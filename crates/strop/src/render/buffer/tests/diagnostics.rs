@@ -55,7 +55,8 @@ fn diagnostics_use_gutter_and_eol_without_underlining_source_cells() {
         .expect("cursor-line diagnostic note");
     assert_eq!(note.fg, crate::render::tokens().dim(error));
 
-    let gutter = strop_engine::editor::prepare::STANDARD_GUTTER as u16;
+    let gutter = e.left_inset(e.current()) as u16;
+    assert_eq!(gutter, 6, "sign, three digits, the number gap");
     let source: String = (gutter..gutter + 10)
         .map(|x| buffer[(x, 0)].symbol())
         .collect();
@@ -101,10 +102,10 @@ fn a_snippet_placeholder_paints_as_the_selection() {
     let buffer = terminal.backend().buffer();
     let select = crate::render::tokens().selection;
     let painted: Vec<u16> = (0..30).filter(|x| buffer[(*x, 0)].bg == select).collect();
-    // "fn name(arg) {}" — 5-cell gutter, "fn " (3), so "name" is cells 8..12
+    // "fn name(arg) {}" — 6-cell gutter, "fn " (3), so "name" is cells 9..13
     assert_eq!(
         painted,
-        [8, 9, 10, 11],
+        [9, 10, 11, 12],
         "the placeholder carries select_bg()"
     );
 }
@@ -116,11 +117,11 @@ fn last_text_row_and_four_digit_gutter_keep_caret_alignment() {
     let mut terminal = viewport_terminal(12, 4);
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 0, 2, 7),
-        [" ", "1", "0", "0", "1", " ", "x"]
+        row_symbols(terminal.backend().buffer(), 0, 2, 8),
+        [" ", "1", "0", "0", "1", " ", " ", "x"]
     );
     // the caret is allowed on the LAST text row (the old renderer hid it)
-    terminal.backend_mut().assert_cursor_position((6, 2));
+    terminal.backend_mut().assert_cursor_position((7, 2));
 }
 
 #[test]
@@ -148,20 +149,20 @@ fn typed_diff_rows_keep_fixed_numbers_and_scrolled_content() {
         None,
     );
     e.set_head(e.buf().line_start(2) + 10);
-    let mut terminal = viewport_terminal(13, 6); // 9 fixed diff cells + 3 content + track
+    let mut terminal = viewport_terminal(14, 6); // 10 fixed diff cells + 3 content + track
     terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
     assert_eq!(e.view().hscroll.get(), 6);
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 0, 2, 13),
-        ["▎", " ", " ", " ", " ", " ", " ", "1", " ", "e\u{301}", "\u{fffd}", "Z", " "]
+        row_symbols(terminal.backend().buffer(), 0, 2, 14),
+        ["▎", " ", " ", " ", " ", " ", " ", "1", " ", " ", "e\u{301}", "\u{fffd}", "Z", " "]
     );
     // the file's heading is laid out against the pane, not the line: its
     // rule fills the number gutter whatever the sideways scroll (0100)
     assert_eq!(
-        row_symbols(terminal.backend().buffer(), 0, 0, 9),
-        ["─", "─", "─", "─", "─", "─", "─", "─", " "]
+        row_symbols(terminal.backend().buffer(), 0, 0, 10),
+        ["─", "─", "─", "─", "─", "─", "─", "─", "─", " "]
     );
-    terminal.backend_mut().assert_cursor_position((11, 2));
+    terminal.backend_mut().assert_cursor_position((12, 2));
 }
 
 #[test]

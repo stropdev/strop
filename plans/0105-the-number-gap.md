@@ -1,8 +1,11 @@
 # 0105 — The number gap: two cells between a line number and its text
 
-- Status: **proposed** (2026-11-15). Not implemented. The plan is complete
-  with the recommended answer to every taste question in §9, so work can start
-  without waiting.
+- Status: **in force** (0.69, 2026-11-15), every §9 question answered as
+  recommended. One correction to §8.4 found in implementation: `git-branches`
+  and `welcome` goldens do change — the branches picker floats over a
+  numbered file and the welcome frame has the scratch buffer's cursor row
+  behind it; the list gutters themselves (`git-status`, `git-log*`,
+  `git-files`) are unchanged.
 - Source: the owner — "tweak the spacing between the text and the line number
   column … to improve the look of strop."
 - Builds on [0088](0088-the-look.md) (four greys, one accent, chrome only when

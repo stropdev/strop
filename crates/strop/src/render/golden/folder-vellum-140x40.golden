@@ -1,7 +1,7 @@
-▌  1 guide/                           now                                                                                                   
-   2 .draft.md                     0  now                                                                                                   
-   3 notes.txt                     6  now                                                                                                   
-   4 remote.md                    84  now                                                                                                   
+▌  1  guide/                           now                                                                                                  
+   2  .draft.md                     0  now                                                                                                  
+   3  notes.txt                     6  now                                                                                                  
+   4  remote.md                    84  now                                                                                                  
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             
@@ -39,10 +39,10 @@
                                                                                                                                             
   NORMAL    docs/                                                                                                       4 items   25%  1:1  
 
-  0: 1:#8a510f/#efeadf+b 4:#8a510f/#efeadf 6:#8a510f/#efeadf+b 30:#656d7b/#efeadf 98:#efeadf/#efeadf 1:reset/reset
-  1: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 27:#656d7b/#f6f2e9 98:reset/#f6f2e9 1:reset/reset
-  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 27:#656d7b/#f6f2e9 98:reset/#f6f2e9 1:reset/reset
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 27:#656d7b/#f6f2e9 98:reset/#f6f2e9 1:reset/reset
+  0: 1:#8a510f/#efeadf+b 5:#8a510f/#efeadf 6:#8a510f/#efeadf+b 30:#656d7b/#efeadf 97:#efeadf/#efeadf 1:reset/reset
+  1: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 27:#656d7b/#f6f2e9 97:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 27:#656d7b/#f6f2e9 97:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 9:#262a30/#f6f2e9 27:#656d7b/#f6f2e9 97:reset/#f6f2e9 1:reset/reset
   4: 139:reset/#f6f2e9 1:reset/reset
   5: 139:reset/#f6f2e9 1:reset/reset
   6: 139:reset/#f6f2e9 1:reset/reset

@@ -20,10 +20,10 @@ fn review_tab_glyph_and_caret_use_same_layout() {
         .unwrap() as usize;
     // the contract: the glyph and the caret read the same layout,
     // driven by the editor's tab width
-    let caret = 5 + e
-        .buf()
-        .cell_col_with_tab(e.head(), e.config().tab_size)
-        .get();
+    let caret = e.left_inset(e.current())
+        + e.buf()
+            .cell_col_with_tab(e.head(), e.config().tab_size)
+            .get();
     assert_eq!(x_col, caret, "rendered X and caret must agree after a tab");
 }
 
@@ -428,9 +428,19 @@ fn same_line_replacements_share_one_exact_styled_review() {
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     let grid = terminal.backend().buffer();
-    assert_eq!(grid[(5, removed)].fg, crate::render::tokens().diff_del);
-    assert_eq!(grid[(5, added)].fg, crate::render::tokens().diff_add);
-    assert_ne!(grid[(5, removed)].bg, grid[(5, added)].bg);
+    let text_column = editor.left_inset(editor.current()) as u16;
+    assert_eq!(
+        grid[(text_column, removed)].fg,
+        crate::render::tokens().diff_del
+    );
+    assert_eq!(
+        grid[(text_column, added)].fg,
+        crate::render::tokens().diff_add
+    );
+    assert_ne!(
+        grid[(text_column, removed)].bg,
+        grid[(text_column, added)].bg
+    );
     editor.feed(Key::Enter);
     assert_eq!(editor.doc(source).buf.text().to_string(), "bar bar\n");
 }

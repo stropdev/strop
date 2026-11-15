@@ -27,10 +27,6 @@ pub struct CellRect {
     pub height: u16,
 }
 
-/// Width of the standard gutter: sign column + 3-digit number + space.
-/// One source for preparation clamps and gutter paint (0064 §1).
-pub const STANDARD_GUTTER: usize = 5;
-
 /// The blame column's reserved width (0011 §4): preparation's left inset
 /// and the margin paint agree on exactly this.
 pub const BLAME_GUTTER_WIDTH: usize = 22;
@@ -388,11 +384,11 @@ pub fn picker_rows_per_result(kind: strop_picker::Kind, replace_visible: bool) -
 /// so they cannot disagree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gutter {
-    /// File buffers: sign + the buffer's line numbers + 1.
+    /// File buffers: sign + the buffer's line numbers + the number gap.
     Lines,
-    /// A collection: sign + the *source file's* line numbers + 1.
+    /// A collection: sign + the *source file's* line numbers + the gap.
     Source,
-    /// A diff: sign + old number + 1 + new number + 1.
+    /// A diff: sign + old number + 1 + new number + the number gap.
     Pair,
     /// Status, log, file history, commit files: sign + 1, no numbers —
     /// the rows are entries, not lines.
@@ -402,10 +398,14 @@ pub enum Gutter {
 /// The list gutter's cells: the sign column and one space.
 pub const LIST_GUTTER: usize = 2;
 
-/// Sign + `digits` + 1, with at least three digits.
-fn number_gutter(largest: usize) -> usize {
+/// Blank cells between the last number column and the text (0105): two
+/// cells read as a column gap where one reads as a word space.
+pub const NUMBER_GAP: usize = 2;
+
+/// Sign + `digits` + the number gap, with at least three digits.
+pub fn number_gutter(largest: usize) -> usize {
     let digits = largest.max(1).ilog10() as usize + 1;
-    2 + digits.max(3)
+    1 + digits.max(3) + NUMBER_GAP
 }
 
 impl Editor {

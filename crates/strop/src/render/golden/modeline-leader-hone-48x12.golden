@@ -8,7 +8,7 @@
  │  s  hunk: stage                           │  
  │  +5 more                                  │  
  ╰───────────────────────────────────────────╯  
-  11 let value_10 = alpha + beta * 10;          
+  11  let value_10 = alpha + beta * 10;         
  PENDING    layout.rs    space g   ●1 ▲2   1:1  
 
   0: 1:#858c9a/#1b1e24+b 1:#858c9a/#1c1f25 9:#e6e1d6/#1c1f25+b 35:#858c9a/#1c1f25 1:#1b1e24/#1b1e24 1:#858c9a/#15171c
@@ -21,5 +21,5 @@
   7: 1:#858c9a/#15171c+b 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#23272f+b 12:#e6e1d6/#1c1f25 27:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
   8: 1:#858c9a/#15171c+b 1:#858c9a/#1c1f25 1:reset/#1c1f25 8:#858c9a/#1c1f25 34:reset/#1c1f25 1:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
   9: 1:#858c9a/#15171c+b 45:#858c9a/#1c1f25 1:reset/#15171c 1:reset/reset
- 10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 33:#e6e1d6/#15171c 9:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 33:#e6e1d6/#15171c 8:reset/#15171c 1:reset/reset
  11: 10:#15171c/#e8a848+b 2:reset/#1c1f25 9:#e6e1d6/#1c1f25 4:reset/#1c1f25 7:#e8a848/#1c1f25 3:reset/#1c1f25 2:#e8707c/#1c1f25 1:reset/#1c1f25 2:#d9a85a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

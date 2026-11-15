@@ -1,8 +1,8 @@
-   1 guide/                           now                                                                                                   
-▌  2 notes.txt                     6  now                                                                                                   
-   3 notes-copy.txt            copy of notes.txt                                                                                            
-   4 remote-notes.md           was remote.md                                                                                                
-   5 new/                      new                                                                                                          
+   1  guide/                           now                                                                                                  
+▌  2  notes.txt                     6  now                                                                                                  
+   3  notes-copy.txt            copy of notes.txt                                                                                           
+   4  remote-notes.md           was remote.md                                                                                               
+   5  new/                      new                                                                                                         
                                                                                                                                             
                                                                                                                                             
                                                                                                                                             
@@ -39,11 +39,11 @@
                                                                                                                                             
   NORMAL    docs/ ●                                                                                                     4 items   40%  2:4  
 
-  0: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 6:#8a510f/#f6f2e9+b 30:#656d7b/#f6f2e9 98:reset/#f6f2e9 1:reset/reset
-  1: 1:#8a510f/#efeadf+b 4:#8a510f/#efeadf 9:#262a30/#efeadf+b 27:#656d7b/#efeadf 98:#efeadf/#efeadf 1:reset/reset
-  2: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 14:#262a30/#f6f2e9 29:#8a510f/#f6f2e9 91:reset/#f6f2e9 1:reset/reset
-  3: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 15:#262a30/#f6f2e9 24:#8a510f/#f6f2e9 95:reset/#f6f2e9 1:reset/reset
-  4: 1:#656d7b/#f6f2e9+b 4:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 25:#8a510f/#f6f2e9 105:reset/#f6f2e9 1:reset/reset
+  0: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 6:#8a510f/#f6f2e9+b 30:#656d7b/#f6f2e9 97:reset/#f6f2e9 1:reset/reset
+  1: 1:#8a510f/#efeadf+b 5:#8a510f/#efeadf 9:#262a30/#efeadf+b 27:#656d7b/#efeadf 97:#efeadf/#efeadf 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 14:#262a30/#f6f2e9 29:#8a510f/#f6f2e9 90:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 15:#262a30/#f6f2e9 24:#8a510f/#f6f2e9 94:reset/#f6f2e9 1:reset/reset
+  4: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 4:#8a510f/#f6f2e9+b 25:#8a510f/#f6f2e9 104:reset/#f6f2e9 1:reset/reset
   5: 139:reset/#f6f2e9 1:reset/reset
   6: 139:reset/#f6f2e9 1:reset/reset
   7: 139:reset/#f6f2e9 1:reset/reset

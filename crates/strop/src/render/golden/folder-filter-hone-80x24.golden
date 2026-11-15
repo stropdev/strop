@@ -1,5 +1,5 @@
-▌  1 .draft.md                     0  now                                       
-   2 remote.md                    84  now                                       
+▌  1  .draft.md                     0  now                                      
+   2  remote.md                    84  now                                      
                                                                                 
                                                                                 
                                                                                 
@@ -23,8 +23,8 @@
                                                                                 
   NORMAL    docs/                                2 of 4 · filter md   50%  1:1  
 
-  0: 1:#e8a848/#1b1e24+b 4:#e8a848/#1b1e24 9:#e6e1d6/#1b1e24+b 27:#858c9a/#1b1e24 38:#1b1e24/#1b1e24 1:reset/reset
-  1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 9:#e6e1d6/#15171c 27:#858c9a/#15171c 38:reset/#15171c 1:reset/reset
+  0: 1:#e8a848/#1b1e24+b 5:#e8a848/#1b1e24 9:#e6e1d6/#1b1e24+b 27:#858c9a/#1b1e24 37:#1b1e24/#1b1e24 1:reset/reset
+  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 9:#e6e1d6/#15171c 27:#858c9a/#15171c 37:reset/#15171c 1:reset/reset
   2: 79:reset/#15171c 1:reset/reset
   3: 79:reset/#15171c 1:reset/reset
   4: 79:reset/#15171c 1:reset/reset

@@ -341,6 +341,9 @@ The gutter is chosen per surface, as data, in one place
 | pair | sign + old + 1 + new + 1 | diff, hunk (unchanged) | accent numbers, `bg.cursorline` over context rows; tinted rows keep their tint |
 | list | 2: sign + 1 | status, log, file history, commit files | `▌` in the accent in the sign column + `bg.cursorline` across the row |
 
+*Amended by [0105](0105-the-number-gap.md): a number gutter (lines, source,
+pair) ends in two blank cells, not one.*
+
 The list gutter has **no line numbers** (G3, L5, F4): the rows are entries, not
 lines. Its cursor row is the directory buffer's idiom, which these buffers
 most resemble. Counts still work (`5j`, `12G`); the modeline shows the line.

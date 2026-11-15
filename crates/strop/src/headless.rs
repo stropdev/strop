@@ -136,20 +136,20 @@ mod diff_surface_tests {
         assert!(heading.starts_with("──"), "heading: {frame}");
         assert!(heading.trim_end().ends_with("─ +2 -1"), "heading: {frame}");
         assert!(
-            frame.contains("   ⋮   ⋮ @@ -1,2 +1,3 @@"),
+            frame.contains("   ⋮   ⋮  @@ -1,2 +1,3 @@"),
             "hunk header: {frame}"
         );
         // both numbers on context, one side blank on add/del rows
         assert!(
-            frame.contains("  1   1 fn a() {}"),
+            frame.contains("  1   1  fn a() {}"),
             "context gutter: {frame}"
         );
         assert!(
-            frame.contains("▎      2 fn new() {}"),
+            frame.contains("▎      2  fn new() {}"),
             "addition gutter: {frame}"
         );
         assert!(
-            frame.contains("▎  2     fn old() {}"),
+            frame.contains("▎  2      fn old() {}"),
             "deletion gutter: {frame}"
         );
         assert!(

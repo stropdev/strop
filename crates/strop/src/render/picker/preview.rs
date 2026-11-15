@@ -135,7 +135,9 @@ fn relative_path(editor: &Editor, path: &str) -> String {
         .map_or_else(|| path.to_owned(), str::to_owned)
 }
 
-use strop_engine::editor::prepare::{preview_source_lines, preview_window};
+use strop_engine::editor::prepare::{
+    number_gutter, preview_source_lines, preview_window, NUMBER_GAP,
+};
 
 #[allow(clippy::too_many_arguments)]
 fn highlight_lines_owned(
@@ -151,9 +153,13 @@ fn highlight_lines_owned(
     use strop_core::layout::{clip, printable_grapheme, RopeGraphemes};
     let spans = spans.unwrap_or_default();
     let mut out = Vec::with_capacity(window.len());
+    // the full gutter is the buffer's (0105 §8.3): a preview row is the
+    // row the buffer draws after `Enter`
+    let full = number_gutter(preview_source_lines(rope));
+    let full_digits = full - 1 - NUMBER_GAP;
     let digits = preview_source_lines(rope).ilog10() as usize + 1;
-    let gutter = if width > digits + 5 {
-        digits + 5
+    let gutter = if width > full {
+        full
     } else if width > digits + 2 {
         digits + 2
     } else {
@@ -182,12 +188,11 @@ fn highlight_lines_owned(
             // the focused line wears the one selected-row idiom (rule 5)
             spans_out.push(super::super::card::row_marker(focused, t));
         }
-        if gutter == digits + 5 {
+        if gutter == full {
             spans_out.push(Span::styled(
-                format!(" {:>digits$}", line + 1),
+                format!("{:>full_digits$}{:NUMBER_GAP$}", line + 1, ""),
                 number_style,
             ));
-            spans_out.push(Span::styled(" │ ", Style::default().fg(t.faint)));
         } else if gutter == digits + 2 {
             spans_out.push(Span::styled(
                 format!("{:>digits$} ", line + 1),
@@ -273,17 +278,17 @@ mod tests {
                 .collect();
             if search {
                 assert!(
-                    lines.iter().any(|line| line.contains("▌ 100 │ needle")),
+                    lines.iter().any(|line| line.contains("▌100  needle")),
                     "{lines:?}"
                 );
                 assert_eq!(lines.iter().filter(|line| line.contains('▌')).count(), 1);
                 assert!(
-                    lines.iter().any(|line| line.contains("  99 │ plain")),
+                    lines.iter().any(|line| line.contains("  99  plain")),
                     "{lines:?}"
                 );
             } else {
                 assert!(
-                    lines.iter().any(|line| line.contains("   1 │ plain")),
+                    lines.iter().any(|line| line.contains("   1  plain")),
                     "{lines:?}"
                 );
                 assert!(lines.iter().all(|line| !line.contains('▌')));
@@ -332,7 +337,7 @@ mod tests {
             .map(|y| (preview.x..100).map(|x| grid[(x, y)].symbol()).collect())
             .collect();
         assert!(
-            right.iter().any(|line| line.contains("▌ 42 │")),
+            right.iter().any(|line| line.contains("▌ 42  fn dispatch")),
             "declaration marker on line 42: {right:?}"
         );
     }
@@ -373,7 +378,7 @@ mod tests {
             .map(|y| (preview.x..100).map(|x| grid[(x, y)].symbol()).collect())
             .collect();
         assert!(
-            right.iter().any(|line| line.contains("▌ 42 │")),
+            right.iter().any(|line| line.contains("▌ 42  fn dispatch")),
             "symbol marker on line 42: {right:?}"
         );
         assert_eq!(
@@ -381,9 +386,10 @@ mod tests {
             1,
             "exactly one marker in the preview"
         );
+        // the preview takes the buffer's gutter (0105): no bar before the text
         assert!(
-            right.iter().any(|line| line.contains("│ fn dispatch")),
-            "divider then content: {right:?}"
+            right.iter().all(|line| !line.contains(" │ fn")),
+            "no gutter bar: {right:?}"
         );
         let t = tokens();
         let mut marker = None;

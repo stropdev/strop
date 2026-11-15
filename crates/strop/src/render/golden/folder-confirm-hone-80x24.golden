@@ -1,11 +1,11 @@
-   1 docs/ — 4 changes                                                          
+   1  docs/ — 4 changes                                                         
    2                                                                            
-   3   copy    notes.txt → notes-copy.txt                                       
-   4   rename  remote.md → remote-notes.md                                      
-   5   create  new/                                                             
-   6   trash   .draft.md                                                        
+   3    copy    notes.txt → notes-copy.txt                                      
+   4    rename  remote.md → remote-notes.md                                     
+   5    create  new/                                                            
+   6    trash   .draft.md                                                       
    7                                                                            
-   8 y apply   q cancel                                                         
+   8  y apply   q cancel                                                        
 ~                                                                               
 ~                                                                               
 ~                                                                               
@@ -23,14 +23,14 @@
  › 4 changes — y applies, q cancels                                             
   NORMAL    changes in docs/ [RO]                                     12%  1:1  
 
-  0: 1:#858c9a/#1b1e24+b 21:#e8a848/#1b1e24 57:#1b1e24/#1b1e24 1:reset/reset
-  1: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
-  2: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 36:#8fc48a/#1e2d22 38:#1e2d22/#1e2d22 1:reset/reset
-  3: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 37:#8fc48a/#1e2d22 37:#1e2d22/#1e2d22 1:reset/reset
-  4: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 14:#8fc48a/#1e2d22 60:#1e2d22/#1e2d22 1:reset/reset
-  5: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 19:#e8707c/#331f24 55:#331f24/#331f24 1:reset/reset
-  6: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 74:reset/#15171c 1:reset/reset
-  7: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 18:#e8a848/#15171c 56:reset/#15171c 1:reset/reset
+  0: 1:#858c9a/#1b1e24+b 22:#e8a848/#1b1e24 56:#1b1e24/#1b1e24 1:reset/reset
+  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 73:reset/#15171c 1:reset/reset
+  2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 36:#8fc48a/#1e2d22 37:#1e2d22/#1e2d22 1:reset/reset
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 37:#8fc48a/#1e2d22 36:#1e2d22/#1e2d22 1:reset/reset
+  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 14:#8fc48a/#1e2d22 59:#1e2d22/#1e2d22 1:reset/reset
+  5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 19:#e8707c/#331f24 54:#331f24/#331f24 1:reset/reset
+  6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 73:reset/#15171c 1:reset/reset
+  7: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e8a848/#15171c 55:reset/#15171c 1:reset/reset
   8: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
   9: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset
  10: 1:#4a5160/#15171c 78:reset/#15171c 1:reset/reset

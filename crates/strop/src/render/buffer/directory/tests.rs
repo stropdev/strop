@@ -77,22 +77,22 @@ fn rows_are_names_with_size_and_age_in_one_column() {
     let grid = frame(&mut editor, 80, 7);
     assert_eq!(
         row_text(&grid, 0),
-        "▌  1 src/                              1d"
+        "▌  1  src/                              1d"
     );
     assert_eq!(
         row_text(&grid, 1),
-        "   2 README.md                  8.5K   3d"
+        "   2  README.md                  8.5K   3d"
     );
     assert_eq!(
         row_text(&grid, 2),
-        "   3 zero.txt                      0   2h"
+        "   3  zero.txt                      0   2h"
     );
     let t = crate::render::tokens();
     // the cursor-row band spans the pane, minus the reserved track column
     assert!((0..79).all(|x| grid[(x, 0)].bg == t.cursorline));
-    assert_eq!(grid[(5, 0)].fg, t.accent, "a folder is the accent");
-    assert!(grid[(5, 0)].modifier.contains(Modifier::BOLD));
-    assert_eq!(grid[(5, 1)].fg, t.text);
+    assert_eq!(grid[(6, 0)].fg, t.accent, "a folder is the accent");
+    assert!(grid[(6, 0)].modifier.contains(Modifier::BOLD));
+    assert_eq!(grid[(6, 1)].fg, t.text);
     assert_eq!(grid[(33, 1)].fg, t.muted, "metadata is quiet");
 }
 
@@ -103,16 +103,16 @@ fn an_edited_row_says_what_write_will_do_with_it() {
     let grid = frame(&mut editor, 80, 8);
     assert_eq!(
         row_text(&grid, 1),
-        "   2 README.txt                was README.md"
+        "   2  README.txt                was README.md"
     );
     assert_eq!(
         row_text(&grid, 2),
-        "   3 README.txt                copy of README.md"
+        "   3  README.txt                copy of README.md"
     );
-    assert_eq!(row_text(&grid, 3), "▌  4 new.txt                   new");
+    assert_eq!(row_text(&grid, 3), "▌  4  new.txt                   new");
     assert_eq!(
         row_text(&grid, 4),
-        "   5 zero.txt                      0   2h"
+        "   5  zero.txt                      0   2h"
     );
     assert_eq!(grid[(31, 1)].fg, crate::render::tokens().accent);
     let mut editor = project();
@@ -120,7 +120,7 @@ fn an_edited_row_says_what_write_will_do_with_it() {
     let grid = frame(&mut editor, 80, 8);
     assert_eq!(
         row_text(&grid, 3),
-        "▌  4 zero.txt                  copy of zero.txt"
+        "▌  4  zero.txt                  copy of zero.txt"
     );
 }
 
@@ -136,10 +136,10 @@ fn a_name_past_the_column_keeps_its_name_and_drops_its_metadata() {
         ListingState::Complete,
     );
     let grid = frame(&mut editor, 100, 5);
-    assert_eq!(row_text(&grid, 0), format!("▌  1 {}", "n".repeat(60)));
+    assert_eq!(row_text(&grid, 0), format!("▌  1  {}", "n".repeat(60)));
     assert_eq!(
         row_text(&grid, 1),
-        format!("   2 short{}1   1d", " ".repeat(49))
+        format!("   2  short{}1   1d", " ".repeat(49))
     );
 }
 
@@ -156,14 +156,14 @@ fn narrow_round_trip_keeps_native_names_and_cursor_mapping() {
     );
     let expected = editor.buf().snapshot();
     let grid = frame(&mut editor, 24, 7);
-    assert_eq!(grid[(5, 0)].symbol(), "日");
-    assert_eq!(grid[(7, 0)].symbol(), "本");
-    assert_eq!(grid[(9, 0)].symbol(), "語");
+    assert_eq!(grid[(6, 0)].symbol(), "日");
+    assert_eq!(grid[(8, 0)].symbol(), "本");
+    assert_eq!(grid[(10, 0)].symbol(), "語");
     frame(&mut editor, 2, 3);
     let restored = frame(&mut editor, 80, 9);
     assert_eq!(editor.buf().snapshot(), expected);
     assert_eq!(restored[(0, 0)].symbol(), "▌");
-    assert_eq!(restored[(5, 0)].symbol(), "日");
+    assert_eq!(restored[(6, 0)].symbol(), "日");
     editor.feed_text("j");
     let source = editor
         .directory()
@@ -182,7 +182,7 @@ fn an_empty_folder_says_how_to_add_a_name() {
     let grid = frame(&mut editor, 60, 6);
     assert_eq!(
         row_text(&grid, 0),
-        "▌  1 empty folder  ·  o adds a name, :w creates it"
+        "▌  1  empty folder  ·  o adds a name, :w creates it"
     );
     assert!((1..5).all(|row| row_text(&grid, row)
         .chars()
