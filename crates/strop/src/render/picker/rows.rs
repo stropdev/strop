@@ -18,11 +18,13 @@ use super::super::clip;
 use super::super::file_name::{self, Label, Role};
 use super::super::style::Tokens;
 
+mod file;
 mod location;
 mod search;
 #[cfg(test)]
 mod tests;
 
+use file::{file_name_column, file_row};
 pub(in crate::render::picker) use search::file_count;
 use search::{file_header, search_rows};
 
@@ -93,7 +95,7 @@ pub(super) fn render_results(
         selected.saturating_sub(height.saturating_sub(1))
     };
     let name_column = if picker.kind == strop_picker::Kind::Files {
-        file_name_column(picker, start_row, height, area.width)
+        file_name_column(picker, area.width)
     } else {
         0
     };
@@ -348,79 +350,7 @@ fn symbol_fields(item: &strop_picker::Item) -> (String, String, String) {
     (name, container, location)
 }
 
-// ---- files ----------------------------------------------------------------
-
-/// The directory column: the widest visible basename plus a gap, capped
-/// at half the row so a long name cannot push every directory off.
-fn file_name_column(
-    picker: &strop_picker::Picker,
-    start: usize,
-    height: usize,
-    width: u16,
-) -> usize {
-    let widest = picker
-        .rows
-        .iter()
-        .skip(start)
-        .take(height)
-        .filter_map(|row| picker.items.get(row.item))
-        .map(|item| {
-            let name = item.text.rsplit('/').next().unwrap_or(&item.text);
-            clip::width(name)
-        })
-        .max()
-        .unwrap_or(0);
-    (widest + 2).min(usize::from(width) / 2)
-}
-
-/// ` STATUS.md      plans/` — basename bright (query matches on it
-/// emphasized), the directory in `fg.secondary` after it at one shared
-/// column, elided from the left so the parent nearest the file survives.
-fn file_row(
-    t: &Tokens,
-    value: &str,
-    match_cols: &[u32],
-    name_column: usize,
-    width: u16,
-    active: bool,
-) -> Line<'static> {
-    let (dir, name) = match value.rfind('/') {
-        Some(i) => (&value[..i], &value[i + 1..]),
-        None => ("", value),
-    };
-    let name_off = dir.chars().count() + usize::from(!dir.is_empty());
-    let (dir_cols, name_cols) = split_match_cols(match_cols, dir.chars().count(), name_off);
-    let budget = (width as usize).saturating_sub(2);
-    let mut spans = vec![row_marker(active, t), plain(" ", Style::default())];
-    let name_w = clip::width(name);
-    let column = name_column.max(name_w + 2).min(budget);
-    let shown_name = clip::clip_end(name, column.saturating_sub(2).max(1));
-    spans.extend(emphasis(
-        t,
-        &shown_name,
-        &name_cols,
-        file_name::name_style(Role::Row, t),
-    ));
-    let room = budget.saturating_sub(column);
-    if !dir.is_empty() && room >= 4 {
-        let pad = column.saturating_sub(clip::width(&shown_name));
-        spans.push(plain(" ".repeat(pad), Style::default()));
-        let shown_dir = format!("{dir}/");
-        let shown_dir = if clip::width(&shown_dir) > room {
-            clip::clip_start(&shown_dir, room).into_owned()
-        } else {
-            shown_dir
-        };
-        // columns only survive while the directory is whole
-        let cols: &[u32] = if shown_dir.starts_with('…') {
-            &[]
-        } else {
-            &dir_cols
-        };
-        spans.extend(emphasis(t, &shown_dir, cols, file_name::dir_style(t)));
-    }
-    finish(t, spans, width, active)
-}
+// ---- paths ----------------------------------------------------------------
 
 /// Query matches fall on the directory or on the name: matches inside
 /// the basename shift into the name's own coordinates, matches in the

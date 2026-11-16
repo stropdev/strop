@@ -456,33 +456,3 @@ fn source_rows_are_total_and_cell_bounded_at_degenerate_widths() {
         assert!(header.width() <= width as usize);
     }
 }
-
-/// Files rows: basename first, directory after it at one shared column.
-#[test]
-fn file_rows_put_the_directory_after_the_name_at_a_shared_column() {
-    let t = t();
-    let a = file_row(&t, "plans/STATUS.md", &[0, 1], 14, 44, true);
-    let b = file_row(
-        &t,
-        "crates/strop-engine/src/editor/lsp/status.rs",
-        &[],
-        14,
-        44,
-        false,
-    );
-    let a_text = line_text(&a);
-    let b_text = line_text(&b);
-    let column =
-        |text: &str, needle: &str| text.find(needle).map(|byte| text[..byte].chars().count());
-    assert!(a_text.starts_with("▌ STATUS.md"), "{a_text:?}");
-    assert_eq!(
-        column(&a_text, "plans/"),
-        column(&b_text, "…"),
-        "shared directory column: {b_text:?}"
-    );
-    assert!(b_text.contains("lsp/"), "elided from the left: {b_text:?}");
-    assert_eq!(a.width(), 44);
-    for width in 0..30 {
-        assert!(file_row(&t, "plans/STATUS.md", &[], 14, width, true).width() <= width as usize);
-    }
-}

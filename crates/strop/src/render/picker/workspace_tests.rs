@@ -609,3 +609,48 @@ fn the_workspace_card_margin_shows_no_backdrop() {
         "the statusline row stays"
     );
 }
+
+/// 0106 A2: the finder's folder column is measured once per list, so a
+/// long name scrolling into view or out of it moves no folder.
+#[test]
+fn file_finder_folder_column_does_not_move_while_scrolling() {
+    let root = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    editor.open_picker(strop_picker::Kind::Files);
+    editor.wait_picker();
+    editor.picker_reset_fixture();
+    let items = (0..60)
+        .map(|i| {
+            let name = if i == 40 {
+                "a-name-of-thirty-cells-long.rs".to_string()
+            } else {
+                format!("f{i:02}.rs")
+            };
+            let path = format!("src/{name}");
+            strop_picker::Item {
+                badge: None,
+                payload: strop_picker::Payload::File(path.clone().into()),
+                text: path,
+            }
+        })
+        .collect();
+    editor.picker_items_fixture(items);
+
+    let mut columns = std::collections::BTreeSet::new();
+    for step in 0..=45 {
+        if step > 0 {
+            editor.feed(Key::Down);
+        }
+        let grid = draw(&mut editor, 140, 30);
+        let list = editor.prepared_view().picker.unwrap().results.unwrap();
+        for y in list.y..list.y + list.height {
+            let row: Vec<&str> = (list.x..list.x + list.width - 1)
+                .map(|x| grid[(x, y)].symbol())
+                .collect();
+            if let Some(at) = row.windows(4).position(|w| w.concat() == "src/") {
+                columns.insert(at);
+            }
+        }
+    }
+    assert_eq!(columns.len(), 1, "folders started at cells {columns:?}");
+}

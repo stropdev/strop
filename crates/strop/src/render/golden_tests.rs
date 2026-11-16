@@ -291,6 +291,40 @@ fn files_picker() {
     });
 }
 
+/// 0106: one folder column per list; a name too wide for it stands alone.
+#[test]
+fn files_picker_columns() {
+    each("files-columns", |editor| {
+        editor.open_picker(strop_picker::Kind::Files);
+        editor.wait_picker();
+        editor.picker_reset_fixture();
+        let paths = [
+            "Makefile",
+            "src/main.rs",
+            "src/render/mod.rs",
+            "src/render/statusline.rs",
+            "crates/strop-engine/src/editor/changes/review/render.rs",
+            "docs/remote.md",
+            "plans/0081-product-coherence-and-workspace-experience-handoff.md",
+            "crates/strop/src/render/golden/collection-blocks-vellum-200x50.golden",
+            "notes/a-file-name-that-is-longer-than-the-whole-row-of-the-list-and-is-cut.md",
+        ];
+        editor.picker_items_fixture(
+            paths
+                .iter()
+                .map(|path| strop_picker::Item {
+                    badge: None,
+                    text: (*path).into(),
+                    payload: strop_picker::Payload::File((*path).into()),
+                })
+                .collect(),
+        );
+        editor.feed(strop_core::frontend_input::Key::Down);
+        editor.feed(strop_core::frontend_input::Key::Down);
+        settle_picker()
+    });
+}
+
 #[test]
 fn grep_picker() {
     each("grep", |editor| {

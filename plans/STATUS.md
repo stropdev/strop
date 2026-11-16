@@ -34,6 +34,7 @@ inside a plan that disagrees with this ledger is stale, and this ledger wins.
 | [0103](0103-seams-and-splits.md) | in force (0.66): a collection's file heading is a heavy `━` seam in `fg.muted`; pane titles are rules with no corners; side-by-side panes share one full-height `│` divider meeting the titles in `┬`; stacked panes lose the closing row (the lower title is the boundary). Amends 0088 rule 4, 0100 §3.2 |
 | [0104](0104-window-tree.md) | in force (0.67): panes are vim's window tree — `:sp`/`:vs` divide the current pane and nest; close gives the cells and focus to the previous neighbour and collapses single children; numbers follow reading order; `ctrl-w h/j/k/l` go to the pane on that side and stop at the edge; one split's cells divided by `strop_kernel::layout::tile` (proved in `proofs/Kernel/Layout.lean`); junctions `┬ ├ ┤ ┼ ┴`; the differential harness compares the window tree with Neovim. Amends 0103 §4.1 |
 | [0105](0105-the-number-gap.md) | in force (0.69): two blank cells between a line number and its text (`NUMBER_GAP`), in file buffers, collections and diffs; the picker preview drops its `│` and takes the buffer's gutter; sign column, alignment and inks unchanged. Amends 0100 §3.5 |
+| [0106](0106-find-alignment.md) | in force (0.70): the file finder's folders stand at one column per list, `clamp(widest name + 2, W/3, W/2)` over the first 256 ranked rows, never per window, so nothing moves while scrolling; a name too wide for the column is shown alone and whole. Renderer only. Amends 0088 File names |
 
 ## Retired or superseded
 
