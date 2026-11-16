@@ -63,6 +63,7 @@ fn list(document: DocumentId, revision: u64, producer: Producer) -> Vec<ProtoSym
                 column: ServerColumn::new(0),
             },
         },
+        span: strop_lsp::LineSpan::line(LineIndex::new(0)),
     }]
 }
 

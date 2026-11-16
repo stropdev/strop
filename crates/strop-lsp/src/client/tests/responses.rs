@@ -191,11 +191,11 @@ fn document_symbols_flatten_both_reply_shapes() {
             &request,
             serde_json::json!([{
                 "name": "Foo", "kind": 23,
-                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 30}},
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 3, "character": 0}},
                 "selectionRange": {"start": {"line": 0, "character": 7}, "end": {"line": 0, "character": 10}},
                 "children": [{
                     "name": "bar", "kind": 6,
-                    "range": {"start": {"line": 0, "character": 12}, "end": {"line": 0, "character": 29}},
+                    "range": {"start": {"line": 1, "character": 4}, "end": {"line": 2, "character": 5}},
                     "selectionRange": {"start": {"line": 0, "character": 25}, "end": {"line": 0, "character": 28}}
                 }]
             }]),
@@ -212,6 +212,16 @@ fn document_symbols_flatten_both_reply_shapes() {
         assert_eq!(symbols[1].name, "bar");
         assert_eq!(symbols[1].container, "Foo");
         assert_eq!(symbols[1].kind, "Method");
+        // The span is the whole range's lines, not the name's; an end
+        // at column 0 does not cover its line.
+        assert_eq!(
+            (symbols[0].span.first.get(), symbols[0].span.last.get()),
+            (0, 2)
+        );
+        assert_eq!(
+            (symbols[1].span.first.get(), symbols[1].span.last.get()),
+            (1, 2)
+        );
         // Legacy flat reply: containerName carries, location decodes
         // through the workspace like any other location.
         let _flat_stamp = ask(RequestKind::DocumentSymbols);
@@ -235,6 +245,11 @@ fn document_symbols_flatten_both_reply_shapes() {
         assert_eq!(symbols[0].kind, "Function");
         assert_eq!(symbols[0].container, "crate");
         assert_eq!(symbols[0].location.position.line.get(), 3);
+        assert_eq!(
+            (symbols[0].span.first.get(), symbols[0].span.last.get()),
+            (3, 3),
+            "a flat row spans its location's range"
+        );
         assert_eq!(
             symbols[0].location.doc.path,
             PathBuf::from("/workspace/a.rs")

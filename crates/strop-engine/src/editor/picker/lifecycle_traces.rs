@@ -202,6 +202,7 @@ mod tests {
                     column: ServerColumn::new(3),
                 },
             },
+            span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(0)),
         };
         // ProviderPartial(g): the live generation merges.
         e.handle_lsp_event(LspEvent::WorkspaceSymbols {

@@ -156,6 +156,7 @@ fn doc_symbol(
                 column: ServerColumn::new(3),
             },
         },
+        span: strop_lsp::LineSpan::line(LineIndex::new(line)),
     }
 }
 
@@ -273,6 +274,7 @@ fn document_symbols_flat_qualifiers_narrow_like_file_find() {
                 column: ServerColumn::new(0),
             },
         },
+        span: strop_lsp::LineSpan::line(LineIndex::new(line)),
     };
     symbols_picker(
         &mut e,

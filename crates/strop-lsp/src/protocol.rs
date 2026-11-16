@@ -280,6 +280,27 @@ pub struct ProtoSymbol {
     /// SymbolKind's LSP name (`Function`, `Struct`, …).
     pub kind: String,
     pub location: ServerLocation,
+    /// The lines the whole declaration covers (0107 §6.1).
+    pub span: LineSpan,
+}
+
+/// The first and last line (0-based, inclusive) of a declaration, from
+/// its first attribute or doc comment (when the source includes them) to
+/// the line of its closing token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LineSpan {
+    pub first: LineIndex,
+    pub last: LineIndex,
+}
+
+impl LineSpan {
+    /// One line: a symbol whose extent is only its name.
+    pub const fn line(line: LineIndex) -> Self {
+        Self {
+            first: line,
+            last: line,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
