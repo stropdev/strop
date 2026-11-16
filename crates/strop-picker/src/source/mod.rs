@@ -247,6 +247,12 @@ fn run_workspace_symbols(
             if cancelled() {
                 return Outcome::Cancelled(CancelReason::OwnerClosed);
             }
+            // An impl block declares nothing new: like rust-analyzer's
+            // workspace/symbol, the list is what it declares. It still
+            // answers `kind:impl` for a line inside it (0107).
+            if declaration.kind == strop_syntax::symbols::SymbolKind::Impl {
+                continue;
+            }
             if let Some(plan) = &admission {
                 // The candidate IS the declaration: `kind:` decides
                 // from its own classification, content atoms from its

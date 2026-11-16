@@ -113,6 +113,7 @@ fn value_suggestions(key: &str, prefix: &str, range: std::ops::Range<usize>) -> 
                 "interface",
                 "module",
                 "constant",
+                "impl",
             ] {
                 push(value.to_string(), "symbol kind");
             }
@@ -194,6 +195,7 @@ mod tests {
             "interface",
             "module",
             "constant",
+            "impl",
         ]));
     }
 }

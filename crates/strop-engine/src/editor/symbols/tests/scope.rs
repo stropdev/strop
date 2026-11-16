@@ -160,21 +160,22 @@ fn the_servers_list_replaces_the_outlines_when_it_is_ready() {
     turn(&mut e, Key::Esc);
     settle(&mut e);
     at_line(&mut e, 2);
-    let outline = path(&e).expect("the outline's path");
-    assert_eq!(outline.last().map(String::as_str), Some("f"));
+    assert_eq!(path(&e), names(&["impl A", "f"]));
     assert_eq!(
         e.analysis.symbols.scope.as_ref().unwrap().producer,
         Producer::Outline
     );
     serve(&mut e);
     let context = request(&mut e, 0, false);
-    reply(&mut e, context, server_list());
+    let mut list = server_list();
+    list[1].name = "f()".into();
+    reply(&mut e, context, list);
     turn(&mut e, Key::Esc);
     assert_eq!(
         e.analysis.symbols.scope.as_ref().unwrap().producer,
         Producer::Server(SERVER)
     );
-    assert_eq!(path(&e), names(&["impl A", "f"]), "the server's names");
+    assert_eq!(path(&e), names(&["impl A", "f()"]), "the server's names");
 }
 
 #[test]
@@ -297,4 +298,43 @@ fn a_commits_diff_has_no_path() {
     settle(&mut e);
     assert!(e.buf().text().to_string().contains("fn b() {}"));
     assert_eq!(path(&e), None, "a diff of a Rust file");
+}
+
+#[test]
+fn without_a_server_the_outline_names_the_impl_and_its_method() {
+    let mut e = editor("lib.rs", NESTED);
+    turn(&mut e, Key::Esc);
+    settle(&mut e);
+    for (line, expected) in [
+        (2, names(&["impl A", "f"])),
+        (0, names(&["impl A"])),
+        (6, names(&["g"])),
+        (5, names(&[])),
+    ] {
+        at_line(&mut e, line);
+        assert_eq!(path(&e), expected, "line {line}");
+    }
+}
+
+#[test]
+fn a_new_function_is_named_when_insert_ends() {
+    let mut e = editor("lib.rs", NESTED);
+    turn(&mut e, Key::Esc);
+    settle(&mut e);
+    at_line(&mut e, 2);
+    type_keys(&mut e, "olet y = 2;");
+    assert_eq!(path(&e), names(&["impl A", "f"]), "typing inside f");
+    assert!(!e.analysis.symbols.pending(), "Insert mode starts no build");
+    turn(&mut e, Key::Esc);
+    at_line(&mut e, 4);
+    type_keys(&mut e, "ofn h() {}");
+    assert_eq!(path(&e), names(&["impl A"]), "after f's closing brace");
+    turn(&mut e, Key::Esc);
+    settle(&mut e);
+    assert_eq!(
+        path(&e),
+        names(&["impl A", "h"]),
+        "named once the build lands"
+    );
+    assert!(e.analysis.symbols.scope.as_ref().unwrap().exact);
 }

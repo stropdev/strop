@@ -10,3 +10,7 @@
 (mod_item name: (identifier) @name) @module.decl
 (const_item name: (identifier) @name) @constant.decl
 (static_item name: (identifier) @name) @constant.decl
+; 0107: an impl block is a row named as rust-analyzer names it —
+; `impl Type`, `impl Trait for Type` — so its methods have a parent.
+(impl_item !trait type: (_) @name) @impl.decl
+(impl_item trait: (_) @trait type: (_) @name) @impl.decl

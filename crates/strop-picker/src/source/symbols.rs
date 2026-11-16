@@ -254,6 +254,7 @@ impl SymbolIndex {
             "interface" => Some(&[Interface]),
             "module" => Some(&[Module]),
             "constant" => Some(&[Constant]),
+            "impl" => Some(&[Impl]),
             _ => None,
         }
     }
@@ -304,6 +305,24 @@ mod tests {
         assert_eq!(index.kind_decides("src/other.rs", Some(1), function), None);
         // No line number (line-less surface): Unknown.
         assert_eq!(index.kind_decides("src/lib.rs", None, function), None);
+    }
+
+    #[test]
+    fn kind_impl_decides_lines_inside_an_impl_block() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/lib.rs",
+            "struct St;\nimpl St {\n    fn f(&self) {}\n}\nfn g() {}\n",
+        );
+        let paths = vec![std::path::PathBuf::from("src/lib.rs")];
+        let index = SymbolIndex::build(dir.path(), &paths, &|| false);
+        let kinds = SymbolIndex::kinds_for_value("impl").unwrap();
+        assert_eq!(index.kind_decides("src/lib.rs", Some(3), kinds), Some(true));
+        assert_eq!(
+            index.kind_decides("src/lib.rs", Some(5), kinds),
+            Some(false)
+        );
     }
 
     #[test]

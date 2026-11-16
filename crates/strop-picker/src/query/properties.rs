@@ -164,6 +164,7 @@ const KIND_VALUES: &[&str] = &[
     "interface",
     "module",
     "constant",
+    "impl",
 ];
 
 /// An independent three-valued evaluator (`None` = Unknown), written
