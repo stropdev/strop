@@ -40,7 +40,7 @@ const STEPS: [Step; 8] = [
     Step::Supersede,
 ];
 
-fn document(generation: u32) -> DocumentId {
+pub(super) fn document(generation: u32) -> DocumentId {
     let fields = [("slot", 0u32), ("generation", generation)];
     serde::Deserialize::deserialize(serde::de::value::MapDeserializer::<
         _,

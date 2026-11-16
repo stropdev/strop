@@ -8,10 +8,15 @@
 //! shown or kept. Nothing waits for one (0099 §5): a press with no kept
 //! list starts (or adopts) a build and returns.
 //!
+//! The breadcrumb (0107) is the same list read at the cursor: a scope
+//! index derived from the kept list of the current document, carried
+//! through edits until the next exact list replaces it (`scope.rs`).
+//!
 //! Owner: `Editor::analysis.symbols`. The functions here take the editor;
 //! they are this component's whole surface.
 
 pub(crate) mod outline;
+pub(crate) mod scope;
 pub(crate) mod store;
 
 use std::collections::HashMap;
@@ -27,6 +32,7 @@ use strop_syntax::symbols::DeclExtractor;
 use super::analysis::AnalysisEvent;
 use super::{trace, Editor, Mode};
 use outline::{OutlineKey, Work};
+use scope::Scopes;
 use store::{Build, BuildId, Current, Delivery, Producer, SymbolStore};
 
 pub(crate) struct SymbolState {
@@ -39,6 +45,8 @@ pub(crate) struct SymbolState {
     settled: Option<(DocumentId, BufferRevision, Option<Producer>)>,
     /// How the outline thread extracts; taken when the thread starts.
     extract: Option<outline::Extract>,
+    /// The breadcrumb's index for the current document (0107 §6.2).
+    pub(crate) scope: Option<Scopes>,
 }
 
 impl Default for SymbolState {
@@ -58,6 +66,7 @@ impl SymbolState {
             cancel: None,
             settled: None,
             extract: Some(extract),
+            scope: None,
         }
     }
 
@@ -72,8 +81,16 @@ impl SymbolState {
     }
 
     /// The text changed: an outline being built for it is unwanted work.
-    /// Its (cancelled) result still arrives and is dropped as stale.
-    pub(crate) fn edited(&mut self, document: DocumentId) {
+    /// Its (cancelled) result still arrives and is dropped as stale. The
+    /// breadcrumb's index follows the edit, or is dropped when it cannot.
+    pub(crate) fn edited(&mut self, document: DocumentId, changes: &[strop_core::Change]) {
+        let follows = match self.scope.as_mut() {
+            Some(scope) if scope.document == document => scope.apply(changes),
+            _ => true,
+        };
+        if !follows {
+            self.scope = None;
+        }
         let outline = self
             .store
             .building()
@@ -84,7 +101,14 @@ impl SymbolState {
     }
 
     pub(crate) fn closed(&mut self, document: DocumentId) {
-        self.edited(document);
+        self.edited(document, &[]);
+        if self
+            .scope
+            .as_ref()
+            .is_some_and(|scope| scope.document == document)
+        {
+            self.scope = None;
+        }
         self.store.close(document);
         if self
             .settled
@@ -214,6 +238,50 @@ pub(crate) fn warm(editor: &mut Editor) {
     match producer {
         Producer::Outline => start_outline(editor, document, false),
         Producer::Server(_) => start_server(editor, false),
+    }
+}
+
+/// After every event, right after [`warm`] (0107 §6.2): keep the
+/// breadcrumb's index on the current document's kept list. O(1) when the
+/// document, revision and source are what the exact index was built for;
+/// otherwise drop an index for another document or source, and build one
+/// when the store holds the list for the text as it is. Starts no job.
+pub(crate) fn follow(editor: &mut Editor) {
+    if editor.docs.is_empty() {
+        editor.analysis.symbols.scope = None;
+        return;
+    }
+    let document = editor.current();
+    let revision = editor.buf().revision();
+    let Some(producer) = source(editor, document) else {
+        editor.analysis.symbols.scope = None;
+        return;
+    };
+    let symbols = &mut editor.analysis.symbols;
+    if let Some(scope) = &symbols.scope {
+        if (scope.document, scope.producer) != (document, producer) {
+            symbols.scope = None;
+        } else if scope.revision == revision && scope.exact {
+            return;
+        }
+    }
+    let list = symbols.store.lookup(document, producer, revision);
+    match (list, editor.docs.get(document)) {
+        (Some(list), Some(doc)) => {
+            let rope = doc.buf.text();
+            symbols.scope = Some(Scopes::build(document, producer, revision, list, rope));
+        }
+        // carried through every edit since its list: it still describes
+        // this text; anything else is a revision it never saw
+        _ => {
+            if symbols
+                .scope
+                .as_ref()
+                .is_some_and(|scope| scope.revision != revision)
+            {
+                symbols.scope = None;
+            }
+        }
     }
 }
 
@@ -461,5 +529,7 @@ fn show(editor: &mut Editor, producer: Producer, symbols: Arc<Vec<ProtoSymbol>>)
 
 #[cfg(test)]
 mod race_tests;
+#[cfg(test)]
+mod scope_tests;
 #[cfg(test)]
 mod tests;

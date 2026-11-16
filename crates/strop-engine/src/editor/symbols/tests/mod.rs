@@ -20,6 +20,8 @@ use strop_lsp::{
 };
 use strop_picker::Kind;
 
+mod scope;
+
 const SOURCE: &str = "fn alpha() {}\nfn beta() {}\n";
 
 fn editor(name: &str, text: &str) -> Editor {

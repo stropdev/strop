@@ -97,6 +97,7 @@ pub use picker::{
 };
 pub use registers::{ClipboardKey, ClipboardResult, Register, RegisterError};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
+pub use symbols::scope::{ScopePath, SCOPE_CAP, SEGMENT_CAP};
 
 pub use ex::{
     PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,

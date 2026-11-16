@@ -346,6 +346,21 @@ impl Editor {
     pub fn lsp_document_symbols_pub(&mut self) {
         self.lsp_document_symbols();
     }
+    /// The breadcrumb (0107): the names of the symbols containing the
+    /// cursor, outermost first, and the slot's cells. `None` where the
+    /// current buffer has no symbol list. A lookup in a kept index: no
+    /// request, no parse, no allocation.
+    pub fn scope_path(&self) -> Option<super::symbols::scope::ScopePath<'_>> {
+        let scope = self.analysis.symbols.scope.as_ref()?;
+        if self.docs.is_empty()
+            || scope.document != self.current()
+            || scope.revision != self.buf().revision()
+            || scope.slot() == 0
+        {
+            return None;
+        }
+        Some(scope.at(self.head()))
+    }
     pub fn lsp_locations_pub(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_locations(kind);
     }
