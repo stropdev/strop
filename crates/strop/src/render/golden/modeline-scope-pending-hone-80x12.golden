@@ -1,0 +1,25 @@
+   1  //! The modeline's width plan.                                           ▮
+   2  pub(super) struct Modeline {                                             ▮
+   3      chip: String,                                                        ▮
+   4  }                                                                        ▮
+   5                                                                            
+   6  impl Modeline {                                                           
+   7      pub(super) fn fit(&self, cells: usize) -> usize {                     
+●  8          let sizes = self.sizes();  ▍ unused variable                      
+●  9          cells.min(sizes)                                                  
+  10      }                                                                     
+  11                                                                            
+ PENDING    feature…  layout.rs  impl Modeline › fit   "a3d  ●1 ▲2   27%   8:1  
+
+  0: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 30:#e6e1d6/#15171c 43:reset/#15171c 1:#858c9a/#15171c
+  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 28:#e6e1d6/#15171c 45:reset/#15171c 1:#858c9a/#15171c
+  2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 17:#e6e1d6/#15171c 56:reset/#15171c 1:#858c9a/#15171c
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 1:#e6e1d6/#15171c 72:reset/#15171c 1:#858c9a/#15171c
+  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 73:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 15:#e6e1d6/#15171c 58:reset/#15171c 1:reset/reset
+  6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 53:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
+  7: 1:#e8707c/#1b1e24+b 5:#e8a848/#1b1e24 33:#e6e1d6/#1b1e24 19:#733e46/#15171c+i 21:#1b1e24/#1b1e24 1:reset/reset
+  8: 1:#d9a85a/#15171c+b 5:#858c9a/#15171c 24:#e6e1d6/#15171c 49:reset/#15171c 1:reset/reset
+  9: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 5:#e6e1d6/#15171c 68:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 73:reset/#15171c 1:reset/reset
+ 11: 10:#15171c/#e8a848+b 2:reset/#1c1f25 8:#858c9a/#1c1f25 2:reset/#1c1f25 9:#e6e1d6/#1c1f25 2:reset/#1c1f25 13:#858c9a/#1c1f25 3:#4a5160/#1c1f25 3:#a8adb8/#1c1f25 3:reset/#1c1f25 4:#e8a848/#1c1f25 2:reset/#1c1f25 2:#e8707c/#1c1f25 1:reset/#1c1f25 2:#d9a85a/#1c1f25 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

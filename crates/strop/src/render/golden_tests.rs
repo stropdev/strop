@@ -264,6 +264,21 @@ fn split_offset() {
     });
 }
 
+/// 0107 §5.5: two files side by side, the second focused — the titles
+/// are as ever, and the one modeline's breadcrumb is the focused file's.
+#[test]
+fn split_scope() {
+    each("split-scope", |editor| {
+        editor.feed_text("16G");
+        editor.split(true, None);
+        editor.focus_pane(1);
+        editor.feed_text(":e src/render/mod.rs\r");
+        editor.wait_io().unwrap();
+        editor.feed_text("5G");
+        Box::new(|editor| editor.wait_symbols())
+    });
+}
+
 /// 0103 §5.5: a file beside a collection, the collection active — the
 /// light frame, the heavy seams and the bands at once.
 #[test]

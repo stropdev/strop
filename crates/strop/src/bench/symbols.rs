@@ -1,5 +1,6 @@
-//! The symbols budgets (0099 §7). Like the find scenarios, this one
-//! fails: an operation past its budget is an error.
+//! The symbols budgets (0099 §7) and the breadcrumb's (0107 §10.5).
+//! Like the find scenarios, this one fails: an operation past its budget
+//! is an error.
 //!
 //! A generated Rust file of 15,400 lines and 2,800 declarations, with no
 //! language server — the syntax outline, so the scenario is hermetic. It
@@ -22,6 +23,10 @@ use crate::editor::Editor;
 
 const OPEN_KEPT: Duration = Duration::from_millis(10);
 const KEY_DURING_BUILD: Duration = Duration::from_millis(5);
+/// What the breadcrumb adds to a motion's frame: the lookup at the cursor.
+const SCOPE_LOOKUP: Duration = Duration::from_micros(200);
+/// A typed character while the index is carried through the edit.
+const KEY_WHILE_CARRIED: Duration = Duration::from_millis(5);
 
 /// 700 × (a struct, an impl with two methods, a free function).
 fn source() -> String {
@@ -154,10 +159,56 @@ pub(super) fn run() -> io::Result<()> {
         turn(&mut drive, Key::Esc)?;
     }
 
+    // 0107: the breadcrumb on the row while the cursor moves, and the
+    // index carried through typing
+    let mut motion = Op::new("scope_motion");
+    let mut lookup = Op::new("scope_lookup");
+    let mut carried = Op::new("key_carried");
+    let mut switch = Op::new("scope_switch");
+    pump(&mut drive, settled)?;
+    for _ in 0..300 {
+        motion.try_time(|| turn(&mut drive, Key::Char('j')))?;
+        let started = Instant::now();
+        let shown = drive.editor.scope_path().map(|path| path.names().count());
+        lookup.samples.push(started.elapsed());
+        if shown.is_none() {
+            return Err(io::Error::other("no breadcrumb for the outlined file"));
+        }
+    }
+    turn(&mut drive, Key::Char('o'))?;
+    pump(&mut drive, |editor| {
+        editor.mode() == crate::editor::Mode::Insert
+    })?;
+    for _ in 0..100 {
+        carried.try_time(|| turn(&mut drive, Key::Char('y')))?;
+    }
+    turn(&mut drive, Key::Esc)?;
+    pump(&mut drive, settled)?;
+    // a buffer switch away and back: one index build on the way back
+    for _ in 0..10 {
+        turn(&mut drive, Key::CtrlCaret)?;
+        pump(&mut drive, settled)?;
+        switch.try_time(|| {
+            turn(&mut drive, Key::CtrlCaret)?;
+            pump(&mut drive, settled)
+        })?;
+    }
+
     println!("symbols (15,400 lines, 2,800 declarations, syntax outline)");
-    for op in [&build, &open_kept, &key_during, &open_after_edit] {
+    for op in [
+        &build,
+        &open_kept,
+        &key_during,
+        &open_after_edit,
+        &motion,
+        &lookup,
+        &carried,
+        &switch,
+    ] {
         op.report();
     }
     super::find::within(&open_kept, OPEN_KEPT)?;
-    super::find::within(&key_during, KEY_DURING_BUILD)
+    super::find::within(&key_during, KEY_DURING_BUILD)?;
+    super::find::within(&lookup, SCOPE_LOOKUP)?;
+    super::find::within(&carried, KEY_WHILE_CARRIED)
 }

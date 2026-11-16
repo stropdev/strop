@@ -33,7 +33,7 @@ pub(super) fn within(op: &Op, budget: Duration) -> io::Result<()> {
     let limit = budget.as_secs_f64() * 1000.0;
     if p95 > limit {
         return Err(io::Error::other(format!(
-            "{} p95 {p95:.1} ms is over its {limit:.0} ms budget",
+            "{} p95 {p95:.2} ms is over its {limit:.2} ms budget",
             op.name
         )));
     }
