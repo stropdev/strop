@@ -27,10 +27,10 @@ fn each_x_is_its_own_undo_step_and_feeds_the_undo_tree() {
 
 #[test]
 fn symbols_and_hover_without_a_language_server_name_the_verb_and_the_cause() {
-    // Go has no symbols query in this build: with no server either,
+    // Bash has no symbols query in this build: with no server either,
     // `Space s` has nothing to list (0099 §4.1).
     for (keys, verb, file) in [
-        (" s", "document symbols", "/proj/lonely.go"),
+        (" s", "document symbols", "/proj/lonely.sh"),
         (" k", "hover", "/proj/lonely.cpp"),
     ] {
         let mut e = Editor::new_in(Buffer::from_text("int main() {}\n"), PathBuf::from("/proj"));
