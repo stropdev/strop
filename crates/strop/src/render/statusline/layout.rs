@@ -24,6 +24,8 @@ const MIN_SPEC: usize = 3;
 const MIN_BRANCH: usize = 8;
 /// `100%`.
 const PERCENT: usize = 4;
+/// The breadcrumb's floor (`… › fit`), or its slot if smaller.
+const MIN_SCOPE: usize = 8;
 
 /// One thing the row can show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +36,7 @@ pub(super) enum Part {
     Namespace,
     Dir,
     Name,
+    Scope,
     Spec,
     SlotPad,
     Attention,
@@ -46,13 +49,16 @@ pub(super) enum Part {
     Position,
 }
 
-const PARTS: usize = 16;
+const PARTS: usize = 17;
 
 /// Who is served first, with the share of the free cells a part may
 /// take on its turn. The first is the last to leave; the last shrinks
 /// first. The filename stops at two thirds on its first turn, so a huge
 /// name cannot starve the grammar footer, and takes the rest after it.
-const ORDER: [(Part, usize, usize); PARTS + 1] = [
+/// The breadcrumb and the branch take turns the same way (0107 §4.3):
+/// half of what is free each, then the rest — where you are in the code
+/// outranks the branch name, and the directory leaves before either.
+const ORDER: [(Part, usize, usize); PARTS + 3] = [
     (Part::Chip, 1, 1),
     (Part::Position, 1, 1),
     (Part::Services, 1, 1),
@@ -67,6 +73,9 @@ const ORDER: [(Part, usize, usize); PARTS + 1] = [
     (Part::Search, 1, 1),
     (Part::Indent, 1, 1),
     (Part::Percent, 1, 1),
+    (Part::Scope, 1, 2),
+    (Part::Git, 1, 2),
+    (Part::Scope, 1, 1),
     (Part::Git, 1, 1),
     (Part::Dir, 1, 1),
     (Part::SlotPad, 1, 1),
@@ -138,10 +147,15 @@ impl Grants {
 /// Share `cells` among the parts. `None` when even the essential parts
 /// do not fit.
 pub(super) fn allot(sizes: &Sizes, cells: usize) -> Option<Grants> {
+    allot_in(&ORDER, sizes, cells)
+}
+
+/// [`allot`] over a given table.
+fn allot_in(order: &[(Part, usize, usize)], sizes: &Sizes, cells: usize) -> Option<Grants> {
     let mut granted: [Option<usize>; PARTS] = [None; PARTS];
     let mut served = [false; PARTS];
     let mut spare = cells;
-    for (part, share, of) in ORDER {
+    for &(part, share, of) in order {
         let size = sizes[part as usize];
         if std::mem::replace(&mut served[part as usize], true) {
             // a second turn: top up what the first one left short
@@ -248,6 +262,9 @@ impl Modeline {
                 );
             }
             set(Part::Dir, Size::elastic(0, MIN_GROUP, width(&self.dir)));
+        }
+        if let Some((_, slot)) = &self.scope {
+            set(Part::Scope, Size::elastic(SEP, MIN_SCOPE.min(*slot), *slot));
         }
         let spec = width(&self.spec);
         set(Part::Spec, Size::elastic(SEP, MIN_SPEC, spec));
@@ -511,6 +528,110 @@ mod tests {
         let name = grants.get(Part::Name).unwrap();
         assert!(spec >= 18, "the footer keeps a third: {spec}");
         assert!(name > spec, "the name still gets the larger share: {name}");
+    }
+
+    /// The table before the breadcrumb (0098 §3.3): the branch in one
+    /// turn.
+    const ONE_TURN: [(Part, usize, usize); 17] = [
+        (Part::Chip, 1, 1),
+        (Part::Position, 1, 1),
+        (Part::Services, 1, 1),
+        (Part::Name, 2, 3),
+        (Part::Spec, 1, 1),
+        (Part::Name, 1, 1),
+        (Part::Namespace, 1, 1),
+        (Part::Rec, 1, 1),
+        (Part::Attention, 1, 1),
+        (Part::Hints, 1, 1),
+        (Part::Diag, 1, 1),
+        (Part::Search, 1, 1),
+        (Part::Indent, 1, 1),
+        (Part::Percent, 1, 1),
+        (Part::Git, 1, 1),
+        (Part::Dir, 1, 1),
+        (Part::SlotPad, 1, 1),
+    ];
+
+    /// With no breadcrumb on the row, the branch's two turns add up to
+    /// exactly its one turn of before: every part gets what it got.
+    #[test]
+    fn without_a_breadcrumb_every_part_gets_what_the_one_turn_table_gave() {
+        for branch in [(9, 25), (4, 4), (8, 60)] {
+            let mut sizes = full();
+            sizes[Part::Git as usize] = Size::elastic(SEP, branch.0, branch.1);
+            for cells in 1..=200 {
+                assert_eq!(
+                    allot(&sizes, cells),
+                    allot_in(&ONE_TURN, &sizes, cells),
+                    "{branch:?} at {cells}"
+                );
+            }
+        }
+    }
+
+    /// A full row with a breadcrumb: its slot outranks the branch and
+    /// the directory, and nothing else (0107 §4.3).
+    fn with_scope(slot: usize) -> Sizes {
+        let mut sizes = full();
+        sizes[Part::Scope as usize] = Size::elastic(SEP, MIN_SCOPE.min(slot), slot);
+        sizes
+    }
+
+    #[test]
+    fn with_a_breadcrumb_every_cell_is_accounted_for() {
+        for slot in [3, 8, 27, 40] {
+            let sizes = with_scope(slot);
+            for cells in 0..400 {
+                let Some(grants) = allot(&sizes, cells) else {
+                    continue;
+                };
+                let mut used = grants.spare();
+                for part in parts() {
+                    let size = sizes[part as usize];
+                    if let Some(given) = grants.get(part) {
+                        assert!(given >= size.floor, "{part:?} under its floor at {cells}");
+                        assert!(given <= size.natural, "{part:?} over natural at {cells}");
+                        used += size.lead + given;
+                    }
+                }
+                assert_eq!(used, cells, "slot {slot}: every cell at {cells}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_breadcrumb_leaves_after_the_branch_and_the_directory() {
+        let sizes = with_scope(27);
+        let first_absent = |part: Part| {
+            (0..400)
+                .rev()
+                .find(|&cells| allot(&sizes, cells).is_none_or(|grants| grants.get(part).is_none()))
+                .unwrap()
+        };
+        let order = [Part::Dir, Part::Git, Part::Scope, Part::Percent];
+        for pair in order.windows(2) {
+            assert!(
+                first_absent(pair[0]) > first_absent(pair[1]),
+                "{:?} leaves before {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+        // the branch is at its floor before the breadcrumb loses a cell
+        let mut cut = false;
+        for cells in 0..400 {
+            let Some(grants) = allot(&sizes, cells) else {
+                continue;
+            };
+            if grants.get(Part::Scope).is_some_and(|slot| slot < 27) {
+                cut = true;
+                assert!(
+                    grants.get(Part::Git).is_none_or(|branch| branch == 9),
+                    "the branch is shortened while the slot is cut at {cells}"
+                );
+            }
+        }
+        assert!(cut, "some width cuts the slot");
     }
 
     #[test]

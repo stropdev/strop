@@ -15,22 +15,6 @@ fn names(names: &[&str]) -> Option<Vec<String>> {
     Some(names.iter().map(|name| (*name).to_owned()).collect())
 }
 
-/// Run every analysis event through the loop as the terminal does: the
-/// event, then the after-event work (`warm`, `follow`).
-fn settle(e: &mut Editor) {
-    while e.analysis.pending() {
-        let event = e
-            .analysis
-            .rx
-            .as_ref()
-            .expect("local analysis channel")
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .expect("analysis settles");
-        e.apply_recorded(Action::Event(AppEvent::Analysis(event)))
-            .unwrap();
-    }
-}
-
 fn at_line(e: &mut Editor, line: usize) {
     type_keys(e, &format!("{}G", line + 1));
 }
@@ -97,7 +81,7 @@ fn the_path_is_the_server_list_read_at_the_cursor() {
 fn a_motion_starts_no_build_and_asks_nobody() {
     let mut e = editor("lib.rs", "fn alpha() {\n}\n\nfn beta() {\n}\n");
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert_eq!(path(&e), names(&["alpha"]));
     let decided = e.analysis.symbols.settled;
     at_line(&mut e, 3);
@@ -134,12 +118,12 @@ fn switching_panes_reads_the_other_files_kept_list() {
     buffer.path = Some(directory.path().join("a.rs"));
     let mut e = Editor::new_in(buffer, directory.path().to_path_buf());
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert_eq!(path(&e), names(&["alpha"]));
     e.feed_text(":vsplit b.rs\r");
     e.wait_io().unwrap();
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert_eq!(path(&e), names(&["beta"]));
     turn(&mut e, Key::CtrlW);
     turn(&mut e, Key::Char('w'));
@@ -158,7 +142,7 @@ fn switching_panes_reads_the_other_files_kept_list() {
 fn the_servers_list_replaces_the_outlines_when_it_is_ready() {
     let mut e = editor("lib.rs", NESTED);
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     at_line(&mut e, 2);
     assert_eq!(path(&e), names(&["impl A", "f"]));
     assert_eq!(
@@ -187,7 +171,7 @@ fn buffers_with_no_symbol_list_have_no_path() {
     buffer.path = Some(directory.path().join("a.rs"));
     let mut e = Editor::new_in(buffer, directory.path().to_path_buf());
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert_eq!(path(&e), names(&["alpha"]));
 
     // a folder
@@ -195,7 +179,7 @@ fn buffers_with_no_symbol_list_have_no_path() {
         .unwrap();
     e.wait_io().unwrap();
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert!(e.directory().is_some());
     assert_eq!(path(&e), None, "a folder");
 
@@ -203,7 +187,7 @@ fn buffers_with_no_symbol_list_have_no_path() {
     e.feed_text(":e notes.md\r");
     e.wait_io().unwrap();
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert_eq!(path(&e), None, "markdown");
 
     // a collection of excerpts from a.rs
@@ -222,7 +206,7 @@ fn buffers_with_no_symbol_list_have_no_path() {
         },
     }]);
     turn(&mut e, Key::CtrlO);
-    settle(&mut e);
+    e.wait_symbols();
     assert!(
         e.collection_title(e.current()).is_some(),
         "a collection opened"
@@ -250,7 +234,7 @@ fn a_stuck_build_holds_nothing_up_and_the_path_is_carried() {
         super::super::outline::extract(&mut extractors, work)
     }));
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     at_line(&mut e, 2);
     let before = path(&e);
     assert_eq!(
@@ -273,7 +257,7 @@ fn a_stuck_build_holds_nothing_up_and_the_path_is_carried() {
 
     release.send(()).unwrap();
     drop(release);
-    settle(&mut e);
+    e.wait_symbols();
     at_line(&mut e, 3);
     assert_eq!(path(&e), before, "the exact list says the same");
     assert!(e.analysis.symbols.scope.as_ref().unwrap().exact);
@@ -281,21 +265,21 @@ fn a_stuck_build_holds_nothing_up_and_the_path_is_carried() {
 
 #[test]
 fn a_commits_diff_has_no_path() {
-    use crate::editor::test_support::git::{fixture, pump, settle as settle_git};
+    use crate::editor::test_support::git::{fixture, pump, settle};
     use crate::editor::Surface;
     let (_directory, mut e) = fixture();
     e.open_log(false);
     pump(&mut e);
     e.feed(Key::Enter);
-    settle_git(&mut e, |e| {
+    settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::ChangedFiles { .. }))
     });
     e.feed(Key::Enter);
-    settle_git(&mut e, |e| {
+    settle(&mut e, |e| {
         matches!(e.surface(), Some(Surface::Diff { .. }))
     });
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert!(e.buf().text().to_string().contains("fn b() {}"));
     assert_eq!(path(&e), None, "a diff of a Rust file");
 }
@@ -304,7 +288,7 @@ fn a_commits_diff_has_no_path() {
 fn without_a_server_the_outline_names_the_impl_and_its_method() {
     let mut e = editor("lib.rs", NESTED);
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     for (line, expected) in [
         (2, names(&["impl A", "f"])),
         (0, names(&["impl A"])),
@@ -320,7 +304,7 @@ fn without_a_server_the_outline_names_the_impl_and_its_method() {
 fn a_new_function_is_named_when_insert_ends() {
     let mut e = editor("lib.rs", NESTED);
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     at_line(&mut e, 2);
     type_keys(&mut e, "olet y = 2;");
     assert_eq!(path(&e), names(&["impl A", "f"]), "typing inside f");
@@ -330,7 +314,7 @@ fn a_new_function_is_named_when_insert_ends() {
     type_keys(&mut e, "ofn h() {}");
     assert_eq!(path(&e), names(&["impl A"]), "after f's closing brace");
     turn(&mut e, Key::Esc);
-    settle(&mut e);
+    e.wait_symbols();
     assert_eq!(
         path(&e),
         names(&["impl A", "h"]),

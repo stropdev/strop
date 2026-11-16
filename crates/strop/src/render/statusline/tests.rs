@@ -15,6 +15,7 @@ use super::render;
 use crate::render::clip::width;
 use crate::render::tokens;
 
+mod scope;
 mod stability;
 
 /// The modeline cells, including severity styling as well as symbols.
