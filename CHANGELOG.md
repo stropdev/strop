@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The modeline shows the class and method the cursor is in** (plans/0107): `impl Modeline › fit`, after the file name, read from the same list as `Space s`. It keeps its place while you move and follows your typing until the list is rebuilt; nothing is shown in a file with no symbols.
+- **`Space s` works without a language server in Go, Java, JavaScript, TypeScript, C#, PHP and Ruby files**, from the syntax tree; Rust's list now includes `impl` blocks, so a method has its type above it, and `kind:impl` finds lines inside one.
+
 ## 0.69.0 — 2026-11-15
 
 ### Changed

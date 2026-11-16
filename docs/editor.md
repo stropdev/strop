@@ -85,8 +85,10 @@ Messages appear on a row above the status line, and only while there is
 one to show: first the answer to your last key, then any message still
 waiting for you (`✗` failure, `▲` warning, `●` info) with the key that
 deals with it, `Space a` or `:explain`. The status line itself shows the
-mode, the branch, the path, then, only when not zero, the diagnostics count
-(`●1 ▲2`), the language-server badge, the indent and the position.
+mode, the branch, the path, the class and method the cursor is in
+(`impl Modeline › fit`, from the same list as `Space s`), then, only when
+not zero, the diagnostics count (`●1 ▲2`), the language-server badge, the
+indent and the position.
 
 A failed save, a failed connection or a terminal that needs a decision
 leaves a message that stays until you deal with it. Moving, searching or a
@@ -173,9 +175,10 @@ goes away. Messages about other projects or other problems stay.
 `Space s` lists the current file's symbols. The list is fetched when the
 file is opened and after each edit, so it opens with the key and without
 asking the server again; it is never a list from before an edit. In Rust,
-Python, C, C++ and Lua files that no server serves, the list comes from
-the syntax tree (functions, methods, types, modules, constants) and the
-message line says so.
+Python, C, C++, Lua, Go, Java, JavaScript, TypeScript, C#, PHP and Ruby
+files that no server serves, the list comes from the syntax tree
+(functions, methods, types, modules, constants, Rust `impl` blocks) and
+the message line says so.
 
 A server that crashes after it was ready restarts by itself, up to three
 times per project: a message says `restarting (1/3)`, the `LSP!` badge
