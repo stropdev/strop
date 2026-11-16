@@ -126,7 +126,11 @@ impl Workset {
                 decision.seen |= same;
                 same
             });
-        let counts = self.counts.entry(hit.path.clone()).or_default();
+        // one row per hit: the path is cloned only for its first row
+        let counts = match self.counts.get_mut(hit.path) {
+            Some(counts) => counts,
+            None => self.counts.entry(hit.path.clone()).or_default(),
+        };
         counts.items += 1;
         counts.excluded_rows += usize::from(excluded_row);
         self.excluded += usize::from(excluded_row || self.files.contains(hit.path));

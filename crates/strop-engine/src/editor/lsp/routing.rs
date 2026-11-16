@@ -512,6 +512,8 @@ pub(crate) fn document_symbol_items(
     root: &std::path::Path,
 ) -> Vec<strop_picker::Item> {
     use strop_picker::{Item, Payload};
+    // symbol rows show no source line: one shared empty text for all
+    let no_text: std::sync::Arc<str> = "".into();
     symbols
         .iter()
         .map(|symbol| (short_kind(&symbol.kind), symbol))
@@ -544,7 +546,7 @@ pub(crate) fn document_symbol_items(
                     line,
                     col,
                     match_len: 1,
-                    line_text: "".into(),
+                    line_text: no_text.clone(),
                 },
                 Filesystem::Remote(endpoint) => Payload::Remote {
                     endpoint: endpoint.clone(),
