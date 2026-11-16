@@ -73,6 +73,44 @@ fn symbols_without_a_server_follow_every_edit() {
     assert!(row(frames[1], "beta").contains(":3"), "{}", frames[1]);
 }
 
+/// The frame's last row: the modeline.
+fn modeline(frame: &str) -> &str {
+    frame
+        .lines()
+        .rfind(|line| !line.trim().is_empty())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_modeline_names_the_method_the_cursor_is_in() {
+    // plans/0107 §10.6: no server, so the outline names the impl block
+    // and its method; at top level the breadcrumb is blank.
+    let directory = tempfile::tempdir().unwrap();
+    let root = &directory.path().join("project");
+    std::fs::create_dir(root).unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "struct Modeline;\n\nimpl Modeline {\n    fn fit(&self) {\n        let cells = 1;\n    }\n}\n",
+    )
+    .unwrap();
+    let output = run(
+        root,
+        "settle 20000\n\
+         keys 5G\n\
+         settle 20000\n\
+         frame\n\
+         keys 2G\n\
+         frame\n",
+        "lib.rs",
+    );
+    let frames = frames(&output);
+    assert_eq!(frames.len(), 2, "{output}");
+    let inside = modeline(frames[0]);
+    assert!(inside.contains("impl Modeline › fit"), "{inside}");
+    let top = modeline(frames[1]);
+    assert!(!top.contains("› ") && !top.contains("fit"), "{top}");
+}
+
 /// `python3` from the test's own `PATH`: the editor itself runs with none.
 fn python() -> std::path::PathBuf {
     std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())

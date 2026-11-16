@@ -20,6 +20,8 @@ use strop_lsp::{
 };
 use strop_picker::Kind;
 
+mod scope;
+
 const SOURCE: &str = "fn alpha() {}\nfn beta() {}\n";
 
 fn editor(name: &str, text: &str) -> Editor {
@@ -300,6 +302,7 @@ fn symbol(name: &str, container: &str, kind: &str, line: usize, column: usize) -
                 column: ServerColumn::new(column),
             },
         },
+        span: strop_lsp::LineSpan::line(LineIndex::new(line)),
     }
 }
 
@@ -546,4 +549,36 @@ fn pressing_again_while_waiting_asks_again() {
     release.send(()).unwrap();
     e.wait_analysis();
     assert_eq!(rows(&e).unwrap().len(), 2);
+}
+
+#[test]
+fn the_outline_spans_a_python_class_and_its_method() {
+    let mut e = editor(
+        "shapes.py",
+        "class Shape:\n    def area(self):\n        return 0\n\ndef free():\n    pass\n",
+    );
+    turn(&mut e, Key::Esc);
+    e.wait_analysis();
+    let (document, revision) = (e.current(), e.buf().revision());
+    let list = e
+        .analysis
+        .symbols
+        .store
+        .lookup(document, Producer::Outline, revision)
+        .expect("the outline was kept");
+    let spans: Vec<(&str, usize, usize)> = list
+        .iter()
+        .map(|symbol| {
+            (
+                symbol.name.as_str(),
+                symbol.span.first.get(),
+                symbol.span.last.get(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        spans,
+        [("Shape", 0, 2), ("area", 1, 2), ("free", 4, 5)],
+        "a declaration spans from its first line to its last"
+    );
 }

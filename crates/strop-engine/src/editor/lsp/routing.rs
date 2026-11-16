@@ -591,6 +591,8 @@ fn lsp_symbol_kind(name: &str) -> Option<strop_syntax::symbols::SymbolKind> {
         "Interface" => Interface,
         "Module" | "Namespace" | "Package" => Module,
         "Constant" => Constant,
+        // rust-analyzer's impl block (0107)
+        "Object" => Impl,
         _ => return None,
     })
 }
@@ -614,6 +616,7 @@ fn short_kind(kind: &str) -> &'static str {
         "Namespace" => "ns",
         "Package" => "pkg",
         "TypeParameter" => "T",
+        "Object" => "impl",
         _ => "sym",
     }
 }

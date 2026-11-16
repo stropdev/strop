@@ -140,7 +140,7 @@ impl AnalysisState {
         // work (0051 §7 R09): its delivery would fail the revision
         // recheck anyway — cancel the scan itself, not only the guard
         self.pair.cancel_target(&target);
-        self.symbols.edited(document);
+        self.symbols.edited(document, changes);
         if !self.registered.contains(&target) {
             return;
         }

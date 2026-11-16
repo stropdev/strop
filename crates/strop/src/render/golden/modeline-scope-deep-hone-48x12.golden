@@ -1,0 +1,25 @@
+  16                                            
+  17  pub(super) fn allot(sizes: usize, cells:  
+● 18      sizes.min(cells)                      
+  19  }                                         
+  20                                            
+  21  mod tests {                              ▮
+  22      struct Fixture;                      ▮
+  23                                           ▮
+  24      impl Fixture {                       ▮
+  25          fn a_long_test_function() {       
+  26              let value = 1;                
+  NORMAL    …line/layout.rs  ●1 ▲2   89%  26:1  
+
+  0: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 41:reset/#15171c 1:reset/reset
+  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 41:#e6e1d6/#15171c 1:reset/reset
+  2: 1:#d9a85a/#15171c+b 5:#858c9a/#15171c 20:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 1:#e6e1d6/#15171c 40:reset/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 41:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 11:#e6e1d6/#15171c 30:reset/#15171c 1:#858c9a/#15171c
+  6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 19:#e6e1d6/#15171c 22:reset/#15171c 1:#858c9a/#15171c
+  7: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 41:reset/#15171c 1:#858c9a/#15171c
+  8: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 23:reset/#15171c 1:#858c9a/#15171c
+  9: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 35:#e6e1d6/#15171c 6:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#1b1e24+b 5:#e8a848/#1b1e24 26:#e6e1d6/#1b1e24 15:#1b1e24/#1b1e24 1:reset/reset
+ 11: 10:#15171c/#e8a848+b 2:reset/#1c1f25 6:#a8adb8/#1c1f25 9:#e6e1d6/#1c1f25 2:reset/#1c1f25 2:#e8707c/#1c1f25 1:reset/#1c1f25 2:#d9a85a/#1c1f25 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25

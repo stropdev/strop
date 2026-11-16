@@ -296,6 +296,7 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
                 column: ServerColumn::new(3),
             },
         },
+        span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(line)),
     };
     // One new semantic hit, one duplicate of the syntax tier (dropped).
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
@@ -407,6 +408,7 @@ fn workspace_symbols_ast_narrows_syntax_and_lsp_tiers() {
                 column: ServerColumn::new(3),
             },
         },
+        span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(line)),
     };
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
         server: ServerId::new(9),
