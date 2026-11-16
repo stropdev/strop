@@ -111,8 +111,8 @@ least 10:1, secondary text 7:1, comments and syntax colours 4.5:1.
 
 | Name | Character |
 | --- | --- |
-| `kiln` | Warm charcoal with a terracotta accent, after the Claude Code terminal look; the default |
-| `hone` | Graphite dark with an amber accent |
+| `hone` | Graphite dark with an amber accent; the default |
+| `kiln` | Warm charcoal with a terracotta accent, after the Claude Code terminal look |
 | `slate` | Muted dark: syntax told apart by brightness, one brass accent |
 | `carbide` | High-contrast dark for projectors and bright rooms (every colour at least 7:1) |
 | `vellum` | Warm paper, graphite text, burnt-umber accent |

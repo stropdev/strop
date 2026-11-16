@@ -175,8 +175,8 @@ fn ansi256_preserves_indexed_terminal_color_contract() {
 }
 
 #[test]
-fn registry_names_round_trip_and_the_default_is_kiln() {
-    assert_eq!(ThemeId::default(), ThemeId::Kiln);
+fn registry_names_round_trip_and_the_default_is_hone() {
+    assert_eq!(ThemeId::default(), ThemeId::Hone);
     for id in ThemeId::ALL {
         assert_eq!(ThemeId::from_name(id.name()), Some(id));
         assert_eq!(ThemeId::from_name(&id.name().to_uppercase()), Some(id));
@@ -190,6 +190,6 @@ fn registry_names_round_trip_and_the_default_is_kiln() {
     assert_eq!(ThemeId::from_name("dark"), None);
     assert_eq!(
         ThemeId::choices(),
-        "kiln, hone, slate, carbide, vellum, paper, paper-dark"
+        "hone, kiln, slate, carbide, vellum, paper, paper-dark"
     );
 }

@@ -156,7 +156,7 @@ fn theme_picker_exposes_full_detail_at_48_and_degrades_at_24() {
     editor.wait_picker();
     let grid = draw_at(&mut editor, 24, 10);
     let text = grid_text(&grid);
-    assert!(text.contains("Kiln"), "tiny label: {text}");
+    assert!(text.contains("Hone"), "tiny label: {text}");
     assert!(text.contains('●'), "tiny applied mark: {text}");
     assert!(text.contains('▌'), "tiny selection: {text}");
     assert!(text.contains('❯'), "input remains visible: {text}");
@@ -192,6 +192,6 @@ fn unknown_theme_names_keep_the_palette_and_list_the_choices() {
     assert_eq!(editor.theme(), ThemeId::default());
     assert!(editor
         .message()
-        .contains("kiln, hone, slate, carbide, vellum, paper, paper-dark"));
+        .contains("hone, kiln, slate, carbide, vellum, paper, paper-dark"));
     assert!(editor.message().contains("nord"));
 }

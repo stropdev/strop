@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The file finder keeps folders in one column** (plans/0106): it no longer shifts while you scroll, and a long file name no longer pushes its folder out of line; a name too long for the column is shown whole, on its own.
+- **`hone` is the default theme again**: graphite with the amber accent. `kiln` stays available with `:theme kiln` or `theme = "kiln"`.
+
 ## 0.69.0 — 2026-11-15
 
 ### Changed

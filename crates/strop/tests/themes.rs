@@ -251,7 +251,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("kiln, hone, slate, carbide, vellum, paper, paper-dark"),
+        stderr.contains("hone, kiln, slate, carbide, vellum, paper, paper-dark"),
         "{stderr}"
     );
     assert_eq!(
@@ -269,7 +269,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
         "the warning names the rejected theme: {output}"
     );
     assert!(
-        output.contains("kiln"),
+        output.contains("hone"),
         "the warning names the choices: {output}"
     );
 }
