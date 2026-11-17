@@ -6,7 +6,7 @@
 //! symbol index re-stats every reused file; the catalog re-stats every
 //! reused directory).
 //!
-//! ## Ordering (Notify.tla ScanNeverErasesNewer)
+//! ## Ordering: a scan never erases a newer hint
 //!
 //! A refresh takes its invalidation snapshot BEFORE scanning and only
 //! that snapshot is consumed; hints landing mid-scan stay recorded for

@@ -90,11 +90,3 @@ FROM scratch AS ship
 COPY --from=release /app/target/release/strop /strop
 ENTRYPOINT ["/strop"]
 
-# TLC over the probation models (plans/0086 §7): EditorProtocol,
-# SearchLifecycle, each with its kept mutants.
-FROM eclipse-temurin:21-jre@sha256:6cbdfc89c9657478bc5abea638030310f6c0267404e98a5808097bb1925932f1 AS model
-ARG TLA_TOOLS_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
-ADD --checksum=sha256:${TLA_TOOLS_SHA256} https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar /tla/tla2tools.jar
-WORKDIR /work
-COPY specs ./specs
-RUN sh specs/gate.sh

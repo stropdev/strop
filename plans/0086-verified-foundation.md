@@ -156,11 +156,15 @@ worker session/deploy admission, save-conflict plan, recovery cohort decisions.
 |---|---|---|
 | `test` | fmt, clippy `-D warnings`, `cargo test`, Loom campaign | every push, release |
 | `proofs` | regenerate `proofs/Extracted`, refuse drift, `lake build`, axiom audit, mutants | CI when `crates/strop-kernel/**` or `proofs/**` change; always at release |
-| `model` | the ≤3 probation TLC models | every push (cheap), release |
 | `container-test`, `ssh-pythonfree` | real Docker / real sshd journeys | every push, release |
 | `release` | static musl tarball | release |
 
 A lane that fails blocks. There is no advisory lane.
+
+*2026-11-17 (plan 0108 D3):* the `model` lane (the probation TLC models in
+`specs/`) is deleted: no recorded catch, fifteen releases past probation. Its
+replacements check shipped code: a Loom test of the worker's cancel/finish
+exactly-once and an exhaustive sequence test of the picker generation guard.
 
 ## 9. Implementation record (0.53.0)
 

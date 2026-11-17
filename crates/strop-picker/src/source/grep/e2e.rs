@@ -272,7 +272,7 @@ fn cancelling_a_running_search_settles_exactly_once_with_no_late_rows() {
 
 /// §6.8 restart/supersede: a retired generation never publishes; the
 /// current generation publishes the complete result set (the
-/// SearchLifecycle RowsCurrent invariant, worker.rs machinery).
+/// RowsCurrent invariant, worker.rs machinery).
 #[test]
 fn a_superseded_generation_never_publishes() {
     let directory = mixed_fixture();

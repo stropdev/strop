@@ -56,7 +56,6 @@ qualify)
     sh tests/release-catalog.sh
     sh tests/install.sh
     docker compose run --build --rm test
-    docker compose run --build --rm model
     docker compose run --build --rm proofs
     ;;
 package)
