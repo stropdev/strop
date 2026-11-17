@@ -261,20 +261,25 @@ impl Editor {
                 }
             }
             Key::Enter => unreachable!("structural Enter handled before dispatch"),
-            // arrows move in insert too (vim) — char-boundary honest
+            // arrows move in insert too (vim) — char-boundary honest. A
+            // moved caret starts a new insert where it lands (vim's
+            // start_arrow): the next key records a fresh origin.
             Key::Left => {
+                self.insert_keys.origin = None;
                 let start = self.buf().line_start(self.buf().line_of(self.head()));
                 if self.head() > start {
                     self.set_head(self.buf().clamp_boundary(self.head() - 1));
                 }
             }
             Key::Right => {
+                self.insert_keys.origin = None;
                 let end = self.buf().line_end(self.buf().line_of(self.head()));
                 if self.head() < end {
                     self.set_head(self.buf().ceil_boundary(self.head() + 1));
                 }
             }
             Key::Up | Key::Down => {
+                self.insert_keys.origin = None;
                 let line = self.buf().line_of(self.head());
                 let target = if key == Key::Up {
                     line.saturating_sub(1)
