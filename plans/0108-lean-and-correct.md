@@ -108,6 +108,14 @@ Implementation record (D4, D1.10):
   grammar, libgit2, the handoff/critique plans (marked superseded in STATUS).
 - `STATUS.md` corrected; over-ceiling files split.
 
+Implementation record (D5): no file is past the ceiling (the two the audit
+named were split earlier this round). `strip` stays in the Dockerfile's
+`release` stage. Beyond the audit's lists, the stored-query module (never
+persisted, with its v1–v3 readers), the session/attach/DocPath compatibility
+defaults and `--log=ALL` went too. Left for the roadmap (0028): the
+`too_many_arguments` allows, the test PRNGs, retired-plan citations in
+comments, the crossterm/ratatui bump.
+
 ---
 
 ## §A. Audit: proofs and specs
