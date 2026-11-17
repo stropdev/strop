@@ -620,3 +620,102 @@ move back onto the input thread.
     (0063 §3). Keep?
 11. **Where the filter list shows.** In the empty field only (as Files and Search
     today), a permanent row, or only behind Ctrl-Space plus the footer hint?
+
+---
+
+## B. As built (0.71)
+
+What landed, and where it differs from §A. The decisions header was
+followed throughout; where §A's proposal and the header disagree, the
+header won.
+
+**The pieces.**
+
+- `strop-core/src/symbol_kind.rs`: one table of 21 kinds (`Function`
+  `Method` `Constructor` `Class` `Struct` `Interface` `Impl` `Enum`
+  `Variant` `Module` `File` `Field` `Property` `Variable` `Constant`
+  `Type` `Event` `Operator` `Key` `Value` `Other`), each with its value,
+  chip, other words, LSP names and what `kind:<value>` admits. All 26
+  protocol kinds have exactly one row; `strop-lsp` maps the protocol's
+  constants straight to it, `strop-syntax` classifies into it, and
+  `ProtoSymbol.kind` is typed. Deleted: `kinds_for_value`, the
+  suggestion list, `KIND_VALUES`, `lsp_symbol_kind`, `short_kind`,
+  `symbol_kind_label`, `SymbolKind::lsp_name` and the syntax crate's enum.
+- `strop-picker/src/query/schema.rs`: `Field`, `Bare`, `Schema`, one
+  const per surface and `Kind::schema()` (exhaustive). The lexer's key
+  list is `Field::from_key`; `type` is not a key.
+- One `SearchQuery::parse(input, schema, modes)`; `parse_with` is gone.
+  A key outside the schema is `"{key}: does not filter {noun}"` with
+  `"{key}: works in …"` naming the surfaces that take it. `kind:` and
+  `repo:` lower flat (`kinds`, `exclude_kinds`, `repos`,
+  `exclude_repos`); only an operator or a paren makes a query Boolean.
+- `plan/admission.rs`: `Admission` replaces `BooleanPlan`, with one
+  constructor (`Admission::compile(query)`: the Boolean AST and the flat
+  families as one conjunction) and one decision,
+  `admits(&RowFacts, &Evidence)`. `Evidence` holds only what a worker
+  owns (the project catalog, the symbol index). `glob:` compiles a
+  `globset` matcher; `glob_literal_match` is gone. Two flat exclusions
+  now both hold (the old lowering OR-ed them), and `-repo:` excludes
+  (the old evaluator negated twice).
+- `query/facts.rs`: `RowFacts` (borrowed) and `ItemFacts` (owned once per
+  row: a shared `Arc<str>` path, the kind, the ranges of the text that
+  name the row). `Item::symbol` is the one symbol-row builder for the
+  outline, document symbols, workspace symbols and the syntax tier.
+- The ranking pass compiles the `Admission` once per pass from
+  `FilterRequest.filter` and tests each row before scoring. Kept lists
+  (Symbols, WorkspaceSymbols, Jumps, Buffers, Diagnostics, Locations)
+  are never rebuilt per keystroke: `rebuild_document_symbols`,
+  `rebuild_jump_rows`, `symbols_candidates` and the LSP merge's admission
+  block are deleted. Files keeps the walk's `FileSelectionPlan` for flat
+  filters and gives the ranking pass only an operator query.
+- Search keeps filtering per hit in its workers; `ContentPlan` holds the
+  Boolean `Admission`, or for a flat query an `Admission` only when it
+  has `kind:`/`repo:` (the file selection already applied the rest).
+  Search now needs a positive content atom (`has_positive_content`).
+- Hints, footer, Ctrl-Space and `Space ?` read the schema; the error
+  marker (`^^^` under the word and the message) is drawn on the row under
+  the field. `docs/search.md` has the per-list table and the kind table,
+  and a test holds both to the code.
+
+**Answers taken for §5's questions.**
+
+1. `type:` retired (header). A stored version 3 query's `type:` reads as
+   `kind:` (syntax version 4).
+2. Values: the value, the chip and the other words in the table, ASCII
+   case-insensitive; a prefix is accepted when every word it starts
+   names one kind. A prefix naming several (`kind:f`) is Incomplete —
+   typing in progress, the list stays — not an error.
+3. (a): an error, and the list stays as it was. A row a filter cannot
+   judge (no path, no kind, no index) is still kept; the "N kept
+   unjudged" count was not built.
+4. `Space s` keeps the path family (one file: keep or drop all).
+5. `kind:function` admits methods and constructors.
+6. Words joined by operators stay exact substrings (unchanged).
+7. Buffers, Diagnostics and Locations take `language: path: fpath:
+   glob: case: text: regex:`; none of their rows carry a kind, so `kind:`
+   is an error there. No `severity:` yet.
+8. Plain lists (Actions, Theme, TabSize, Branches, RemoteHosts,
+   RemoteAddress) are not parsed.
+9. `ext:`, `lang:`, `type:`, `dir:`, `file:` are not keys; the correction
+   names the key the list takes (`ext:rs` → `did you mean language:?`).
+10. `!` stays literal.
+11. The empty field's row lists the everyday filters when the list has
+    rows; empty Files and Search keep their teaching lines (generated);
+    the footer shows `ctrl-space filters`.
+
+**Deviations from §3.**
+
+- `repo:` is declared by Search only. The ranking pass has no project
+  catalog, so on Files and workspace symbols `repo:` could never judge a
+  row (Files never applied it; workspace symbols applied it to the
+  syntax tier only). Declaring it there would advertise a filter that
+  keeps everything.
+- `text:`, `regex:` and wholly quoted input rank exactly (substring or
+  pattern) on every fuzzy list, not only Files: §A's audit row "pattern
+  text used as a fuzzy needle" is gone.
+- Content atoms on kept rows match the row's subject (a symbol's name, a
+  jump's line, a diagnostic's message, a location's source line) or a
+  symbol's container; the qualified `Container::name` string is not
+  built.
+- The `filter_key` bench op (one character of a `kind:` value on the
+  2,800-row list, input to frame) has a 5 ms budget.
