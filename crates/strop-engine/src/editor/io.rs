@@ -7,6 +7,7 @@ mod local_tests;
 pub(super) mod native;
 mod navigation;
 pub(crate) mod open;
+pub use open::open_startup_file;
 #[cfg(test)]
 mod remote_tests;
 mod save;

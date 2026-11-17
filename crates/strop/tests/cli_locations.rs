@@ -181,3 +181,56 @@ fn a_dash_operand_edits_stdin() {
     );
     assert_eq!(first_line(&output), 2);
 }
+
+fn message(output: &str) -> String {
+    let state = output
+        .lines()
+        .find_map(|line| line.strip_prefix("─── state "))
+        .unwrap();
+    serde_json::from_str::<serde_json::Value>(state).unwrap()["message"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// 0108 H6: the file on the command line goes through `:e`'s guarded
+/// read. A FIFO, a device and a file that is not UTF-8 reach the editor
+/// with `:e`'s refusal on an empty buffer — never a hang, an unbounded
+/// read or an exit.
+#[test]
+fn startup_file_is_refused_exactly_like_e() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().to_path_buf();
+    std::fs::write(root.join("steps"), "state\nkeys ihello<esc>\nframe\n").unwrap();
+    let fifo = std::ffi::CString::new(root.join("pipe").as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: `fifo` is a NUL-terminated path that outlives the call.
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+    std::fs::write(root.join("latin.txt"), b"caf\xe9\n").unwrap();
+    for (operand, refusal) in [
+        ("pipe", "only regular files and directories can be opened"),
+        (
+            "/dev/zero",
+            "only regular files and directories can be opened",
+        ),
+        ("latin.txt", "stream contained invalid UTF-8"),
+    ] {
+        // a FIFO read blocks forever and /dev/zero never ends: the run
+        // owns a thread and the test a deadline, so a regression fails
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let workdir = root.clone();
+        std::thread::spawn(move || {
+            let args = ["--headless".into(), "steps".into(), operand.into()];
+            let _ = sender.send(run(&workdir, &args));
+        });
+        let output = receiver
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .unwrap_or_else(|_| panic!("{operand}: strop did not reach the editor"));
+        let output = text(output);
+        let shown = message(&output);
+        assert!(
+            shown.starts_with("open ") && shown.ends_with(refusal),
+            "{operand}: {shown}"
+        );
+        assert!(output.contains("hello"), "{operand}: the editor runs");
+    }
+}
