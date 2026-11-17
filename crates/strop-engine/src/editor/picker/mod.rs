@@ -16,6 +16,8 @@ mod accept;
 mod drain;
 #[cfg(test)]
 mod find_tests;
+#[cfg(test)]
+mod generation_guard_tests;
 mod keys;
 #[cfg(test)]
 mod lifecycle_traces;

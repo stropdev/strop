@@ -401,34 +401,49 @@ impl Editor {
         })
     }
     pub(crate) fn apply_indentation(&mut self, edits: &[Edit]) {
-        let map = |old: usize| {
-            let mut delta = 0isize;
-            for edit in edits {
-                if old == edit.cursor.get() {
-                    return (edit.start.get() as isize + delta + edit.landing as isize).max(0)
-                        as usize;
-                }
-                if old < edit.start.get() {
-                    break;
-                }
-                if old < edit.end.get() {
-                    return (edit.start.get() as isize + delta + edit.text.len() as isize).max(0)
-                        as usize;
-                }
-                delta += edit.text.len() as isize - (edit.end.get() - edit.start.get()) as isize;
+        // Apply back to front and journal what actually applied: a
+        // collection view may refuse an edit, and a refused edit moves
+        // nothing (0108 B5).
+        let mut journal = Vec::with_capacity(edits.len() * 2);
+        let mut landed = vec![false; edits.len()];
+        for (index, edit) in edits.iter().enumerate().rev() {
+            let (start, end) = (edit.start.get(), edit.end.get());
+            let deleted = start == end || {
+                let revision = self.buf().revision();
+                self.buf_mut()
+                    .delete(strop_core::Range::charwise(edit.start, edit.end));
+                self.buf().revision() != revision
+            };
+            if deleted && start != end {
+                journal.push((start, end, start));
             }
-            (old as isize + delta).max(0) as usize
+            let inserted = self.buf_mut().insert(edit.start, &edit.text);
+            if inserted && !edit.text.is_empty() {
+                journal.push((start, start, start + edit.text.len()));
+            }
+            landed[index] = deleted && inserted;
+        }
+        // Positions are spans of width zero through the journal: the start
+        // edge stays before text inserted at it, the end edge lands after
+        // it — a position in (or at the start of) a re-indented prefix ends
+        // up after the new indentation.
+        let through = |at: usize| {
+            journal
+                .iter()
+                .fold((at, at), |(left, right), &(s, e, new_end)| {
+                    strop_kernel::editmap::map_span(left, right, s, e, new_end, true)
+                })
+        };
+        let map = |old: usize| match edits.iter().position(|edit| edit.cursor.get() == old) {
+            // a cursor lands where its edit says, inside the new text
+            Some(index) if landed[index] => {
+                through(edits[index].start.get()).0 + edits[index].landing
+            }
+            _ => through(old).1,
         };
         self.sels_mut().map_positions(map);
         if self.snippet.is_some() {
             self.snippet_map(map);
-        }
-        for edit in edits.iter().rev() {
-            if edit.start != edit.end {
-                self.buf_mut()
-                    .delete(strop_core::Range::charwise(edit.start, edit.end));
-            }
-            self.buf_mut().insert(edit.start, &edit.text);
         }
     }
 }

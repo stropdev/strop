@@ -1,8 +1,7 @@
 //! Conformance harness (0024): a reference model (plain String) and the
 //! real editor driven by the SAME generated operation streams through
 //! the production headless path. Every step asserts text equality plus
-//! the protocol invariants the TLA+ spec proves at the model level:
-//! panes reference live docs (NoStalePane), the revision never goes
+//! the protocol invariants: panes reference live docs (NoStalePane), the revision never goes
 //! back (RevisionTracksPublications — the epoch counts publications,
 //! undo included), anchors stay inside the text on char boundaries.
 //! The transaction/ticket boundary itself has its own oracle module:

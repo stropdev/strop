@@ -7,5 +7,6 @@ license.workspace = true
 
 [dependencies]
 strop-core = { path = "../strop-core", version = "0.70.0" }
+strop-kernel = { path = "../strop-kernel" }
 ropey = "1"
 serde = { version = "1", features = ["derive"] }

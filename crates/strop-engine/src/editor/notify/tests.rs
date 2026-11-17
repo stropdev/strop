@@ -1,7 +1,7 @@
 //! 0058 S7 acceptance: hint application over the real watcher thread
 //! (inotify watches, 25ms pump), plus deterministic synthetic-record
 //! drives for identity,
-//! overflow and lifecycle edges. Notify.tla correspondence: dirty
+//! overflow and lifecycle edges. Invariants: dirty
 //! buffers are never clobbered, stale generations never act, overflow
 //! is a conservative rescan, close retires the subscription.
 use super::*;

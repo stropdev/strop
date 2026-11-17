@@ -1,6 +1,3 @@
 target/
 dist/
-specs/*_TTrace_*
-specs/states/
 __pycache__/
-.tlacache/

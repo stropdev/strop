@@ -354,6 +354,7 @@ impl Editor {
             }
         };
         let mut collection = Collection {
+            writing: false,
             title: title.clone(),
             excerpts,
             rows: Vec::new(),

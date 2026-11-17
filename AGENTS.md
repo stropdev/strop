@@ -78,7 +78,11 @@ tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
 - **Code moves inward to gain guarantees.** Proving something means moving
   the decision into `strop-kernel` (moved, not copied; production calls it),
   stating the theorem, adding it to `proofs/Audit.lean`'s claims and a
-  mutant to `proofs/mutants.py` that must break it.
+  mutant to `proofs/mutants.py` that must break it. A property stated over a
+  model of the code is broken by a *paired* mutant that patches the Rust and
+  the model together; a bridge breaking does not calibrate it. The audit
+  refuses a public kernel function no claim's statement mentions, and the
+  calibration refuses a claim no mutant breaks (plans/0108 D4).
 - **Kernel shape:** plain safe Rust, no dependencies, no closures or iterator
   adaptors in proved code, explicit loops over slices. After changing it run
   `sh proofs/refresh.sh` and commit `proofs/Extracted/` — the gate refuses
@@ -86,8 +90,7 @@ tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
 - **The survival rule:** an artefact stays only if it is a machine-checked
   proof about shipped code, a test of behaviour a user can see, or a
   counterexample finder with a recorded catch. No evidence inventories,
-  digest receipts, freezes or re-pin commits. The two TLC models in
-  `specs/` are on probation until 0.55.
+  digest receipts, freezes or re-pin commits.
 - **Every lane blocks.** A gate that may fail without stopping a release is
   deleted, not tolerated.
 
@@ -100,8 +103,8 @@ exactly that: partial. The authoritative procedure is `plans/0079` and
 `.github/scripts/release-local.sh`.
 
 1. **Local qualification**: a clean committed Linux/WSL checkout whose GitHub
-   `ci` run is green (test, model, ssh-pythonfree) passes the
-   Compose `test`, `model` and `proofs` gates, the release fixtures, a
+   `ci` run is green (test, ssh-pythonfree) passes the
+   Compose `test` and `proofs` gates, the release fixtures, a
    changed-feature smoke and the static artifact checks. `proofs` runs locally
    because its toolchain image does not fit a hosted runner. The supported
    release artifact is `x86_64-unknown-linux-musl`; every other platform is

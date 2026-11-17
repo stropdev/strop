@@ -1,10 +1,9 @@
-//! Transaction conformance (R12): the Rust half of the
-//! specs/EditorProtocol.tla correspondence, checked on the real
-//! Editor/Buffer APIs — `Editor::apply`, `Buffer::prepare_replacements`
+//! Transaction conformance (R12): the editor's document/ticket protocol,
+//! checked on the real Editor/Buffer APIs — `Editor::apply`, `Buffer::prepare_replacements`
 //! with `apply_prepared`, `close_buffer`, the generational document arena —
 //! never on internals.
 //!
-//! TLA+                      Rust oracle (this module)
+//! Protocol step / invariant  Rust oracle (this module)
 //! -----------------------   ------------------------------------------------
 //! OpenDoc/CloseDoc/gen      `docs.insert` / `close_buffer`; a closed id
 //!                           fails lookup even after the arena reuses its

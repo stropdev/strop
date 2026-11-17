@@ -310,11 +310,7 @@ impl Editor {
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup();
-                let width = unit.len();
-                for &pos in positions.iter().rev() {
-                    self.buf_mut().insert(pos, &unit);
-                }
-                self.remap_after_mirrored_edit(&positions, width as isize);
+                self.mirror_insert(&positions, &unit);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push_str(&unit);
                 }
@@ -325,10 +321,7 @@ impl Editor {
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup(); // stacked cursors edit once
-                for &pos in positions.iter().rev() {
-                    self.buf_mut().insert(pos, encoded);
-                }
-                self.remap_after_mirrored_edit(&positions, c.len_utf8() as isize);
+                self.mirror_insert(&positions, encoded);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push(c);
                 }

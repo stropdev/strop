@@ -108,20 +108,15 @@ impl WordJournal {
             start: self.original_position(edit.start_byte, Edge::Start),
             end: self.original_position(edit.old_end_byte, Edge::End),
         };
+        // A changed window is a span: text typed at either edge joins it.
         for window in &mut self.windows {
-            window.after.start = map_edge(
+            (window.after.start, window.after.end) = strop_kernel::editmap::map_span(
                 window.after.start,
-                edit.start_byte,
-                edit.old_end_byte,
-                edit.new_end_byte,
-                Edge::Start,
-            );
-            window.after.end = map_edge(
                 window.after.end,
                 edit.start_byte,
                 edit.old_end_byte,
                 edit.new_end_byte,
-                Edge::End,
+                true,
             );
         }
         self.windows.push(ChangedWindow {
@@ -188,17 +183,4 @@ impl WordJournal {
 enum Edge {
     Start,
     End,
-}
-
-fn map_edge(position: usize, start: usize, old_end: usize, new_end: usize, edge: Edge) -> usize {
-    if position < start || (position == start && matches!(edge, Edge::Start)) {
-        position
-    } else if position >= old_end {
-        new_end + (position - old_end)
-    } else {
-        match edge {
-            Edge::Start => start,
-            Edge::End => new_end,
-        }
-    }
 }

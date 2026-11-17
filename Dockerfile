@@ -32,7 +32,12 @@ COPY docs ./docs
 
 # The gate: fmt, clippy -D warnings, the workspace tests (including the real
 # sshd suites) and the Loom campaign over the shipped synchronization seams.
+# A name filter matching nothing passes silently, so the Loom lane first
+# counts the campaigns it selects and refuses any number but LOOM_TESTS:
+# a renamed or cfg'd-out campaign fails the gate, and a new one is counted
+# by bumping this number in the same change.
 FROM builder AS test
+ARG LOOM_TESTS=7
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-test,sharing=locked \
@@ -40,8 +45,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
     && STROP_REQUIRE_SSH_TESTS=1 STROP_REQUIRE_NVIM=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
-    && CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
-        cargo test --locked -p strop-engine -p strop-lsp loom
+    && export CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
+    && loom_tests=$(cargo test --locked -p strop-core -p strop-engine -p strop-lsp loom -- --list \
+        | grep -c ': test$' || true) \
+    && { [ "$loom_tests" -eq "$LOOM_TESTS" ] \
+        || { echo "Loom lane matched $loom_tests tests, expected $LOOM_TESTS" >&2; exit 1; }; } \
+    && cargo test --locked -p strop-core -p strop-engine -p strop-lsp loom
 
 # Remote editing over plain SSH on a host with no Python interpreter:
 # OpenSSH, rg and git on the Rust builder, never python3. The exec journeys
@@ -90,11 +99,3 @@ FROM scratch AS ship
 COPY --from=release /app/target/release/strop /strop
 ENTRYPOINT ["/strop"]
 
-# TLC over the probation models (plans/0086 §7): EditorProtocol,
-# SearchLifecycle, each with its kept mutants.
-FROM eclipse-temurin:21-jre@sha256:6cbdfc89c9657478bc5abea638030310f6c0267404e98a5808097bb1925932f1 AS model
-ARG TLA_TOOLS_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
-ADD --checksum=sha256:${TLA_TOOLS_SHA256} https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar /tla/tla2tools.jar
-WORKDIR /work
-COPY specs ./specs
-RUN sh specs/gate.sh

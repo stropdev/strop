@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mutant calibration for the `proofs` gate (plans/0086 §8).
+"""Mutant calibration for the `proofs` gate (plans/0086 §8, plans/0108 D4).
 
 Every moved kernel function gets at least one semantic mutation of its Rust
 source. For each: copy the crate, apply the mutation, translate it exactly as
@@ -8,6 +8,18 @@ translation in a scratch copy of the lake project, and require the build to
 FAIL inside the named theorem(s) — no other theorem may fail, and the
 translation itself must still type-check. A proof that survives its mutant
 proves nothing; a failure anywhere else is noise, not calibration.
+
+A Rust mutant breaks the bridge lemma that unfolds the code (a `_spec`);
+property theorems stated over a model of the code sit behind that bridge and
+never see it. A *paired* mutant also patches the model (`lean`) the way a
+developer changing the code would, so the bridge still proves and the
+property itself must fail.
+
+Every claim in `proofs/Audit.lean` must be broken by some mutant. The audit
+prints, per claim, every kernel theorem its proof rests on (`CLAIM_DEPS`). A
+mutant breaks a claim when one of the theorems it makes fail is among them —
+for a property claim (a name not ending in `_spec`), a failing bridge does not
+count unless it is the claim itself: the failure must reach the property.
 """
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -25,12 +37,22 @@ KERNEL = ROOT / "crates" / "strop-kernel"
 
 
 @dataclass(frozen=True)
-class Mutant:
-    name: str
+class Patch:
+    """A textual replacement in a theorem file under proofs/, made `count` times."""
     file: str
     before: str
     after: str
+    count: int = 1
+
+
+@dataclass(frozen=True)
+class Mutant:
+    name: str
+    file: str  # the kernel source under crates/strop-kernel/src; "" patches the model only
+    before: str
+    after: str
     fails: tuple[str, ...]
+    lean: tuple[Patch, ...] = ()
 
 
 MUTANTS = (
@@ -173,10 +195,182 @@ MUTANTS = (
            ("Strop.Kernel.total_spec",)),
 )
 
+
+# --- paired and model mutants: the bridge still proves, the property must fail ---
+PAIRED = (
+    # a new table serves nothing: every slot starts dead
+    Mutant("cache-vacant-live", "cache.rs",
+           "    Slot {\n        live: false,\n        subject: 0,",
+           "    Slot {\n        live: true,\n        subject: 0,",
+           ("Strop.Kernel.vacant_spec",)),
+    # an invalidation that revives what it covers, with the spec updated to match:
+    # a retired pair is still served, a refreshed pair keeps its old entry, a
+    # revived slot's stale cost escapes the bound, eviction sees no dead slot
+    Mutant("cache-retire-revives", "cache.rs",
+           "            slot.live = false;\n",
+           "            slot.live = true;\n",
+           ("Strop.Kernel.retired_not_holds", "Strop.Kernel.placed_bounded",
+            "Strop.Kernel.placed_entries", "Strop.Kernel.place_evicts_oldest"),
+           lean=(Patch("Kernel/Cache.lean",
+                       "(Selects old s p bs bp → new = { old with live := false })",
+                       "(Selects old s p bs bp → new = { old with live := true })"),
+                 Patch("Kernel/Cache.lean",
+                       "if k.val = j then { x with live := false } else",
+                       "if k.val = j then { x with live := true } else"))),
+    # most-recently-used eviction, with the spec updated to match
+    Mutant("cache-evicts-newest-paired", "cache.rs",
+           "        if best == slots.len() || slot.used < oldest {",
+           "        if best == slots.len() || slot.used > oldest {",
+           # the loop proof follows the old comparison, so the bridge breaks too
+           ("Strop.Kernel.victim_loop_spec", "Strop.Kernel.place_evicts_oldest"),
+           lean=(Patch("Kernel/Cache.lean",
+                       "      ∀ j (hj : j < l.length), l[r].used.val ≤ l[j].used.val)",
+                       "      ∀ j (hj : j < l.length), l[j].used.val ≤ l[r].used.val)"),)),
+    # the memory bound counts only live entries: a dead slot's stale cost is free
+    Mutant("cache-cost-counts-dead", "", "", "",
+           ("Strop.Kernel.total_cost_le",),
+           lean=(Patch("Kernel/Cache.lean",
+                       "  | x :: rest => (if x.live = true then x.cost.val else 0) + liveCost rest",
+                       "  | x :: rest => x.cost.val + liveCost rest"),)),
+    # interior anchors collapse to the old end, with the model updated to match:
+    # anchors cross, leave the buffer, and the journal fold stops composing
+    Mutant("map-collapse-to-end-paired", "editmap.rs",
+           "    } else {\n        start\n    }\n}",
+           "    } else {\n        old_end\n    }\n}",
+           ("Strop.Kernel.mapSpec_monotone", "Strop.Kernel.mapSpec_in_bounds",
+            "Strop.Kernel.mapSpec_eq_mapNat"),
+           lean=(Patch("Kernel/EditMap.lean",
+                       "  if p < s then p else if oe ≤ p then min (ne + (p - oe)) Usize.max else s",
+                       "  if p < s then p else if oe ≤ p then min (ne + (p - oe)) Usize.max else oe"),)),
+    # an overlap is an edit reaching past the next one's end, not its start,
+    # with the batch predicate updated to match: accepted batches stop composing
+    Mutant("batch-reach-to-end-paired", "editmap.rs",
+           "            if previous.0 == current.0 || previous.1 > current.0 {",
+           "            if previous.0 == current.0 || previous.1 > current.1 {",
+           ("Strop.Kernel.consecutive_of_batchOk",),
+           lean=(Patch("Kernel/EditMap.lean",
+                       "  a.1.val < b.1.val ∧ a.2.val ≤ b.1.val",
+                       "  a.1.val < b.1.val ∧ a.2.val ≤ b.2.val"),)),
+    # an edit starting at a span's end belongs to it unasked (bug 0108 B4)
+    Mutant("span-end-claimed", "editmap.rs",
+           "    let mapped_end = if end < s || (end == s && !grow_at_end) {",
+           "    let mapped_end = if end < s {",
+           ("Strop.Kernel.map_span_spec", "Strop.Kernel.map_span_end_before")),
+    # a span's start is left-affine: an insertion at the start lands inside it
+    Mutant("span-start-right-affine", "editmap.rs",
+           "    let mapped_start = if start <= s {",
+           "    let mapped_start = if start < s {",
+           ("Strop.Kernel.map_span_spec",)),
+    # a range starting exactly where the kept one ends does not overlap it
+    Mutant("keep-touching-dropped", "editmap.rs",
+           "        if range.0 >= reach {",
+           "        if range.0 > reach {",
+           ("Strop.Kernel.keep_disjoint_loop_spec",)),
+    # the filter compares against the last kept range, not the previous input range
+    Mutant("keep-against-previous-input", "editmap.rs",
+           "            keep[k] = true;\n            reach = range.1;\n        } else {\n"
+           "            keep[k] = false;\n        }\n",
+           "            keep[k] = true;\n        } else {\n"
+           "            keep[k] = false;\n        }\n        reach = range.1;\n",
+           ("Strop.Kernel.keep_disjoint_loop_spec",)),
+    # the translation is clamped onto the source, with the model updated to match
+    Mutant("excerpt-unclamped-paired", "excerpt.rs",
+           "    if value > bound {\n        bound\n    } else {",
+           "    if value > bound {\n        value\n    } else {",
+           # the clamp's own proof steps follow the old branch, so the bridges break too
+           ("Strop.Kernel.clamp_spec", "Strop.Kernel.source_edit_spec",
+            "Strop.Kernel.toSource_in_span"),
+           lean=(Patch("Kernel/Excerpt.lean",
+                       "excerpt.clamp value bound ⦃ r => r.val = min value.val bound.val ⦄",
+                       "excerpt.clamp value bound ⦃ r => r.val = value.val ⦄"),
+                 Patch("Kernel/Excerpt.lean",
+                       "def toSource (vs ss se p : Nat) : Nat := ss + min (p - vs) (se - ss)",
+                       "def toSource (vs ss se p : Nat) : Nat := ss + (p - vs)"))),
+    # the shown source is the whole excerpt, with the model updated to match:
+    # anchors past the clamp stop agreeing between view and source
+    Mutant("excerpt-half-shown-paired", "excerpt.rs",
+           "    let shown = source_end - source_start;",
+           "    let shown = (source_end - source_start) / 2;",
+           ("Strop.Kernel.source_edit_spec", "Strop.Kernel.source_edit_commutes"),
+           lean=(Patch("Kernel/Excerpt.lean",
+                       "def toSource (vs ss se p : Nat) : Nat := ss + min (p - vs) (se - ss)",
+                       "def toSource (vs ss se p : Nat) : Nat := ss + min (p - vs) ((se - ss) / 2)"),)),
+    # K1: only the part strictly before the edit keeps its coordinates
+    Mutant("project-empty-fragment", "intervals.rs",
+           "        if range.0 < start {",
+           "        if range.0 <= start {",
+           ("Strop.Kernel.project_loop_spec",)),
+    # K1: the replaced bytes never inherit a class
+    Mutant("project-paints-insert", "intervals.rs",
+           "            out.push((range.0, least(range.1, start), k));",
+           "            out.push((range.0, range.1, k));",
+           ("Strop.Kernel.project_loop_spec",)),
+    # K1: an interval ending at the old end has nothing after the edit
+    Mutant("project-after-at-end", "intervals.rs",
+           "        if range.1 > old_end {",
+           "        if range.1 >= old_end {",
+           ("Strop.Kernel.project_loop_spec",)),
+    # K2: the merged interval is part of the union
+    Mutant("cover-drops-merged", "intervals.rs",
+           "    out.push((low, high));\n",
+           "",
+           ("Strop.Kernel.cover_merge_spec", "Strop.Kernel.cover_spec")),
+    # K2: an interval touching the window merges with it
+    Mutant("cover-touching-kept-apart", "intervals.rs",
+           "        } else if interval.0 <= last {",
+           "        } else if interval.0 < last {",
+           ("Strop.Kernel.cover_merge_spec",)),
+    # K2: what survives a window is non-empty
+    Mutant("uncover-empty-part", "intervals.rs",
+           "        if interval.0 < below {\n            out.push((interval.0, below, k));",
+           "        if interval.0 <= below {\n            out.push((interval.0, below, k));",
+           ("Strop.Kernel.uncover_loop_spec",)),
+    # K2: an old span's part below the window ends at the window
+    Mutant("replace-below-overlaps", "intervals.rs",
+           "        let below = least(span.1, first);\n        if span.0 < below {\n            out.push((span.0, below, k));",
+           "        let below = least(span.1, first);\n        if span.0 < below {\n            out.push((span.0, span.1, k));",
+           ("Strop.Kernel.replace_below_spec",)),
+    # K2: an old span's part above the window starts at the window
+    Mutant("replace-above-overlaps", "intervals.rs",
+           "        if above < span.1 {\n            out.push((above, span.1, k));",
+           "        if above < span.1 {\n            out.push((span.0, span.1, k));",
+           ("Strop.Kernel.replace_above_spec",)),
+    # K2: a clipped part never reaches past the window
+    Mutant("clip-unclamped", "intervals.rs",
+           "        let high = least(span.1, last);",
+           "        let high = span.1;",
+           ("Strop.Kernel.clip_loop_spec", "Strop.Kernel.clip_spec")),
+    # T1 with the model updated to match: an unclamped span passes the frame
+    Mutant("layout-overrun-paired", "layout.rs",
+           "            least(minimum(tracks[k], unit, gap) + extra, left)\n",
+           "            minimum(tracks[k], unit, gap) + extra\n",
+           ("Strop.Kernel.tile_loop_body_spec", "Strop.Kernel.tileFrom_in_bounds",
+            "Strop.Kernel.tileFrom_fits"),
+           lean=(Patch("Kernel/Layout.lean",
+                       "      let len := min (minSpec t unit gap + extra) (cells - a)",
+                       "      let len := minSpec t unit gap + extra"),
+                 Patch("Kernel/Layout.lean",
+                       "min (minSpec t u g + t * r / w) (c - a)",
+                       "(minSpec t u g + t * r / w)", count=2))),
+    # T2-T4 with the model updated to match: spans without the divider between
+    # them stop covering the frame, so the minimum and the fair share go too
+    Mutant("layout-gap-dropped-paired", "layout.rs",
+           "        at = least(at + len + gap, cells);\n",
+           "        at = least(at + len, cells);\n",
+           ("Strop.Kernel.tile_loop_body_spec", "Strop.Kernel.tileFrom_fits"),
+           lean=(Patch("Kernel/Layout.lean",
+                       "(a, len) :: tileFrom cells unit gap (min (a + len + gap) cells)",
+                       "(a, len) :: tileFrom cells unit gap (min (a + len) cells)"),
+                 Patch("Kernel/Layout.lean",
+                       "(min (a + min (minSpec t u g + t * r / w) (c - a) + g) c)",
+                       "(min (a + min (minSpec t u g + t * r / w) (c - a)) c)"))),
+)
+
 # lake reports `error: <path>.lean:<line>:<col>: <message>`
 ERROR = re.compile(r"^error:\s*(?P<file>[^\s:]+\.lean):(?P<line>\d+):(?P<col>\d+):", re.M)
 DECLARATION = re.compile(r"^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+)?(?:theorem|lemma|def|abbrev|instance)\s+(?P<name>[^\s:(]+)", re.M)
 NAMESPACE = re.compile(r"^namespace\s+(?P<name>\S+)", re.M)
+END = re.compile(r"^end(\s+[\w.]+)?\s*$")
 
 
 def declarations(path: Path) -> list[tuple[int, str]]:
@@ -187,7 +381,7 @@ def declarations(path: Path) -> list[tuple[int, str]]:
         if match := NAMESPACE.match(line):
             namespace = match.group("name") + "."
             continue
-        if line.startswith("end "):
+        if END.match(line):
             namespace = ""
             continue
         if match := DECLARATION.match(line):
@@ -241,11 +435,12 @@ def calibrate(mutant: Mutant, scratch: Path) -> str:
     """Return the calibration line, or raise `Calibration` with the evidence."""
     crate = scratch / "crate"
     shutil.copytree(KERNEL, crate, ignore=shutil.ignore_patterns("target"))
-    source = crate / "src" / mutant.file
-    text = source.read_text()
-    if text.count(mutant.before) != 1:
-        raise Calibration(f"FAIL {mutant.name}: mutation site does not match exactly once")
-    source.write_text(text.replace(mutant.before, mutant.after))
+    if mutant.file:
+        source = crate / "src" / mutant.file
+        text = source.read_text()
+        if text.count(mutant.before) != 1:
+            raise Calibration(f"FAIL {mutant.name}: mutation site does not match exactly once")
+        source.write_text(text.replace(mutant.before, mutant.after))
 
     extraction = run(["sh", str(PROOFS / "extract.sh"), str(crate), str(scratch / "Extracted")], ROOT)
     if extraction.returncode != 0:
@@ -256,6 +451,13 @@ def calibrate(mutant: Mutant, scratch: Path) -> str:
     for name in ("lakefile.toml", "lean-toolchain", "lake-manifest.json", "Kernel.lean", "Audit.lean"):
         shutil.copy2(PROOFS / name, project / name)
     shutil.copytree(PROOFS / "Kernel", project / "Kernel")
+    for patch in mutant.lean:
+        theorems = project / patch.file
+        text = theorems.read_text()
+        if text.count(patch.before) != patch.count:
+            raise Calibration(f"FAIL {mutant.name}: model patch site in {patch.file} does not "
+                              f"match exactly {patch.count} time(s)")
+        theorems.write_text(text.replace(patch.before, patch.after))
     shutil.copytree(scratch / "Extracted", project / "Extracted")
     (project / ".lake").mkdir()
     os.symlink(PROOFS / ".lake" / "packages", project / ".lake" / "packages")
@@ -292,11 +494,51 @@ def jobs(count: int) -> int:
     return max(1, min(count, int(configured) if configured else 4))
 
 
+CLAIM_DEPS = re.compile(r"CLAIM_DEPS (?P<claim>\S+): (?P<deps>.*)$", re.M)
+
+
+def claim_dependencies() -> dict[str, set[str]]:
+    """Every claim of the audit, with the kernel theorems its proof rests on."""
+    audit = run(["lake", "env", "lean", "Audit.lean"], PROOFS)
+    if audit.returncode != 0:
+        raise SystemExit(audit.stdout + "\nFAIL: the audit does not run on the unmutated proofs")
+    claims = {m.group("claim"): set(m.group("deps").split()) for m in CLAIM_DEPS.finditer(audit.stdout)}
+    if not claims:
+        raise SystemExit("FAIL: the audit printed no CLAIM_DEPS lines")
+    return claims
+
+
+def is_bridge(theorem: str) -> bool:
+    """A lemma that unfolds extracted code into a statement about it."""
+    return theorem.rsplit(".", 1)[-1].endswith("_spec")
+
+
+def breaks(mutant: Mutant, claim: str, deps: set[str]) -> bool:
+    reached = set(mutant.fails) & deps
+    if is_bridge(claim):
+        return bool(reached)
+    return claim in reached or any(not is_bridge(theorem) for theorem in reached)
+
+
+def coverage(mutants: list[Mutant]) -> list[str]:
+    """Print which mutants break each claim; return the claims none breaks."""
+    missing = []
+    for claim, deps in claim_dependencies().items():
+        by = [m.name for m in mutants if breaks(m, claim, deps)]
+        print(f"claim: {claim} broken by {', '.join(by) if by else 'NOTHING'}", flush=True)
+        if not by:
+            missing.append(claim)
+    return missing
+
+
 def main() -> None:
     selected = set(sys.argv[1:])
-    mutants = [m for m in MUTANTS if not selected or m.name in selected]
+    mutants = [m for m in MUTANTS + PAIRED if not selected or m.name in selected]
     if selected and len(mutants) != len(selected):
         raise SystemExit(f"unknown mutant(s): {sorted(selected - {m.name for m in mutants})}")
+    # Every claim must be breakable before any mutant runs: a gap is a
+    # property nothing calibrates, whatever the mutants then report.
+    missing = [] if selected else coverage(mutants)
     # Every mutant runs even after a failure, so one gate run reports them all;
     # verdicts are printed in declaration order whatever order they finish in.
     failed: list[str] = []
@@ -307,6 +549,8 @@ def main() -> None:
                 failed.append(mutant.name)
     if failed:
         raise SystemExit(f"FAIL: {len(failed)} mutant(s) not calibrated: {failed}")
+    if missing:
+        raise SystemExit(f"FAIL: {len(missing)} claim(s) no mutant breaks: {missing}")
     print(f"PROOF_CALIBRATIONS={len(mutants)}", flush=True)
 
 

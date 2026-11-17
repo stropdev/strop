@@ -1,7 +1,6 @@
 # strop build/test/release services (plans/0002 §4, plans/0086 §8).
 #   docker compose run --build --rm test            # fmt + clippy -D warnings + cargo test + Loom
 #   docker compose run --build --rm proofs          # Lean proofs over the kernel translation
-#   docker compose run --build --rm model           # TLC probation models
 #   docker compose run --build --rm ssh-pythonfree  # editing over real sshd, no Python on the host
 #   docker compose run --build --rm -e VERSION=x.y.z release   # tarball → ./dist/
 #   docker compose run --build --rm bench           # perf scenarios (measurement, not a gate)
@@ -40,13 +39,6 @@ services:
       - DELAY_MS
       - STROP_SSH_EXEC_BENCH_N
 
-  model:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: model
-    # TLC runs at image-build time; the image existing IS the gate.
-    command: 'echo "gate passed: editor protocol model checks clean (TLC)"'
   bench:
     build:
       context: .

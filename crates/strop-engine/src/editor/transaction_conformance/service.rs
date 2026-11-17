@@ -329,8 +329,8 @@ fn step_service(
     Ok(())
 }
 
-/// The full invariant sweep after every service step — the Rust image of
-/// the TLA+ state invariants over observable editor state.
+/// The full invariant sweep after every service step, over observable
+/// editor state.
 fn sweep(editor: &Editor, model: &ServiceState) -> Result<(), String> {
     // NoStalePane + the pane model
     for (index, pane) in editor.panes.iter().enumerate() {

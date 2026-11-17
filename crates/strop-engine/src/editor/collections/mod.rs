@@ -89,6 +89,9 @@ pub(crate) struct Collection {
     pub touched: bool,
     /// `u` (true) or `Ctrl-R` (false) is moving the view's history.
     pub history_move: Option<bool>,
+    /// The view is writing into its sources: an edit it places at an
+    /// excerpt's end is that excerpt's own (0108 B4, `transact.rs`).
+    pub writing: bool,
     /// The current hit (0097 §3): where the cursor last was among the
     /// hits, in the collection or in a file.
     pub cursor: Option<usize>,

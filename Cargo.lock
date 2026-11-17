@@ -1568,6 +1568,7 @@ name = "strop-core"
 version = "0.70.0"
 dependencies = [
  "libc",
+ "loom",
  "parking_lot",
  "ropey",
  "serde",
@@ -1682,6 +1683,7 @@ dependencies = [
  "ropey",
  "serde",
  "strop-core",
+ "strop-kernel",
 ]
 
 [[package]]
