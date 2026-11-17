@@ -332,7 +332,7 @@ def cache.place
       ok (some «at», slots2)
 
 /-- [strop_kernel::editmap::map_position]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 23:0-31:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 32:0-40:1
     Visibility: public -/
 def editmap.map_position
   (position : Std.Usize) (start : Std.Usize) (old_end : Std.Usize)
@@ -349,7 +349,7 @@ def editmap.map_position
     else ok start
 
 /-- [strop_kernel::editmap::map_through_edits]: loop body 0:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 40:4-44:5
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:4-53:5
     Visibility: public -/
 @[rust_loop_body]
 def editmap.map_through_edits_loop.body
@@ -367,7 +367,7 @@ def editmap.map_through_edits_loop.body
   else ok (done mapped)
 
 /-- [strop_kernel::editmap::map_through_edits]: loop 0:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 40:4-44:5
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:4-53:5
     Visibility: public -/
 @[rust_loop]
 def editmap.map_through_edits_loop
@@ -380,7 +380,7 @@ def editmap.map_through_edits_loop
     (mapped, k)
 
 /-- [strop_kernel::editmap::map_through_edits]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 37:0-46:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 46:0-55:1
     Visibility: public -/
 @[reducible]
 def editmap.map_through_edits
@@ -390,8 +390,100 @@ def editmap.map_through_edits
   := do
   editmap.map_through_edits_loop edits position 0#usize
 
+/-- [strop_kernel::editmap::map_span]:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 64:0-87:1
+    Visibility: public -/
+def editmap.map_span
+  (start : Std.Usize) («end» : Std.Usize) (s : Std.Usize) (e : Std.Usize)
+  (new_end : Std.Usize) (grow_at_end : Bool) :
+  Result (Std.Usize × Std.Usize)
+  := do
+  let mapped_start ←
+    if start <= s
+    then ok start
+    else
+      if start >= e
+      then do
+           let i ← start - e
+           ok (core.num.Usize.saturating_add new_end i)
+      else ok s
+  if «end» < s
+  then ok (mapped_start, «end»)
+  else
+    if «end» = s
+    then
+      if grow_at_end
+      then
+        if «end» <= e
+        then ok (mapped_start, new_end)
+        else
+          let i ← «end» - e
+          let mapped_end ← lift (core.num.Usize.saturating_add new_end i)
+          ok (mapped_start, mapped_end)
+      else ok (mapped_start, «end»)
+    else
+      if «end» <= e
+      then ok (mapped_start, new_end)
+      else
+        let i ← «end» - e
+        let mapped_end ← lift (core.num.Usize.saturating_add new_end i)
+        ok (mapped_start, mapped_end)
+
+/-- [strop_kernel::editmap::keep_disjoint]: loop body 0:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 98:4-107:5
+    Visibility: public -/
+@[rust_loop_body]
+def editmap.keep_disjoint_loop.body
+  (ranges : Slice (Std.Usize × Std.Usize)) (keep : Slice Bool)
+  (reach : Std.Usize) (k : Std.Usize) :
+  Result (ControlFlow ((Slice Bool) × Std.Usize × Std.Usize) (Slice Bool))
+  := do
+  let i := Slice.len ranges
+  if k < i
+  then
+    let i1 := Slice.len keep
+    if k < i1
+    then
+      let (i2, reach1) ← Slice.index_usize ranges k
+      let (keep1, reach2) ←
+        if i2 >= reach
+        then do
+             let s ← Slice.update keep k true
+             ok (s, reach1)
+        else do
+             let s ← Slice.update keep k false
+             ok (s, reach)
+      let k1 ← k + 1#usize
+      ok (cont (keep1, reach2, k1))
+    else ok (done keep)
+  else ok (done keep)
+
+/-- [strop_kernel::editmap::keep_disjoint]: loop 0:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 98:4-107:5
+    Visibility: public -/
+@[rust_loop]
+def editmap.keep_disjoint_loop
+  (ranges : Slice (Std.Usize × Std.Usize)) (keep : Slice Bool)
+  (reach : Std.Usize) (k : Std.Usize) :
+  Result (Slice Bool)
+  := do
+  loop
+    (fun (keep1, reach1, k1) => editmap.keep_disjoint_loop.body ranges keep1
+      reach1 k1)
+    (keep, reach, k)
+
+/-- [strop_kernel::editmap::keep_disjoint]:
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 93:0-108:1
+    Visibility: public -/
+@[reducible]
+def editmap.keep_disjoint
+  (ranges : Slice (Std.Usize × Std.Usize)) (keep : Slice Bool) :
+  Result (Slice Bool)
+  := do
+  editmap.keep_disjoint_loop ranges keep 0#usize 0#usize
+
 /-- [strop_kernel::editmap::BatchRefusal]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 50:0-59:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 112:0-121:1
     Visibility: public -/
 @[discriminant isize]
 inductive editmap.BatchRefusal where
@@ -400,7 +492,7 @@ inductive editmap.BatchRefusal where
 | Unsorted : editmap.BatchRefusal
 
 /-- [strop_kernel::editmap::{impl core::fmt::Debug for strop_kernel::editmap::BatchRefusal}::fmt]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:9-49:14
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:9-111:14
     Visibility: public -/
 def editmap.BatchRefusal.Insts.CoreFmtDebug.fmt
   (self : editmap.BatchRefusal) (f : core.fmt.Formatter) :
@@ -415,7 +507,7 @@ def editmap.BatchRefusal.Insts.CoreFmtDebug.fmt
     core.fmt.Formatter.write_str f (toStr "Unsorted")
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::fmt::Debug for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:9-49:14 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:9-111:14 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreFmtDebug : core.fmt.Debug
   editmap.BatchRefusal := {
@@ -423,14 +515,14 @@ def editmap.BatchRefusal.Insts.CoreFmtDebug : core.fmt.Debug
 }
 
 /-- [strop_kernel::editmap::{impl core::clone::Clone for strop_kernel::editmap::BatchRefusal}::clone]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:16-49:21
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:16-111:21
     Visibility: public -/
 def editmap.BatchRefusal.Insts.CoreCloneClone.clone
   (self : editmap.BatchRefusal) : Result editmap.BatchRefusal := do
   ok self
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::clone::Clone for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:16-49:21 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:16-111:21 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreCloneClone : core.clone.Clone
   editmap.BatchRefusal := {
@@ -438,7 +530,7 @@ def editmap.BatchRefusal.Insts.CoreCloneClone : core.clone.Clone
 }
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::marker::Copy for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:23-49:27 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:23-111:27 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreMarkerCopy : core.marker.Copy
   editmap.BatchRefusal := {
@@ -446,14 +538,14 @@ def editmap.BatchRefusal.Insts.CoreMarkerCopy : core.marker.Copy
 }
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::marker::StructuralPartialEq for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:29-49:38 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:29-111:38 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq editmap.BatchRefusal := {
 }
 
 /-- [strop_kernel::editmap::{impl core::cmp::PartialEq<strop_kernel::editmap::BatchRefusal> for strop_kernel::editmap::BatchRefusal}::eq]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:29-49:38
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:29-111:38
     Visibility: public -/
 def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal.eq
   (self : editmap.BatchRefusal) (other : editmap.BatchRefusal) :
@@ -464,7 +556,7 @@ def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal.eq
   ok (self1 = other1)
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::cmp::PartialEq<strop_kernel::editmap::BatchRefusal> for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:29-49:38 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:29-111:38 -/
 @[reducible]
 def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal :
   core.cmp.PartialEq editmap.BatchRefusal editmap.BatchRefusal := {
@@ -472,7 +564,7 @@ def editmap.BatchRefusal.Insts.CoreCmpPartialEqBatchRefusal :
 }
 
 /-- Trait implementation: [strop_kernel::editmap::{impl core::cmp::Eq for strop_kernel::editmap::BatchRefusal}]
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 49:40-49:42 -/
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 111:40-111:42 -/
 @[reducible]
 impl_def editmap.BatchRefusal.Insts.CoreCmpEq : core.cmp.Eq
   editmap.BatchRefusal := {
@@ -482,7 +574,7 @@ impl_def editmap.BatchRefusal.Insts.CoreCmpEq : core.cmp.Eq
 }
 
 /-- [strop_kernel::editmap::validate_batch]: loop body 0:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 66:4-83:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 128:4-145:1
     Visibility: public -/
 @[rust_loop_body]
 def editmap.validate_batch_loop.body
@@ -520,7 +612,7 @@ def editmap.validate_batch_loop.body
   else ok (done (core.result.Result.Ok ()))
 
 /-- [strop_kernel::editmap::validate_batch]: loop 0:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 66:4-83:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 128:4-145:1
     Visibility: public -/
 @[rust_loop]
 def editmap.validate_batch_loop
@@ -532,7 +624,7 @@ def editmap.validate_batch_loop
     k
 
 /-- [strop_kernel::editmap::validate_batch]:
-    Source: 'crates/strop-kernel/src/editmap.rs', lines 64:0-83:1
+    Source: 'crates/strop-kernel/src/editmap.rs', lines 126:0-145:1
     Visibility: public -/
 @[reducible]
 def editmap.validate_batch
@@ -700,21 +792,15 @@ def layout.Span.Insts.CoreFmtDebug : core.fmt.Debug layout.Span := {
   fmt := layout.Span.Insts.CoreFmtDebug.fmt
 }
 
-/-- [strop_kernel::layout::empty]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 34:0-36:1
-    Visibility: public -/
-def layout.empty : Result layout.Span := do
-  ok { «at» := 0#usize, len := 0#usize }
-
 /-- [strop_kernel::layout::least]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 38:0-44:1 -/
+    Source: 'crates/strop-kernel/src/layout.rs', lines 33:0-39:1 -/
 def layout.least (a : Std.Usize) (b : Std.Usize) : Result Std.Usize := do
   if a < b
   then ok a
   else ok b
 
 /-- [strop_kernel::layout::minimum]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 48:0-54:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 43:0-49:1
     Visibility: public -/
 def layout.minimum
   (tracks : Std.Usize) (unit : Std.Usize) (gap : Std.Usize) :
@@ -729,7 +815,7 @@ def layout.minimum
     i + i2
 
 /-- [strop_kernel::layout::total]: loop body 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 60:4-63:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 55:4-58:5
     Visibility: public -/
 @[rust_loop_body]
 def layout.total_loop.body
@@ -746,7 +832,7 @@ def layout.total_loop.body
   else ok (done sum)
 
 /-- [strop_kernel::layout::total]: loop 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 60:4-63:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 55:4-58:5
     Visibility: public -/
 @[rust_loop]
 def layout.total_loop
@@ -758,14 +844,14 @@ def layout.total_loop
     (sum, k)
 
 /-- [strop_kernel::layout::total]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 57:0-65:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 52:0-60:1
     Visibility: public -/
 @[reducible]
 def layout.total (tracks : Slice Std.Usize) : Result Std.Usize := do
   layout.total_loop tracks 0#usize 0#usize
 
 /-- [strop_kernel::layout::share]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 70:0-72:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 65:0-67:1
     Visibility: public -/
 def layout.share
   (room : Std.Usize) (tracks : Std.Usize) (weight : Std.Usize) :
@@ -776,7 +862,7 @@ def layout.share
   ok (core.option.Option.unwrap_or o 0#usize)
 
 /-- [strop_kernel::layout::tile]: loop body 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 83:4-96:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 78:4-91:5
     Visibility: public -/
 @[rust_loop_body]
 def layout.tile_loop.body
@@ -817,7 +903,7 @@ def layout.tile_loop.body
   else ok (done out)
 
 /-- [strop_kernel::layout::tile]: loop 0:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 83:4-96:5
+    Source: 'crates/strop-kernel/src/layout.rs', lines 78:4-91:5
     Visibility: public -/
 @[rust_loop]
 def layout.tile_loop
@@ -832,7 +918,7 @@ def layout.tile_loop
     (out, weight, room, «at», k)
 
 /-- [strop_kernel::layout::tile]:
-    Source: 'crates/strop-kernel/src/layout.rs', lines 77:0-97:1
+    Source: 'crates/strop-kernel/src/layout.rs', lines 72:0-92:1
     Visibility: public -/
 def layout.tile
   (cells : Std.Usize) (unit : Std.Usize) (gap : Std.Usize)

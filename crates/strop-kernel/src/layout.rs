@@ -30,11 +30,6 @@ pub struct Span {
     pub len: usize,
 }
 
-/// What the owner fills `out` with before `tile`.
-pub fn empty() -> Span {
-    Span { at: 0, len: 0 }
-}
-
 fn least(a: usize, b: usize) -> usize {
     if a < b {
         a
@@ -101,7 +96,7 @@ mod tests {
     use super::*;
 
     fn spans(cells: usize, unit: usize, gap: usize, tracks: &[usize]) -> [Span; 8] {
-        let mut out = [empty(); 8];
+        let mut out = [Span { at: 0, len: 0 }; 8];
         tile(cells, unit, gap, tracks, &mut out);
         out
     }

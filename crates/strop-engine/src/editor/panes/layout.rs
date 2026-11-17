@@ -226,7 +226,7 @@ impl Layout {
             }
             Layout::Split { axis, children } => {
                 let tracks: Vec<usize> = children.iter().map(|child| child.tracks(*axis)).collect();
-                let mut spans = vec![kernel::empty(); children.len()];
+                let mut spans = vec![Span { at: 0, len: 0 }; children.len()];
                 let (cells, unit, gap) = match axis {
                     Axis::Row => (frame.width, 1, 1),
                     Axis::Column => (frame.height, STACKED_UNIT, 0),
