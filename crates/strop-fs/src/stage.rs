@@ -56,11 +56,16 @@ impl<'a> Stage<'a> {
                 "stage directory identity unavailable",
             )
         })?;
+        // The private 0700 directory keeps the contents unreachable while
+        // staged; the file itself takes 0666 under the umask, so a new
+        // file publishes with the mode any program would give it. An
+        // existing destination's mode is restored over it before
+        // publication.
         let file = match openat(
             &directory,
             "contents",
             OFlags::CREATE | OFlags::EXCL | OFlags::RDWR | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::from_raw_mode(0o600),
+            Mode::from_raw_mode(0o666),
         ) {
             Ok(file) => File::from(file),
             Err(error) => {
