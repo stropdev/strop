@@ -242,3 +242,28 @@ fn insert_ctrl_w_and_ctrl_u_after_an_arrow_stop_at_the_new_insert_start() {
     e.feed_text("<c-w>");
     assert_eq!(text(&e), "one wo\n");
 }
+
+/// 0108 D2 (found by the key fuzzer): a recording holds the keys typed,
+/// not what a macro they run expands to, and `@a` inside `qa` replays
+/// what `"a` held before — it never replays the recording growing under
+/// it (that ran without end).
+#[test]
+fn a_recording_holds_typed_keys_and_replays_the_register_it_replaces() {
+    let mut e = editor_with("abcdef\n");
+    e.feed_text("qbxq");
+    e.feed_text("qa@bq");
+    assert_eq!(text(&e), "cdef\n");
+    assert_eq!(e.register(Some('a')).text, "@b");
+    e.feed_text("@a");
+    assert_eq!(text(&e), "def\n");
+    let mut e = editor_with("abcdef\n");
+    e.feed_text("qaxx@aq");
+    assert_eq!(text(&e), "cdef\n", "the empty register replays nothing");
+    assert_eq!(e.register(Some('a')).text, "xx@a");
+    e.feed_text("qax@aq");
+    assert_eq!(
+        text(&e),
+        "\n",
+        "the old `xx@a` runs until the line is empty"
+    );
+}

@@ -221,7 +221,7 @@ pub struct Editor {
     /// scroll_to_cursor; viewport motions read it.
     pub(crate) view_rows: usize,
     /// Macro recording (0016): the register being recorded into.
-    pub(crate) recording: Option<char>,
+    pub(crate) recording: Option<macros::Recording>,
     /// The app event channel (0018): set by connect_events; late LSP
     /// attaches forward through it.
     pub(crate) app_tx: Option<events::EventSender>,
@@ -624,19 +624,19 @@ impl Editor {
             self.message = "open cancelled".into();
         }
         // macro recording (0016): q at ground stops and never reaches
-        // the machine; everything else records BEFORE it runs, so
-        // replay is exactly the live stream
-        if let Some(reg) = self.recording {
+        // the machine; every other TYPED key records before it runs, so
+        // replay is exactly the live stream. Keys a macro or `:normal`
+        // feeds are its expansion, not typing (Vim): recording them made
+        // `@a` inside `qa` replay itself without end.
+        if self.recording.is_some() && self.macro_depth == 0 {
             let at_ground =
                 self.walker.is_ground() && !self.pending.is_active() && self.mode != Mode::Insert;
             if at_ground && key == Key::Char('q') {
-                self.recording = None;
-                self.macro_recorded(reg);
-                self.message = format!("recorded @{}", reg);
+                self.macro_stop();
                 return;
             }
-            if let Some(buf) = self.macros.get_mut(&reg) {
-                buf.push(key);
+            if let Some(recording) = self.recording.as_mut() {
+                recording.keys.push(key);
             }
         }
         self.dispatch_owned(key);
