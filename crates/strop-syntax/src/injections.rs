@@ -187,16 +187,17 @@ impl Highlighter {
 
     /// Whether any layer's tree holds an error or missing node (test
     /// inspection): tree-sitter's error recovery may legitimately settle
-    /// differently after an incremental reparse than from scratch.
-    #[cfg(test)]
-    pub(crate) fn any_layer_has_error(&self) -> bool {
+    /// differently after an incremental reparse than from scratch, so
+    /// differential tests compare well-formed parses only.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn has_parse_error(&self) -> bool {
         self.tree
             .as_ref()
             .is_some_and(|tree| tree.root_node().has_error())
             || self
                 .children
                 .iter()
-                .any(|child| child.highlighter.any_layer_has_error())
+                .any(|child| child.highlighter.has_parse_error())
     }
 }
 

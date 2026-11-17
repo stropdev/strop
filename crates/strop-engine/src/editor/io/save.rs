@@ -282,6 +282,7 @@ impl Editor {
         };
         let previous_path = document.buf.path.clone();
         let saved = document.buf.accept_save(receipt);
+        document.redetect_syntax();
         if saved {
             // A confirmed save IS the fresh observation: external-change
             // state clears only here or on a guarded reload, never on a

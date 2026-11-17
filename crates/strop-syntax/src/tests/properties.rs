@@ -119,7 +119,7 @@ fn fresh(path: &Path, rope: &Rope, first: usize, last: usize) -> (Vec<Span>, boo
     let spans = hl
         .highlight(rope, BufferRevision::new(0), first, last)
         .expect("fresh highlight");
-    (spans, hl.any_layer_has_error())
+    (spans, hl.has_parse_error())
 }
 
 /// One random replacement at char boundaries, from the case's alphabet.
