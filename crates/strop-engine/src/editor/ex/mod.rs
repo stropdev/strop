@@ -71,6 +71,11 @@ impl Editor {
         substitute_preview(self)
     }
 
+    /// How the command on the open line is typed (`:w[!] [file]`).
+    pub fn cmdline_usage(&self) -> Option<&'static str> {
+        self.cmdline.completion.usage()
+    }
+
     /// The command line's menu, when it shows.
     pub fn cmdline_menu(&self) -> Option<&complete::Completion> {
         let completion = &self.cmdline.completion;

@@ -23,6 +23,13 @@ pub(crate) enum Target {
     },
 }
 
+/// The command the line names (the outer one: `:g`, not what it runs).
+pub(crate) fn command(body: &str) -> Option<&'static ExCommand> {
+    let mut at = leading(body);
+    at += range_len(&body[at..]);
+    super::super::command_word(&body[at..]).map(|(command, _, _)| command)
+}
+
 /// The target at `cursor` in `body`.
 pub(crate) fn target(body: &str, cursor: usize) -> Target {
     let cursor = cursor.min(body.len());

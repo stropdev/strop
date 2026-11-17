@@ -2,7 +2,8 @@
 //! in `buffer`/`diff` (0010 §3); `statusline` owns the modeline and
 //! `echo` the message row above it. Colours come from one per-frame
 //! `Tokens` (`style.rs`, 0088 §2) and chrome from one primitive module
-//! (`card.rs`); this module owns the welcome card and the cursor.
+//! (`card.rs`); this module owns the welcome card and the cursor. While a
+//! command line is open it is the bottom row (`cmdline`).
 //! Overlay precedence (0001 §5.8 subset): search/incsearch < operator
 //! preview < cursor. One accent colour (0001 §4).
 
@@ -21,7 +22,7 @@ mod block_frame_tests;
 mod buffer;
 pub(crate) mod card;
 mod clip;
-mod cmd_card;
+mod cmdline;
 mod completion;
 pub(crate) mod diff;
 mod echo;
@@ -44,6 +45,7 @@ mod golden_modeline_tests;
 mod golden_tests;
 mod help;
 mod hover_card;
+mod menu;
 #[path = "picker/mod.rs"]
 mod picker;
 mod recovery_card;
@@ -121,8 +123,8 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
     render_welcome(editor, &t, frame);
     echo::render(editor, &t, frame, area, pane_area);
     statusline::render(editor, &t, frame, area);
-    cmd_card::render_cmd_card(editor, &t, frame);
-    let caret = if !cmd_card_active(editor) && !editor.terminal_input_active() {
+    cmdline::render(editor, &t, frame, area);
+    let caret = if !cmdline::open(editor) && !editor.terminal_input_active() {
         place_cursor(editor, &t, frame, pane_area)
     } else {
         None
@@ -254,10 +256,4 @@ fn render_welcome(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         Line::from(Span::styled(note, Style::default().fg(t.muted))),
     ];
     frame.render_widget(Paragraph::new(lines), inner);
-}
-
-/// True when the floating command/search/pipe card owns the caret
-/// (0031 R7: every sigil prompt — `:`, `/`, `?`, `|` — takes it).
-pub(crate) fn cmd_card_active(editor: &Editor) -> bool {
-    !editor.picker_open() && editor.cmdline_sigil().is_some()
 }

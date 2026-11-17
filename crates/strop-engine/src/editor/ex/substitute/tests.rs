@@ -196,11 +196,11 @@ fn cursor_identity_no_target_and_offscreen_counts_are_truthful() {
     editor.feed_text(":%s/alpha/omega/g");
     let preview = ready(&editor);
     assert_eq!(preview.count(), 6);
-    assert_eq!(preview.offscreen_count(), 4);
+    assert_eq!(preview.offscreen(), (1, 3));
     assert!(preview.diff_text().contains("@@"));
     assert_eq!(preview.diff_text().matches("-alpha").count(), 6);
     assert_eq!(preview.diff_text().matches("+omega").count(), 6);
-    assert!(preview.summary().contains("4 offscreen"));
+    assert_eq!(preview.summary(), "6 changes · 1 above · 3 below");
 }
 
 #[test]

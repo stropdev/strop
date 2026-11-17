@@ -1,25 +1,25 @@
    1  let value_0 = alpha + beta * 0;                                          ▮
-   2  let value_╭ command ─────────────────────────────────────╮               ▮
-   3  let value_│ : w▏                                         │                
-   4  let value_│   write  write the buffer (! over a file ch… │                
-   5  let value_│   wall   write every modified buffer         │                
-   6  let value_│   wq     write and quit                      │                
-   7  let value_│   wqall  write every modified buffer and qu… │                
-   8  let value_╰──────────────────────────────────────────────╯                
-   9  let value_8 = alpha + beta * 8;                                           
-  10  let value_9 = alpha + beta * 9;                                           
-  11  let value_10 = alpha + beta * 10;                                         
- COMMAND    feature/modeline-design  …/statusline/layout.rs  ●1 ▲2    2%   1:1  
+   2  let value_1 = alpha + beta * 1;                                          ▮
+   3  let value_2 = alpha + beta * 2;                                           
+   4  let value_3 = alpha + beta * 3;                                           
+   5  let value_4 = alpha + beta * 4;                                           
+   6  let ╭ commands ───────────────────────────────── 4 ╮                      
+   7  let │  write  w    write the buffer (! over a fil… │                      
+   8  let │  wall   wa   write every modified buffer     │                      
+   9  let │  wq     wq   write and quit                  │                      
+  10  let │  wqall  wqa  write every modified buffer an… │                      
+  11  let ╰  tab  next   s-tab  previous ────────────────╯                      
+ COMMAND    :w▏                                                    :w[!] [file] 
 
   0: 1:#858c9a/#1b1e24+b 5:#e8a848/#1b1e24 31:#e6e1d6/#1b1e24 42:#1b1e24/#1b1e24 1:#858c9a/#15171c
-  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 1:#858c9a/#1c1f25 9:#e6e1d6/#1c1f25+b 38:#858c9a/#1c1f25 15:reset/#15171c 1:#858c9a/#15171c
-  2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 2:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 41:reset/#1c1f25 1:#858c9a/#1c1f25 15:reset/#15171c 1:reset/reset
-  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25+b 35:#e6e1d6/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 15:reset/#15171c 1:reset/reset
-  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e6e1d6/#1c1f25+b 27:#858c9a/#1c1f25 9:reset/#1c1f25 1:#858c9a/#1c1f25 15:reset/#15171c 1:reset/reset
-  5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e6e1d6/#1c1f25+b 14:#858c9a/#1c1f25 22:reset/#1c1f25 1:#858c9a/#1c1f25 15:reset/#15171c 1:reset/reset
-  6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e6e1d6/#1c1f25+b 35:#858c9a/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25 15:reset/#15171c 1:reset/reset
-  7: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 10:#e6e1d6/#15171c 48:#858c9a/#1c1f25 15:reset/#15171c 1:reset/reset
-  8: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 31:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
-  9: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 31:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
- 10: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 33:#e6e1d6/#15171c 40:reset/#15171c 1:reset/reset
- 11: 10:#15171c/#8fc48a+b 2:reset/#1c1f25 23:#858c9a/#1c1f25 2:reset/#1c1f25 13:#a8adb8/#1c1f25 9:#e6e1d6/#1c1f25 2:reset/#1c1f25 2:#e8707c/#1c1f25 1:reset/#1c1f25 2:#d9a85a/#1c1f25 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 6:#a8adb8/#1c1f25
+  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 31:#e6e1d6/#15171c 42:reset/#15171c 1:#858c9a/#15171c
+  2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 31:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 31:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 31:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e6e1d6/#15171c 1:#858c9a/#1c1f25 10:#e6e1d6/#1c1f25+b 37:#858c9a/#1c1f25 21:reset/#15171c 1:reset/reset
+  6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25+b 4:#e6e1d6/#1c1f25 5:#858c9a/#1c1f25 33:#a8adb8/#1c1f25 1:#e6e1d6/#1c1f25 1:#858c9a/#1c1f25 21:reset/#15171c 1:reset/reset
+  7: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25+b 4:#e6e1d6/#1c1f25 5:#858c9a/#1c1f25 29:#a8adb8/#1c1f25 5:#e6e1d6/#1c1f25 1:#858c9a/#1c1f25 21:reset/#15171c 1:reset/reset
+  8: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25+b 4:#e6e1d6/#1c1f25 5:#858c9a/#1c1f25 16:#a8adb8/#1c1f25 18:#e6e1d6/#1c1f25 1:#858c9a/#1c1f25 21:reset/#15171c 1:reset/reset
+  9: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25+b 4:#e6e1d6/#1c1f25 5:#858c9a/#1c1f25 33:#a8adb8/#1c1f25 1:#e6e1d6/#1c1f25 1:#858c9a/#1c1f25 21:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 4:#e6e1d6/#15171c 2:#858c9a/#1c1f25 5:#e8a848/#23272f+b 7:#858c9a/#1c1f25 7:#e8a848/#23272f+b 27:#858c9a/#1c1f25 21:reset/#15171c 1:reset/reset
+ 11: 10:#15171c/#8fc48a+b 2:reset/#1c1f25 1:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 52:reset/#1c1f25 12:#858c9a/#1c1f25 1:reset/#1c1f25

@@ -1,7 +1,7 @@
    1  //! The modeline: one quiet row at the bottom edge.                                                                                   
-   2  //!                   ╭ command ─────────────────────────────────────────────────────────────────────────╮                            
-   3  //! Every width is a d│ : '<,'>▏                                                                         │                            
-   4                        ╰──────────────────────────────────────────────────────────────────────────────────╯                            
+   2  //!                                                                                                                                   
+   3  //! Every width is a display cell, never a character.                                                                                 
+   4                                                                                                                                        
    5  use std::path::Path;                                                                                                                  
    6                                                                                                                                        
    7  /// Gather the row.                                                                                                                   
@@ -37,12 +37,12 @@
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
- COMMAND    src/render/statusline.rs                                                                                             40%   8:1  
+ COMMAND    :'<,'>▏                                                                                                                         
 
   0: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 51:#696d77/#f6f2e9+i 82:reset/#f6f2e9 1:reset/reset
-  1: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 19:reset/#f6f2e9 1:#656d7b/#fdfbf6 9:#262a30/#fdfbf6+b 74:#656d7b/#fdfbf6 27:reset/#f6f2e9 1:reset/reset
-  2: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 22:#696d77/#f6f2e9+i 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 2:#8a510f/#fdfbf6 5:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 73:reset/#fdfbf6 1:#656d7b/#fdfbf6 27:reset/#f6f2e9 1:reset/reset
-  3: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 22:reset/#f6f2e9 84:#656d7b/#fdfbf6 27:reset/#f6f2e9 1:reset/reset
+  1: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 3:#696d77/#f6f2e9+i 130:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 53:#696d77/#f6f2e9+i 80:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
   4: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 3:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 3:#1f6e5c/#f6f2e9 2:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 2:#656d7b/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 113:reset/#f6f2e9 1:reset/reset
   5: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
   6: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 19:#696d77/#f6f2e9+i 114:reset/#f6f2e9 1:reset/reset
@@ -78,4 +78,4 @@
  36: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  37: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  38: 1:#aeb3ba/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
- 39: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6 92:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 6:#4b525c/#fdfbf6
+ 39: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 1:#8a510f/#fdfbf6 5:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 121:reset/#fdfbf6

@@ -6,8 +6,6 @@
 
 use crate::editor::Editor;
 
-use crate::render::cmd_card_active;
-
 pub(super) fn spec(editor: &Editor) -> String {
     if editor.terminal_phase(editor.current()).is_some() {
         return if editor.cmdline().is_open() {
@@ -15,11 +13,6 @@ pub(super) fn spec(editor: &Editor) -> String {
         } else {
             String::new()
         };
-    }
-    if editor.substitute_preview().is_some() {
-        // the `:` card shows the substitution's state: one fact, one
-        // place (0098 §3.2)
-        return String::new();
     }
     let preview = match editor.preview() {
         Ok(Some((_, spec))) => Some(spec),
@@ -31,10 +24,6 @@ pub(super) fn spec(editor: &Editor) -> String {
             editor
                 .preview_is_resolving()
                 .then(|| "preview resolving…".into())
-        })
-        .or_else(|| {
-            (editor.cmdline().is_open() && !cmd_card_active(editor))
-                .then(|| editor.cmdline().text().trim_end_matches('\r').to_owned())
         })
         .or_else(|| {
             (!editor.walker().prefix_display().is_empty() || !editor.walker().state.empty())

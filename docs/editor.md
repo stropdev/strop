@@ -263,6 +263,27 @@ binds that strop does not (**Missing**) or uses differently (**Reassigned**).
 
 ## The command line
 
+`:`, `/`, `?` and `|` open the command line on the bottom row, beside the
+mode chip. `Esc` or `Ctrl-C` cancels it at once, and so does `Backspace` on
+an empty line. It edits like Vim's: `Ctrl-W` deletes a word, `Ctrl-U`
+everything before the cursor, `Ctrl-B` / `Home` and `Ctrl-E` / `End` go to
+the start and end, `Ctrl-R {register}` inserts a register and
+`Ctrl-R Ctrl-W` / `Ctrl-R Ctrl-A` the word or WORD under the cursor.
+
+- **History**: `Up` / `Down` recall older and newer lines that start with
+  what you typed; `Ctrl-P` / `Ctrl-N` recall any line. `:` and `/ ?` keep
+  200 lines each, per project, with the session.
+- **Completion**: a menu of commands opens as you type a name; its top row
+  is the command `Enter` runs. `Tab` / `Shift-Tab` (or `Ctrl-N` / `Ctrl-P`
+  while it shows) write the next row into the line, and after the last one
+  put back what you typed; `Ctrl-Y` keeps a row, `Ctrl-E` puts back what you
+  typed. After a name, `Tab` or `Ctrl-D` lists what the command takes:
+  files (`:e`, `:w`, `:sp`, `:vs`, `:view`), directories (`:cd`), buffers
+  (`:b`, `:bd`), themes, help topics, or the command's own words (`:set`,
+  `:remote`, `:recover`, `:tab-size`, `:indent-style`, `:sort`).
+- The right end of the line says what the command takes (`:w[!] [file]`),
+  how many matches a search has, or what a `:s` will change.
+
 `:` takes Vim's ranges and Vim's names. A range is line numbers, `.`, `$`,
 `%`, marks (`'a`, and `'<,'>` — which `:` typed from Visual mode fills in),
 `/pattern/` and `?pattern?`, each with `+N` / `-N` offsets, joined by `,` or

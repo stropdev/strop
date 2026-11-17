@@ -111,6 +111,8 @@ pub struct Completion {
     /// What was typed there, put back after the last row.
     typed: String,
     selected: Option<usize>,
+    /// How the command on the line is typed (`:w[!] [file]`).
+    usage: Option<&'static str>,
     pub(crate) listing: Option<paths::Listing>,
     /// `Tab` asked for a path listing: select its first row when it lands.
     pub(crate) select_on_arrival: bool,
@@ -137,6 +139,10 @@ impl Completion {
     pub fn selected(&self) -> Option<usize> {
         self.selected
     }
+    /// How the command on the line is typed, when one is named.
+    pub fn usage(&self) -> Option<&'static str> {
+        self.usage
+    }
     /// The body offset the menu's rows start at (it hangs under it).
     pub fn anchor(&self) -> usize {
         self.span.0
@@ -151,6 +157,7 @@ impl Completion {
     /// The line closed: forget everything.
     pub(crate) fn reset(&mut self) {
         self.close();
+        self.usage = None;
         self.listing = None;
         self.select_on_arrival = false;
         self.note = None;
@@ -267,6 +274,8 @@ fn refresh(editor: &mut Editor, explicit: bool) {
         return;
     };
     let target = split::target(line.body(), line.cursor() - 1);
+    let usage = split::command(line.body()).map(|command| command.usage);
+    editor.cmdline.completion.usage = usage;
     let was_open = editor.cmdline.completion.open;
     let kind = editor.cmdline.completion.kind;
     match target {

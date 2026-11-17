@@ -26,7 +26,11 @@ pub(super) fn project(
             cursor: None,
         };
     }
-    let label = format!("{label} ");
+    let label = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{label} ")
+    };
     let label_budget = usize::from(width.saturating_sub(1));
     // A narrow field ellipsizes the label instead of letting it vanish
     // into clipped blanks (0068 B3).

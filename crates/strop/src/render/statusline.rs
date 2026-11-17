@@ -37,7 +37,7 @@ use super::clip::{clip_end, clip_start, width};
 use super::file_name;
 use super::style::Tokens;
 
-mod chip;
+pub(super) mod chip;
 mod layout;
 mod scope;
 mod services;
@@ -50,6 +50,9 @@ use layout::{Grants, Part};
 pub(super) fn render(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
         return; // a 0-sized resize must not underflow (0027 §2)
+    }
+    if super::cmdline::open(editor) {
+        return; // the command line has the row (0110 §3.1)
     }
     let cells = area.width as usize;
     let row = Modeline::gather(editor, t);

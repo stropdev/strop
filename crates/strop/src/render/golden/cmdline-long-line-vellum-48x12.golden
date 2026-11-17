@@ -1,0 +1,25 @@
+   5  │   chip: String,                         
+   6  │   dirty: bool,                          
+   7  │   line: usize,                          
+   8  }                                        ▮
+   9                                           ▮
+  10  impl Modeline {                          ▮
+  11  │   fn gather(path: &Path, line: usize) -▮
+  12  │   │   let chip = format!(" {} ", "NORMA▮
+  13  │   │   Self { chip, dirty: path.exists()▮
+  14  │   }                                    ▮
+  15                                            
+ COMMAND    :st the row/and a replacement too/g▏
+
+  0: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 24:reset/#f6f2e9 1:reset/reset
+  1: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 25:reset/#f6f2e9 1:reset/reset
+  2: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 5:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 25:reset/#f6f2e9 1:reset/reset
+  3: 1:#656d7b/#f6f2e9+b 6:#656d7b/#f6f2e9 40:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  4: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 41:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  5: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 4:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 8:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 26:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  6: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 2:#6f3aa8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 4:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 5:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9
+  7: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 3:#6f3aa8/#f6f2e9 6:#262a30/#f6f2e9 1:#4b525c/#f6f2e9 1:#262a30/#f6f2e9 6:#235f8c/#f6f2e9 1:#4b525c/#f6f2e9 1:#656d7b/#f6f2e9 6:#4e6f22/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#4e6f22/#f6f2e9 1:#656d7b/#f6f2e9
+  8: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 5:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 6:#262a30/#f6f2e9 3:#656d7b/#f6f2e9
+  9: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 36:reset/#f6f2e9 1:#656d7b/#f6f2e9
+ 10: 1:#656d7b/#efeadf+b 5:#8a510f/#efeadf 41:#efeadf/#efeadf 1:reset/reset
+ 11: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 1:#8a510f/#fdfbf6 34:#262a30/#fdfbf6 1:#8a510f/#fdfbf6

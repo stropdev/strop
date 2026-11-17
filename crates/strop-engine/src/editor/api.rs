@@ -169,8 +169,8 @@ impl Editor {
         &self.resolution
     }
 
-    /// The free-text pending line (readonly; AR02): `:`/`/` input in
-    /// flight, drawn by the command card and statusline.
+    /// The open command line (readonly; AR02): `: / ? |` input in
+    /// flight, drawn on the bottom row.
     pub fn cmdline(&self) -> &cmdline::Cmdline {
         &self.cmdline
     }

@@ -97,7 +97,9 @@ pub(crate) struct SubstitutionPlan {
 /// plan: rendering never rebuilds a diff or copies all of its changed text.
 pub struct SubstitutionPreview<'a> {
     pub(crate) plan: &'a SubstitutionPlan,
-    pub(crate) offscreen: usize,
+    /// Changed lines above and below the view.
+    pub(crate) above: usize,
+    pub(crate) below: usize,
 }
 impl SubstitutionPreview<'_> {
     pub fn ranges(&self) -> impl Iterator<Item = Range> + '_ {
@@ -115,28 +117,25 @@ impl SubstitutionPreview<'_> {
     pub fn changed_line_count(&self) -> usize {
         self.plan.changed_lines.len()
     }
-    pub fn offscreen_count(&self) -> usize {
-        self.offscreen
+    /// Changed lines out of view: above it, below it.
+    pub fn offscreen(&self) -> (usize, usize) {
+        (self.above, self.below)
     }
     /// Inclusive, zero-based source line bounds.
     pub fn scope(&self) -> (usize, usize) {
         self.plan.scope
     }
+    /// `4 changes · 1 below`: what the command line's right side says.
     pub fn summary(&self) -> String {
         let count = self.count();
-        let lines = self.changed_line_count();
-        let (first, last) = self.scope();
-        let scope = if first == last {
-            format!("line {}", first + 1)
-        } else {
-            format!("lines {}–{}", first + 1, last + 1)
-        };
-        let offscreen = self.offscreen;
-        format!(
-            "{count} substitution{} · {offscreen} offscreen · {lines} changed line{} · {scope}",
-            if count == 1 { "" } else { "s" },
-            if lines == 1 { "" } else { "s" }
-        )
+        let mut summary = format!("{count} change{}", if count == 1 { "" } else { "s" });
+        if self.above > 0 {
+            summary.push_str(&format!(" · {} above", self.above));
+        }
+        if self.below > 0 {
+            summary.push_str(&format!(" · {} below", self.below));
+        }
+        summary
     }
 }
 
@@ -263,14 +262,13 @@ pub(crate) fn substitute_preview(editor: &Editor) -> Option<SubstitutePreviewSta
         Some(Ok(plan)) => {
             let top = origin.pane.view_top;
             let bottom = top.saturating_add(editor.view_rows());
-            let offscreen = plan
-                .changed_lines
-                .iter()
-                .filter(|&&line| line < top || line >= bottom)
-                .count();
+            let above = plan.changed_lines.partition_point(|&line| line < top);
+            let below = plan.changed_lines.len()
+                - plan.changed_lines.partition_point(|&line| line < bottom);
             Some(SubstitutePreviewState::Ready(SubstitutionPreview {
                 plan,
-                offscreen,
+                above,
+                below,
             }))
         }
         Some(Err(error)) => Some(SubstitutePreviewState::Unavailable(error.to_owned())),
