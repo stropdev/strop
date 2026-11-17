@@ -273,6 +273,9 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ctrl-d` — list the completions
 - `✓ ctrl-f` — edit this line in the command-line window
 - `✓ ctrl-l` — repaint the screen
+- `✓ q: q/ q?` — the command-line window: the : (or / ?) history as a buffer, the line being typed last
+- `✓ enter` — in the command-line window: run the cursor's line (Insert too)
+- `✓ ctrl-c :q` — in the command-line window: close it
 
 ## Command line: text
 
@@ -374,7 +377,6 @@ commands.
 - Normal: `==` `=j` `=ip` — the reindent operator
 - Normal: `gqq` `gqip` `gwip` — reflow text to the text width
 - Normal: `dis` `das` — the sentence text objects
-- Normal: `q:` `q/` — the command-line window
 - Normal: `ga` `g8` — show the character under the cursor as a code
 - Normal: `gx` `gf` `gF` — open the URL or file name under the cursor
 - Normal: `gR` — virtual replace mode

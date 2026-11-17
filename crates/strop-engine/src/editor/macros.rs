@@ -18,7 +18,7 @@ impl Editor {
     /// records itself).
     pub(crate) fn macro_toggle(&mut self, reg: char) {
         if !(reg.is_ascii_alphanumeric() || reg == '"') {
-            // (`q:` and `q/` are Vim's command-line window, not registers)
+            // (`q:` and `q/` open the command-line window before this)
             self.message = format!("q{reg}: not a register to record into");
             return;
         }

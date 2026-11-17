@@ -254,6 +254,10 @@ impl Editor {
                     AbsorbKind::MarkJump => self.jump_mark(c, true),
                     AbsorbKind::MarkLine => self.jump_mark(c, false),
                     AbsorbKind::Find => {} // grammar resolved f<c> in the machine
+                    // `q:` `q/` `q?` are Vim's command-line window
+                    AbsorbKind::MacroRecord if matches!(c, ':' | '/' | '?') => {
+                        crate::editor::cmdline::window::open(self, c, "");
+                    }
                     AbsorbKind::MacroRecord => self.macro_toggle(c),
                     AbsorbKind::MacroPlay if c == '@' => self.macro_again(n),
                     AbsorbKind::MacroPlay if c == ':' => self.repeat_command_line(n),

@@ -119,7 +119,11 @@ impl Editor {
                     self.feed_document(key);
                 }
             }
-            InputOwner::Document => self.feed_document(key),
+            InputOwner::Document => {
+                if !super::cmdline::window::key(self, key) {
+                    self.feed_document(key);
+                }
+            }
             InputOwner::Terminal => {
                 self.message =
                     "terminal input needs physical events; use keys or input in scripts".into();
@@ -140,7 +144,7 @@ impl Editor {
     }
 
     /// The mode machine: insert/visual/normal dispatch.
-    fn feed_document(&mut self, key: Key) {
+    pub(crate) fn feed_document(&mut self, key: Key) {
         // Terminal-input entry is a bare-key interception: a walker
         // mid-sequence (mark absorber, register, operator) keeps its
         // grammar — `ma` sets a mark, it never opens the PTY (0065 W2).

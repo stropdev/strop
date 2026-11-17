@@ -282,7 +282,13 @@ the start and end, `Ctrl-R {register}` inserts a register and
   (`:b`, `:bd`), themes, help topics, or the command's own words (`:set`,
   `:remote`, `:recover`, `:tab-size`, `:indent-style`, `:sort`).
 - The right end of the line says what the command takes (`:w[!] [file]`),
-  how many matches a search has, or what a `:s` will change.
+  how many matches a search has, the lines a range names, or what a `:s`
+  will change — while it is typed, `:s` shows each changed line as it will
+  read, in place.
+- **The command-line window**: `q:` (or `q/`, `q?`, or `Ctrl-F` on an open
+  line) opens the history in a split below as an ordinary buffer, the line
+  being typed last. Edit with any key; `Enter` runs the line under the
+  cursor, `Ctrl-C` or `:q` closes it.
 
 `:` takes Vim's ranges and Vim's names. A range is line numbers, `.`, `$`,
 `%`, marks (`'a`, and `'<,'>` — which `:` typed from Visual mode fills in),

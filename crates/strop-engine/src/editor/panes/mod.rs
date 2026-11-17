@@ -164,6 +164,14 @@ impl Editor {
 
     /// `:q` closes the pane; the last pane's close is document close.
     pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
+        // `:q` in the command-line window closes it, buffer and all
+        if self
+            .cmdline
+            .window
+            .is_some_and(|window| window.doc == self.current())
+        {
+            return super::cmdline::window::close(self);
+        }
         // closing the commit message is what commits (or aborts): the
         // buffer goes, not only the pane showing it
         if self.panes.len() > 1 && !self.is_commit_message(self.current()) {

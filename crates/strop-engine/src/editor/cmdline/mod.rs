@@ -19,6 +19,7 @@ pub(crate) mod keys;
 pub(crate) mod parsed;
 #[cfg(test)]
 mod tests;
+pub(crate) mod window;
 
 /// Where a line opened: the whole originating pane (document, complete
 /// selections, viewport) and the buffer revision. Cancelling restores
@@ -168,6 +169,8 @@ pub struct Cmdline {
     pub(crate) completion: super::ex::complete::Completion,
     /// What the line means, parsed once per change.
     pub(crate) parsed: parsed::Parsed,
+    /// The command-line window, while it is open.
+    pub(crate) window: Option<window::Window>,
 }
 
 impl Cmdline {

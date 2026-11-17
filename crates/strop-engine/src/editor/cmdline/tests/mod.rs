@@ -8,6 +8,7 @@ mod accept;
 mod errors;
 mod history;
 mod keys;
+mod window;
 
 fn editor(text: &str) -> Editor {
     Editor::new(Buffer::from_text(text))

@@ -120,4 +120,19 @@ pub(super) const ROWS: &[Binding] = &[
         "cmdline-window",
     ),
     key("ctrl-l", "repaint the screen", "cmdline-repaint"),
+    key(
+        "q: q/ q?",
+        "the command-line window: the : (or / ?) history as a buffer, the line being typed last",
+        "cmdline-window-open",
+    ),
+    key(
+        "enter",
+        "in the command-line window: run the cursor's line (Insert too)",
+        "cmdline-window-run",
+    ),
+    key(
+        "ctrl-c :q",
+        "in the command-line window: close it",
+        "cmdline-window-close",
+    ),
 ];

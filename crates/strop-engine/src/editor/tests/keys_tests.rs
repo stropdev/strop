@@ -216,7 +216,11 @@ fn ctrl_e_and_ctrl_y_scroll_without_moving_the_cursor_off_its_line() {
 #[test]
 fn q_records_only_into_a_register() {
     let mut e = editor_with("one\n");
-    e.feed_text("q:");
+    e.feed_text("q-");
     assert!(e.recording.is_none());
     assert!(e.message.contains("not a register"));
+    // `q:` is the command-line window, never a recording
+    e.feed_text("q:");
+    assert!(e.recording.is_none());
+    assert_eq!(e.buf().name.as_deref(), Some("command line"));
 }

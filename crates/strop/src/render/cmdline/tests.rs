@@ -159,6 +159,15 @@ fn range_error() {
     each("range-error", |editor| editor.feed_text(":'q,$d"));
 }
 
+/// `q:`: the history as a buffer in a split below, the line being typed
+/// last.
+#[test]
+fn window() {
+    each("window", |editor| {
+        editor.feed_text(":2<cr>:%s/Modeline/Statusline/g<cr>u:4,6d<cr>uq:")
+    });
+}
+
 /// A failed line: it closes, and the echo row above the modeline says
 /// why in error ink.
 #[test]

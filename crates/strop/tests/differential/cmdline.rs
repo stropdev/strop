@@ -69,6 +69,11 @@ pub const CASES: &[Case] = &[
     ("search history is its own", FIVE, "/two<cr>:3d<cr>/<up><cr>x"),
     ("a failed line is in history", FIVE, ":frob<cr>:<up><bs><bs><bs><bs>2d<cr>"),
     ("up after editing filters again", FIVE, ":1d<cr>:2y<cr>:<up><bs>d<up><cr>"),
+    // the command-line window
+    ("window runs a history line", FIVE, ":1d<cr>q:k<cr>"),
+    ("window closes with :q", FIVE, "q:ix<esc>:q<cr>"),
+    ("window edits a line then runs it", FIVE, ":1d<cr>q:kcw3d<esc><cr>"),
+    ("window search history", FIVE, "/four<cr>ggq/k<cr>x"),
     // edits after edits
     ("type delete retype", FIVE, ":3d<c-u>4d<cr>"),
     ("search edited mid-line", FIVE, "/fxur<home><right><delete>o<cr>x"),

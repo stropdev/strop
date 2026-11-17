@@ -165,7 +165,10 @@ fn every_key_renders_in_help_and_every_row_is_bound() {
         );
     }
     for row in rows {
-        if matches!(row.id, "cmdline-open" | "cmdline-ranges") {
+        // how the line opens, ranges, and the window's own keys
+        if matches!(row.id, "cmdline-open" | "cmdline-ranges")
+            || row.id.starts_with("cmdline-window-")
+        {
             continue;
         }
         assert!(

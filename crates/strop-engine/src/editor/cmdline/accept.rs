@@ -185,7 +185,7 @@ impl Editor {
         }
     }
 
-    fn cmdline_action(&mut self, action: Action) {
+    pub(super) fn cmdline_action(&mut self, action: Action) {
         let Some(line) = self.cmdline.line_mut() else {
             return;
         };
@@ -249,7 +249,7 @@ impl Editor {
                 }
                 return;
             }
-            Action::Window => return,
+            Action::Window => return super::window::from_line(self),
         }
         self.cmdline_edited();
     }
