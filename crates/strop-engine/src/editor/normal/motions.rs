@@ -107,7 +107,7 @@ impl Editor {
             self.view_mut().desired_column = Some(column);
         }
         if is_search && primary.is_none() {
-            self.message = "pattern not found".into();
+            self.fail("pattern not found".into());
         }
     }
 

@@ -131,6 +131,13 @@ fn long_line() {
     });
 }
 
+/// A failed line: it closes, and the echo row above the modeline says
+/// why in error ink.
+#[test]
+fn error() {
+    each("error", |editor| editor.feed_text(":wrte<cr>"));
+}
+
 #[test]
 fn the_line_is_the_bottom_row_and_owns_the_caret() {
     let root = workspace();

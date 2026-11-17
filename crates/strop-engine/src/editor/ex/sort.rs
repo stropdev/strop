@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use strop_core::Range;
 
-use super::ExCall;
+use super::{ExCall, ExResult};
 use crate::editor::ex::*;
 use crate::editor::Editor;
 
@@ -29,7 +29,7 @@ fn number(line: &str) -> Option<i128> {
     })
 }
 
-pub(crate) fn ex_sort(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_sort(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let (mut unique, mut numeric, mut ignore_case) = (false, false, false);
     for flag in call.arg.chars() {
         match flag {
@@ -38,8 +38,7 @@ pub(crate) fn ex_sort(editor: &mut Editor, call: &ExCall<'_>) {
             'i' => ignore_case = true,
             ' ' => {}
             other => {
-                editor.message = format!("unsupported :sort argument: {other}");
-                return;
+                return Err(format!("unsupported :sort argument: {other}"));
             }
         }
     }
@@ -75,4 +74,5 @@ pub(crate) fn ex_sort(editor: &mut Editor, call: &ExCall<'_>) {
         editor.tx_commit();
     }
     ex_land(editor, first);
+    Ok(())
 }

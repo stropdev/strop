@@ -306,7 +306,7 @@ impl Editor {
 
     fn run_cmdline(&mut self, line: Line) {
         if !self.restore_cmdline_origin(line.origin()) {
-            self.message = "input cancelled: document or pane changed".into();
+            self.fail("input cancelled: document or pane changed".into());
             return;
         }
         // Every typed line goes into history, a failed one too; a macro's
@@ -318,7 +318,7 @@ impl Editor {
             Context::Ex(_) => self.run_ex(line.body()),
             Context::Pipe { range, visual, .. } => {
                 if self.buf().readonly {
-                    self.message = "readonly buffer".into();
+                    self.fail("readonly buffer".into());
                     return;
                 }
                 self.pipe_run(range.start.get(), range.end.get(), line.body());
@@ -331,7 +331,7 @@ impl Editor {
                     Ok(Some(command)) => command,
                     Ok(None) => return,
                     Err(error) => {
-                        self.message = error;
+                        self.fail(error);
                         return;
                     }
                 };
@@ -346,7 +346,7 @@ impl Editor {
                 // cursor BEFORE dispatch changes last_search, history
                 // or a register.
                 if let Err(error) = self.search_line_heads(&line, &command) {
-                    self.message = error;
+                    self.fail(error);
                     return;
                 }
                 self.dispatch_grammar(&command);

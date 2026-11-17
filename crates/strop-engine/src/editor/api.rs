@@ -119,6 +119,11 @@ impl Editor {
         &self.message
     }
 
+    /// The message says why a command failed (drawn in error ink).
+    pub fn message_failed(&self) -> bool {
+        !self.message.is_empty() && self.message == self.feedback.failure
+    }
+
     /// The admitted message write (0056 AR02): startup/load failures and
     /// host-effect errors surface here; engine handlers keep setting the
     /// field directly.

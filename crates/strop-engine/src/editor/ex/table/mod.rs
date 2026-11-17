@@ -82,7 +82,7 @@ pub(crate) const fn name(name: &'static str, min: usize) -> Name {
     Name { name, min }
 }
 
-pub(crate) type Run = fn(&mut Editor, &ExCall<'_>);
+pub(crate) type Run = fn(&mut Editor, &ExCall<'_>) -> super::ExResult;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ExCommand {
@@ -249,4 +249,4 @@ const fn concat(parts: [&[ExCommand]; 4]) -> [ExCommand; TOTAL] {
     out
 }
 
-const PLACEHOLDER: ExCommand = command(&[], "", "", |_, _| {});
+const PLACEHOLDER: ExCommand = command(&[], "", "", |_, _| Ok(()));

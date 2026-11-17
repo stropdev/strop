@@ -65,14 +65,20 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("quit", 1)],
         ":q[uit][!]",
         "close the window, or the buffer in the last one",
-        |e, c| e.close_pane_or_buffer(c.bang),
+        |e, c| {
+            e.close_pane_or_buffer(c.bang);
+            Ok(())
+        },
     )
     .bang(),
     c(
         &[name("qall", 2), name("quitall", 5)],
         ":qa[ll][!]",
         "quit all (fails on unsaved; ! discards)",
-        |e, c| e.quit_all(c.bang),
+        |e, c| {
+            e.quit_all(c.bang);
+            Ok(())
+        },
     )
     .bang(),
     c(
@@ -127,7 +133,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("split", 2)],
         ":sp[lit] [file]",
         "split below",
-        |e, c| e.split(false, optional(c.arg)),
+        |e, c| {
+            e.split(false, optional(c.arg));
+            Ok(())
+        },
     )
     .arg(Arg::File)
     .key("ctrl-w s"),
@@ -135,7 +144,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("vsplit", 2)],
         ":vs[plit] [file]",
         "split to the right",
-        |e, c| e.split(true, optional(c.arg)),
+        |e, c| {
+            e.split(true, optional(c.arg));
+            Ok(())
+        },
     )
     .arg(Arg::File)
     .key("ctrl-w v"),
@@ -152,6 +164,7 @@ pub(super) const ROWS: &[ExCommand] = &[
         "show the project root (Files, Search, terminals)",
         |e, _| {
             e.message = e.cwd.display().to_string();
+            Ok(())
         },
     ),
     c(
@@ -165,20 +178,29 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("help", 1)],
         ":h[elp] [topic]",
         "the help buffer (this text; / searches it)",
-        |e, c| e.open_help_topic(c.arg),
+        |e, c| {
+            e.open_help_topic(c.arg);
+            Ok(())
+        },
     )
     .arg(Arg::HelpTopic),
     c(
         &[name("messages", 3)],
         ":mes[sages]",
         "the last 50 echo-row messages",
-        |e, _| e.open_messages(),
+        |e, _| {
+            e.open_messages();
+            Ok(())
+        },
     ),
     c(
         &[name("jumps", 2)],
         ":ju[mps]",
         "the jumplist picker",
-        |e, _| e.open_jumps_picker(),
+        |e, _| {
+            e.open_jumps_picker();
+            Ok(())
+        },
     )
     .key("space j"),
 ];

@@ -63,7 +63,9 @@ impl Editor {
 
     /// `@:`: the last command line again, `count` times.
     pub fn repeat_command_line(&mut self, count: usize) {
-        repeat_command_line(self, count);
+        if let Err(error) = repeat_command_line(self, count) {
+            self.fail(error);
+        }
     }
 
     /// The live `:s` preview: the plan Enter would apply.
@@ -211,14 +213,18 @@ pub(crate) fn command_word(text: &str) -> Option<(&'static ExCommand, &'static s
     }
 }
 
-/// Run one command line (the text after the `:`).
+/// What a command returns: `Err` says why it failed, in error ink.
+pub(crate) type ExResult = Result<(), String>;
+
+/// Run one command line (the text after the `:`); a failure shows in
+/// the echo row as one.
 pub(crate) fn run_ex(editor: &mut Editor, cmdline: &str) {
     if let Err(message) = run_ex_line(editor, cmdline) {
-        editor.message = message;
+        editor.fail(message);
     }
 }
 
-fn run_ex_line(editor: &mut Editor, cmdline: &str) -> Result<(), String> {
+fn run_ex_line(editor: &mut Editor, cmdline: &str) -> ExResult {
     let (range, rest) = parse_ex_range(editor, editor.head(), cmdline)?;
     let rest = rest.trim_start();
     if rest.is_empty() {
@@ -261,37 +267,39 @@ fn run_ex_line(editor: &mut Editor, cmdline: &str) -> Result<(), String> {
             range,
             arg,
         },
-    );
-    Ok(())
+    )
 }
 
 /// `@:`: the last command line again, `count` times.
-fn repeat_command_line(editor: &mut Editor, count: usize) {
-    let Some(line) = editor.cmdline.last_command_line().map(str::to_owned) else {
-        editor.message = "no previous command line".into();
-        return;
-    };
+fn repeat_command_line(editor: &mut Editor, count: usize) -> ExResult {
+    let line = editor
+        .cmdline
+        .last_command_line()
+        .map(str::to_owned)
+        .ok_or("no previous command line")?;
     for _ in 0..count.max(1) {
         run_ex(editor, &line);
     }
+    Ok(())
 }
 
 /// `:@:` repeats the last command line; `:@x` runs register `x`, one
 /// command per line.
-pub(crate) fn ex_at(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_at(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let mut names = call.arg.chars();
     match (names.next(), names.next()) {
         (Some(':'), None) => repeat_command_line(editor, 1),
         (Some(name), None) => {
             let text = editor.register(Some(name)).text;
             if text.is_empty() {
-                editor.message = format!("nothing in register {name}");
+                return Err(format!("nothing in register {name}"));
             }
             for line in text.lines() {
                 run_ex(editor, line);
             }
+            Ok(())
         }
-        _ => editor.message = "usage: :@: or :@{register}".into(),
+        _ => Err("usage: :@: or :@{register}".into()),
     }
 }
 

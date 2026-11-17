@@ -604,6 +604,7 @@ impl Editor {
         }
         self.revoke_shell_focus();
         self.message.clear();
+        self.feedback.failure.clear();
         self.feedback.log.forget_echo();
         if key == Key::Esc
             && self.mode == Mode::Normal

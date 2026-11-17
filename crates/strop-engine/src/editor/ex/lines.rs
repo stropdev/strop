@@ -3,7 +3,7 @@
 
 use strop_core::Range;
 
-use super::ExCall;
+use super::{ExCall, ExResult};
 use crate::editor::ex::*;
 use crate::editor::{Editor, Register};
 
@@ -69,21 +69,14 @@ fn insert_lines(editor: &mut Editor, index: usize, text: &str) {
 }
 
 /// `:[range]d [x] [count]`
-pub(crate) fn ex_delete(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_delete(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let (name, rest) = register_argument(call.arg);
-    let ((first, last), rest) = match call.counted(editor, rest) {
-        Ok(counted) => counted,
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
-    };
+    let ((first, last), rest) = call.counted(editor, rest)?;
     if !rest.is_empty() {
-        editor.message = format!("trailing characters: {rest}");
-        return;
+        return Err(format!("trailing characters: {rest}"));
     }
     if !editor.register_writable(name) {
-        return;
+        return Ok(());
     }
     let (start, end) = line_span(editor, first, last);
     let mut register = Register::linewise(lines_text(editor, first, last));
@@ -98,24 +91,18 @@ pub(crate) fn ex_delete(editor: &mut Editor, call: &ExCall<'_>) {
     if count > 2 {
         editor.message = format!("{count} fewer lines");
     }
+    Ok(())
 }
 
 /// `:[range]y [x] [count]`
-pub(crate) fn ex_yank(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_yank(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let (name, rest) = register_argument(call.arg);
-    let ((first, last), rest) = match call.counted(editor, rest) {
-        Ok(counted) => counted,
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
-    };
+    let ((first, last), rest) = call.counted(editor, rest)?;
     if !rest.is_empty() {
-        editor.message = format!("trailing characters: {rest}");
-        return;
+        return Err(format!("trailing characters: {rest}"));
     }
     if !editor.register_writable(name) {
-        return;
+        return Ok(());
     }
     let (start, end) = line_span(editor, first, last);
     let mut register = Register::linewise(lines_text(editor, first, last));
@@ -126,6 +113,7 @@ pub(crate) fn ex_yank(editor: &mut Editor, call: &ExCall<'_>) {
     if count > 2 {
         editor.message = format!("{count} lines yanked");
     }
+    Ok(())
 }
 
 /// The `{address}` of `:m` and `:t`: the one-based line the text goes
@@ -143,21 +131,14 @@ pub(crate) fn destination(editor: &Editor, arg: &str) -> Result<usize, String> {
 }
 
 /// `:[range]m {address}`
-pub(crate) fn ex_move(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_move(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let (first, last) = call.lines(editor);
-    let destination = match destination(editor, call.arg) {
-        Ok(destination) => destination,
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
-    };
+    let destination = destination(editor, call.arg)?;
     let count = last - first + 1;
     let column = ex_column(editor);
     // `destination` is one-based: lines `first + 1 ..= last + 1`.
     if destination > first && destination <= last {
-        editor.message = "cannot move a range of lines into itself".into();
-        return;
+        return Err("cannot move a range of lines into itself".into());
     }
     let landing = if destination <= first {
         destination + count - 1
@@ -180,18 +161,13 @@ pub(crate) fn ex_move(editor: &mut Editor, call: &ExCall<'_>) {
     if count > 2 {
         editor.message = format!("{count} lines moved");
     }
+    Ok(())
 }
 
 /// `:[range]t {address}`, `:[range]co[py] {address}`
-pub(crate) fn ex_copy(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_copy(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let (first, last) = call.lines(editor);
-    let destination = match destination(editor, call.arg) {
-        Ok(destination) => destination,
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
-    };
+    let destination = destination(editor, call.arg)?;
     let count = last - first + 1;
     let text = lines_text(editor, first, last);
     let column = ex_column(editor);
@@ -202,23 +178,17 @@ pub(crate) fn ex_copy(editor: &mut Editor, call: &ExCall<'_>) {
     if count > 2 {
         editor.message = format!("{count} more lines");
     }
+    Ok(())
 }
 
 /// `:[range]j[!] [count]`: Vim's join. Without `!` the next line's
 /// leading blanks go and one space joins the two, unless the first
 /// already ends in a blank, or the second is empty or starts with `)`.
-pub(crate) fn ex_join(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_join(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let typed = call.range.is_some_and(|range| range.first != range.last);
-    let ((mut first, mut last), rest) = match call.counted(editor, call.arg) {
-        Ok(counted) => counted,
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
-    };
+    let ((mut first, mut last), rest) = call.counted(editor, call.arg)?;
     if !rest.is_empty() {
-        editor.message = format!("trailing characters: {rest}");
-        return;
+        return Err(format!("trailing characters: {rest}"));
     }
     if rest.len() != call.arg.len() {
         // `:j N` joins N lines starting at the range's last line.
@@ -228,7 +198,7 @@ pub(crate) fn ex_join(editor: &mut Editor, call: &ExCall<'_>) {
     }
     last = last.min(editor.buf().last_content_line());
     if first >= last {
-        return;
+        return Ok(());
     }
     let mut joined = editor.buf().line_text(first);
     for line in first + 1..=last {
@@ -251,24 +221,18 @@ pub(crate) fn ex_join(editor: &mut Editor, call: &ExCall<'_>) {
     editor.buf_mut().insert(start, &joined);
     editor.tx_commit();
     ex_land(editor, first);
+    Ok(())
 }
 
 /// `:[range]> [count]`, `:[range]< [count]`; each extra `>` is one
 /// more shift. Empty lines stay empty.
-pub(crate) fn ex_shift(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_shift(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let right = call.name == ">";
     let same = if right { '>' } else { '<' };
     let extra = call.arg.len() - call.arg.trim_start_matches(same).len();
-    let ((first, last), rest) = match call.counted(editor, call.arg[extra..].trim_start()) {
-        Ok(counted) => counted,
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
-    };
+    let ((first, last), rest) = call.counted(editor, call.arg[extra..].trim_start())?;
     if !rest.is_empty() {
-        editor.message = format!("trailing characters: {rest}");
-        return;
+        return Err(format!("trailing characters: {rest}"));
     }
     let indent = editor.cur_indent();
     let width = indent.width.max(1);
@@ -314,21 +278,20 @@ pub(crate) fn ex_shift(editor: &mut Editor, call: &ExCall<'_>) {
             if extra == 0 { "" } else { "s" }
         );
     }
+    Ok(())
 }
 
 /// `:[line]pu[!] [x]`: the register as whole lines below the line
 /// (above with `!`; `:0pu` is above the first).
-pub(crate) fn ex_put(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_put(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let name = call.arg.chars().next();
     let rest = name.map_or("", |name| call.arg[name.len_utf8()..].trim());
     if !rest.is_empty() {
-        editor.message = format!("trailing characters: {rest}");
-        return;
+        return Err(format!("trailing characters: {rest}"));
     }
     let mut text = editor.register(name).text;
     if text.is_empty() {
-        editor.message = format!("nothing in register {}", name.unwrap_or('"'));
-        return;
+        return Err(format!("nothing in register {}", name.unwrap_or('"')));
     }
     if !text.ends_with('\n') {
         text.push('\n');
@@ -348,44 +311,42 @@ pub(crate) fn ex_put(editor: &mut Editor, call: &ExCall<'_>) {
     if count > 2 {
         editor.message = format!("{count} more lines");
     }
+    Ok(())
 }
 
 /// `:[line]k a`, `:[line]mark a`
-pub(crate) fn ex_mark(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_mark(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let mut names = call.arg.chars();
     let (Some(name), None) = (names.next(), names.next()) else {
-        editor.message = if call.arg.is_empty() {
+        return Err(if call.arg.is_empty() {
             "argument required".into()
         } else {
             format!("trailing characters: {}", call.arg)
-        };
-        return;
+        });
     };
     if !name.is_ascii_alphabetic() && !matches!(name, '\'' | '`') {
-        editor.message = format!("{name} is not a mark name");
-        return;
+        return Err(format!("{name} is not a mark name"));
     }
     let line = call.lines(editor).1;
     let offset = editor.buf().line_start(line);
     editor.marks.insert(name, (editor.current(), offset));
+    Ok(())
 }
 
 /// `:delm a b`, `:delm a-d`, `:delm!` (every lowercase mark here).
-pub(crate) fn ex_delmarks(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_delmarks(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let document = editor.current();
     if call.bang {
         if !call.arg.is_empty() {
-            editor.message = "invalid argument".into();
-            return;
+            return Err("invalid argument".into());
         }
         editor
             .marks
             .retain(|name, (owner, _)| !(name.is_ascii_lowercase() && *owner == document));
-        return;
+        return Ok(());
     }
     if call.arg.is_empty() {
-        editor.message = "argument required".into();
-        return;
+        return Err("argument required".into());
     }
     let names: Vec<char> = call.arg.chars().filter(|c| *c != ' ').collect();
     let mut doomed = Vec::new();
@@ -394,8 +355,7 @@ pub(crate) fn ex_delmarks(editor: &mut Editor, call: &ExCall<'_>) {
         let name = names[index];
         if names.get(index + 1) == Some(&'-') {
             let Some(&end) = names.get(index + 2).filter(|end| **end >= name) else {
-                editor.message = format!("invalid argument: {}", call.arg);
-                return;
+                return Err(format!("invalid argument: {}", call.arg));
             };
             doomed.extend(name..=end);
             index += 3;
@@ -408,19 +368,21 @@ pub(crate) fn ex_delmarks(editor: &mut Editor, call: &ExCall<'_>) {
     editor.marks.retain(|name, (owner, _)| {
         !(doomed.contains(name) && (name.is_ascii_uppercase() || *owner == document))
     });
+    Ok(())
 }
 
 /// `:!cmd` runs a command; `:{range}!cmd` filters the lines through it.
-pub(crate) fn ex_shell(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_shell(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let Some(_) = call.range else {
         editor.shell_run(call.arg);
-        return;
+        return Ok(());
     };
     if editor.buf().readonly {
         editor.refuse_readonly();
-        return;
+        return Ok(());
     }
     let (first, last) = call.lines(editor);
     let (start, end) = line_span(editor, first, last);
     editor.pipe_run(start, end, call.arg);
+    Ok(())
 }

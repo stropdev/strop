@@ -5,6 +5,7 @@ use crate::editor::Editor;
 use strop_core::Buffer;
 
 mod accept;
+mod errors;
 mod history;
 mod keys;
 

@@ -46,7 +46,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("ls", 2), name("buffers", 7), name("files", 5)],
         ":ls[!]",
         "list the buffers",
-        |e, c| open_buffer_listing(e, c.bang),
+        |e, c| {
+            open_buffer_listing(e, c.bang);
+            Ok(())
+        },
     )
     .bang(),
 ];

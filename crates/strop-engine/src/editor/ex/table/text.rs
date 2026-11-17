@@ -46,7 +46,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("global", 1)],
         ":g[!]/pat/cmd",
         "run cmd on every matching line (! on the others)",
-        ex_global,
+        |e, c| {
+            ex_global(e, c);
+            Ok(())
+        },
     )
     .lines()
     .bang()
@@ -55,7 +58,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("vglobal", 1)],
         ":v/pat/cmd",
         "run cmd on every line that does not match",
-        ex_global,
+        |e, c| {
+            ex_global(e, c);
+            Ok(())
+        },
     )
     .lines()
     .arg(Arg::Command),
@@ -63,7 +69,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("normal", 4)],
         ":norm[al] {keys}",
         "type Normal-mode keys on each line of the range",
-        ex_normal_command,
+        |e, c| {
+            ex_normal_command(e, c);
+            Ok(())
+        },
     )
     .lines()
     .bang()
@@ -170,18 +179,25 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("read", 1)],
         ":r !cmd",
         "insert the command's output below the cursor",
-        |e, c| e.read_command(c.arg),
+        |e, c| {
+            e.read_command(c.arg);
+            Ok(())
+        },
     )
     .arg(Arg::Shell),
     c(&[name("undo", 1)], ":u[ndo]", "undo one change", |e, _| {
-        e.undo()
+        e.undo();
+        Ok(())
     })
     .key("u"),
     c(
         &[name("redo", 3)],
         ":red[o]",
         "redo one undone change",
-        |e, _| e.redo(),
+        |e, _| {
+            e.redo();
+            Ok(())
+        },
     )
     .key("ctrl-r"),
     c(
@@ -193,7 +209,8 @@ pub(super) const ROWS: &[ExCommand] = &[
     .lines()
     .arg(Arg::Mark),
     c(&[name("marks", 5)], ":marks", "list the marks", |e, _| {
-        open_marks_listing(e)
+        open_marks_listing(e);
+        Ok(())
     }),
     c(
         &[name("delmarks", 4)],
@@ -207,7 +224,10 @@ pub(super) const ROWS: &[ExCommand] = &[
         &[name("registers", 3), name("display", 2)],
         ":reg [names]",
         "list the registers",
-        |e, c| open_registers_listing(e, c.arg),
+        |e, c| {
+            open_registers_listing(e, c.arg);
+            Ok(())
+        },
     )
     .arg(Arg::Register),
     c(
@@ -217,6 +237,7 @@ pub(super) const ROWS: &[ExCommand] = &[
         |e, _| {
             // nohlsearch: the persistent highlight drops (0001 §5.8)
             e.last_search = None;
+            Ok(())
         },
     ),
 ];

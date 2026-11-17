@@ -43,7 +43,14 @@ impl Editor {
 
     /// After every event: retain whatever the echo row now says.
     pub(crate) fn log_echo_message(&mut self) {
-        self.feedback.log.observe(&self.message);
+        let failed = self.message_failed();
+        self.feedback.log.observe(&self.message, failed);
+    }
+
+    /// A command failed: say why, as a failure (plan 0110 §3.2).
+    pub(crate) fn fail(&mut self, message: String) {
+        self.feedback.failure.clone_from(&message);
+        self.message = message;
     }
 
     /// `:messages`: the retained history as a temporary output buffer.

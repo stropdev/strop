@@ -8,13 +8,13 @@ use std::path::PathBuf;
 
 use strop_workspace::ResourceLocation;
 
-use super::ExCall;
+use super::{ExCall, ExResult};
 use crate::editor::{DocumentSource, Editor};
 
 /// `:cd` (home), `:cd -` (back), `:cd dir` (relative to the root, `~`
 /// is home). The directory is resolved on a worker; the root changes
 /// when the answer lands.
-pub(crate) fn ex_cd(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_cd(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let home = || std::env::var_os("HOME").map(PathBuf::from);
     let target = match call.arg {
         "" | "~" => home(),
@@ -25,14 +25,14 @@ pub(crate) fn ex_cd(editor: &mut Editor, call: &ExCall<'_>) {
         },
     };
     let Some(target) = target else {
-        editor.message = if call.arg == "-" {
+        return Err(if call.arg == "-" {
             "no previous directory".into()
         } else {
             "no home directory".into()
-        };
-        return;
+        });
     };
     editor.request_directory(target);
+    Ok(())
 }
 
 /// Why the root cannot move right now, if anything is mid-flight

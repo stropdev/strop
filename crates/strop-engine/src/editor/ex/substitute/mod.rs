@@ -280,23 +280,19 @@ pub(crate) fn substitute_preview(editor: &Editor) -> Option<SubstitutePreviewSta
 
 /// `:s`, `:&`, `:&&`, `:~`: execute the same parsed spec through the
 /// same plan the card showed.
-pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) {
+pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) -> super::ExResult {
     let Some(form) = Form::of(call.name) else {
-        return;
+        return Ok(());
     };
     let line = editor.buf().line_of(editor.head());
     let spec = match parse_substitute(editor, form, call.range, line, call.arg) {
         Ok(spec) => spec,
-        Err(error) => {
-            editor.message = error.to_string();
-            return;
-        }
+        Err(error) => return Err(error.to_string()),
     };
     if spec.flags.confirm && editor.cmdline.ex.compound > 0 {
         // The question would have to stop a `:g` or `:normal` in the
         // middle of its one undo step.
-        editor.message = "the c flag cannot ask inside :g or :normal".into();
-        return;
+        return Err("the c flag cannot ask inside :g or :normal".into());
     }
     remember_substitute(editor, &spec);
     // Vim: the substitute pattern is the search pattern from here on.
@@ -313,40 +309,44 @@ pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) {
     let inline = editor.cmdline.ex.compound > 0 || spec.flags.confirm;
     if !inline && editor.substitution_is_large() && !editor.substitution_ready(&spec, &cursors) {
         editor.defer_substitute(spec, cursors, ResolutionPurpose::Execute);
-        return;
+        return Ok(());
     }
     let plan = match editor.take_substitution(&spec, &cursors) {
         Some(Ok(plan)) => plan,
         Some(Err(error)) => {
-            editor.message = format!("substitution failed: {error}");
-            return;
+            return Err(format!("substitution failed: {error}"));
         }
         None => match plan(editor.buf(), &spec) {
             Ok(plan) => plan,
-            Err(error) => {
-                editor.message = format!("substitution failed: {error}");
-                return;
-            }
+            Err(error) => return Err(format!("substitution failed: {error}")),
         },
     };
-    apply_substitution(editor, spec, plan);
+    apply_substitution(editor, spec, plan)
 }
 
 pub(crate) fn execute_prepared_substitution(editor: &mut Editor, spec: SubstituteSpec) {
     let cursors = editor.all_cursors();
     match editor.take_substitution(&spec, &cursors) {
-        Some(Ok(plan)) => apply_substitution(editor, spec, plan),
-        Some(Err(error)) => editor.message = format!("substitution failed: {error}"),
-        None => editor.message = "substitution plan invalidated before apply".into(),
+        Some(Ok(plan)) => {
+            if let Err(error) = apply_substitution(editor, spec, plan) {
+                editor.fail(error);
+            }
+        }
+        Some(Err(error)) => editor.fail(format!("substitution failed: {error}")),
+        None => editor.fail("substitution plan invalidated before apply".into()),
     }
 }
 
-fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: SubstitutionPlan) {
+fn apply_substitution(
+    editor: &mut Editor,
+    spec: SubstituteSpec,
+    plan: SubstitutionPlan,
+) -> super::ExResult {
     if plan.edits.is_empty() {
         if !spec.flags.quiet {
-            editor.message = format!("pattern not found: {}", spec.pattern);
+            return Err(format!("pattern not found: {}", spec.pattern));
         }
-        return;
+        return Ok(());
     }
     let hits = plan.edits.len();
     let lines = plan.changed_lines.len();
@@ -356,11 +356,11 @@ fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: Substitut
             if hits == 1 { "" } else { "es" },
             if lines == 1 { "" } else { "s" }
         );
-        return;
+        return Ok(());
     }
     if spec.flags.confirm {
         begin_confirm(editor, plan);
-        return;
+        return Ok(());
     }
     let start = editor.buf().line_start(spec.range.0);
     let old_end = editor.buf().line_end(spec.range.1);
@@ -382,8 +382,7 @@ fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: Substitut
         },
     ) {
         editor.view_mut().jumps = previous_jumps;
-        editor.message = format!("substitution failed: {error}");
-        return;
+        return Err(format!("substitution failed: {error}"));
     }
     let end = old_end
         .saturating_add_signed(delta)
@@ -398,4 +397,5 @@ fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: Substitut
         if hits == 1 { "" } else { "s" },
         if lines == 1 { "" } else { "s" }
     );
+    Ok(())
 }
