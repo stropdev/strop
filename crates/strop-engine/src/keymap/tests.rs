@@ -279,30 +279,6 @@ fn every_dispatched_sequence_has_a_row() {
     );
 }
 
-/// 0003 §5.7 for the `:` line, read off the one table dispatch uses
-/// (0095 §2.6): every ex command is named in `?` — by its full name or
-/// any abbreviation Vim accepts for it. A new table row without a
-/// keymap row fails here; no hand-kept list stands between them.
-#[test]
-fn every_ex_command_has_a_row() {
-    let named: std::collections::HashSet<&str> = BINDINGS
-        .iter()
-        .flat_map(|row| row.keys.split(' '))
-        .filter_map(|token| token.strip_prefix(':'))
-        .filter_map(crate::editor::ex::split_command)
-        .map(|(command, _, _)| command.name)
-        .collect();
-    let missing: Vec<&str> = crate::editor::ex::table::COMMANDS
-        .iter()
-        .map(|command| command.name)
-        .filter(|name| !named.contains(name))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "ex commands missing BINDINGS rows (0003 §5.7): {missing:?}"
-    );
-}
-
 /// 0008 stage 2 structural pin: every live normal/leader row
 /// dispatches observably through the walker — the table IS dispatch.
 #[test]

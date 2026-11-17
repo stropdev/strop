@@ -174,7 +174,7 @@ impl Editor {
                 // vim's `":` keeps the last line that had any text; a
                 // repeat (`:@:`) is not itself the line to repeat
                 let repeat = crate::editor::ex::split_command(prompt.body())
-                    .is_some_and(|(command, _, _)| command.name == "@");
+                    .is_some_and(|named| named.name == "@");
                 if !prompt.body().is_empty() && !repeat {
                     self.registers.command_line = Some(prompt.body().to_owned());
                 }

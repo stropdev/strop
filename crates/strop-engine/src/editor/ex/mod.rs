@@ -22,6 +22,7 @@ mod tests;
 
 pub use prompt::{PendingFieldEscape, PendingFieldMode, PendingFieldState};
 pub use substitute::{SubstitutePreviewState, SubstitutionPreview};
+pub(crate) use table::{help_rows, Family};
 
 // The commands are functions over the editor, not methods of it (0087 A4:
 // `Editor` does not grow); they see each other through this module.
@@ -90,7 +91,7 @@ impl Editor {
 
 /// One parsed command line, as its handler sees it.
 pub(crate) struct ExCall<'a> {
-    /// The table's full name, whatever abbreviation was typed.
+    /// The full name the typed word abbreviates (`xit` or `exit`).
     pub name: &'static str,
     pub bang: bool,
     /// The addresses typed, already checked against the buffer for a
@@ -151,10 +152,35 @@ pub(crate) struct ExState {
     pub quit_after_writes: bool,
 }
 
+/// A command name typed on the line: the command, the name it
+/// abbreviates, whether `!` follows, and the argument.
+pub(crate) struct Named<'a> {
+    pub command: &'static ExCommand,
+    pub name: &'static str,
+    pub bang: bool,
+    pub arg: &'a str,
+}
+
 /// The command a line names, whether `!` follows it, and its argument.
 /// `None` when no command starts the text.
-pub(crate) fn split_command(text: &str) -> Option<(&'static ExCommand, bool, &str)> {
+pub(crate) fn split_command(text: &str) -> Option<Named<'_>> {
     let text = text.trim_start();
+    let (command, name, length) = command_word(text)?;
+    let rest = &text[length..];
+    let (bang, rest) = match rest.strip_prefix('!') {
+        Some(rest) if command.bang => (true, rest),
+        _ => (false, rest),
+    };
+    Some(Named {
+        command,
+        name,
+        bang,
+        arg: rest.trim_start(),
+    })
+}
+
+/// The command at the start of `text` and how many bytes name it.
+pub(crate) fn command_word(text: &str) -> Option<(&'static ExCommand, &'static str, usize)> {
     let first = text.chars().next()?;
     let word = |extra: fn(char) -> bool| {
         text.len()
@@ -162,29 +188,28 @@ pub(crate) fn split_command(text: &str) -> Option<(&'static ExCommand, bool, &st
                 .trim_start_matches(|c: char| c.is_ascii_alphabetic() || extra(c))
                 .len()
     };
-    let (command, length) = if first.is_ascii_alphabetic() {
-        let letters = word(|_| false);
-        // strop's own commands carry hyphens (`select-next`); `:m-2` is
-        // `:m` with an address, so the longer word must name one exactly.
-        let hyphenated = word(|c| c == '-');
-        match table::exact_name(&text[..hyphenated]) {
-            Some(command) if hyphenated > letters => (command, hyphenated),
-            _ => match table::lookup(&text[..letters]) {
-                Some(command) => (command, letters),
-                // `:ka` is `:k a` (Vim's one glued argument).
-                None if first == 'k' => (table::lookup("k")?, 1),
-                None => return None,
-            },
+    if !first.is_ascii_alphabetic() {
+        let (command, name) = table::lookup(&text[..first.len_utf8()])?;
+        return Some((command, name, first.len_utf8()));
+    }
+    let letters = word(|_| false);
+    // strop's own commands carry hyphens (`select-next`); `:m-2` is
+    // `:m` with an address, so the longer word must name one exactly.
+    let hyphenated = word(|c| c == '-');
+    if hyphenated > letters {
+        if let Some((command, name)) = table::exact_name(&text[..hyphenated]) {
+            return Some((command, name, hyphenated));
         }
-    } else {
-        (table::lookup(&text[..first.len_utf8()])?, first.len_utf8())
-    };
-    let rest = &text[length..];
-    let (bang, rest) = match rest.strip_prefix('!') {
-        Some(rest) if command.bang => (true, rest),
-        _ => (false, rest),
-    };
-    Some((command, bang, rest.trim_start()))
+    }
+    match table::lookup(&text[..letters]) {
+        Some((command, name)) => Some((command, name, letters)),
+        // `:ka` is `:k a` (Vim's one glued argument).
+        None if first == 'k' => {
+            let (command, name) = table::lookup("k")?;
+            Some((command, name, 1))
+        }
+        None => None,
+    }
 }
 
 /// Run one command line (the text after the `:`).
@@ -207,7 +232,13 @@ fn run_ex_line(editor: &mut Editor, cmdline: &str) -> Result<(), String> {
         }
         return Ok(());
     }
-    let Some((command, bang, arg)) = split_command(rest) else {
+    let Some(Named {
+        command,
+        name,
+        bang,
+        arg,
+    }) = split_command(rest)
+    else {
         return Err(format!("not an editor command: {rest}"));
     };
     match command.range {
@@ -226,7 +257,7 @@ fn run_ex_line(editor: &mut Editor, cmdline: &str) -> Result<(), String> {
     (command.run)(
         editor,
         &ExCall {
-            name: command.name,
+            name,
             bang,
             range,
             arg,

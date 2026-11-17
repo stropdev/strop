@@ -176,10 +176,11 @@ pub(crate) fn parse_substitute_line(
     head: usize,
 ) -> Result<Option<SubstituteSpec>, SubstituteError> {
     let (range, rest) = parse_ex_range(editor, head, body).map_err(SubstituteError::Invalid)?;
-    let Some((command, _, arg)) = super::super::split_command(rest) else {
+    let Some(named) = super::super::split_command(rest) else {
         return Ok(None);
     };
-    let Some(form) = Form::of(command.name) else {
+    let arg = named.arg;
+    let Some(form) = Form::of(named.name) else {
         return Ok(None);
     };
     parse_substitute(editor, form, range, editor.buf().line_of(head), arg).map(Some)

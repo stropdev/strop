@@ -32,8 +32,13 @@ pub(crate) fn ex_candidates(editor: &Editor) -> Vec<(&'static str, &'static str)
     }
     COMMANDS
         .iter()
-        .filter(|command| command.name.starts_with(prefix))
-        .map(|command| (command.name, command.doc))
+        .flat_map(|command| {
+            command
+                .names
+                .iter()
+                .map(move |name| (name.name, command.doc))
+        })
+        .filter(|(name, _)| name.starts_with(prefix))
         .collect()
 }
 

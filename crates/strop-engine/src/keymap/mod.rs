@@ -172,8 +172,8 @@ pub const SECTIONS: &[Section] = &[
         title: "Terminal",
     },
     Section {
-        id: "ex",
-        title: "Ex commands",
+        id: "cmdline",
+        title: "Command line",
     },
 ];
 

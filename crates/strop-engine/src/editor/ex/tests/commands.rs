@@ -63,11 +63,7 @@ fn vims_abbreviations_name_their_commands() {
         (">", ">"),
         ("!", "!"),
     ] {
-        assert_eq!(
-            lookup(typed).map(|command| command.name),
-            Some(name),
-            ":{typed}"
-        );
+        assert_eq!(lookup(typed).map(|(_, name)| name), Some(name), ":{typed}");
     }
     // shorter than Vim allows is not a command
     for typed in ["nor", "no", "de-", "sy", "apply", "p", "c"] {
@@ -77,13 +73,15 @@ fn vims_abbreviations_name_their_commands() {
 
 #[test]
 fn every_row_is_reached_by_its_name_and_its_shortest_form() {
-    for command in COMMANDS {
-        for typed in [command.name, &command.name[..command.min]] {
-            assert_eq!(
-                lookup(typed).map(|found| found.name),
-                Some(command.name),
-                ":{typed}"
-            );
+    for command in COMMANDS.iter() {
+        for name in command.names {
+            for typed in [name.name, &name.name[..name.min]] {
+                assert_eq!(
+                    lookup(typed).map(|(_, found)| found),
+                    Some(name.name),
+                    ":{typed}"
+                );
+            }
         }
     }
 }

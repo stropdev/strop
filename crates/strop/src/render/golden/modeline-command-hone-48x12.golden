@@ -1,7 +1,7 @@
    1  let value_0 = alpha + beta * 0;          ▮
    2  le╭ command ─────────────────────╮       ▮
    3  le│ : w▏                         │        
-   4  le│   write  :w[!] [file]: writ… │        
+   4  le│   write  write the buffer (… │        
    5  le│   wall   write every modifi… │        
    6  le│   wq     write and quit      │        
    7  le│   wqall  write every modifi… │        

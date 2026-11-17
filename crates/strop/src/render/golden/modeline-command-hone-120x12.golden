@@ -1,7 +1,7 @@
    1  let value_0 = alpha + beta * 0;                                                                                  ▮
    2  let value_1 = alph╭ command ─────────────────────────────────────────────────────────────╮                       ▮
    3  let value_2 = alph│ : w▏                                                                 │                        
-   4  let value_3 = alph│   write  :w[!] [file]: write (! over a file changed on disk)         │                        
+   4  let value_3 = alph│   write  write the buffer (! over a file changed on disk)            │                        
    5  let value_4 = alph│   wall   write every modified buffer                                 │                        
    6  let value_5 = alph│   wq     write and quit                                              │                        
    7  let value_6 = alph│   wqall  write every modified buffer and quit                        │                        
@@ -14,7 +14,7 @@
   0: 1:#858c9a/#1b1e24+b 5:#e8a848/#1b1e24 31:#e6e1d6/#1b1e24 82:#1b1e24/#1b1e24 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 9:#e6e1d6/#1c1f25+b 62:#858c9a/#1c1f25 23:reset/#15171c 1:#858c9a/#15171c
   2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 2:#e8a848/#1c1f25 1:#e6e1d6/#1c1f25 1:#e8a848/#1c1f25 65:reset/#1c1f25 1:#858c9a/#1c1f25 23:reset/#15171c 1:reset/reset
-  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25+b 51:#e6e1d6/#1c1f25 9:reset/#1c1f25 1:#858c9a/#1c1f25 23:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e8a848/#1c1f25+b 48:#e6e1d6/#1c1f25 12:reset/#1c1f25 1:#858c9a/#1c1f25 23:reset/#15171c 1:reset/reset
   4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e6e1d6/#1c1f25+b 27:#858c9a/#1c1f25 33:reset/#1c1f25 1:#858c9a/#1c1f25 23:reset/#15171c 1:reset/reset
   5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e6e1d6/#1c1f25+b 14:#858c9a/#1c1f25 46:reset/#1c1f25 1:#858c9a/#1c1f25 23:reset/#15171c 1:reset/reset
   6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 18:#e6e1d6/#15171c 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#1c1f25 1:reset/#1c1f25 7:#e6e1d6/#1c1f25+b 36:#858c9a/#1c1f25 24:reset/#1c1f25 1:#858c9a/#1c1f25 23:reset/#15171c 1:reset/reset
