@@ -1,8 +1,35 @@
-use parking_lot::Mutex;
+//! The worker envelope: one terminal outcome per job, raced between the
+//! job finishing and its owner cancelling.
+//!
+//! Loom seam (0108 D3): under `--cfg strop_loom` the envelope's own
+//! coordination types (the cancel flag, the resource and emitter slots
+//! and the Arcs around them) compile to loom's instrumented types, so
+//! `worker/loom_tests.rs` explores every cancel/finish interleaving over
+//! this exact source; without the cfg it uses parking_lot/std and loom
+//! never ships.
+#[cfg(strop_loom)]
+use loom::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, MutexGuard,
+};
+#[cfg(not(strop_loom))]
+use parking_lot::{Mutex, MutexGuard};
+#[cfg(not(strop_loom))]
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+
+#[cfg(not(strop_loom))]
+fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock()
+}
+#[cfg(strop_loom)]
+fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 mod effect;
 pub use effect::spawn_effect;
@@ -140,6 +167,10 @@ fn invoke(resource: Resource) -> Result<(), Failure> {
     }
 }
 impl CancelToken {
+    fn fresh() -> Self {
+        Self(Arc::new(Cancellation::default()))
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.0.cancelled.load(Ordering::Acquire)
     }
@@ -151,7 +182,7 @@ impl CancelToken {
     /// handle without cancelling still cancels (OwnerClosed), matching
     /// the pool's abandon semantics.
     pub fn standalone() -> (Self, CancelHandle) {
-        let token = Self(Arc::new(Cancellation::default()));
+        let token = Self::fresh();
         let inner = token.clone();
         let handle = CancelHandle {
             cancel: Some(Box::new(move |_reason| {
@@ -171,7 +202,7 @@ impl CancelToken {
     ) -> Result<(), Failure> {
         let resource: Resource = Box::new(resource);
         {
-            let mut slot = self.0.resource.lock();
+            let mut slot = lock(&self.0.resource);
             if !self.is_cancelled() {
                 if slot.is_some() {
                     return Err(Failure::new(
@@ -189,13 +220,13 @@ impl CancelToken {
     /// Call only after normal resource cleanup. An already detached callback
     /// may still run; the resource itself must serialize revocation and reuse.
     pub fn clear_cancel_resource(&self) {
-        let resource = self.0.resource.lock().take();
+        let resource = lock(&self.0.resource).take();
         drop(resource);
     }
 
     fn cancel_resource(&self) -> Result<(), Failure> {
         let resource = {
-            let mut slot = self.0.resource.lock();
+            let mut slot = lock(&self.0.resource);
             self.0.cancelled.store(true, Ordering::Release);
             slot.take()
         };
@@ -207,7 +238,7 @@ impl CancelToken {
 }
 type Emitter<T> = Arc<Mutex<Option<Box<dyn FnOnce(Outcome<T>) + Send>>>>;
 fn finish<T>(emitter: &Emitter<T>, outcome: Outcome<T>) {
-    let emit = emitter.lock().take();
+    let emit = lock(emitter).take();
     if let Some(emit) = emit {
         emit(outcome);
     }
@@ -241,7 +272,7 @@ pub fn prepare<T: Send + 'static>(
     emit: impl FnOnce(Outcome<T>) + Send + 'static,
 ) -> PreparedWork<T> {
     PreparedWork {
-        token: CancelToken(Arc::new(Cancellation::default())),
+        token: CancelToken::fresh(),
         emitter: Arc::new(Mutex::new(Some(Box::new(emit)))),
     }
 }
@@ -254,7 +285,7 @@ impl<T: Send + 'static> PreparedWork<T> {
         let cancel_emitter = self.emitter.clone();
         CancelHandle {
             cancel: Some(Box::new(move |reason| {
-                let emit = cancel_emitter.lock().take();
+                let emit = lock(&cancel_emitter).take();
                 if let Some(emit) = emit {
                     let outcome = match cancel_token.cancel_resource() {
                         Ok(()) => Outcome::Cancelled(reason),
@@ -333,6 +364,9 @@ pub fn spawn_scoped<'scope, 'env, T: Send + 'static>(
     handle
 }
 
+#[cfg(all(test, strop_loom))]
+mod loom_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,7 +415,7 @@ mod tests {
 
     #[test]
     fn late_registration_runs_immediately_and_success_wins_when_already_published() {
-        let token = CancelToken(Arc::new(Cancellation::default()));
+        let token = CancelToken::fresh();
         token.cancel_resource().unwrap();
         let (tx, rx) = channel();
         token

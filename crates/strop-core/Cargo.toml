@@ -21,3 +21,13 @@ tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# 0108 D3: Loom campaign over the worker envelope (worker.rs). Runs as
+# `RUSTFLAGS="--cfg strop_loom" cargo test -p strop-core loom` — the
+# dependency and the seam exist only under cfg(strop_loom), never in
+# release artifacts.
+[target.'cfg(strop_loom)'.dependencies]
+loom = "0.7"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(strop_loom)"] }

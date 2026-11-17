@@ -1,5 +1,5 @@
 //! Admitted effects finish with their observed result, not an eager cancel fiction.
-use super::{CancelHandle, CancelToken, Cancellation, Failure, FailureKind, Outcome};
+use super::{CancelHandle, CancelToken, Failure, FailureKind, Outcome};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -91,7 +91,7 @@ pub fn spawn_effect<T: Send + 'static>(
     work: impl FnOnce(CancelToken) -> Outcome<T> + Send + 'static,
 ) -> CancelHandle {
     let shared = Arc::new(Shared {
-        token: CancelToken(Arc::new(Cancellation::default())),
+        token: CancelToken::fresh(),
         state: Mutex::new(State {
             emit: Some(Box::new(emit)),
             outcome: None,
