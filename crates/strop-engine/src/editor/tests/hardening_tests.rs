@@ -73,3 +73,43 @@ fn outside_visual_the_anchor_follows_the_caret() {
         );
     }
 }
+
+/// 0108 D2: what the multibyte, CRLF and unterminated differential
+/// fixtures found, pinned without Neovim (each diffs clean against it).
+#[test]
+fn crlf_unterminated_and_multibyte_edits_match_vim() {
+    for (text, keys, after, register) in [
+        // a Visual end on a line's end takes its whole CRLF break
+        (
+            "one (two) x\r\nthree\r\n",
+            "f(lv$d",
+            "one (three\r\n",
+            "two) x\r\n",
+        ),
+        // a linewise change through a last line without its break
+        // replaces both lines, and the fresh line has no break either
+        ("a\n  b\nc", "jjckX<esc>", "a\n  X", "  b\nc\n"),
+        // linewise registers end in a break, as Vim's do
+        ("a\nb", "jdk", "", "a\nb\n"),
+        // an inclusive end takes a character's combining marks
+        ("ae\u{301}cole x\n", "dfe", "cole x\n", "ae\u{301}"),
+    ] {
+        let mut e = Editor::new(Buffer::from_text(text));
+        e.feed_text(keys);
+        assert_eq!(e.buf().text().to_string(), after, "{text:?} {keys:?}");
+        assert_eq!(e.register(None).text, register, "{text:?} {keys:?}");
+    }
+    // a put below a last line without its break keeps it without one
+    let mut e = Editor::new(Buffer::from_text("étude"));
+    e.feed_text("yyp");
+    assert_eq!(e.buf().text().to_string(), "étude\nétude");
+    // a linewise delete keeps the cell the cursor showed on: a wide
+    // character's left half, a TAB's last cell
+    let mut e = Editor::new(Buffer::from_text("abcdef\nx\n  🎉 xyz\nabcdef\n"));
+    e.feed_text("jj^dk");
+    assert_eq!(e.buf().text().to_string(), "abcdef\nabcdef\n");
+    assert_eq!(e.head(), 9);
+    let mut e = Editor::new(Buffer::from_text("abcdefgh\n\tx\nabcdefgh\n"));
+    e.feed_text("j0dk");
+    assert_eq!(e.head(), e.config.tab_size - 1);
+}

@@ -387,6 +387,23 @@ impl Buffer {
         offset
     }
 
+    /// One past the character at `offset` as Vim counts characters: a
+    /// base character with the combining marks that follow it (one
+    /// grapheme cluster). Reads at most a short window of the line, never
+    /// past its end.
+    pub fn cluster_end(&self, offset: impl Into<id::ByteOffset>) -> usize {
+        use unicode_segmentation::UnicodeSegmentation;
+        const WINDOW: usize = 64;
+        let offset = self.ceil_boundary(offset);
+        let end = self.line_end(self.line_of(offset));
+        if offset >= end {
+            return self.ceil_boundary(offset + 1);
+        }
+        let limit = self.ceil_boundary((offset + WINDOW).min(end));
+        let text: std::borrow::Cow<'_, str> = self.rope.byte_slice(offset..limit).into();
+        offset + text.graphemes(true).next().map_or(0, str::len).max(1)
+    }
+
     /// Smallest char boundary >= offset. Byte arithmetic on a cursor
     /// (`cursor + 1` in x/a/r/~) lands inside a multibyte char; deleting
     /// or inserting there panics ropey. Round up, never down — a

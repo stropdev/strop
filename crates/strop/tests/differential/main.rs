@@ -219,7 +219,13 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
     })
 }
 
+/// Neovim's 'fileformats' detection: every line of the file ends CRLF.
+fn is_crlf(text: &str) -> bool {
+    text.contains("\r\n") && text.matches('\n').count() == text.matches("\r\n").count()
+}
+
 fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, String> {
+    let crlf = is_crlf(text);
     let file = dir.join("fixture.txt");
     std::fs::write(&file, text).unwrap();
     let script = dir.join("script.strop");
@@ -245,16 +251,30 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
             )
         })?;
     let v: serde_json::Value = serde_json::from_str(json.trim_start_matches("─── state ")).unwrap();
+    // Neovim reads a CRLF file as 'fileformat' dos: its lines and
+    // registers carry no `\r`. strop keeps the bytes; compare the lines.
+    let lines = |text: &str| {
+        if crlf {
+            text.replace("\r\n", "\n")
+        } else {
+            text.to_owned()
+        }
+    };
+    let registers: std::collections::BTreeMap<String, String> =
+        serde_json::from_value(v["registers"].clone()).unwrap();
     Ok(State {
         text: {
-            let text = std::fs::read_to_string(&file).unwrap();
+            let text = lines(&std::fs::read_to_string(&file).unwrap());
             text.strip_suffix('\n').unwrap_or(&text).to_owned()
         },
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
         mode: v["mode"].as_str().unwrap().to_owned(),
-        register: v["register"].as_str().unwrap().to_owned(),
-        registers: serde_json::from_value(v["registers"].clone()).unwrap(),
+        register: lines(v["register"].as_str().unwrap()),
+        registers: registers
+            .into_iter()
+            .map(|(name, text)| (name, lines(&text)))
+            .collect(),
         modified: v["dirty"].as_bool().unwrap(),
         windows: serde_json::json!([v["layout"], v["active_pane"].as_u64().unwrap() + 1])
             .to_string(),

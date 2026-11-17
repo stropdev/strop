@@ -275,12 +275,7 @@ fn land_in_line(editor: &mut Editor, column: Option<DisplayColumn>) {
 /// `nostartofline`): the one the cursor wanted before the command.
 /// `None` when a delete became linewise by `exclusive-linewise`.
 pub(crate) fn kept_column(editor: &Editor, op: Op, operand: &Operand) -> Option<DisplayColumn> {
-    (!operand.end_adjusted || op.on_lines()).then(|| {
-        editor
-            .view()
-            .desired_column
-            .unwrap_or_else(|| editor.cluster_cells(editor.head()).1 - 1)
-    })
+    (!operand.end_adjusted || op.on_lines()).then(|| editor.wanted_cell())
 }
 
 /// vim `cc` / `S` (and counted `2cc`): clear each line's content,
@@ -305,10 +300,7 @@ pub(crate) fn change_lines(
             let first = editor.buf().line_of(o.range.start);
             let last = editor.buf().line_of(o.range.end.saturating_sub(1));
             let s = editor.buf().line_start(first);
-            let e = editor
-                .buf()
-                .line_start(last + 1)
-                .min(editor.buf().len_bytes());
+            let e = past_line(editor.buf(), last);
             editor.buf().text().byte_slice(s..e).to_string()
         })
         .collect();
@@ -341,17 +333,20 @@ pub(crate) fn change_lines(
             editor.buf_mut().delete(Range::charwise(start, end));
             editor.buf_mut().insert(start, indent);
         } else {
-            // N lines collapse into one fresh line
-            let end = editor
-                .buf()
-                .line_start(last + 1)
-                .min(editor.buf().len_bytes());
+            // N lines collapse into one fresh line; through a last line
+            // without its break, the fresh line has none either
+            let end = past_line(editor.buf(), last);
+            let unterminated = end == editor.buf().len_bytes()
+                && editor.buf().byte_at(end.saturating_sub(1)) != Some(b'\n');
             editor.filename_change_hint(Range::charwise(start, end));
             editor.buf_mut().delete(Range::charwise(start, end));
             editor.clear_filename_hint();
-            editor
-                .buf_mut()
-                .insert(start, &format!("{indent}{newline}"));
+            let fresh = if unterminated {
+                indent.clone()
+            } else {
+                format!("{indent}{newline}")
+            };
+            editor.buf_mut().insert(start, &fresh);
         }
         let net = editor.buf().len_bytes() as isize - before;
         entries.push((operand.cursor == editor.head(), start + indent.len(), net));
@@ -388,4 +383,15 @@ pub(crate) fn change_lines(
     editor.enter_insert_from(keys);
     editor.clamp_cursor();
     editor.flash(Range::charwise(editor.head(), editor.head()));
+}
+
+/// The offset just past `line` and its break: the next line's start, or
+/// the buffer's end for the last line (`line_start` clamps a line past
+/// the end back onto the last one).
+fn past_line(buf: &strop_core::Buffer, line: usize) -> usize {
+    if line + 1 < buf.len_lines() {
+        buf.line_start(line + 1)
+    } else {
+        buf.len_bytes()
+    }
 }

@@ -166,7 +166,8 @@ fn a_plain_yank_reaches_the_system_clipboard_and_a_delete_does_not() {
     e.feed_text("yy");
     assert_eq!(e.osc52, None);
     assert!(e.message.contains("too large"), "{}", e.message);
-    assert_eq!(e.register(None).text.len(), (1 << 20) + 1);
+    // (a linewise register ends in a break, as in Vim)
+    assert_eq!(e.register(None).text.len(), (1 << 20) + 2);
 }
 
 /// 0108 H1: a linewise put below a last row without its break grows the

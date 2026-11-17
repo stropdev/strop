@@ -63,10 +63,17 @@ impl Editor {
                 Spot {
                     at,
                     land: at + prefix + blank,
+                    grown: prefix,
                     text: if prefix == 0 {
                         text.to_string()
                     } else {
-                        format!("{}{}", self.newline_str(), text)
+                        // the break moves to the front: the buffer still
+                        // ends without one, as it did
+                        let rows = text
+                            .strip_suffix("\r\n")
+                            .or_else(|| text.strip_suffix('\n'))
+                            .unwrap_or(text);
+                        format!("{}{rows}", self.newline_str())
                     },
                 }
             }
@@ -92,6 +99,7 @@ impl Editor {
                 Spot {
                     at,
                     land,
+                    grown: 0,
                     text: text.to_string(),
                 }
             }
@@ -113,13 +121,7 @@ impl Editor {
         let cursors = self.all_cursors();
         if cursors.len() == 1 {
             let spot = self.paste_points(self.head(), &text, shape, before);
-            self.filename_paste_hint(
-                spot.at,
-                &spot.text,
-                usize::from(spot.text.len() > text.len()),
-                provenance,
-                count,
-            );
+            self.filename_paste_hint(spot.at, &spot.text, spot.grown, provenance, count);
             self.buf_mut().insert(spot.at, &spot.text);
             self.clear_filename_hint();
             self.set_head(spot.land);
@@ -132,35 +134,33 @@ impl Editor {
         // (a spot below a final row without its break carries the
         // break it grew — bytes can differ per cursor)
         let primary = self.head();
-        let mut jobs: Vec<(usize, usize, bool, String)> = cursors
+        let mut jobs: Vec<(Spot, bool)> = cursors
             .into_iter()
-            .map(|c| {
-                let spot = self.paste_points(c, &text, shape, before);
-                (spot.at, spot.land, c == primary, spot.text)
-            })
+            .map(|c| (self.paste_points(c, &text, shape, before), c == primary))
             .collect();
-        jobs.sort_by_key(|j| j.0);
-        jobs.dedup_by_key(|j| j.0); // stacked cursors paste once
-                                    // each landing shifts by what lower insertions already added
+        jobs.sort_by_key(|(spot, _)| spot.at);
+        jobs.dedup_by_key(|(spot, _)| spot.at); // stacked cursors paste once
+                                                // each landing shifts by what lower insertions already added
         let mut shift = 0usize;
-        for j in &mut jobs {
-            j.1 += shift;
-            shift += j.3.len();
+        for (spot, _) in &mut jobs {
+            spot.land += shift;
+            shift += spot.text.len();
         }
-        for (at, _, _, insert) in jobs.iter().rev() {
-            self.filename_paste_hint(
-                *at,
-                insert,
-                usize::from(insert.len() > text.len()),
-                provenance,
-                count,
-            );
-            self.buf_mut().insert(*at, insert);
+        for (spot, _) in jobs.iter().rev() {
+            self.filename_paste_hint(spot.at, &spot.text, spot.grown, provenance, count);
+            self.buf_mut().insert(spot.at, &spot.text);
             self.clear_filename_hint();
         }
-        self.sels_mut()
-            .set_extras(jobs.iter().filter(|j| !j.2).map(|j| j.1));
-        self.set_head(jobs.iter().find(|j| j.2).map(|j| j.1).unwrap_or(primary));
+        self.sels_mut().set_extras(
+            jobs.iter()
+                .filter(|(_, primary)| !primary)
+                .map(|(spot, _)| spot.land),
+        );
+        self.set_head(
+            jobs.iter()
+                .find(|(_, primary)| *primary)
+                .map_or(primary, |(spot, _)| spot.land),
+        );
         self.normalize_cursors();
         self.clamp_cursor();
         self.tx_commit();
@@ -278,10 +278,11 @@ impl Editor {
 
 /// One cursor's paste: insertion byte, landing byte, and the exact
 /// bytes that land (a paste below a final row without its break grows
-/// one first — vim's `p` at EOF).
+/// one first — vim's `p` at EOF — `grown` bytes long).
 struct Spot {
     at: usize,
     land: usize,
+    grown: usize,
     text: String,
 }
 

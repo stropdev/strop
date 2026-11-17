@@ -82,6 +82,21 @@ impl Editor {
         self.block_rect()
     }
 
+    /// The cell a vertical move or a linewise operator keeps (Vim's
+    /// curswant): the one remembered, else the one the cursor shows on —
+    /// a TAB's last cell, any other character's first (a wide character
+    /// shows the cursor on its left half).
+    pub(crate) fn wanted_cell(&self) -> DisplayColumn {
+        self.view().desired_column.unwrap_or_else(|| {
+            let (start, end) = self.cluster_cells(self.head());
+            if self.buf().byte_at(self.head()) == Some(b'\t') {
+                end - 1
+            } else {
+                start
+            }
+        })
+    }
+
     pub(crate) fn cluster_cells(&self, byte: usize) -> (DisplayColumn, DisplayColumn) {
         let line = self.buf().line_of(byte);
         let start = self.buf().line_start(line);
@@ -126,10 +141,7 @@ impl Editor {
             strop_grammar::Target::Motion(strop_grammar::Motion::Up) => false,
             _ => return false,
         };
-        let desired = self
-            .view()
-            .desired_column
-            .unwrap_or_else(|| self.cluster_cells(self.head()).1 - 1);
+        let desired = self.wanted_cell();
         let line = self.buf().line_of(self.head());
         let count = command.count.unwrap_or(1).max(1);
         let target = if down {
