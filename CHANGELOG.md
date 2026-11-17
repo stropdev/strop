@@ -1,14 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.71.0 — 2026-11-17
 
-### Fixed
+### Added
 
-- **`kind:` filters `Space s` and `Space S`** (plans/0109). It used to keep every row: only nine exact words were values and anything else was ignored without a word, a language server's fields, variants and type parameters passed every `kind:` filter, and a `kind:` turned the words beside it into an exact phrase. Now `kind:` takes the full word, the chip the list shows (`fn`, `meth`, `iface`, `const`, …) and common language words (`trait`, `func`, `def`, …), in any case, or the start of one; all 26 kinds a language server reports have one; and `kind:fn pcfg` finds `parse_config`.
-- **Files obeys `AND`/`OR`/`NOT`**: `NOT path:src` and `path:a OR path:b` used to list every file.
-- **Search with only filters asks for text** instead of listing every line, several times.
-- **`-repo:` excludes the project**; it used to keep only that project.
-- **`glob:` matches the same paths everywhere**; the symbol lists and Search's line filter used their own glob matching.
+- **The command line lives on the bottom row, as in Vim** (plans/0110). A menu opens as you type: the top row is always the command Enter runs, then names that start with what you typed, then close matches, each with its short form and what it does. `Tab`/`Shift-Tab` cycle; arguments complete by what the command takes — files, folders, buffers, themes, help topics. The right end of the row shows the command's usage, the lines a range names (`4–6 · 3 lines`), the changes a `:s` will make, or the error.
+- **Command-line history**: `Up`/`Down` recall earlier lines that start with what you typed, 200 each for `:` and `/`, kept per project. `q:`, `q/` and `Ctrl-F` open the history as a buffer you can edit with every key; `Enter` runs the line.
+- **Vim's command-line keys**: `Ctrl-W`, `Ctrl-U`, `Ctrl-B`, `Ctrl-E`, `Ctrl-R {register}`, `Ctrl-P`/`Ctrl-N`, `Home`, `End`, `Del`; `Home`, `End` and `Del` also work in Insert mode and in list fields.
+- **`:s` previews in place**: the changed lines read as they will after `Enter`, and the row counts the changes, including those off screen.
+- **`Ctrl-C` stops a long `:g` or ranged `:normal`** between lines.
 
 ### Changed
 
@@ -18,7 +18,42 @@
 - **Every list that takes filters says so**: the row under an empty field shows its everyday filters, the footer shows `ctrl-space filters`, and Ctrl-Space offers only the filters that list takes. Actions, themes, branches and SSH destinations take none: there a colon is just a colon.
 - **`repo:` is Search's alone**; Files and workspace symbols never applied it.
 - **Filtering a kept list happens off the input thread**, in the pass that ranks it, over facts each row carries from when the list was built: a keystroke allocates nothing per row.
-- **Recorded traces store a symbol's kind by name in strop's kind table** (`Variant`, not the protocol's `EnumMember`).
+- **Recorded traces store a symbol's kind by name in strop's kind table** (`Variant`, not the protocol's `EnumMe
+- **`Esc` closes the command line at once**, as in Vim; Normal-mode editing of the line is the command-line window.
+- **Errors look like errors**: a failed command or a search with no match shows `✗` in the error colour.
+- **`?` lists every command** with its usage, written from the same table that runs it.
+- **Highlighting**: a line longer than 3000 bytes is coloured up to there (Vim's `synmaxcol`); a typed `#!` line takes effect when you write the file; Markdown with forty code blocks opens in tens of milliseconds instead of a second or two.
+- **New files get the usual permissions** (your umask), not owner-only.
+- **git never runs a repository's own programs for reading**: blame, log, diff and show run without its fsmonitor, textconv, external diff, pager or hooks. Commit keeps your hooks.
+- **A line break is a newline**, as in Vim: a lone carriage return, form feed or Unicode line separator is text.
+- **Commands are words**: `strop headless`, `strop replay`, `strop remote`, `strop bench`. The `--headless`, `--script`, `--replay`, `--remote` and `--bench` flags are gone.
+- **Session, trace and trust files in old formats are refused** rather than read.
+- **The release binary is built with whole-program optimisation** (fat LTO, one codegen unit).
+
+### Fixed
+
+- **`kind:` filters `Space s` and `Space S`** (plans/0109). It used to keep every row: only nine exact words were values and anything else was ignored without a word, a language server's fields, variants and type parameters passed every `kind:` filter, and a `kind:` turned the words beside it into an exact phrase. Now `kind:` takes the full word, the chip the list shows (`fn`, `meth`, `iface`, `const`, …) and common language words (`trait`, `func`, `def`, …), in any case, or the start of one; all 26 kinds a language server reports have one; and `kind:fn pcfg` finds `parse_config`.
+- **Files obeys `AND`/`OR`/`NOT`**: `NOT path:src` and `path:a OR path:b` used to list every file.
+- **Search with only filters asks for text** instead of listing every line, several times.
+- **`-repo:` excludes the project**; it used to keep only that project.
+- **`glob:` matches the same paths everywhere**; the symbol lists and Search's line filter used their own glob matching.
+- **`yyp` on a last line with no newline crashed** when the line began with a non-ASCII letter, and put the cursor one column off otherwise.
+- **`Ctrl-W` or `Ctrl-U` in Insert mode after an arrow key crashed** next to a non-ASCII letter. An arrow key now starts a new insert, as in Vim.
+- **`v$d` in a CRLF file deleted only the carriage return**; `ck`, `cip` and others missed a last line without a newline; `j`/`k` over wide characters kept the wrong column; an inclusive motion left a combining mark behind.
+- **`@a` while recording into `a` never returned.**
+- **Opening a FIFO, a device or a non-UTF-8 file from the command line** hung or quit; it now opens the editor with the same message `:e` gives.
+- **`SIGTERM` and `SIGHUP` left the terminal raw** and skipped the session save.
+- **`:g` took seconds on a few thousand lines**; it is now linear.
+- **A failed highlight was retried every frame**, eight nested code blocks lost all colour, and a closing tag lost its colour once its opening tag scrolled away (Markdown, PHP).
+- **Marks in a multi-cursor edit, and an excerpt in a collection**, could move to the wrong place; a refused multi-cursor insert moved the cursors anyway.
+
+### Proved
+
+- **Edits move spans, highlights and cursors through one proved function.** The kernel's edit map now also maps spans, the multi-cursor filter that drops overlapping edits, and the way highlights carry through an edit and merge with a fresh result; Lean proofs cover each. Every proved claim now has a mutant that breaks it, and a kernel function without a claim fails the build.
+- **The two TLA+ models are gone** after fifteen releases without a catch; a Loom test checks the worker's cancel and finish happen exactly once, and an exhaustive test covers the list generation guard.
+- **A random-key test runs in every build** over multibyte, CRLF and unterminated files: no crash, the cursor always on a character, undo returns the original text.
+
+mber`).
 
 ## 0.70.0 — 2026-11-16
 
