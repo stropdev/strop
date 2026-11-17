@@ -2,6 +2,9 @@
 # Local Linux/WSL release entrypoint (plans/0079, plans/0086 §8).
 # qualify: every blocking gate on the exact clean source, including the
 # GitHub ci run for HEAD and the local-only Lean proofs gate.
+# package: runs qualify itself, then builds and checks the artifact, so an
+# artifact can only come from a commit that passed qualification in the
+# same invocation (no receipt files: plans/0108 D3).
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -43,8 +46,7 @@ catalog() {
         --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json"
 }
 
-case "$COMMAND" in
-qualify)
+qualify() {
     clean_source
     head=$(git rev-parse HEAD)
     conclusion=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$head" \
@@ -57,9 +59,14 @@ qualify)
     sh tests/install.sh
     docker compose run --build --rm test
     docker compose run --build --rm proofs
+}
+
+case "$COMMAND" in
+qualify)
+    qualify
     ;;
 package)
-    clean_source
+    qualify
     mkdir -p "$DIST"
     if [ -e "$ARCHIVE" ]; then
         echo "reusing existing artifact without rebuilding: $ARCHIVE"

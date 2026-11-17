@@ -23,21 +23,20 @@ Releases are built and qualified on the maintainer's Linux/WSL workstation with
 Docker BuildKit. GitHub Actions does not rebuild or publish the release. The
 routine local gate is:
 
-1. An exact clean committed checkout; the workspace version and tag agree.
-2. `docker compose run --build --rm test` (fmt, clippy, all tests).
-3. `python3 verification/check.py --release`, `sh tests/release-catalog.sh` and
-   `sh tests/install.sh`.
-4. The changed feature's real UI/CLI smoke.
-5. `.github/scripts/release-local.sh package <x.y.z>`, which builds through
-   Compose into `dist/v<x.y.z>/`, then runs checksum, static-link, version,
-   headless-parse, completion and find-budget (0093 §7) qualification against the
-   extracted shipping binary.
-6. The package-generated freeze `--check` validates the exact commit against the
-   completion report produced from that same shipping binary (not the previous
-   release's committed report).
+1. The changed feature's real UI/CLI smoke.
+2. `.github/scripts/release-local.sh package <x.y.z>`. It first runs
+   `qualify` on the same checkout: an exact clean committed tree whose
+   workspace version matches, a green GitHub `ci` run for HEAD,
+   `sh tests/release-catalog.sh`, `sh tests/install.sh` and the Compose `test`
+   and `proofs` gates. Only then does it build through Compose into
+   `dist/v<x.y.z>/` and run checksum, static-link, version, headless-parse
+   and the find/search/symbols/history budgets (0093 §7, 0099 §7, 0101 §5.1)
+   against the extracted shipping binary. `qualify` alone runs the gates
+   without packaging.
 
-The model/proof/native assurance lanes remain CI and explicitly requested deep
-checks; they are not hidden or reported as run by the routine local release.
+*2026-11-17 (plan 0108 D3):* `package` used to trust that `qualify` had been
+run; it now runs it itself, so no artifact is built from an unqualified
+commit and no receipt file is needed. The TLC `model` lane is deleted.
 BuildKit caches are performance state, never qualification evidence. Release
 outputs stay in a version-specific ignored `dist/v<x.y.z>/` directory and may be
 copied to cold storage without rebuilding them.
