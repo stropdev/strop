@@ -78,7 +78,11 @@ tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
 - **Code moves inward to gain guarantees.** Proving something means moving
   the decision into `strop-kernel` (moved, not copied; production calls it),
   stating the theorem, adding it to `proofs/Audit.lean`'s claims and a
-  mutant to `proofs/mutants.py` that must break it.
+  mutant to `proofs/mutants.py` that must break it. A property stated over a
+  model of the code is broken by a *paired* mutant that patches the Rust and
+  the model together; a bridge breaking does not calibrate it. The audit
+  refuses a public kernel function no claim's statement mentions, and the
+  calibration refuses a claim no mutant breaks (plans/0108 D4).
 - **Kernel shape:** plain safe Rust, no dependencies, no closures or iterator
   adaptors in proved code, explicit loops over slices. After changing it run
   `sh proofs/refresh.sh` and commit `proofs/Extracted/` — the gate refuses

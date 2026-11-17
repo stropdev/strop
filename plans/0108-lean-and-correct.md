@@ -61,6 +61,42 @@ The differential corpus gains the same three fixture shapes.
   extracted `pub fn` without a claim.
 - Deferred: `operated_span`, viewport clamps, mark fold (roadmap).
 
+Implementation record (D4, D1.10):
+- `editmap::map_span` is the one span rule; `map_span_spec` states its
+  properties over the extracted function (ordered, in bounds, shift before,
+  untouched after, exact delta inside, start left-affine) and
+  `map_span_keeps_order` that two ordered spans stay ordered unless the edit
+  straddles the second one's start or the first claims an insertion there.
+  Excerpt spans (`transact.rs`), view bodies (`collections/updates.rs`) and
+  the completion journal's windows (`words/journal.rs`, whose `map_edge` was
+  exactly `map_span` with the end claiming) map through it. Structural
+  re-indent folds `map_span` over the edits that applied (a position in a
+  re-indented prefix still lands after the new indentation); mirrored
+  inserts fold `map_through_edits` over the inserts that applied (B5).
+- `editmap::keep_disjoint` (`keep_disjoint_spec`): a range is kept exactly
+  when it starts at or after the end of every range kept before it, and the
+  kept non-empty ranges are `BatchOk`. The proof needs no sortedness:
+  sorting only decides which cursor wins.
+- D1.10, as built: marks are judged per edit (its own `start_point` column,
+  the mark followed through the edits before it). An edit at an excerpt's
+  end in the source does not grow it — typing or replacing at column 1 of
+  the line below (B4) — except when the view itself wrote it through that
+  excerpt (`o` on its last line, its undo restoring a line, typing there:
+  `Collection::writing`) or the end is mid-line (a last line without a
+  newline goes on). Read literally, "an insertion never grows it" would
+  make the view's own `o` drift from its source. A clean view rebuilds from
+  its sources for an insertion at an excerpt's end instead of deciding the
+  rule a second time.
+- Calibration: `Audit.lean` prints `CLAIM_DEPS` (the kernel theorems each
+  claim rests on) and refuses a public kernel function absent from every
+  claim's statement (`layout::empty` was deleted as weightless;
+  `cache::vacant`, `holds`, `selects` gained claims). `mutants.py` refuses
+  a claim no mutant breaks; for a property claim (not a `_spec`) the
+  failure must reach a property lemma, so paired mutants patch the Rust
+  and the Lean model together (cache, edit map, batch admission, excerpt
+  translation, tiling). `total_cost_le` is a lemma about the cost model
+  only, so its mutant patches the model alone.
+
 ### D5. Bloat
 - `[profile.release]`: `lto = "fat"`, `codegen-units = 1`, `panic` unchanged.
 - Delete: unreferenced pub items, dead `cfg(windows)`/`cfg(not(unix))`
