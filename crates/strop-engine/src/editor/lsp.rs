@@ -199,9 +199,7 @@ impl Editor {
             return;
         }
         self.begin_text_line(':', Default::default());
-        self.feed_pending_event(super::pending::PendingEvent::Paste(format!(
-            "rename {name}"
-        )));
+        self.cmdline_paste(&format!("rename {name}"));
     }
 
     /// `:rename <new>` — workspace rename through a change plan.

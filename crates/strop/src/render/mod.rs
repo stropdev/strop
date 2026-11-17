@@ -172,7 +172,7 @@ fn place_cursor(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) -> O
     // exactly the unfaded cursor below. Presentation only.
     if matches!(editor.mode(), Mode::Normal)
         && !editor.picker_open()
-        && editor.pending_sigil().is_none()
+        && editor.cmdline_sigil().is_none()
     {
         if let Some(progress) = editor.cursor_fade_progress() {
             let cell = &mut frame.buffer_mut()[at];
@@ -259,5 +259,5 @@ fn render_welcome(editor: &Editor, t: &Tokens, frame: &mut Frame) {
 /// True when the floating command/search/pipe card owns the caret
 /// (0031 R7: every sigil prompt — `:`, `/`, `?`, `|` — takes it).
 pub(crate) fn cmd_card_active(editor: &Editor) -> bool {
-    !editor.picker_open() && editor.pending_sigil().is_some()
+    !editor.picker_open() && editor.cmdline_sigil().is_some()
 }

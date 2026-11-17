@@ -1,14 +1,13 @@
 //! Normal mode (0016): the machine walks keys to typed actions; this
 //! module dispatches them. Siblings by responsibility: `execute` (the
-//! operator engine + editing entries), `search`, `preview`, `pending`
-//! (the prompt effects), `motions`. The `:` line is `editor/ex/`.
+//! operator engine + editing entries), `search`, `preview`, `motions`. The command line is
+//! `editor/cmdline/`, its commands `editor/ex/`.
 
 pub(crate) mod bind;
 pub(crate) mod edits;
 mod execute;
 mod motions;
 pub(crate) mod operators;
-mod pending;
 mod preview;
 mod search;
 

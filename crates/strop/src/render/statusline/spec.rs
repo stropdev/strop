@@ -10,24 +10,11 @@ use crate::render::cmd_card_active;
 
 pub(super) fn spec(editor: &Editor) -> String {
     if editor.terminal_phase(editor.current()).is_some() {
-        return if editor.pending().is_active() {
-            editor.pending().text().to_owned()
+        return if editor.cmdline().is_open() {
+            editor.cmdline().text().to_owned()
         } else {
             String::new()
         };
-    }
-    if let Some(state) = editor
-        .pending_field_state()
-        .filter(|state| state.mode == strop_engine::editor::PendingFieldMode::Normal)
-    {
-        let owner = state.outer_operator.map_or_else(
-            || "prompt pending".to_owned(),
-            |operator| format!("{operator:?} pending").to_lowercase(),
-        );
-        return format!(
-            "{owner} · field NORMAL · Esc cancels · {}",
-            editor.pending().text().trim_end_matches('\r')
-        );
     }
     if editor.substitute_preview().is_some() {
         // the `:` card shows the substitution's state: one fact, one
@@ -46,8 +33,8 @@ pub(super) fn spec(editor: &Editor) -> String {
                 .then(|| "preview resolving…".into())
         })
         .or_else(|| {
-            (editor.pending().is_active() && !cmd_card_active(editor))
-                .then(|| editor.pending().text().trim_end_matches('\r').to_owned())
+            (editor.cmdline().is_open() && !cmd_card_active(editor))
+                .then(|| editor.cmdline().text().trim_end_matches('\r').to_owned())
         })
         .or_else(|| {
             (!editor.walker().prefix_display().is_empty() || !editor.walker().state.empty())

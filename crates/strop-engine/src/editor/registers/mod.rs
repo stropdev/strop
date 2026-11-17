@@ -128,7 +128,7 @@ impl Editor {
             Some('+' | '*') => Ok(RegisterRead::Clipboard),
             // vim's read-only registers are views of editor state
             Some('.') => computed(self.last_insert.clone()),
-            Some(':') => computed(self.registers.command_line.clone()),
+            Some(':') => computed(self.cmdline.last_command_line().map(str::to_owned)),
             Some('/') => computed(
                 self.last_search
                     .as_ref()
@@ -256,9 +256,7 @@ impl Editor {
                 &register.text,
                 crate::editor::insert::replay::InsertTargets::All,
             ),
-            PasteDestination::Prompt => self.feed_pending_event(
-                crate::editor::pending::PendingEvent::Paste(field_text(&register).to_owned()),
-            ),
+            PasteDestination::Prompt => self.cmdline_paste(field_text(&register)),
             PasteDestination::Picker => self.paste_picker(field_text(&register)),
         }
     }
@@ -268,7 +266,7 @@ impl Editor {
         match destination {
             PasteDestination::Put { .. } => true,
             PasteDestination::Insert => self.mode == crate::editor::Mode::Insert,
-            PasteDestination::Prompt => self.pending.is_active(),
+            PasteDestination::Prompt => self.cmdline.is_open(),
             PasteDestination::Picker => self.picker_open(),
         }
     }
@@ -385,8 +383,8 @@ impl Editor {
         if text.is_empty() {
             return;
         }
-        if self.pending.is_active() {
-            self.feed_pending_event(super::pending::PendingEvent::Paste(text.to_owned()));
+        if self.cmdline.is_open() {
+            self.cmdline_paste(text);
             return;
         }
         if self.picker_open() {

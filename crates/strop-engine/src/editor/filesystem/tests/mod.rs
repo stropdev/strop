@@ -271,7 +271,7 @@ fn committed_rename_retires_completion_candidates_for_the_old_name() {
     );
     editor.switch_to(document);
     editor.feed_text(":e orig");
-    let prompt = editor.pending.text().to_string();
+    let prompt = editor.cmdline.text().to_string();
     let ticket = Ticket {
         request: editor.worker_ids.allocate().unwrap(),
         key: RemoteCompletionKey {
@@ -304,7 +304,7 @@ fn committed_rename_retires_completion_candidates_for_the_old_name() {
             listed_directory: None,
         }),
     });
-    assert_eq!(editor.pending.text(), prompt);
+    assert_eq!(editor.cmdline.text(), prompt);
 }
 
 #[test]

@@ -67,8 +67,18 @@ pub struct Session {
     current: usize,
     #[serde(default)]
     jumps: JumpListState,
+    /// The command-line history (plan 0110): `:` and `/ ?` lines, newest
+    /// last.
+    #[serde(default)]
+    history: HistoryState,
     #[serde(skip)]
     captured: Vec<ropey::Rope>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct HistoryState {
+    ex: Vec<String>,
+    search: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -167,10 +177,15 @@ pub fn capture(editor: &Editor) -> Option<Session> {
         None
     } else {
         let jumps = capture_jumps(editor, &buffers);
+        let history = &editor.cmdline.history;
         Some(Session {
             buffers,
             current,
             jumps,
+            history: HistoryState {
+                ex: history.ex.iter().map(str::to_owned).collect(),
+                search: history.search.iter().map(str::to_owned).collect(),
+            },
             captured,
         })
     }
@@ -365,6 +380,11 @@ impl Session {
         }
         editor.view_mut().doc = current;
         editor.view_mut().jumps = jumps;
+        let history = std::mem::take(&mut self.history);
+        editor.cmdline.history.ex =
+            crate::editor::cmdline::history::History::from_lines(history.ex);
+        editor.cmdline.history.search =
+            crate::editor::cmdline::history::History::from_lines(history.search);
         for id in old {
             editor.docs.remove(id);
         }

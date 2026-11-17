@@ -1,5 +1,4 @@
 use super::*;
-use crate::editor::{PendingFieldEscape, PendingFieldMode};
 use std::time::Duration;
 use strop_core::frontend_input::Key;
 
@@ -58,12 +57,9 @@ fn preview_apply_and_cancel_share_one_plan_without_composition_effects() {
     assert!(preview.diff_text().contains("+omega two omega"));
     assert_eq!(editor.preview().unwrap().unwrap().0.len(), 3);
 
+    // one Esc cancels (0110 §3.1)
     editor.feed(Key::Esc);
-    let field = editor.pending_field_state().unwrap();
-    assert_eq!(field.mode, PendingFieldMode::Normal);
-    assert_eq!(field.next_escape, PendingFieldEscape::CancelPrompt);
-    editor.feed(Key::Esc);
-    assert!(!editor.pending.is_active());
+    assert!(!editor.cmdline.is_open());
     assert_eq!(editor.buf().text().to_string(), original);
     assert_eq!(editor.buf().revision(), revision);
     assert!(editor.last_search.is_none());
@@ -247,26 +243,19 @@ fn large_preview_resolves_without_mutating_and_enter_waits_for_the_same_work() {
 }
 
 #[test]
-fn outer_operator_field_mode_and_next_escape_are_exposed_for_ex_and_search() {
-    for (prompt, outer_operator) in [
-        (":%s/alpha/omega/g", None),
-        ("/alpha", Some(strop_grammar::Op::Delete)),
-    ] {
+fn one_escape_cancels_ex_and_search_lines_with_an_outer_operator() {
+    for (prompt, outer_operator) in [(":%s/alpha/omega/g", false), ("/alpha", true)] {
         let mut editor = Editor::new(Buffer::from_text("alpha\n"));
-        if outer_operator.is_some() {
+        if outer_operator {
             editor.feed_text("d");
         }
         editor.feed_text(prompt);
-        let field = editor.pending_field_state().unwrap();
-        assert_eq!(field.outer_operator, outer_operator);
-        assert_eq!(field.mode, PendingFieldMode::Insert);
-        assert_eq!(field.next_escape, PendingFieldEscape::EnterNormal);
         editor.feed(Key::Esc);
-        let field = editor.pending_field_state().unwrap();
-        assert_eq!(field.mode, PendingFieldMode::Normal);
-        assert_eq!(field.next_escape, PendingFieldEscape::CancelPrompt);
-        editor.feed(Key::Esc);
-        assert!(!editor.pending.is_active());
+        assert!(!editor.cmdline.is_open());
+        assert!(
+            editor.walker.is_ground(),
+            "{prompt}: the operator is gone too"
+        );
         assert_eq!(editor.buf().text().to_string(), "alpha\n");
     }
 }

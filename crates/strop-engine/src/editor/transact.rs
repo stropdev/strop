@@ -49,11 +49,11 @@ impl super::Editor {
             return Ok(Committed { revision: base });
         }
         if self
-            .pending
-            .prompt()
+            .cmdline
+            .line()
             .is_some_and(|prompt| prompt.origin().pane.doc == document)
         {
-            self.cancel_pending();
+            self.cancel_cmdline();
         }
         let revision = self
             .doc_mut(document)
@@ -213,7 +213,7 @@ impl super::Editor {
                 (start, old_end, new_end, ends_in_break(index))
             })
             .collect();
-        self.pending.ex.marked.map_edits(id, &marked, &document.buf);
+        self.cmdline.ex.marked.map_edits(id, &marked, &document.buf);
         self.analysis.edits(id, document.buf.changes());
         self.resolution.edits(id, document.buf.changes());
         if let Err(error) = self.completion.edits(

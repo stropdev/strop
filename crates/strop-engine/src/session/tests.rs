@@ -35,6 +35,28 @@ fn roundtrip_restores_buffers_and_position() {
 }
 
 #[test]
+fn command_line_history_roundtrips_per_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+    let mut e = Editor::new(Buffer::open(root.join("a.txt")).unwrap());
+    e.cwd = root.to_path_buf();
+    e.state_dir = Some(root.join("state"));
+    e.feed_text(":2<cr>/thr<cr>:1<cr>");
+    assert!(save(&e).unwrap());
+    let mut e2 = Editor::new(Buffer::from_text(""));
+    e2.cwd = root.to_path_buf();
+    e2.state_dir = Some(root.join("state"));
+    assert!(restore(&mut e2).unwrap());
+    let ex: Vec<_> = e2.cmdline.history.ex.iter().collect();
+    let search: Vec<_> = e2.cmdline.history.search.iter().collect();
+    assert_eq!(ex, ["2", "1"]);
+    assert_eq!(search, ["thr"]);
+    e2.feed_text(":<up><up>");
+    assert_eq!(e2.cmdline.text(), ":2");
+}
+
+#[test]
 fn jump_history_roundtrips_across_documents_with_index_and_view() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

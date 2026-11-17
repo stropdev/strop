@@ -231,11 +231,11 @@ pub(crate) fn plan(buf: &Buffer, spec: &SubstituteSpec) -> Result<SubstitutionPl
 /// Read only the plan stamped for the exact current Ex body, source,
 /// pane and saved cursors. Parsing happens before consulting that cache.
 pub(crate) fn substitute_preview(editor: &Editor) -> Option<SubstitutePreviewState<'_>> {
-    let prompt = editor.pending.prompt()?;
-    let crate::editor::pending::PromptContext::Ex(origin) = prompt.context() else {
+    let prompt = editor.cmdline.line()?;
+    let crate::editor::cmdline::Context::Ex(origin) = prompt.context() else {
         return None;
     };
-    if !editor.pending_origin_valid(origin)
+    if !editor.cmdline_origin_valid(origin)
         || editor.sels().extra_heads() != origin.pane.sels.extra_heads()
     {
         return Some(SubstitutePreviewState::Unavailable(
@@ -294,7 +294,7 @@ pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) {
             return;
         }
     };
-    if spec.flags.confirm && editor.pending.ex.compound > 0 {
+    if spec.flags.confirm && editor.cmdline.ex.compound > 0 {
         // The question would have to stop a `:g` or `:normal` in the
         // middle of its one undo step.
         editor.message = "the c flag cannot ask inside :g or :normal".into();
@@ -312,7 +312,7 @@ pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) {
     // A compound command (`:g`, `:normal`) and a confirmation need the
     // answer now; a lone `:s` on a large buffer resolves off the input
     // path.
-    let inline = editor.pending.ex.compound > 0 || spec.flags.confirm;
+    let inline = editor.cmdline.ex.compound > 0 || spec.flags.confirm;
     if !inline && editor.substitution_is_large() && !editor.substitution_ready(&spec, &cursors) {
         editor.defer_substitute(spec, cursors, ResolutionPurpose::Execute);
         return;

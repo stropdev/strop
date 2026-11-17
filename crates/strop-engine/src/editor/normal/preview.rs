@@ -59,15 +59,15 @@ impl Editor {
     pub(crate) fn prepare_resolution_preview(&mut self) {
         if self.resolution.blocked()
             || self
-                .pending
-                .prompt()
-                .is_some_and(|prompt| prompt.search().is_some())
+                .cmdline
+                .line()
+                .is_some_and(|line| line.search().is_some())
         {
             return;
         }
-        if let Some(prompt) = self.pending.prompt() {
-            if let crate::editor::pending::PromptContext::Ex(origin) = prompt.context() {
-                if !self.pending_origin_valid(origin) {
+        if let Some(prompt) = self.cmdline.line() {
+            if let crate::editor::cmdline::Context::Ex(origin) = prompt.context() {
+                if !self.cmdline_origin_valid(origin) {
                     self.resolution.cancel_preview();
                     return;
                 }
@@ -101,14 +101,14 @@ impl Editor {
     }
 
     fn preview_command(&self) -> Result<Option<(grammar::Command, Vec<usize>)>, String> {
-        if let Some(prompt) = self.pending.prompt() {
+        if let Some(prompt) = self.cmdline.line() {
             let Some((origin, state)) = prompt.search() else {
                 return Ok(None);
             };
-            if state.op.is_none() || !self.pending_origin_valid(origin) {
+            if state.op.is_none() || !self.cmdline_origin_valid(origin) {
                 return Ok(None);
             }
-            let Some(command) = self.search_prompt_command(prompt, false)? else {
+            let Some(command) = self.search_line_command(prompt, false)? else {
                 return Ok(None);
             };
             Ok(Some((command, origin.pane.sels.heads())))

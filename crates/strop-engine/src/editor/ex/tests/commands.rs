@@ -158,7 +158,7 @@ fn ex_normal_abandons_what_the_keys_leave_open() {
         e.ex_normal(None, keys);
         assert_eq!(e.mode, Mode::Normal, "{keys}");
         assert!(e.walker.is_ground(), "{keys}");
-        assert!(!e.pending.is_active(), "{keys}");
+        assert!(!e.cmdline.is_open(), "{keys}");
     }
 }
 
@@ -244,6 +244,6 @@ fn completion_offers_the_tables_names() {
     assert_eq!(e.ex_candidates(), vec![("bnext", "go to the next buffer")]);
     // a range is not a name to complete
     e.feed_text("<esc><esc>V:");
-    assert_eq!(e.pending.text(), ":'<,'>");
+    assert_eq!(e.cmdline.text(), ":'<,'>");
     assert!(e.ex_candidates().is_empty());
 }

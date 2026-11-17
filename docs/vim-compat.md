@@ -252,6 +252,27 @@ does not is listed at the end, under Missing and Reassigned.
 
 - `✓ :` — the command line (from Visual it opens with '<,'>)
 - `✓ :N :N,M :. :$ :% :'a :'<,'> :/pat/ :?pat? :.+N :N;+M` — ranges: lines, marks, searches and offsets; :N alone goes to the line
+- `✓ enter ctrl-j ctrl-m` — run the line (a failed line says so in error ink)
+- `✓ esc ctrl-[ ctrl-c` — cancel; the view returns to where it was
+- `✓ backspace ctrl-h` — delete before the cursor; on an empty line, cancel
+- `✓ delete` — delete under the cursor (at the end: before it)
+- `✓ ctrl-w` — delete the word before the cursor
+- `✓ ctrl-u` — delete everything before the cursor
+- `✓ left` — one character left
+- `✓ right` — one character right
+- `✓ ctrl-b home` — start of the line
+- `✓ ctrl-e end` — end of the line; with a completion selected: put back what was typed
+- `✓ ctrl-r` — insert a register (" a-z 0 : / +); ctrl-r ctrl-w / ctrl-a: the word / WORD under the cursor
+- `✓ tab` — next completion, written into the line (after the last: what was typed)
+- `✓ s-tab` — previous completion
+- `✓ ctrl-p` — older history line; previous completion while the menu is open
+- `✓ ctrl-n` — newer history line; next completion while the menu is open
+- `✓ up` — older history line that starts with what is typed; the row above once one is selected
+- `✓ down` — newer history line that starts with what is typed; the row below once one is selected
+- `✓ ctrl-y` — keep the selected completion, close the menu
+- `✓ ctrl-d` — list the completions
+- `✓ ctrl-f` — edit this line in the command-line window
+- `✓ ctrl-l` — repaint the screen
 
 ## Command line: text
 

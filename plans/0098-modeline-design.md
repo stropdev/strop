@@ -242,7 +242,8 @@ even chip, position and badge fit, the row is the bare `chip · line:col` of
   0088's 60 % width. It is a typed field: it must not move or resize under the
   caret, and the top is the one place neither the echo row nor the key card ever
   occupies. The two cards now have the same margin from the edge they hang
-  from.
+  from. Amended by 0110: there is no `:` card — the line is the modeline's
+  own row while it is open, and its menu is a card anchored above it.
 - **Inside the `:` card there is one text column** (C3): the sigil and the
   row markers (`▌`, `-`, `+`) live in a two-cell gutter; what you type,
   completion names, the summary and the changed lines all start in the column

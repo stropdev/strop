@@ -318,7 +318,7 @@ impl Editor {
             self.remember_directory_view();
             self.remember_terminal_view();
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.focus_epoch += 1;
         if switching {

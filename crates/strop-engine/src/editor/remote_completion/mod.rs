@@ -3,7 +3,7 @@
 //! connections or bounded cached observations; Tab never authenticates.
 //!
 //! Every reply captures the exact prompt, focus, document revision and cursor.
-//! Cycling uses the existing PendingEvent::CompleteEx reducer. Candidates use
+//! Cycling rewrites the open command line. Candidates use
 //! lossless resource URIs so native filename bytes cannot become display aliases.
 
 use std::collections::VecDeque;
@@ -15,8 +15,8 @@ use strop_core::worker::{self, CancelReason, Completion, FailureKind, Outcome, T
 use strop_remote::{HostCandidate, HostSources, RemoteClient, RemoteEntryKind};
 use strop_workspace::RemoteFile;
 
+use super::cmdline::Context;
 use super::document::DocumentSource;
-use super::pending::{PendingEvent, PromptContext};
 use super::Editor;
 
 mod directory;
@@ -214,8 +214,8 @@ impl Editor {
     /// caller's command-name cycling never touches a remote line.
     pub(crate) fn remote_completion_tab(&mut self) -> bool {
         let Some((text, cursor)) = self
-            .pending
-            .prompt()
+            .cmdline
+            .line()
             .map(|prompt| (prompt.text().to_owned(), prompt.cursor()))
         else {
             return false;
@@ -268,14 +268,14 @@ impl Editor {
             return true;
         }
         if let Some(ready) = self.remote_completion.ready.as_ref() {
-            if self.pending.text() == ready.applied && ready.candidates.len() > 1 {
+            if self.cmdline.text() == ready.applied && ready.candidates.len() > 1 {
                 let next = (ready.index + 1) % ready.candidates.len();
                 let uri = ready.candidates[next].uri.clone();
                 let prefix = ready.prefix_body.clone();
                 self.apply_completion(&prefix, &uri);
                 if let Some(ready) = self.remote_completion.ready.as_mut() {
                     ready.index = next;
-                    ready.applied = self.pending.text().to_owned();
+                    ready.applied = self.cmdline.text().to_owned();
                 }
                 return true;
             }
@@ -290,10 +290,10 @@ impl Editor {
     /// Classify the typed operand and launch the owned worker request.
     fn start_remote_completion(&mut self, query: RemoteCompletionQuery, prefix_body: String) {
         let Some((text, cursor, document, revision)) =
-            self.pending
-                .prompt()
+            self.cmdline
+                .line()
                 .and_then(|prompt| match prompt.context() {
-                    PromptContext::Ex(origin) => Some((
+                    Context::Ex(origin) => Some((
                         prompt.text().to_owned(),
                         prompt.cursor(),
                         origin.pane.doc,
@@ -437,7 +437,7 @@ impl Editor {
                 self.message = candidates_message(&items, source);
                 self.remote_completion.ready = Some(ReadyCompletion {
                     prefix_body,
-                    applied: self.pending.text().to_owned(),
+                    applied: self.cmdline.text().to_owned(),
                     candidates: items,
                     index: 0,
                 });
@@ -460,10 +460,10 @@ impl Editor {
     /// The request's prompt moment still describes the editor: same
     /// ex prompt, focus, document, revision, input text and cursor.
     fn completion_prompt_fresh(&self, key: &RemoteCompletionKey) -> bool {
-        let Some(prompt) = self.pending.prompt() else {
+        let Some(prompt) = self.cmdline.line() else {
             return false;
         };
-        matches!(prompt.context(), PromptContext::Ex(_))
+        matches!(prompt.context(), Context::Ex(_))
             && !self.docs.is_empty()
             && self.current() == key.document
             && self.focus_epoch == key.focus
@@ -472,9 +472,13 @@ impl Editor {
             && prompt.cursor() == key.cursor
     }
 
-    /// Apply one candidate through the one prompt grammar.
+    /// Write one candidate into the line.
     fn apply_completion(&mut self, prefix_body: &str, uri: &str) {
-        self.feed_pending_event(PendingEvent::CompleteEx(format!("{prefix_body}{uri}")));
+        if let Some(line) = self.cmdline.line_mut() {
+            if line.sigil() == ':' {
+                line.set_body(&format!("{prefix_body}{uri}"));
+            }
+        }
     }
 
     /// Host candidates from endpoints this editor already opened.

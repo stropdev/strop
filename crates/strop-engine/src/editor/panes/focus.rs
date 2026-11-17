@@ -43,7 +43,7 @@ impl Editor {
             return;
         }
         if index != self.active_pane {
-            self.cancel_pending();
+            self.cancel_cmdline();
             self.panes[self.active_pane].focused = self.focus_epoch;
         }
         self.active_pane = index;

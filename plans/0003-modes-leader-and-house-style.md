@@ -29,6 +29,10 @@ Not modes, never modes:
   Operators, counts, motions and text objects work identically to a file
   buffer (`dw`, `2dw`, `diw`, `cw`→insert, `dfx`); exclusions refuse
   loudly; picker j/k still walks results.
+
+  Amended by 0110: the `: / ? |` line keeps no field Normal mode — `Esc`
+  cancels it at once, and Normal-key editing of a line is the
+  command-line window (`q:`, `q/`, `Ctrl-F`). Picker fields keep theirs.
 - **Git** — surfaces with buffer-local keymaps (§4). No git mode exists; "modal-on-modal"
   would force redefining every operator (`dw`, `dd`) per mode and breaks plan 0001's
   fidelity promise.
@@ -148,6 +152,8 @@ Applies to every pane, popup, and picker strop ever ships:
 8. **The command/search line is a floating card** (noice.nvim lineage — yes, it's a
    plugin there; it's house style here): `:` and `/` render top-center with an accented
    prompt, live match count on search, and own the caret. The statusline stays clean.
+   Amended by 0110: the command line is the bottom row (Vim's place), beside the
+   mode chip; the top-centre card is deleted.
 9. Plan 0001 §4 invariants still govern everything above: one accent color, matches get
    accent+bold (never background blocks), no spinners before 100ms, Nerd Font optional.
 

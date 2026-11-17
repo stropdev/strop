@@ -21,7 +21,7 @@ pub(super) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
             picker_label(glue.picker.kind),
             typing(glue.picker.input_normal()),
         )
-    } else if let Some(sigil) = editor.pending_sigil() {
+    } else if let Some(sigil) = editor.cmdline_sigil() {
         let label = match sigil {
             ':' => "COMMAND",
             '|' => "PIPE",
@@ -32,7 +32,7 @@ pub(super) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
         // TERMINAL is its own mode (0090 §4); NORMAL on a terminal buffer
         // is plain NORMAL.
         ("TERMINAL", t.mode_terminal)
-    } else if editor.pending().is_active()
+    } else if editor.cmdline().is_open()
         || !editor.walker().prefix_display().is_empty()
         || !editor.walker().state.empty()
     {

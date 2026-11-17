@@ -78,7 +78,7 @@ fn local_completion_preserves_native_names_and_opens_the_selected_file() {
     let uri = strop_workspace::ResourceLocation::local(canonical.clone())
         .uri()
         .unwrap();
-    assert_eq!(editor.pending.text(), format!(":e {uri}"));
+    assert_eq!(editor.cmdline.text(), format!(":e {uri}"));
     editor.feed_text("<cr>");
     editor.wait_io().unwrap();
     assert_eq!(editor.buf().text(), "native source\n");
@@ -94,17 +94,17 @@ fn local_directory_completion_descends_and_rejects_stale_field_results() {
     editor.feed_text(":e fol<tab>");
     complete_worker(&mut editor);
     // a relative operand completes as typed, never to an absolute URI
-    assert_eq!(editor.pending.text(), ":e folder/");
+    assert_eq!(editor.cmdline.text(), ":e folder/");
     editor.feed_text("<tab>");
     complete_worker(&mut editor);
-    assert_eq!(editor.pending.text(), ":e folder/child.txt");
+    assert_eq!(editor.cmdline.text(), ":e folder/child.txt");
     editor.feed_text("<cr>");
     editor.wait_io().unwrap();
     assert_eq!(editor.buf().text(), "child\n");
     editor.feed_text("<esc><esc>:e fol<tab>x");
-    let edited = editor.pending.text().to_owned();
+    let edited = editor.cmdline.text().to_owned();
     complete_worker(&mut editor);
-    assert_eq!(editor.pending.text(), edited);
+    assert_eq!(editor.cmdline.text(), edited);
 }
 
 #[test]
@@ -125,15 +125,15 @@ fn host_candidates_apply_then_cycle_without_new_requests() {
         ticket,
         hosts_result(&["ssh://alpha.example.com", "ssh://alpine.example.com"]),
     );
-    assert_eq!(e.pending.text(), ":e ssh://alpha.example.com");
+    assert_eq!(e.cmdline.text(), ":e ssh://alpha.example.com");
     assert!(e.message.contains("alpine.example.com"));
     // The second Tab cycles the landed list; no new request exists.
     e.feed_text("<tab>");
     assert!(e.remote_completion.ticket().is_none());
-    assert_eq!(e.pending.text(), ":e ssh://alpine.example.com");
+    assert_eq!(e.cmdline.text(), ":e ssh://alpine.example.com");
     // …and wraps around.
     e.feed_text("<tab>");
-    assert_eq!(e.pending.text(), ":e ssh://alpha.example.com");
+    assert_eq!(e.cmdline.text(), ":e ssh://alpha.example.com");
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn late_results_cannot_replace_edited_input() {
         hosts_result(&["ssh://alpha.example.com", "ssh://alpine.example.com"]),
     );
     assert_eq!(
-        e.pending.text(),
+        e.cmdline.text(),
         ":e ssh://alx",
         "input must stay untouched"
     );
@@ -169,9 +169,9 @@ fn late_results_after_cancel_are_dropped_not_applied() {
     e.feed_text("<tab>");
     let ticket = e.remote_completion.ticket().expect("request in flight");
     e.feed_text("<esc><esc>"); // Esc-Esc closes the prompt
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
     deliver(&mut e, ticket, hosts_result(&["ssh://alpha.example.com"]));
-    assert!(!e.pending.is_active(), "no prompt may be reopened");
+    assert!(!e.cmdline.is_open(), "no prompt may be reopened");
     assert_eq!(e.buf().text().to_string(), "x\n");
 }
 
@@ -184,7 +184,7 @@ fn focus_change_rejects_delivery() {
     let ticket = e.remote_completion.ticket().expect("request in flight");
     e.focus_epoch += 1; // a pane switch happened after the request
     deliver(&mut e, ticket, hosts_result(&["ssh://alpha.example.com"]));
-    assert_eq!(e.pending.text(), ":e ssh://al");
+    assert_eq!(e.cmdline.text(), ":e ssh://al");
     assert!(e.remote_completion.ready.is_none());
 }
 
@@ -200,9 +200,9 @@ fn superseded_tickets_are_rejected() {
     let current = e.remote_completion.ticket().expect("request in flight");
     assert_ne!(stale.request, current.request);
     deliver(&mut e, stale, hosts_result(&["ssh://stale.example.com"]));
-    assert_eq!(e.pending.text(), ":e ssh://alp");
+    assert_eq!(e.cmdline.text(), ":e ssh://alp");
     deliver(&mut e, current, hosts_result(&["ssh://alpha.example.com"]));
-    assert_eq!(e.pending.text(), ":e ssh://alpha.example.com");
+    assert_eq!(e.cmdline.text(), ":e ssh://alpha.example.com");
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn path_completion_never_connects_and_says_so() {
             endpoint: "ssh://build".into(),
         },
     );
-    assert_eq!(e.pending.text(), ":e ssh://build/var/l");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/l");
     assert!(e.message.contains("no live connection"));
     assert!(e.message.contains("never connects"));
     assert!(e.remote_completion.ready.is_none());
@@ -255,12 +255,12 @@ fn directories_route_as_prefixes_files_as_full_uris() {
         },
     );
     // Directories apply first and keep a trailing slash…
-    assert_eq!(e.pending.text(), ":e ssh://build/var/log/");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/log/");
     assert!(e.message.contains("log/"), "directory shown with its slash");
     e.feed_text("<tab>");
-    assert_eq!(e.pending.text(), ":e ssh://build/var/local");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/local");
     e.feed_text("<tab>");
-    assert_eq!(e.pending.text(), ":e ssh://build/var/log/");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/log/");
     // …and the live listing feeds the fallback cache.
     assert!(e
         .remote_completion
@@ -288,7 +288,7 @@ fn directories_route_as_prefixes_files_as_full_uris() {
             listed_directory: None,
         },
     );
-    assert_eq!(e.pending.text(), ":e ssh://build/var/log/syslog");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/log/syslog");
     assert!(
         e.message.contains("(cached)"),
         "cache is labeled, never live"
@@ -341,7 +341,7 @@ fn applied_uris_keep_native_path_identity() {
             listed_directory: None,
         },
     );
-    assert_eq!(e.pending.text(), ":e ssh://build/caf%FF%20menu.txt");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/caf%FF%20menu.txt");
     let file = RemoteFile::parse("ssh://build/caf%FF%20menu.txt").unwrap();
     assert_eq!(
         file.path().as_os_str().as_encoded_bytes(),
@@ -373,7 +373,7 @@ fn non_file_commands_fall_back_to_command_name_cycling() {
     e.feed_text("<esc><esc>");
     e.feed_text(":he");
     e.feed_text("<tab>");
-    assert_eq!(e.pending.text(), ":help");
+    assert_eq!(e.cmdline.text(), ":help");
 }
 
 #[test]
@@ -382,9 +382,9 @@ fn raw_spaces_and_mid_line_cursors_refuse_with_a_hint() {
     e.feed_text(":e ssh://build/a b");
     e.feed_text("<tab>");
     assert!(e.message.contains("%20"), "raw space gets an escape hint");
-    e.feed_text("<esc><esc>");
+    e.feed_text("<esc>");
     e.feed_text(":e ssh://build/lo");
-    e.feed_text("<esc>h"); // line's normal mode, caret moved left
-    e.feed_pending(strop_core::frontend_input::Key::Tab);
+    e.feed_text("<left>");
+    e.feed_text("<tab>");
     assert!(e.message.contains("end of the line"));
 }

@@ -74,7 +74,7 @@ pub(crate) fn write_all(editor: &mut Editor, force: bool, quit: bool) {
         return;
     }
     if quit {
-        editor.pending.ex.quit_after_writes = true;
+        editor.cmdline.ex.quit_after_writes = true;
         quit_after_writes(editor);
     }
 }
@@ -82,13 +82,13 @@ pub(crate) fn write_all(editor: &mut Editor, force: bool, quit: bool) {
 /// `:wqa` quits once its writes have landed. A failed write leaves a
 /// modified buffer, and `quit_all` then refuses with its own message.
 pub(crate) fn quit_after_writes(editor: &mut Editor) {
-    if !editor.pending.ex.quit_after_writes
+    if !editor.cmdline.ex.quit_after_writes
         || editor.local_write_pending()
         || editor.remote.writes.pending()
     {
         return;
     }
-    editor.pending.ex.quit_after_writes = false;
+    editor.cmdline.ex.quit_after_writes = false;
     editor.quit_all(false);
 }
 

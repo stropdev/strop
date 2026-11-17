@@ -12,8 +12,8 @@ use strop_core::frontend_input::Key;
 /// A late hover/blame reply never steals a modal field's input or paint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputOwner {
-    /// A live `: / ? |` line.
-    Pending,
+    /// An open command line (`: / ? |`).
+    Cmdline,
     /// An open `:s///c` question: the next key is its answer.
     SubstituteConfirm,
     /// The LSP hover card — a transient overlay.
@@ -46,8 +46,8 @@ impl InputOwner {
 impl Editor {
     /// The typed owner of the next key, computed from state.
     pub fn input_owner(&self) -> InputOwner {
-        if self.pending.is_active() {
-            return InputOwner::Pending;
+        if self.cmdline.is_open() {
+            return InputOwner::Cmdline;
         }
         if super::ex::confirm_active(self) {
             return InputOwner::SubstituteConfirm;
@@ -90,7 +90,7 @@ impl Editor {
             return;
         }
         match owner {
-            InputOwner::Pending => self.feed_pending(key),
+            InputOwner::Cmdline => self.feed_cmdline(key),
             InputOwner::SubstituteConfirm => super::ex::feed_confirm(self, key),
             InputOwner::HoverCard => {
                 if key == Key::Enter {

@@ -24,7 +24,7 @@ const GUTTER: u16 = 2;
 pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     // `?` is a first-class search sigil here (the old detection missed
     // it: backward searches never got the card)
-    let Some(kind) = editor.pending_sigil() else {
+    let Some(kind) = editor.cmdline_sigil() else {
         return;
     };
     if !matches!(kind, ':' | '/' | '?' | '|') {
@@ -33,7 +33,7 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     if editor.picker_open() {
         return;
     }
-    let pending = editor.pending().text();
+    let pending = editor.cmdline().text();
     let substitution = if kind == ':' {
         editor.substitute_preview()
     } else {
@@ -90,17 +90,6 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         '|' => "pipe".to_owned(),
         _ => "search".to_owned(),
     };
-    let title = editor
-        .pending_field_state()
-        .filter(|state| {
-            state.mode == crate::editor::PendingFieldMode::Normal && state.outer_operator.is_some()
-        })
-        .map_or(title, |state| {
-            format!(
-                "{} · field NORMAL · Esc cancels",
-                state.outer_operator.expect("filtered operator").key()
-            )
-        });
     let inner = if height >= 3 {
         Card::new(&title).render(frame, card, t)
     } else {
@@ -124,7 +113,7 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         ..inner
     };
     let caret_byte = editor
-        .pending()
+        .cmdline()
         .cursor()
         .saturating_sub(kind.len_utf8())
         .min(body.len());
@@ -616,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn substitute_card_reports_offscreen_extent_and_outer_field_mode() {
+    fn substitute_card_reports_offscreen_extent() {
         let original = (0..30)
             .map(|line| format!("alpha {line}\n"))
             .collect::<String>();
@@ -627,21 +616,5 @@ mod tests {
         assert!(row_text(&grid, 3).contains("6 offscreen"));
         assert!(row_text(&grid, 8).contains('…'));
         assert!(row_text(&grid, 12).contains("+ omega 29"));
-
-        let mut editor = Editor::new(Buffer::from_text("alpha\n"));
-        editor.feed_text("d/alpha");
-        assert!(!editor.input_normal());
-        editor.feed(strop_core::frontend_input::Key::Esc);
-        assert_eq!(editor.pending_sigil(), Some('/'));
-        assert!(editor.pending().is_active());
-        assert!(!editor.picker_open());
-        let grid = draw_ex(&editor, 10);
-        let status = row_text(&grid, 1);
-        assert!(
-            status.contains("d · field NORMAL · Esc cancels"),
-            "{status}"
-        );
-        editor.feed(strop_core::frontend_input::Key::Esc);
-        assert_eq!(editor.buf().text().to_string(), "alpha\n");
     }
 }

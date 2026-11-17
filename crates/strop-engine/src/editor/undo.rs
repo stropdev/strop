@@ -24,7 +24,7 @@ impl Editor {
             self.message = "undo tree: not available in a readonly buffer".into();
             return;
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         let rows = self.buf().history().tree_rows();
         if rows.is_empty() {
             self.message = "undo tree: undo history is empty".into();

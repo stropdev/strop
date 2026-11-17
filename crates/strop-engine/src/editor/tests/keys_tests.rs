@@ -132,15 +132,15 @@ fn the_special_marks_are_read_by_operators() {
 fn the_filter_operator_opens_the_command_line_with_its_range() {
     let mut e = editor_with("b\na\nc\n");
     e.feed_text("!j");
-    assert_eq!(e.pending.text(), ":.,.+1!");
+    assert_eq!(e.cmdline.text(), ":.,.+1!");
     e.feed(Key::Esc);
     e.feed(Key::Esc);
     e.feed_text("!!");
-    assert_eq!(e.pending.text(), ":.!");
+    assert_eq!(e.cmdline.text(), ":.!");
     e.feed(Key::Esc);
     e.feed(Key::Esc);
     e.feed_text("Vj!");
-    assert_eq!(e.pending.text(), ":'<,'>!");
+    assert_eq!(e.cmdline.text(), ":'<,'>!");
     assert_eq!(e.mode, Mode::Normal);
 }
 
@@ -180,11 +180,12 @@ fn the_alternate_file_register() {
 }
 
 #[test]
-fn a_prompt_field_writes_registers() {
+fn a_picker_field_writes_registers() {
     let mut e = editor_with("one\n");
-    e.feed_text("/alpha beta");
+    e.open_picker(strop_picker::Kind::Files);
+    e.feed_text("alpha beta");
     e.feed(Key::Esc);
-    e.feed_text("0wyiw");
+    e.feed_text("0yiw");
     assert_eq!(e.register(None).text, "alpha");
     assert_eq!(e.register(Some('0')).text, "alpha");
     e.feed_text("wdiw");

@@ -399,7 +399,7 @@ fn missing_rows_do_not_dispatch() {
                 }
                 assert_eq!(e.mode, mode, "{sequence} changed the mode");
                 assert!(e.walker.is_ground(), "{sequence} left a command pending");
-                assert!(!e.pending.is_active(), "{sequence} opened a prompt");
+                assert!(!e.cmdline.is_open(), "{sequence} opened a prompt");
                 e.feed(Key::Esc);
             }
             assert_eq!(

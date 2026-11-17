@@ -18,7 +18,7 @@ pub(crate) fn ex_cd(editor: &mut Editor, call: &ExCall<'_>) {
     let home = || std::env::var_os("HOME").map(PathBuf::from);
     let target = match call.arg {
         "" | "~" => home(),
-        "-" => editor.pending.ex.previous_directory.clone(),
+        "-" => editor.cmdline.ex.previous_directory.clone(),
         arg => match arg.strip_prefix("~/") {
             Some(rest) => home().map(|home| home.join(rest)),
             None => Some(editor.cwd.join(arg)),
@@ -97,7 +97,7 @@ pub(crate) fn change_directory(editor: &mut Editor, directory: PathBuf) {
         .workspaces
         .retire_root(ResourceLocation::local(old.clone()));
     editor.cwd = directory;
-    editor.pending.ex.previous_directory = Some(old);
+    editor.cmdline.ex.previous_directory = Some(old);
     editor.request_session_save();
     editor.recovery_enter_project();
     if watching {

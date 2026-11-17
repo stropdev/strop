@@ -261,6 +261,46 @@ impl Editor {
                 }
             }
             Key::Enter => unreachable!("structural Enter handled before dispatch"),
+            // vim's <Home>/<End>: the line's start and end
+            Key::Home => {
+                let start = self.buf().line_start(self.buf().line_of(self.head()));
+                self.set_head(start);
+            }
+            Key::End => {
+                let end = self.buf().line_end(self.buf().line_of(self.head()));
+                self.set_head(end);
+            }
+            // vim's <Del>: the character under each cursor (at a line's
+            // end, the line break: the next line joins)
+            Key::Delete => {
+                let mut positions = self.all_cursors();
+                positions.sort_unstable();
+                positions.dedup();
+                let len = self.buf().len_bytes();
+                let edits: Vec<_> = positions
+                    .iter()
+                    .filter(|&&pos| pos < len)
+                    .map(|&pos| {
+                        let end = if self.buf().byte_at(pos) == Some(b'\r')
+                            && self.buf().byte_at(pos + 1) == Some(b'\n')
+                        {
+                            pos + 2
+                        } else {
+                            self.buf().ceil_boundary(pos + 1)
+                        };
+                        super::structural_indent::Edit {
+                            cursor: strop_core::id::ByteOffset::new(pos),
+                            start: strop_core::id::ByteOffset::new(pos),
+                            end: strop_core::id::ByteOffset::new(end),
+                            text: String::new(),
+                            landing: 0,
+                        }
+                    })
+                    .collect();
+                if !edits.is_empty() {
+                    self.apply_indentation(&edits);
+                }
+            }
             // arrows move in insert too (vim) — char-boundary honest
             Key::Left => {
                 let start = self.buf().line_start(self.buf().line_of(self.head()));

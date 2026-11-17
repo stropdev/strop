@@ -157,6 +157,22 @@ impl Editor {
             Key::Backtab => glue.picker.move_by(-1),
             Key::Left => glue.picker.caret_left(),
             Key::Right => glue.picker.caret_right(),
+            Key::Home => glue.picker.active_field().set_cursor(0),
+            Key::End => glue.picker.active_field().set_cursor(usize::MAX),
+            Key::Delete => {
+                let replace_field = replace && glue.picker.field == strop_picker::Field::Replace;
+                let field = glue.picker.active_field();
+                let caret = field.cursor();
+                let Some(next) = field.text()[caret..].chars().next() else {
+                    return;
+                };
+                field.delete_range(caret, caret + next.len_utf8());
+                if replace_field {
+                    self.search_intent_changed();
+                } else {
+                    self.picker_input_changed();
+                }
+            }
             // bare j/k walk the result list (a picker, not a buffer);
             // mid-composition they are grammar (dj, 3j as motions)
             Key::Char('j') if glue.picker.input_normal() && glue.field_keys.is_ground() => {

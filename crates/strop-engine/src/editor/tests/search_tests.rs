@@ -40,13 +40,13 @@ fn typing_backspace_and_interior_caret_edits_reresolve() {
     assert_eq!(e.head(), 10);
     e.feed(Key::Backspace);
     assert_eq!(e.head(), first);
-    e.feed_text("<esc><esc>");
+    e.feed_text("<esc>");
     e = Editor::new(Buffer::from_text("a fx then fox\n"));
-    e.feed_text("/fox<esc>hi<bs>");
-    assert_eq!(e.pending.text(), "/fx");
+    e.feed_text("/fox<left><bs>");
+    assert_eq!(e.cmdline.text(), "/fx");
     assert_eq!(e.head(), 2);
     e.feed_text("o");
-    assert_eq!(e.pending.text(), "/fox");
+    assert_eq!(e.cmdline.text(), "/fox");
     assert_eq!(e.head(), 10);
 }
 
@@ -59,7 +59,7 @@ fn enter_uses_the_preview_origin_for_every_counted_cursor() {
     e.feed(Key::Enter);
     assert_eq!(e.all_cursors(), vec![8, 14]);
     assert_eq!(e.last_search.as_ref().map(|s| s.query.source()), Some("hi"));
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
     e.feed(Key::CtrlO);
     assert_eq!(e.head(), 8, "same-line dedup leaves the live position");
 }
@@ -82,7 +82,7 @@ fn counted_registered_operator_preview_and_execution_share_the_saved_origin() {
 }
 
 #[test]
-fn double_escape_restores_all_anchors_duplicates_and_both_view_axes() {
+fn escape_restores_all_anchors_duplicates_and_both_view_axes() {
     let text = "zero foo\none foo\ntwo\nthree\nfour\nfive far\n";
     let mut e = Editor::new(Buffer::from_text(text));
     e.sels_mut().stretch_primary(1, 2);
@@ -98,23 +98,20 @@ fn double_escape_restores_all_anchors_duplicates_and_both_view_axes() {
     e.scroll_to_cursor(2);
     assert_ne!(e.view().view_top, origin.view_top);
     e.feed(Key::Esc);
-    assert!(e.input_normal());
-    assert_eq!(e.head(), text.find("far").unwrap());
-    e.feed(Key::Esc);
     assert_eq!(selection_pairs(&e), pairs);
     assert_eq!(e.view().view_top, origin.view_top);
     assert_eq!(e.view().hscroll, origin.hscroll);
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
     assert_eq!(e.buf().text().to_string(), text);
 }
 
 #[test]
-fn sigil_backspace_and_normal_delete_both_cancel_and_release_input() {
-    for cancel in ["<bs>", "<esc>0x"] {
+fn backspace_on_an_empty_line_and_escape_both_cancel_and_release_input() {
+    for cancel in ["<bs>", "<esc>", "x<bs><bs>", "x<c-c>"] {
         let mut e = Editor::new(Buffer::from_text("foo\n"));
         e.feed_text("/");
         e.feed_text(cancel);
-        assert!(!e.pending.is_active());
+        assert!(!e.cmdline.is_open());
         e.feed_text("x");
         assert_eq!(e.buf().text().to_string(), "oo\n");
     }
@@ -152,17 +149,14 @@ fn prompt_edit_cancel_matrix_uses_identical_modal_rules_on_all_surfaces() {
                 let origin = selection_pairs(&e);
                 e.feed_text(open);
                 if readonly && open == " |" {
-                    assert!(!e.pending.is_active());
+                    assert!(!e.cmdline.is_open());
                     assert!(!e.message.is_empty());
                     continue;
                 }
-                e.feed_text("fox<esc>hi<bs>");
-                assert!(e.pending.text().ends_with("fx"));
-                assert!(!e.input_normal());
-                e.feed_text("o<esc>");
-                assert!(e.input_normal());
+                e.feed_text("fox<left><bs>");
+                assert!(e.cmdline.text().ends_with("fx"));
                 e.feed(Key::Esc);
-                assert!(!e.pending.is_active());
+                assert!(!e.cmdline.is_open());
                 assert_eq!(selection_pairs(&e), origin);
                 assert_eq!(e.buf().text().to_string(), "a fx then fox\nother\n");
                 // Vim: `:` ends Visual mode (the range is typed for it);
@@ -190,7 +184,7 @@ fn prompt_accept_matrix_reaches_ex_search_and_pipe_error_effects() {
                 }
                 e.feed_text(keys);
                 assert_eq!(e.head(), expected);
-                assert!(!e.pending.is_active());
+                assert!(!e.cmdline.is_open());
                 assert_eq!(e.buf().text().to_string(), "zero foo\nsecond\n");
             }
         }
@@ -201,7 +195,7 @@ fn prompt_accept_matrix_reaches_ex_search_and_pipe_error_effects() {
             e.feed_text("vj");
         }
         e.feed_text(" |<cr>");
-        assert!(!e.pending.is_active());
+        assert!(!e.cmdline.is_open());
         assert_eq!(e.mode, Mode::Normal);
         assert!(!e.message.is_empty()); // pipe_run rejected the empty command
         assert_eq!(e.buf().text().to_string(), "a\nb\n");
@@ -212,10 +206,10 @@ fn prompt_accept_matrix_reaches_ex_search_and_pipe_error_effects() {
 fn ex_completion_updates_the_same_caret_used_by_later_typing() {
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.feed_text(":hel<tab>p");
-    assert_eq!(e.pending.text(), ":helpp");
+    assert_eq!(e.cmdline.text(), ":helpp");
     e.feed_text("<bs><esc><esc>");
     assert_eq!(e.buf().text().to_string(), "x\n");
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
 }
 
 #[test]
@@ -249,7 +243,7 @@ fn ex_tab_completion_offers_dispatched_user_commands() {
         let mut completed = false;
         for _ in 0..candidates.len() {
             e.feed_text("<tab>");
-            completed |= e.pending.text() == expected.as_str();
+            completed |= e.cmdline.text() == expected.as_str();
         }
         assert!(completed, "Tab never completed :{prefix} to {expected}");
     }
@@ -341,7 +335,7 @@ fn readonly_buffers_keep_live_search_and_enter_on_the_same_path() {
     assert_eq!(e.head(), 5);
     e.feed_text("G$?foo<cr>");
     assert_eq!(e.head(), 13);
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
     assert_eq!(e.buf().text().to_string(), text);
 }
 
@@ -351,11 +345,11 @@ fn bracketed_paste_belongs_to_the_prompt_not_the_document() {
         let mut e = Editor::new(Buffer::from_text("a fox\n"));
         e.feed_text(open);
         e.paste_bracketed("fox");
-        assert!(e.pending.text().ends_with("fox"));
+        assert!(e.cmdline.text().ends_with("fox"));
         assert_eq!(e.buf().text().to_string(), "a fox\n");
-        let pending = e.pending.text().to_owned();
+        let pending = e.cmdline.text().to_owned();
         e.paste_bracketed("\nx");
-        assert_eq!(e.pending.text(), pending);
+        assert_eq!(e.cmdline.text(), pending);
         assert_eq!(e.buf().text().to_string(), "a fox\n");
         assert!(!e.message.is_empty());
     }
@@ -371,7 +365,7 @@ fn document_switch_cancels_before_rebinding_and_never_executes_the_old_operator(
         .unwrap();
     e.feed_text("d/foo");
     e.switch_to(other);
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
     assert_eq!(e.current(), other);
     e.feed(Key::Enter);
     assert_eq!(e.doc(first).buf.text().to_string(), "a foo\n");
@@ -397,7 +391,7 @@ fn accepted_origin_edit_restores_before_remapping_and_consumes_pending_operator(
     e.feed_text("d/hit");
     assert_eq!(e.head(), 2);
     e.apply(doc, e.buf().revision(), insertion(0, "X")).unwrap();
-    assert!(!e.pending.is_active());
+    assert!(!e.cmdline.is_open());
     assert_eq!(
         e.head(),
         1,
@@ -416,7 +410,7 @@ fn stale_and_overlapping_batches_do_not_cancel_or_move_the_prompt() {
     let wrong = strop_core::id::BufferRevision::new(revision.get() + 1);
     let origin = selection_pairs(&e);
     assert!(e.apply(doc, wrong, insertion(0, "X")).is_err());
-    assert!(e.pending.is_active());
+    assert!(e.cmdline.is_open());
     assert_eq!(selection_pairs(&e), origin);
     let changes = crate::editor::transact::ChangeSet {
         edits: vec![
@@ -426,7 +420,7 @@ fn stale_and_overlapping_batches_do_not_cancel_or_move_the_prompt() {
         undo_open: false,
     };
     assert!(e.apply(doc, revision, changes).is_err());
-    assert!(e.pending.is_active());
+    assert!(e.cmdline.is_open());
     assert_eq!(selection_pairs(&e), origin);
     assert_eq!(e.buf().text().to_string(), "a hit\n");
     e.feed(Key::Enter);
@@ -446,7 +440,7 @@ fn unrelated_document_commit_preserves_the_live_prompt_and_focus() {
     e.apply(other, e.doc(other).buf.revision(), insertion(0, "X"))
         .unwrap();
     assert_eq!(e.current(), doc);
-    assert!(e.pending.is_active());
+    assert!(e.cmdline.is_open());
     assert_eq!(selection_pairs(&e), shown);
     assert_eq!(e.doc(other).buf.text().to_string(), "Xother\n");
     e.feed(Key::Enter);
@@ -470,7 +464,7 @@ fn equal_revision_and_reused_slot_cannot_accept_another_documents_prompt() {
         // still checked at acceptance using generation-bearing DocumentId.
         e.view_mut().doc = other;
         e.feed(Key::Enter);
-        assert!(!e.pending.is_active());
+        assert!(!e.cmdline.is_open());
         assert_eq!(e.current(), other);
         assert_eq!(e.buf().text().to_string(), "other\n");
         if !reuse_slot {

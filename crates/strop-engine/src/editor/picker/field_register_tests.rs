@@ -30,7 +30,7 @@ fn a_yank_pastes_with_ctrl_r_in_every_text_input() {
         e.feed_text("yiw");
         e.feed_text(sigil);
         ctrl_r(&mut e, '"');
-        assert_eq!(e.pending.text(), format!("{sigil}Needle"));
+        assert_eq!(e.cmdline.text(), format!("{sigil}Needle"));
     }
     let mut e = Editor::new(Buffer::from_text("Needle\nneedle\n"));
     e.feed_text("yiw/");
@@ -99,9 +99,9 @@ fn read_only_registers_are_views_of_editor_state() {
     e.feed_text("/two<cr>:2<cr>");
     e.feed_text(":");
     ctrl_r(&mut e, '/');
-    assert_eq!(e.pending.text(), ":two");
+    assert_eq!(e.cmdline.text(), ":two");
     ctrl_r(&mut e, ':');
-    assert_eq!(e.pending.text(), ":two2");
+    assert_eq!(e.cmdline.text(), ":two2");
     e.feed(Key::Esc);
     e.feed(Key::Esc);
     e.open_picker(Kind::Files);
@@ -145,11 +145,9 @@ fn field_normal_mode_puts_with_p_and_a_named_register() {
     e.feed_text("\"ap");
     assert_eq!(query(&e), "NeedleéNeedle");
     e.close_picker();
-    // the `:` line speaks the same normal-mode put
-    e.feed_text(":");
-    e.feed(Key::Esc);
-    e.feed_text("\"ap");
-    assert_eq!(e.pending.text(), ":é");
+    // the command line has no Normal mode: Ctrl-R puts there
+    e.feed_text(":<c-r>a");
+    assert_eq!(e.cmdline.text(), ":é");
 }
 
 #[test]
@@ -171,7 +169,7 @@ fn the_system_clipboard_lands_in_the_field_that_asked_or_nowhere() {
     let read = ticket(&mut e);
     e.clip_paste_pending = Some((PasteDestination::Prompt, read.clone()));
     deliver(&mut e, read);
-    assert_eq!(e.pending.text(), ":clip");
+    assert_eq!(e.cmdline.text(), ":clip");
     e.feed(Key::Esc);
     e.feed(Key::Esc);
     // the prompt closed while the provider ran: the text goes nowhere

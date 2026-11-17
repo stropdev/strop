@@ -29,7 +29,9 @@ impl Editor {
         let document_keys = self.mode != Mode::Insert
             && matches!(self.input_owner(), InputOwner::Document)
             && matches!(key, Key::CtrlE | Key::CtrlY);
-        if document_insert || document_keys {
+        // The command line binds every one of them itself (0110 §3.2).
+        let cmdline = matches!(self.input_owner(), InputOwner::Cmdline);
+        if document_insert || document_keys || cmdline {
             return key;
         }
         // Preserve the pre-completion field/normal-mode normalization. Physical

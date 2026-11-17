@@ -20,7 +20,6 @@ pub(crate) mod table;
 #[cfg(test)]
 mod tests;
 
-pub use prompt::{PendingFieldEscape, PendingFieldMode, PendingFieldState};
 pub use substitute::{SubstitutePreviewState, SubstitutionPreview};
 pub(crate) use table::{help_rows, Family};
 
@@ -71,11 +70,6 @@ impl Editor {
     /// Ex-completion candidates for the pending prefix (name, doc).
     pub fn ex_candidates(&self) -> Vec<(&'static str, &'static str)> {
         ex_candidates(self)
-    }
-
-    /// Field ownership is independent of the outer walker's operator grammar.
-    pub fn pending_field_state(&self) -> Option<PendingFieldState> {
-        pending_field_state(self)
     }
 
     /// The live `:s` preview: the plan Enter would apply.
@@ -268,7 +262,7 @@ fn run_ex_line(editor: &mut Editor, cmdline: &str) -> Result<(), String> {
 
 /// `@:`: the last command line again, `count` times.
 fn repeat_command_line(editor: &mut Editor, count: usize) {
-    let Some(line) = editor.registers.command_line.clone() else {
+    let Some(line) = editor.cmdline.last_command_line().map(str::to_owned) else {
         editor.message = "no previous command line".into();
         return;
     };
