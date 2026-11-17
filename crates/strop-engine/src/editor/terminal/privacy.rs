@@ -22,7 +22,7 @@ impl Editor {
                 .any(|pane| self.terminal_document(pane.doc).is_some())
     }
     pub(crate) fn private_terminal_prompt(&self) -> bool {
-        !self.terminals.capture && terminal_command(self.pending.text().chars())
+        !self.terminals.capture && terminal_command(self.cmdline.text().chars())
     }
     pub(crate) fn private_terminal_action(&self, action: &Action) -> bool {
         if self.terminals.capture {
@@ -42,11 +42,11 @@ impl Editor {
             Action::Event(
                 AppEvent::Paste(text) | AppEvent::Input(Input::Paste(text) | Input::Text(text)),
             ) => {
-                let current = self.pending.text();
+                let current = self.cmdline.text();
                 if !current.starts_with(':') {
                     return false;
                 }
-                let cursor = self.pending.cursor();
+                let cursor = self.cmdline.cursor();
                 let Some((before, after)) = current.split_at_checked(cursor) else {
                     return true;
                 };

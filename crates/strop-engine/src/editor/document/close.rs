@@ -40,11 +40,11 @@ impl Editor {
             return;
         };
         if self
-            .pending
-            .prompt()
+            .cmdline
+            .line()
             .is_some_and(|prompt| prompt.origin().pane.doc == scratch)
         {
-            self.cancel_pending();
+            self.cancel_cmdline();
         }
         for pane in &mut self.panes {
             if pane.doc == scratch {
@@ -146,7 +146,7 @@ impl Editor {
             self.message = "unsaved changes — :q! to force".into();
             return false;
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
         if self.docs.len() == 1 {
             self.request_session_save();

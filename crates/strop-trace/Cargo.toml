@@ -4,6 +4,7 @@ description = "Ordered diagnostic session traces for strop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [features]
 # Hermetic fixture recorder for the editor's replay regressions; never

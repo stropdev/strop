@@ -4,20 +4,19 @@ description = "Owned native filesystem observations, checked operations and rece
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.69.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.69.0" }
+strop-core = { path = "../strop-core" }
+strop-workspace = { path = "../strop-workspace" }
 serde = { version = "1", features = ["derive", "rc"] }
 thiserror = "2"
-ropey = "1"
+ropey.workspace = true
 sha2 = "0.10"
 getrandom = "0.4"
 unicode-normalization = "0.1"
-
-[target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["fs", "process"] }
 libc = "0.2"
 

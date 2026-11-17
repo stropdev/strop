@@ -25,97 +25,25 @@ impl OpenRead {
         }
         match &self.target {
             FileTarget::Local(path) => {
-                let location = ResourceLocation::local(path.clone());
-                let observed = match self
-                    .local
-                    .observe(cancel, std::slice::from_ref(&location))
-                    .map(|mut observations| observations.pop())
-                {
-                    Ok(Some(observation)) => observation,
-                    Ok(None) => {
-                        return Outcome::failed(
-                            FailureKind::Protocol,
-                            "an observation batch came back empty",
-                        )
-                    }
-                    Err(error) if error.kind == FsFailureKind::Cancelled => {
-                        return Outcome::Cancelled(CancelReason::OwnerClosed)
-                    }
-                    Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+                let observation = match observe_local(&self.local, path, cancel) {
+                    Ok(observation) => observation,
+                    Err(error) => return observe_failed(error),
                 };
-                let Some(observation) = observed.value else {
-                    // Missing file: a new empty buffer with that path (vim
-                    // semantics — `:w` creates it), matching Buffer::open.
-                    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-                    return Outcome::Success(Opened {
-                        document: Document::new(Buffer::from_read(
-                            path.clone(),
-                            ropey::Rope::new(),
-                            None,
-                            canonical.clone(),
-                            true,
-                        )),
-                        canonical: FileTarget::Local(canonical),
-                    });
-                };
-                match observation.kind {
-                    strop_workspace::EntryKind::Directory => {
+                match observation {
+                    Some(observation)
+                        if observation.kind == strop_workspace::EntryKind::Directory =>
+                    {
                         if self.requires_file {
                             return file_required();
                         }
-                        self.list(location, cancel)
+                        self.list(ResourceLocation::local(path.clone()), cancel)
                     }
-                    strop_workspace::EntryKind::File => {
-                        if self.browse {
-                            return Outcome::failed(
-                                FailureKind::InvalidInput,
-                                "browse requires a directory",
-                            );
-                        }
-                        let payload = match self.local.read(cancel, &location) {
-                            Ok(payload) => payload,
-                            Err(error) if error.kind == FsFailureKind::Cancelled => {
-                                return Outcome::Cancelled(CancelReason::OwnerClosed)
-                            }
-                            Err(error) => {
-                                return Outcome::failed(FailureKind::Io, error.to_string())
-                            }
-                        };
-                        let rope = match ropey::Rope::from_reader(payload.as_slice()) {
-                            Ok(rope) => rope,
-                            Err(error) => {
-                                return Outcome::failed(FailureKind::Io, error.to_string())
-                            }
-                        };
-                        // Writability is the observation's evidence,
-                        // never guessed (readonly = no write bit, the
-                        // exact Buffer::open rule). The identity path is
-                        // this namespace's own canonicalization.
-                        let writable = observation
-                            .permissions
-                            .is_none_or(|permissions| permissions.bits() & 0o222 != 0);
-                        let stamp = observation.modified.map(filetime_to_systemtime);
-                        let canonical =
-                            std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-                        Outcome::Success(Opened {
-                            document: Document::new(Buffer::from_read(
-                                path.clone(),
-                                rope,
-                                stamp,
-                                canonical.clone(),
-                                writable,
-                            )),
-                            canonical: FileTarget::Local(canonical),
-                        })
+                    Some(observation)
+                        if self.browse && observation.kind == strop_workspace::EntryKind::File =>
+                    {
+                        Outcome::failed(FailureKind::InvalidInput, "browse requires a directory")
                     }
-                    strop_workspace::EntryKind::SymbolicLink => Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "symlink target is unavailable; no new-file fallback",
-                    ),
-                    _ => Outcome::failed(
-                        FailureKind::InvalidInput,
-                        "only regular files and directories can be opened",
-                    ),
+                    observation => open_local_file(&self.local, path, observation, cancel),
                 }
             }
             FileTarget::Remote(location) => {
@@ -181,6 +109,120 @@ impl OpenRead {
         }
     }
 }
+/// The startup file (plan 0108 H6): the guarded local read `:e` runs —
+/// devices, FIFOs and sockets refused, a missing file a new buffer —
+/// called before the event loop exists. A refusal is the message `:e`
+/// would show.
+pub fn open_startup_file(path: std::path::PathBuf) -> Result<Buffer, String> {
+    let local = crate::editor::namespace::LocalFs::default();
+    let (cancel, _handle) = CancelToken::standalone();
+    let outcome = match observe_local(&local, &path, &cancel) {
+        Ok(Some(observation)) if observation.kind == strop_workspace::EntryKind::Directory => {
+            file_required()
+        }
+        Ok(observation) => open_local_file(&local, &path, observation, &cancel),
+        Err(error) => observe_failed(error),
+    };
+    match outcome {
+        Outcome::Success(opened) => Ok(opened.document.buf),
+        Outcome::Failed { failure, .. } => {
+            Err(format!("open {}: {}", path.display(), failure.message))
+        }
+        Outcome::Cancelled(_) => Err(format!("open {}: cancelled", path.display())),
+    }
+}
+
+/// One local path's observation (`None`: nothing is there).
+fn observe_local(
+    local: &crate::editor::namespace::LocalFs,
+    path: &std::path::Path,
+    cancel: &CancelToken,
+) -> Result<Option<strop_workspace::Observation>, strop_workspace::operation::FsFailure> {
+    let location = ResourceLocation::local(path.to_path_buf());
+    let mut observations = local.observe(cancel, std::slice::from_ref(&location))?;
+    let observed = observations.pop().ok_or_else(|| {
+        strop_workspace::operation::FsFailure::new(
+            FsFailureKind::Protocol,
+            "an observation batch came back empty",
+        )
+    })?;
+    Ok(observed.value)
+}
+
+/// The open an observation failure ends in.
+fn observe_failed(error: strop_workspace::operation::FsFailure) -> Outcome<Opened> {
+    if error.kind == FsFailureKind::Cancelled {
+        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    }
+    Outcome::failed(FailureKind::Io, error.to_string())
+}
+
+/// A local path that is not a directory: a missing one is a new empty
+/// buffer with that path (vim semantics — `:w` creates it); a regular
+/// file is read whole; anything else is refused.
+fn open_local_file(
+    local: &crate::editor::namespace::LocalFs,
+    path: &std::path::PathBuf,
+    observation: Option<strop_workspace::Observation>,
+    cancel: &CancelToken,
+) -> Outcome<Opened> {
+    let Some(observation) = observation else {
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+        return Outcome::Success(Opened {
+            document: Document::new(Buffer::from_read(
+                path.clone(),
+                ropey::Rope::new(),
+                None,
+                canonical.clone(),
+                true,
+            )),
+            canonical: FileTarget::Local(canonical),
+        });
+    };
+    match observation.kind {
+        strop_workspace::EntryKind::File => {
+            let location = ResourceLocation::local(path.clone());
+            let payload = match local.read(cancel, &location) {
+                Ok(payload) => payload,
+                Err(error) if error.kind == FsFailureKind::Cancelled => {
+                    return Outcome::Cancelled(CancelReason::OwnerClosed)
+                }
+                Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+            };
+            let rope = match ropey::Rope::from_reader(payload.as_slice()) {
+                Ok(rope) => rope,
+                Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
+            };
+            // Writability is the observation's evidence, never guessed
+            // (readonly = no write bit). The identity path is this
+            // namespace's own canonicalization.
+            let writable = observation
+                .permissions
+                .is_none_or(|permissions| permissions.bits() & 0o222 != 0);
+            let stamp = observation.modified.map(filetime_to_systemtime);
+            let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            Outcome::Success(Opened {
+                document: Document::new(Buffer::from_read(
+                    path.clone(),
+                    rope,
+                    stamp,
+                    canonical.clone(),
+                    writable,
+                )),
+                canonical: FileTarget::Local(canonical),
+            })
+        }
+        strop_workspace::EntryKind::SymbolicLink => Outcome::failed(
+            FailureKind::InvalidInput,
+            "symlink target is unavailable; no new-file fallback",
+        ),
+        _ => Outcome::failed(
+            FailureKind::InvalidInput,
+            "only regular files and directories can be opened",
+        ),
+    }
+}
+
 fn file_required() -> Outcome<Opened> {
     Outcome::failed(
         FailureKind::InvalidInput,

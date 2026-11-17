@@ -14,22 +14,68 @@ use crate::editor::ex::*;
 use crate::editor::{Editor, Mode};
 
 /// One line `:g` has yet to visit: where it starts and where its line
-/// break is. Both follow the text as earlier commands edit it.
+/// break is. Both follow the text as earlier commands edit it. `order`
+/// is its rank among the marked lines, which edits never change.
 #[derive(Debug, Clone, Copy)]
 struct Marked {
     start: usize,
     end: usize,
+    order: usize,
 }
 
 /// The lines `:g` marked, in buffer order. A line a command deletes (or
 /// joins into the one above) drops out, as Vim's marks do.
+///
+/// Each stored offset is the real one less `shift` (wrapping): an edit
+/// moves every line after it by the same amount, so it changes `shift`
+/// and touches only the lines on the shorter side of it, never all of
+/// them (plan 0108 H4: `:g` on 100,000 lines was quadratic).
 #[derive(Debug, Default)]
 pub(crate) struct MarkedLines {
     document: Option<DocumentId>,
     lines: VecDeque<Marked>,
+    shift: usize,
 }
 
 impl MarkedLines {
+    fn new(document: DocumentId, lines: impl Iterator<Item = (usize, usize)>) -> Self {
+        Self {
+            document: Some(document),
+            lines: lines
+                .enumerate()
+                .map(|(order, (start, end))| Marked { start, end, order })
+                .collect(),
+            shift: 0,
+        }
+    }
+
+    /// A `:g` is running.
+    pub(crate) fn busy(&self) -> bool {
+        self.document.is_some()
+    }
+
+    fn real(&self, line: Marked) -> Marked {
+        Marked {
+            start: line.start.wrapping_add(self.shift),
+            end: line.end.wrapping_add(self.shift),
+            order: line.order,
+        }
+    }
+
+    fn stored(&self, line: Marked) -> Marked {
+        Marked {
+            start: line.start.wrapping_sub(self.shift),
+            end: line.end.wrapping_sub(self.shift),
+            order: line.order,
+        }
+    }
+
+    /// The next line to visit, in real offsets.
+    fn pop_front(&mut self) -> Option<Marked> {
+        let line = self.lines.pop_front()?;
+        Some(self.real(line))
+    }
+
     /// Carry the marks through one batch of edits to `document`.
     /// `journal` is `(start, old_end, new_end, inserted text ends in a
     /// line break)` per edit, in application order; `buffer` is the text
@@ -43,9 +89,51 @@ impl MarkedLines {
         if self.document != Some(document) || self.lines.is_empty() {
             return;
         }
-        for &(start, old_end, new_end, breaks) in journal {
-            let shift = |offset: usize| offset - old_end + new_end;
-            self.lines.retain_mut(|line| {
+        let mut touched = Vec::new();
+        for &edit in journal {
+            self.map_edit(edit, &mut touched);
+        }
+        // A touched line whose start no longer begins a line was joined
+        // away; the others measure their line's end again. Untouched
+        // lines kept their text, so their ends only moved.
+        touched.sort_unstable();
+        touched.dedup();
+        for order in touched {
+            let Ok(index) = self.lines.binary_search_by_key(&order, |line| line.order) else {
+                continue;
+            };
+            let mut line = self.real(self.lines[index]);
+            let start = line.start.min(buffer.len_bytes());
+            if start > 0 && buffer.byte_at(start - 1) != Some(b'\n') {
+                self.lines.remove(index);
+                continue;
+            }
+            line.end = buffer.line_end(buffer.line_of(start));
+            self.lines[index] = self.stored(line);
+        }
+    }
+
+    /// One edit: the line holding its start and the lines starting
+    /// inside it or at its end follow Vim's mark rules one by one
+    /// (`touched` names them); every later line moves by its length.
+    fn map_edit(
+        &mut self,
+        (start, old_end, new_end, breaks): (usize, usize, usize, bool),
+        touched: &mut Vec<usize>,
+    ) {
+        let offset = self.shift;
+        let real_start = |line: &Marked| line.start.wrapping_add(offset);
+        let mut first = self.lines.partition_point(|line| real_start(line) < start);
+        if first > 0 && self.real(self.lines[first - 1]).end >= start {
+            first -= 1;
+        }
+        let last = self
+            .lines
+            .partition_point(|line| real_start(line) <= old_end);
+        let shift = |offset: usize| offset - old_end + new_end;
+        let window: Vec<Option<Marked>> = (first..last)
+            .map(|index| {
+                let mut line = self.real(self.lines[index]);
                 if line.start < start {
                     // The line's own text or break changed, at most.
                     if line.end >= old_end {
@@ -53,40 +141,54 @@ impl MarkedLines {
                     } else if line.end >= start {
                         line.end = start;
                     }
-                    return true;
-                }
-                if line.start == start && start == old_end {
+                } else if line.start == start && start == old_end {
                     // Inserted at the line's first column: whole lines
                     // above it push it down, text joins it.
                     if breaks {
                         line.start = new_end;
                     }
                     line.end = shift(line.end);
-                    return true;
-                }
-                if line.start >= old_end {
+                } else if line.start >= old_end {
                     line.start = shift(line.start);
                     line.end = shift(line.end);
-                    return true;
+                } else if start < line.start || old_end > line.end {
+                    // The edit removed the line's first byte: gone when
+                    // it took the whole line with its break, or began
+                    // above it.
+                    return None;
+                } else {
+                    line.end = shift(line.end);
                 }
-                // The edit removed the line's first byte: gone when it
-                // took the whole line with its break, or began above it.
-                if start < line.start || old_end > line.end {
-                    return false;
-                }
-                line.end = shift(line.end);
-                true
-            });
-        }
-        // A line whose start no longer begins a line was joined away.
-        self.lines.retain_mut(|line| {
-            let start = line.start.min(buffer.len_bytes());
-            if start > 0 && buffer.byte_at(start - 1) != Some(b'\n') {
-                return false;
+                Some(line)
+            })
+            .collect();
+        // Lines after the window move by the edit's length: move them,
+        // or move everything through `shift` and put the lines up to the
+        // window's end back — whichever touches fewer.
+        let delta = new_end.wrapping_sub(old_end);
+        if self.lines.len() - last <= last {
+            for line in self.lines.range_mut(last..) {
+                line.start = line.start.wrapping_add(delta);
+                line.end = line.end.wrapping_add(delta);
             }
-            line.end = buffer.line_end(buffer.line_of(start));
-            true
-        });
+        } else {
+            self.shift = self.shift.wrapping_add(delta);
+            for line in self.lines.range_mut(..last) {
+                line.start = line.start.wrapping_sub(delta);
+                line.end = line.end.wrapping_sub(delta);
+            }
+        }
+        for (index, line) in (first..last).zip(window).rev() {
+            match line {
+                Some(line) => {
+                    touched.push(line.order);
+                    self.lines[index] = self.stored(line);
+                }
+                None => {
+                    self.lines.remove(index);
+                }
+            }
+        }
     }
 }
 
@@ -107,17 +209,17 @@ fn typed_key(c: char) -> Key {
 fn compound_begin(editor: &mut Editor) -> (DocumentId, bool) {
     let document = editor.current();
     let deferring = editor.resolution.enabled;
-    if editor.pending.ex.compound == 0 {
+    if editor.cmdline.ex.compound == 0 {
         editor.buf_mut().hold_undo_group();
         editor.resolution.enabled = false;
     }
-    editor.pending.ex.compound += 1;
+    editor.cmdline.ex.compound += 1;
     (document, deferring)
 }
 
 fn compound_end(editor: &mut Editor, (document, deferring): (DocumentId, bool)) {
-    editor.pending.ex.compound -= 1;
-    if editor.pending.ex.compound == 0 {
+    editor.cmdline.ex.compound -= 1;
+    if editor.cmdline.ex.compound == 0 {
         editor.resolution.enabled = deferring;
         if editor.docs.get(document).is_some() {
             editor.doc_mut(document).buf.release_undo_group();
@@ -128,7 +230,7 @@ fn compound_end(editor: &mut Editor, (document, deferring): (DocumentId, bool)) 
 /// `:[range]g/pattern/command`, `:g!`, `:v`: mark the lines first,
 /// then run the command with the cursor on each that still exists.
 pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
-    if editor.pending.ex.marked.document.is_some() {
+    if editor.cmdline.ex.marked.document.is_some() {
         editor.message = "cannot do :global recursive".into();
         return;
     }
@@ -185,12 +287,9 @@ pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
         editor.message = error.to_string();
         return;
     }
-    let lines: VecDeque<Marked> = (first..=last)
+    let lines: Vec<(usize, usize)> = (first..=last)
         .filter(|line| matching[line - first] != invert)
-        .map(|line| Marked {
-            start: buf.line_start(line),
-            end: buf.line_end(line),
-        })
+        .map(|line| (buf.line_start(line), buf.line_end(line)))
         .collect();
     editor.last_search = Some(crate::editor::LastSearch {
         query,
@@ -205,19 +304,20 @@ pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
         return;
     }
     let command = command.to_owned();
+    editor.push_jump();
     let compound = compound_begin(editor);
-    editor.pending.ex.marked = MarkedLines {
-        document: Some(compound.0),
-        lines,
-    };
-    while let Some(line) = editor.pending.ex.marked.lines.pop_front() {
+    editor.cmdline.ex.marked = MarkedLines::new(compound.0, lines.into_iter());
+    while let Some(line) = editor.cmdline.ex.marked.pop_front() {
         if editor.current() != compound.0 || editor.should_quit {
+            break;
+        }
+        if interrupted(editor) {
             break;
         }
         editor.set_head(line.start.min(editor.buf().len_bytes()));
         run_ex(editor, &command);
     }
-    editor.pending.ex.marked = MarkedLines::default();
+    editor.cmdline.ex.marked = MarkedLines::default();
     compound_end(editor, compound);
     if editor.current() == compound.0 {
         editor.clamp_cursor();
@@ -231,6 +331,22 @@ pub(crate) fn run_ex_in_batch(editor: &mut Editor, command: &str) {
     let compound = compound_begin(editor);
     run_ex(editor, command);
     compound_end(editor, compound);
+}
+
+/// Whether `Ctrl-C` stops the running compound command before its next
+/// line (vim's `got_int`); it says so.
+fn interrupted(editor: &mut Editor) -> bool {
+    match editor.cmdline.ex.interrupt.raised(&editor.tape) {
+        Ok(false) => false,
+        Ok(true) => {
+            editor.message = "Interrupted".into();
+            true
+        }
+        Err(error) => {
+            editor.message = error.to_string();
+            true
+        }
+    }
 }
 
 /// `:[range]norm[al][!] {keys}`
@@ -264,6 +380,9 @@ pub(crate) fn ex_normal(editor: &mut Editor, range: Option<(usize, usize)>, keys
                 if editor.current() != compound.0 || editor.should_quit {
                     break;
                 }
+                if interrupted(editor) {
+                    break;
+                }
                 let line = line.min(editor.buf().last_content_line());
                 editor.set_head(editor.buf().line_start(line));
                 type_normal(editor, &keys);
@@ -288,8 +407,8 @@ fn type_normal(editor: &mut Editor, keys: &[Key]) {
         editor.feed(*key);
     }
     editor.macro_depth = depth;
-    if editor.pending.is_active() {
-        editor.cancel_pending();
+    if editor.cmdline.is_open() {
+        editor.cancel_cmdline();
     }
     if editor.mode != Mode::Normal || !editor.walker.is_ground() {
         let message = std::mem::take(&mut editor.message);

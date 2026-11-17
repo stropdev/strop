@@ -261,20 +261,68 @@ impl Editor {
                 }
             }
             Key::Enter => unreachable!("structural Enter handled before dispatch"),
-            // arrows move in insert too (vim) — char-boundary honest
+            // vim's <Home>/<End>: the line's start and end; like an
+            // arrow, the moved caret starts a new insert
+            Key::Home => {
+                self.insert_keys.origin = None;
+                let start = self.buf().line_start(self.buf().line_of(self.head()));
+                self.set_head(start);
+            }
+            Key::End => {
+                self.insert_keys.origin = None;
+                let end = self.buf().line_end(self.buf().line_of(self.head()));
+                self.set_head(end);
+            }
+            // vim's <Del>: the character under each cursor (at a line's
+            // end, the line break: the next line joins)
+            Key::Delete => {
+                let mut positions = self.all_cursors();
+                positions.sort_unstable();
+                positions.dedup();
+                let len = self.buf().len_bytes();
+                let edits: Vec<_> = positions
+                    .iter()
+                    .filter(|&&pos| pos < len)
+                    .map(|&pos| {
+                        let end = if self.buf().byte_at(pos) == Some(b'\r')
+                            && self.buf().byte_at(pos + 1) == Some(b'\n')
+                        {
+                            pos + 2
+                        } else {
+                            self.buf().ceil_boundary(pos + 1)
+                        };
+                        super::structural_indent::Edit {
+                            cursor: strop_core::id::ByteOffset::new(pos),
+                            start: strop_core::id::ByteOffset::new(pos),
+                            end: strop_core::id::ByteOffset::new(end),
+                            text: String::new(),
+                            landing: 0,
+                        }
+                    })
+                    .collect();
+                if !edits.is_empty() {
+                    self.apply_indentation(&edits);
+                }
+            }
+            // arrows move in insert too (vim) — char-boundary honest. A
+            // moved caret starts a new insert where it lands (vim's
+            // start_arrow): the next key records a fresh origin.
             Key::Left => {
+                self.insert_keys.origin = None;
                 let start = self.buf().line_start(self.buf().line_of(self.head()));
                 if self.head() > start {
                     self.set_head(self.buf().clamp_boundary(self.head() - 1));
                 }
             }
             Key::Right => {
+                self.insert_keys.origin = None;
                 let end = self.buf().line_end(self.buf().line_of(self.head()));
                 if self.head() < end {
                     self.set_head(self.buf().ceil_boundary(self.head() + 1));
                 }
             }
             Key::Up | Key::Down => {
+                self.insert_keys.origin = None;
                 let line = self.buf().line_of(self.head());
                 let target = if key == Key::Up {
                     line.saturating_sub(1)
@@ -310,11 +358,7 @@ impl Editor {
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup();
-                let width = unit.len();
-                for &pos in positions.iter().rev() {
-                    self.buf_mut().insert(pos, &unit);
-                }
-                self.remap_after_mirrored_edit(&positions, width as isize);
+                self.mirror_insert(&positions, &unit);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push_str(&unit);
                 }
@@ -325,10 +369,7 @@ impl Editor {
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup(); // stacked cursors edit once
-                for &pos in positions.iter().rev() {
-                    self.buf_mut().insert(pos, encoded);
-                }
-                self.remap_after_mirrored_edit(&positions, c.len_utf8() as isize);
+                self.mirror_insert(&positions, encoded);
                 if let Some(rec) = &mut self.recording_insert {
                     rec.push(c);
                 }

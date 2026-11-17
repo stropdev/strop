@@ -252,15 +252,8 @@ fn encode_segment(segment: &[u8]) -> String {
 }
 
 fn segment_bytes(segment: &OsStr) -> Cow<'_, [u8]> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        Cow::Borrowed(segment.as_bytes())
-    }
-    #[cfg(not(unix))]
-    {
-        Cow::Owned(segment.to_string_lossy().into_owned().into_bytes())
-    }
+    use std::os::unix::ffi::OsStrExt;
+    Cow::Borrowed(segment.as_bytes())
 }
 
 /// The location's repo-relative path as URL path segments: native
@@ -529,7 +522,6 @@ mod tests {
 
     /// Unix filenames may be non-UTF8: their bytes percent-encode, no
     /// lossy spelling ever reaches the link.
-    #[cfg(unix)]
     #[test]
     fn permalink_percent_encodes_non_utf8_path_bytes() {
         use std::os::unix::ffi::OsStrExt;

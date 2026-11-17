@@ -171,21 +171,18 @@ pub(crate) fn file_kind(kind: std::fs::FileType) -> EntryKind {
     if kind.is_symlink() {
         return EntryKind::SymbolicLink;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::FileTypeExt;
-        if kind.is_fifo() {
-            return EntryKind::Fifo;
-        }
-        if kind.is_socket() {
-            return EntryKind::Socket;
-        }
-        if kind.is_block_device() {
-            return EntryKind::BlockDevice;
-        }
-        if kind.is_char_device() {
-            return EntryKind::CharacterDevice;
-        }
+    use std::os::unix::fs::FileTypeExt;
+    if kind.is_fifo() {
+        return EntryKind::Fifo;
+    }
+    if kind.is_socket() {
+        return EntryKind::Socket;
+    }
+    if kind.is_block_device() {
+        return EntryKind::BlockDevice;
+    }
+    if kind.is_char_device() {
+        return EntryKind::CharacterDevice;
     }
     EntryKind::Unknown
 }

@@ -264,6 +264,21 @@ fn split_offset() {
     });
 }
 
+/// 0107 §5.5: two files side by side, the second focused — the titles
+/// are as ever, and the one modeline's breadcrumb is the focused file's.
+#[test]
+fn split_scope() {
+    each("split-scope", |editor| {
+        editor.feed_text("16G");
+        editor.split(true, None);
+        editor.focus_pane(1);
+        editor.feed_text(":e src/render/mod.rs\r");
+        editor.wait_io().unwrap();
+        editor.feed_text("5G");
+        Box::new(|editor| editor.wait_symbols())
+    });
+}
+
 /// 0103 §5.5: a file beside a collection, the collection active — the
 /// light frame, the heavy seams and the bands at once.
 #[test]
@@ -287,6 +302,41 @@ fn files_picker() {
         editor.wait_picker();
         editor.paste_bracketed("mod");
         editor.wait_picker();
+        settle_picker()
+    });
+}
+
+/// 0106: one folder column per list; a name too wide for it stands alone.
+#[test]
+fn files_picker_columns() {
+    each("files-columns", |editor| {
+        editor.open_picker(strop_picker::Kind::Files);
+        editor.wait_picker();
+        editor.picker_reset_fixture();
+        let paths = [
+            "Makefile",
+            "src/main.rs",
+            "src/render/mod.rs",
+            "src/render/statusline.rs",
+            "crates/strop-engine/src/editor/changes/review/render.rs",
+            "docs/remote.md",
+            "plans/0081-product-coherence-and-workspace-experience-handoff.md",
+            "crates/strop/src/render/golden/collection-blocks-vellum-200x50.golden",
+            "notes/a-file-name-that-is-longer-than-the-whole-row-of-the-list-and-is-cut.md",
+        ];
+        editor.picker_items_fixture(
+            paths
+                .iter()
+                .map(|path| strop_picker::Item {
+                    badge: None,
+                    text: (*path).into(),
+                    payload: strop_picker::Payload::File((*path).into()),
+                    facts: Default::default(),
+                })
+                .collect(),
+        );
+        editor.feed(strop_core::frontend_input::Key::Down);
+        editor.feed(strop_core::frontend_input::Key::Down);
         settle_picker()
     });
 }
@@ -335,6 +385,33 @@ fn locations_picker() {
             })
             .collect();
         editor.locations_fixture(&places, sources);
+        settle_picker()
+    });
+}
+
+/// 0109 decision 7: the symbols list names the filters it takes, read
+/// from its schema, under an empty field; the footer says where the
+/// rest are.
+#[test]
+fn symbols_picker_filters() {
+    each("symbols-filters", |editor| {
+        editor.feed_text(" s");
+        editor.wait_symbols();
+        editor.wait_picker();
+        settle_picker()
+    });
+}
+
+/// 0109 decision 3: an unknown kind is a located error under the word,
+/// with its correction; the list stays as it was.
+#[test]
+fn symbols_picker_unknown_kind() {
+    each("symbols-unknown-kind", |editor| {
+        editor.feed_text(" s");
+        editor.wait_symbols();
+        editor.wait_picker();
+        editor.paste_bracketed("kind:fnc gather");
+        editor.wait_picker();
         settle_picker()
     });
 }

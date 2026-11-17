@@ -1,5 +1,6 @@
 //! 0063 §2 syntax-definition fallback: declaration extraction over the
-//! statically linked grammars (Rust, Python, C, C++, Lua). This is the
+//! statically linked grammars (Rust, Python, C, C++, Lua, Go, Java,
+//! JavaScript, TypeScript/TSX, C#, PHP, Ruby — 0107 §9). This is the
 //! bounded, honest tier — useful when a semantic server is unavailable
 //! or still loading — never a promise of semantic truth: macro-expanded
 //! and inferred declarations are not found.
@@ -10,55 +11,8 @@
 
 use crate::languages::LanguageId;
 use streaming_iterator::StreamingIterator;
+use strop_core::symbol_kind::SymbolKind;
 use tree_sitter::{Parser, Query, QueryCursor};
-
-/// Canonical symbol classification shared by query `kind:` values and
-/// the future workspace-symbols surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SymbolKind {
-    Function,
-    /// A function nested in a member context (impl/trait, class body,
-    /// Lua method syntax).
-    Method,
-    Class,
-    Struct,
-    Enum,
-    Interface,
-    Module,
-    Constant,
-}
-
-impl SymbolKind {
-    /// Compact chip text (picker badge column), matching the LSP
-    /// tier's `short_kind` vocabulary.
-    pub fn chip(self) -> &'static str {
-        match self {
-            SymbolKind::Function => "fn",
-            SymbolKind::Method => "meth",
-            SymbolKind::Class => "class",
-            SymbolKind::Struct => "struct",
-            SymbolKind::Enum => "enum",
-            SymbolKind::Interface => "iface",
-            SymbolKind::Module => "mod",
-            SymbolKind::Constant => "const",
-        }
-    }
-
-    /// This kind's LSP `SymbolKind` name: the vocabulary a symbol list
-    /// is labelled in, whichever source produced it (0099 §4.1).
-    pub fn lsp_name(self) -> &'static str {
-        match self {
-            SymbolKind::Function => "Function",
-            SymbolKind::Method => "Method",
-            SymbolKind::Class => "Class",
-            SymbolKind::Struct => "Struct",
-            SymbolKind::Enum => "Enum",
-            SymbolKind::Interface => "Interface",
-            SymbolKind::Module => "Module",
-            SymbolKind::Constant => "Constant",
-        }
-    }
-}
 
 /// One extracted declaration: kind, name and inclusive line span.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +64,38 @@ impl DeclExtractor {
             LanguageId::Lua => (
                 tree_sitter_lua::LANGUAGE.into(),
                 include_str!("../queries/lua/symbols.scm"),
+            ),
+            LanguageId::Go => (
+                tree_sitter_go::LANGUAGE.into(),
+                include_str!("../queries/go/symbols.scm"),
+            ),
+            LanguageId::Java => (
+                tree_sitter_java::LANGUAGE.into(),
+                include_str!("../queries/java/symbols.scm"),
+            ),
+            LanguageId::JavaScript => (
+                tree_sitter_javascript::LANGUAGE.into(),
+                include_str!("../queries/javascript/symbols.scm"),
+            ),
+            LanguageId::TypeScript => (
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                include_str!("../queries/typescript/symbols.scm"),
+            ),
+            LanguageId::Tsx => (
+                tree_sitter_typescript::LANGUAGE_TSX.into(),
+                include_str!("../queries/typescript/symbols.scm"),
+            ),
+            LanguageId::CSharp => (
+                tree_sitter_c_sharp::LANGUAGE.into(),
+                include_str!("../queries/c-sharp/symbols.scm"),
+            ),
+            LanguageId::Php => (
+                tree_sitter_php::LANGUAGE_PHP.into(),
+                include_str!("../queries/php/symbols.scm"),
+            ),
+            LanguageId::Ruby => (
+                tree_sitter_ruby::LANGUAGE.into(),
+                include_str!("../queries/ruby/symbols.scm"),
             ),
             _ => return None,
         })
@@ -164,9 +150,11 @@ impl DeclExtractor {
             let mut kind = None;
             let mut decl = None;
             let mut name = None;
+            let mut implemented = None;
             for capture in matched.captures {
                 match names[capture.index as usize] {
                     "name" => name = Some(capture.node),
+                    "trait" => implemented = Some(capture.node),
                     other => {
                         if let Some(value) = other.strip_suffix(".decl") {
                             kind = Some(kind_of(value));
@@ -183,10 +171,25 @@ impl DeclExtractor {
             {
                 kind = SymbolKind::Method;
             }
-            let text = source
-                .get(name.byte_range())
-                .map(|bytes| String::from_utf8_lossy(bytes).into_owned());
-            let name_col = name.start_position().column;
+            let text_of = |node: tree_sitter::Node<'_>| {
+                source
+                    .get(node.byte_range())
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+            };
+            let (text, name_col) = if kind == SymbolKind::Impl {
+                // named as rust-analyzer names it: `impl Type`,
+                // `impl Trait for Type`, one line
+                let target = text_of(name).map(|text| one_line(&text));
+                let text = match implemented.map(text_of) {
+                    Some(Some(implemented)) => {
+                        target.map(|target| format!("impl {} for {target}", one_line(&implemented)))
+                    }
+                    _ => target.map(|target| format!("impl {target}")),
+                };
+                (text, decl.start_position().column)
+            } else {
+                (text_of(name), name.start_position().column)
+            };
             let (Some(name), start, end) = (text, decl.start_position(), decl.end_position())
             else {
                 continue;
@@ -223,6 +226,7 @@ impl DeclExtractor {
             LanguageId::Rust => &["impl_item", "trait_item"],
             LanguageId::Python => &["class_definition"],
             LanguageId::C | LanguageId::Cpp => &["class_specifier", "struct_specifier"],
+            LanguageId::Ruby => &["class", "module", "singleton_class"],
             _ => &[],
         };
         let mut node = decl.parent();
@@ -236,9 +240,16 @@ impl DeclExtractor {
     }
 }
 
+/// Source text on one line: every run of whitespace is one space.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn kind_of(capture: &str) -> SymbolKind {
     match capture {
         "function" => SymbolKind::Function,
+        "method" => SymbolKind::Method,
+        "impl" => SymbolKind::Impl,
         "class" => SymbolKind::Class,
         "struct" => SymbolKind::Struct,
         "enum" => SymbolKind::Enum,

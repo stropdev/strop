@@ -1,5 +1,9 @@
 # 0063 — Canonical search: one query language, automatic workspace symbols
 
+> Amended by [0109](0109-one-filter-language.md): `type:` is retired,
+> `kind:`/`repo:` no longer make a query Boolean, every list declares
+> the keys it takes, and kept lists filter in the ranking pass.
+
 Status: **landed** (2026-09-16). Every section's code and verification
 slices are in the tree with their evidence; the only residual obligations
 are owned by [0058](0058-unified-native-worker.md) (incremental index

@@ -183,8 +183,8 @@ const fn cube_level(index: u8) -> u8 {
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeId {
     #[default]
-    Kiln,
     Hone,
+    Kiln,
     Slate,
     Carbide,
     Vellum,
@@ -194,8 +194,8 @@ pub enum ThemeId {
 
 impl ThemeId {
     pub const ALL: [ThemeId; 7] = [
-        Self::Kiln,
         Self::Hone,
+        Self::Kiln,
         Self::Slate,
         Self::Carbide,
         Self::Vellum,
@@ -229,8 +229,8 @@ impl ThemeId {
 
     pub const fn description(self) -> &'static str {
         match self {
-            Self::Kiln => "Warm charcoal with a terracotta accent; the default",
-            Self::Hone => "Graphite dark with the amber accent",
+            Self::Kiln => "Warm charcoal with a terracotta accent",
+            Self::Hone => "Graphite dark with the amber accent; the default",
             Self::Slate => "Low-chroma dark: syntax by luminance, one brass accent",
             Self::Carbide => "High-contrast dark for projectors and bright rooms",
             Self::Vellum => "Warm paper with graphite ink and a burnt-umber accent",
@@ -239,6 +239,7 @@ impl ThemeId {
         }
     }
 
+    #[cfg(test)]
     /// True for the palettes drawn on a light base.
     pub const fn is_light(self) -> bool {
         matches!(self, Self::Vellum | Self::Paper)

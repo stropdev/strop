@@ -166,8 +166,7 @@ pub struct ProjectedRow {
 /// Wire form of `Frame`. The projection rope is exactly the concatenation
 /// of the row texts and every `absolute_start` is the running byte offset
 /// from `origin` — frame validation re-derives both — so the wire carries
-/// neither: decode rebuilds them. Captures written before this derivation
-/// carry explicit offsets and the projection; that shape still decodes.
+/// neither: decode rebuilds them.
 #[derive(Debug, Clone)]
 pub struct Frame {
     pub session: SessionId,

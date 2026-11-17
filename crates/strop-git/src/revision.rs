@@ -48,16 +48,3 @@ impl GitRevision {
         }
     }
 }
-
-impl SourceLocation {
-    /// The URL slug: a pinned commit sha or the branch's name.
-    pub fn revision_slug(&self) -> String {
-        match &self.revision {
-            GitRevision::Head => "HEAD".into(),
-            GitRevision::Commit(sha) => sha.clone(),
-            GitRevision::Index => "index".into(),
-            GitRevision::Worktree => "worktree".into(),
-            GitRevision::MergeBase(a, b) => format!("{a}...{b}"),
-        }
-    }
-}

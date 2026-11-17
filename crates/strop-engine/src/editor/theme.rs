@@ -44,6 +44,7 @@ impl Editor {
                 // Its match columns stay valid because the label is the prefix.
                 text: format!("{} — {}", id.label(), id.name()),
                 payload: Payload::ThemeChoice(id),
+                facts: Default::default(),
             })
             .collect();
         let picker = Picker::new(strop_picker::Kind::Theme, items, false);

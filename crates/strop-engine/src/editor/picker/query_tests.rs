@@ -167,6 +167,7 @@ fn a_source_warning_keeps_results_acceptable() {
                     match_len: 6,
                     line_text: "needle".into(),
                 },
+                facts: Default::default(),
             }]
             .into(),
         ),
@@ -209,6 +210,7 @@ fn qualifier_edits_do_not_clear_ranked_results() {
             match_len: 3,
             line_text: "hit".into(),
         },
+        facts: Default::default(),
     }]);
     // a parsed qualifier query: raw input differs from the rank needle
     glue.picker.input.set_text("language:rust");
@@ -288,7 +290,7 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
     let symbol = |name: &str, line: usize| ProtoSymbol {
         name: name.into(),
         container: String::new(),
-        kind: "Function".into(),
+        kind: strop_core::symbol_kind::SymbolKind::Function,
         location: ServerLocation {
             doc: ResourceLocation::local(dir.path().join("lib.rs")),
             position: ServerPosition {
@@ -296,6 +298,7 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
                 column: ServerColumn::new(3),
             },
         },
+        span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(line)),
     };
     // One new semantic hit, one duplicate of the syntax tier (dropped).
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
@@ -364,8 +367,18 @@ fn boolean_negative_guards_narrow_the_engine_surface() {
     assert_eq!(picker.items.len(), 1, "only the unguarded line survives");
 }
 
+/// The rows the list shows, in order.
+fn visible(editor: &Editor) -> Vec<String> {
+    let picker = &editor.picker.as_ref().unwrap().picker;
+    picker
+        .rows
+        .iter()
+        .map(|row| picker.items[row.item].text.clone())
+        .collect()
+}
+
 #[test]
-fn workspace_symbols_ast_narrows_syntax_and_lsp_tiers() {
+fn workspace_symbols_server_rows_are_filtered_like_syntax_rows() {
     use strop_lsp::protocol::{
         ProtoSymbol, ServerColumn, ServerId, ServerLocation, ServerPosition,
     };
@@ -386,20 +399,27 @@ fn workspace_symbols_ast_narrows_syntax_and_lsp_tiers() {
         3,
         "the full declaration list"
     );
-    // `kind:` + content narrow the syntax tier exactly (0063 §4).
-    editor.paste_bracketed("kind:function parse");
+    // `kind:` narrows and the word beside it stays fuzzy (0109): the
+    // ranking pass filters the syntax tier's rows.
+    editor.paste_bracketed("kind:function pcfg");
+    editor.wait_picker();
+    assert_eq!(visible(&editor), vec!["parse_config  lib.rs · :2"]);
+    for _ in 0.."pcfg".len() {
+        editor.feed(strop_core::frontend_input::Key::Backspace);
+    }
+    editor.paste_bracketed("parse");
     editor.wait_picker();
     let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
     {
         let picker = &editor.picker.as_ref().unwrap().picker;
         assert!(picker.error.is_none(), "{:?}", picker.error);
-        let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
-        assert_eq!(texts, vec!["parse_config  lib.rs · :2"], "{texts:?}");
+        assert_eq!(picker.items.len(), 3, "the walk was not repeated");
+        assert_eq!(visible(&editor), vec!["parse_config  lib.rs · :2"]);
     }
     let symbol = |file: &str, name: &str, kind: &str, container: &str, line: usize| ProtoSymbol {
         name: name.into(),
         container: container.into(),
-        kind: kind.into(),
+        kind: crate::editor::symbols::lsp_kind(kind),
         location: ServerLocation {
             doc: ResourceLocation::local(dir.path().join(file)),
             position: ServerPosition {
@@ -407,6 +427,7 @@ fn workspace_symbols_ast_narrows_syntax_and_lsp_tiers() {
                 column: ServerColumn::new(3),
             },
         },
+        span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(line)),
     };
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
         server: ServerId::new(9),
@@ -415,23 +436,24 @@ fn workspace_symbols_ast_narrows_syntax_and_lsp_tiers() {
             symbol("semantic.rs", "parse_semantic", "Function", "", 0),
             // A true duplicate of the syntax row (path, line, name).
             symbol("lib.rs", "parse_config", "Function", "", 1),
-            symbol("semantic.rs", "run", "Method", "parse", 2), // qualified form matches
-            symbol("semantic.rs", "wrap", "Function", "", 3),   // content says No
+            symbol("semantic.rs", "parser_field", "Field", "", 2), // kind says No
+            symbol("semantic.rs", "wrap", "Function", "", 3),      // the needle says No
             symbol("semantic.rs", "parse_struct", "Struct", "", 4), // kind says No
+            symbol("semantic.rs", "Parse", "EnumMember", "", 5),   // kind says No
         ],
     });
     editor.wait_picker();
-    let picker = &editor.picker.as_ref().unwrap().picker;
-    let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+    let mut texts = visible(&editor);
+    texts.sort();
     assert_eq!(
         texts,
         vec![
             "parse_config  lib.rs · :2",
-            "parse_semantic  semantic.rs · :1",
-            "run  semantic.rs · :3",
+            "parse_semantic  semantic.rs · :1"
         ],
-        "{texts:?}"
+        "the servers' rows are filtered like the syntax rows: {texts:?}"
     );
+    let picker = &editor.picker.as_ref().unwrap().picker;
     assert_eq!(
         picker
             .items
@@ -584,7 +606,7 @@ fn workspace_symbols_field_edits_notify_exactly_once_per_completed_command() {
 }
 
 #[test]
-fn workspace_symbols_unknown_evidence_and_invalid_query_stay_honest() {
+fn workspace_symbols_invalid_query_keeps_the_list_and_retires_replies() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("lib.rs"),
@@ -594,23 +616,19 @@ fn workspace_symbols_unknown_evidence_and_invalid_query_stay_honest() {
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
     editor.open_picker(Kind::WorkspaceSymbols);
     editor.wait_picker();
-    // An unrecognized kind value stays Unknown and admits (0063 §4).
-    editor.paste_bracketed("kind:bogus");
+    editor.paste_bracketed("kind:struct");
     editor.wait_picker();
-    {
-        let picker = &editor.picker.as_ref().unwrap().picker;
-        assert_eq!(picker.items.len(), 2, "unknown evidence admits");
-        assert!(picker.error.is_none(), "{:?}", picker.error);
-    }
-    // A broken query keeps the rows, surfaces the diagnostic through
-    // the shared path, and retires in-flight LSP replies.
+    assert_eq!(visible(&editor), vec!["St  lib.rs · :1"]);
+    // An unknown value is an error (0109): the list stays as it was,
+    // and in-flight LSP replies for the left-behind query are retired.
     let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
-    editor.paste_bracketed(" NOT");
+    editor.paste_bracketed(" kind:bogus");
     {
         let picker = &editor.picker.as_ref().unwrap().picker;
-        assert!(picker.error.is_some(), "the diagnostic is on the card");
-        assert_eq!(picker.items.len(), 2, "rows stay while typing");
+        let error = picker.error.as_deref().unwrap_or_default();
+        assert!(error.starts_with("unknown kind: bogus"), "{error}");
     }
+    assert_eq!(visible(&editor), vec!["St  lib.rs · :1"], "the list stays");
     assert_eq!(
         editor.picker.as_ref().unwrap().wsymbols_generation,
         generation + 1,
@@ -640,14 +658,13 @@ fn workspace_symbols_status_rows_survive_ast_relaunch_unconsumed() {
         .items
         .iter()
         .any(|item| matches!(item.payload, Payload::ProjectStatus(_))));
-    // A Boolean query relaunches the syntax tier (0063 §4): the
-    // informational status row is neither AST-filtered as a symbol
-    // candidate nor reranked into the results — it stays the pinned
-    // tail across the relaunch.
-    editor.paste_bracketed("kind:function");
+    // A filter and a scope change (which re-walks the syntax tier):
+    // the informational status row is neither filtered as a symbol nor
+    // ranked into the results — it stays the pinned tail.
+    editor.paste_bracketed("kind:function hidden:include");
     editor.wait_picker();
     let picker = &editor.picker.as_ref().unwrap().picker;
-    let texts: Vec<&str> = picker.items.iter().map(|item| item.text.as_str()).collect();
+    let texts = visible(&editor);
     assert!(
         texts.iter().any(|text| text.starts_with("wrap  ")),
         "{texts:?}"

@@ -43,9 +43,7 @@ pub(crate) struct RegisterStore {
     /// `"+`/`"*`: what this editor last wrote to the system clipboard.
     /// Reads of the live clipboard are a provider job, never this cell.
     clipboard: Option<Register>,
-    /// `":`: the last executed ex line. Read-only to operators; the ex
-    /// prompt records it on accept.
-    pub(crate) command_line: Option<String>,
+    // `":` is the command-line history's newest line (`Cmdline::last_command_line`).
 }
 
 /// The vim-valid register a write may name, already lowercased.

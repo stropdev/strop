@@ -15,21 +15,7 @@ fn load(path: &Path) -> Result<Vec<FileTarget>, SessionError> {
         }
         Err(error) => return Err(error),
     };
-    if bytes.first() == Some(&b'[') {
-        return Ok(serde_json::from_slice(&bytes)?);
-    }
-    // Legacy line-based stores only had unambiguous UTF-8 identities.
-    let text = std::str::from_utf8(&bytes).map_err(|e| SessionError::Invalid(e.to_string()))?;
-    text.lines()
-        .map(|line| {
-            if line.contains('\u{fffd}') {
-                return Err(strop_core::path_serde::PathError::AmbiguousLegacy.into());
-            }
-            let root = PathBuf::from(line);
-            strop_core::path_serde::validate(&root)?;
-            Ok(FileTarget::Local(root))
-        })
-        .collect()
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 pub fn is_trusted(base: Option<&Path>, root: &Path) -> Result<bool, SessionError> {

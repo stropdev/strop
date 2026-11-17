@@ -230,6 +230,7 @@ fn workspace_root_item(root: strop_workspace::ResourceLocation) -> Item {
         badge: None,
         text: format!("Select project root here · {}", root.label()),
         payload: Payload::WorkspaceRoot(root),
+        facts: Default::default(),
     }
 }
 fn new_host_item() -> Item {
@@ -237,6 +238,7 @@ fn new_host_item() -> Item {
         badge: None,
         text: "Add a host…".into(),
         payload: Payload::RemoteConnect,
+        facts: Default::default(),
     }
 }
 fn destination_item(directory: RemoteFile, origin: &str) -> Item {
@@ -244,5 +246,6 @@ fn destination_item(directory: RemoteFile, origin: &str) -> Item {
         badge: None,
         text: format!("{directory}  [{origin}]"),
         payload: Payload::RemoteDirectory(directory),
+        facts: Default::default(),
     }
 }

@@ -128,7 +128,9 @@ impl Editor {
     }
 
     pub(crate) fn push_jump(&mut self) {
-        if self.docs.is_empty() {
+        // Vim's global_busy: `:g` records its start once, and nothing it
+        // runs records another
+        if self.docs.is_empty() || self.cmdline.ex.marked.busy() {
             return;
         }
         let record = self.jump_record();

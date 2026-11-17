@@ -1,6 +1,6 @@
 //! `Space s` on the real binary (plans/0099 §6): a file no language server
 //! serves lists its declarations, and the list is never one from before an
-//! edit. Runs the shipped `strop --headless` in a tempdir with an empty
+//! edit. Runs the shipped `strop headless` in a tempdir with an empty
 //! `PATH`, so no server can be found whatever the machine has installed.
 use std::path::Path;
 use std::process::Command;
@@ -18,7 +18,7 @@ fn run(root: &Path, script: &str, file: &str) -> String {
         .env("XDG_STATE_HOME", outside.join("state"))
         .env("PATH", &no_programs)
         .env_remove("STROP_LOG")
-        .arg("--headless")
+        .arg("headless")
         .arg(&steps)
         .arg(file)
         .output()
@@ -71,6 +71,86 @@ fn symbols_without_a_server_follow_every_edit() {
     // one line was opened above both: the rows moved with the text
     assert!(row(frames[1], "alpha").contains(":2"), "{}", frames[1]);
     assert!(row(frames[1], "beta").contains(":3"), "{}", frames[1]);
+}
+
+/// The owner's report (plan 0109): `kind:` in `Space s` filters, the
+/// words beside it stay fuzzy, and an unknown kind says so under the
+/// word instead of keeping everything.
+#[test]
+fn symbols_kind_filters_and_keeps_the_words_fuzzy() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = &directory.path().join("project");
+    std::fs::create_dir(root).unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "struct Config {}\nfn parse_config() {}\nfn wrap() {}\n",
+    )
+    .unwrap();
+    let output = run(
+        root,
+        "settle 20000\n\
+         keys <space>s\n\
+         settle 20000\n\
+         keys kind:function pcfg\n\
+         settle 20000\n\
+         frame\n\
+         keys <c-u>kind:fnc\n\
+         settle 20000\n\
+         frame\n",
+        "lib.rs",
+    );
+    let frames = frames(&output);
+    assert_eq!(frames.len(), 2, "{output}");
+    assert!(
+        row(frames[0], "parse_config").contains(":2"),
+        "{}",
+        frames[0]
+    );
+    assert!(!frames[0].contains(" wrap "), "{}", frames[0]);
+    assert!(!frames[0].contains("struct  Config"), "{}", frames[0]);
+    assert!(
+        frames[1].contains("^^^^^^^^ unknown kind: fnc"),
+        "the error sits under the word: {}",
+        frames[1]
+    );
+}
+
+/// The frame's last row: the modeline.
+fn modeline(frame: &str) -> &str {
+    frame
+        .lines()
+        .rfind(|line| !line.trim().is_empty())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_modeline_names_the_method_the_cursor_is_in() {
+    // plans/0107 §10.6: no server, so the outline names the impl block
+    // and its method; at top level the breadcrumb is blank.
+    let directory = tempfile::tempdir().unwrap();
+    let root = &directory.path().join("project");
+    std::fs::create_dir(root).unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "struct Modeline;\n\nimpl Modeline {\n    fn fit(&self) {\n        let cells = 1;\n    }\n}\n",
+    )
+    .unwrap();
+    let output = run(
+        root,
+        "settle 20000\n\
+         keys 5G\n\
+         settle 20000\n\
+         frame\n\
+         keys 2G\n\
+         frame\n",
+        "lib.rs",
+    );
+    let frames = frames(&output);
+    assert_eq!(frames.len(), 2, "{output}");
+    let inside = modeline(frames[0]);
+    assert!(inside.contains("impl Modeline › fit"), "{inside}");
+    let top = modeline(frames[1]);
+    assert!(!top.contains("› ") && !top.contains("fit"), "{top}");
 }
 
 /// `python3` from the test's own `PATH`: the editor itself runs with none.

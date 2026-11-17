@@ -2,7 +2,6 @@
 //! changed-on-disk refusal, search, Git and a terminal on the host, over
 //! a private inetd connection — no network, real HOME, host key
 //! discovery or sleeps. Required by the Docker gates.
-#![cfg(unix)]
 use std::ffi::{OsStr, OsString};
 use std::io::Write as _;
 use std::os::unix::ffi::OsStrExt;
@@ -135,7 +134,7 @@ impl Fixture {
     }
     fn open(&self, uri: &str, steps: &str) -> String {
         let script = self.script("steps", steps);
-        self.run(&["--headless".into(), script.into(), uri.into()])
+        self.run(&["headless".into(), script.into(), uri.into()])
     }
 }
 fn uri(host: &str, path: &Path) -> String {
@@ -177,7 +176,7 @@ fn openssh_reads_native_names_and_replay_needs_no_ssh() {
     );
     let trace = fixture.root().join("read.jsonl");
     let output = fixture.run(&[
-        "--headless".into(),
+        "headless".into(),
         steps.into(),
         target.into(),
         "--log-file".into(),
@@ -204,7 +203,7 @@ fn openssh_reads_native_names_and_replay_needs_no_ssh() {
         std::fs::Permissions::from_mode(0o700),
     )
     .unwrap();
-    let replay = fixture.run(&["--replay".into(), trace.into()]);
+    let replay = fixture.run(&["replay".into(), trace.into()]);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&replay).unwrap()["should_quit"],
         true

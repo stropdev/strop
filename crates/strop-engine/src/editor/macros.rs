@@ -6,11 +6,20 @@
 use super::Editor;
 use strop_core::frontend_input::Key;
 
+/// A recording in progress: the keys typed since `q{register}`. They
+/// become the register's macro at the closing `q`; until then `@{reg}`
+/// replays what the register held before (Vim).
+#[derive(Debug)]
+pub(crate) struct Recording {
+    pub(crate) register: char,
+    pub(crate) keys: Vec<Key>,
+}
+
 impl Editor {
     /// The register a macro is being recorded into, from `q{reg}` until
     /// the closing `q`.
     pub fn recording(&self) -> Option<char> {
-        self.recording
+        self.recording.as_ref().map(|recording| recording.register)
     }
 
     /// `q{reg}`: start recording; `q` while recording stops (handled in
@@ -18,13 +27,25 @@ impl Editor {
     /// records itself).
     pub(crate) fn macro_toggle(&mut self, reg: char) {
         if !(reg.is_ascii_alphanumeric() || reg == '"') {
-            // (`q:` and `q/` are Vim's command-line window, not registers)
+            // (`q:` and `q/` open the command-line window before this)
             self.message = format!("q{reg}: not a register to record into");
             return;
         }
-        self.recording = Some(reg);
-        self.macros.insert(reg, Vec::new());
+        self.recording = Some(Recording {
+            register: reg,
+            keys: Vec::new(),
+        });
         self.message = format!("recording @{reg}");
+    }
+
+    /// The closing `q`: the typed keys become the register's macro.
+    pub(crate) fn macro_stop(&mut self) {
+        let Some(Recording { register, keys }) = self.recording.take() else {
+            return;
+        };
+        self.macros.insert(register, keys);
+        self.macro_recorded(register);
+        self.message = format!("recorded @{register}");
     }
 
     /// A finished recording is register content (vim: `qa` fills

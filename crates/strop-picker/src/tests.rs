@@ -7,16 +7,19 @@ fn filter_and_rank() {
             badge: None,
             text: "src/main.rs".into(),
             payload: Payload::File("src/main.rs".into()),
+            facts: Default::default(),
         },
         Item {
             badge: None,
             text: "src/render.rs".into(),
             payload: Payload::File("src/render.rs".into()),
+            facts: Default::default(),
         },
         Item {
             badge: None,
             text: "tests/e2e.py".into(),
             payload: Payload::File("tests/e2e.py".into()),
+            facts: Default::default(),
         },
     ];
     let mut p = Picker::new(Kind::Files, items, false);
@@ -34,6 +37,7 @@ fn ranking_defaults_to_smart_case_and_sensitive_restores_exact_case() {
         badge: None,
         text: text.into(),
         payload: Payload::File(text.into()),
+        facts: Default::default(),
     };
     for (needle, rows) in [("mixedcase", 2), ("MixedCase", 1), ("MIXEDCASE", 0)] {
         let mut picker = Picker::new(
@@ -109,11 +113,13 @@ fn pinned_tail_survives_filtering_below_real_matches() {
             badge: None,
             text: "prtdv-pw-846".into(),
             payload: Payload::RemoteConnect,
+            facts: Default::default(),
         },
         Item {
             badge: None,
             text: "Add a host\u{2026}".into(),
             payload: Payload::RemoteConnect,
+            facts: Default::default(),
         },
     ];
     let mut p = Picker::new(Kind::RemoteHosts, items, false);
@@ -131,11 +137,13 @@ fn pinned_tail_survives_filtering_below_real_matches() {
                 badge: None,
                 text: "prtdv-pw-846".into(),
                 payload: Payload::RemoteConnect,
+                facts: Default::default(),
             },
             Item {
                 badge: None,
                 text: "Add a host\u{2026}".into(),
                 payload: Payload::RemoteConnect,
+                facts: Default::default(),
             },
         ],
         false,
@@ -159,6 +167,7 @@ fn shrinking_pinned_tail_keeps_installed_rows_addressable() {
         badge: None,
         text: text.into(),
         payload: Payload::ProjectStatus(PathBuf::from(text)),
+        facts: Default::default(),
     };
     let mut p = Picker::new(
         Kind::WorkspaceSymbols,
@@ -166,6 +175,7 @@ fn shrinking_pinned_tail_keeps_installed_rows_addressable() {
             badge: None,
             text: "src/main.rs".into(),
             payload: Payload::File("src/main.rs".into()),
+            facts: Default::default(),
         }],
         false,
     );
@@ -198,6 +208,7 @@ fn selection_wraps() {
             badge: None,
             text: format!("f{i}"),
             payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+            facts: Default::default(),
         })
         .collect();
     let mut p = Picker::new(Kind::Buffers, items, false);
@@ -220,6 +231,7 @@ fn ctrl_d_excludes_a_whole_file() {
             match_len: 1,
             line_text: "x".into(),
         },
+        facts: Default::default(),
     };
     let mut p = Picker::search(vec![hit("a.rs"), hit("a.rs"), hit("b.rs")], false, true);
     p.install_ranking(rank::rank(&p.filter_request(), || false).unwrap().unwrap());
@@ -240,16 +252,19 @@ fn regex_query_never_hides_rg_rows() {
                 badge: None,
                 text: "a.rs:1 foo".into(),
                 payload: Payload::File("a.rs".into()),
+                facts: Default::default(),
             },
             Item {
                 badge: None,
                 text: "b.rs:2 bar".into(),
                 payload: Payload::File("b.rs".into()),
+                facts: Default::default(),
             },
             Item {
                 badge: None,
                 text: "c.rs:3 baz".into(),
                 payload: Payload::File("c.rs".into()),
+                facts: Default::default(),
             },
         ],
         false,
@@ -268,6 +283,7 @@ fn file(path: &str) -> Item {
         badge: None,
         text: path.into(),
         payload: Payload::File(path.into()),
+        facts: Default::default(),
     }
 }
 
@@ -337,6 +353,7 @@ fn the_resting_row_applies_to_the_empty_query_only() {
             badge: None,
             text: name.into(),
             payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+            facts: Default::default(),
         })
         .collect();
     let mut picker = Picker::new(Kind::Buffers, items, false);

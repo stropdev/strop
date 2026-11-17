@@ -21,6 +21,7 @@ and the version of the subject it was computed for.
   when no slot is dead, and then the least recently used one.
 - `find_after_place`: the entry just placed is found under its key, and the
   same pair at any other version misses.
+- `vacant_spec`: a new table's slots are dead, so it serves nothing.
 - `touch_spec`: a use changes one slot's tick and nothing else.
 -/
 
@@ -28,6 +29,11 @@ open Aeneas Aeneas.Std Result
 open strop_kernel
 
 namespace Strop.Kernel
+
+/-- A new table is filled with dead slots: it serves nothing until `place`. -/
+theorem vacant_spec : cache.vacant ⦃ x => x.live = false ⦄ := by
+  unfold cache.vacant
+  simp only [WP.spec_ok]
 
 /-! ## Lookup -/
 

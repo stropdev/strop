@@ -34,7 +34,6 @@ pub(crate) struct AttachArgs {
     #[serde(with = "strop_core::path_serde")]
     pub path: PathBuf,
     pub language: String,
-    #[serde(default)]
     pub target: Filesystem,
 }
 
@@ -410,15 +409,6 @@ mod tests {
         let mut pending = HashMap::new();
         pending.insert(local, WorkerId::new(1));
         assert!(!pending.contains_key(&remote));
-    }
-
-    #[test]
-    fn attach_args_replay_legacy_local_records_as_local() {
-        // Records from before remote targets existed carry no target
-        // field; they must deserialize as local attempts.
-        let legacy = r#"{"ticket":0,"path":"/w/a.rs","language":"rust"}"#;
-        let args: AttachArgs = serde_json::from_str(legacy).unwrap();
-        assert_eq!(args.target, Filesystem::Local);
     }
 
     #[test]

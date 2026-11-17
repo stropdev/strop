@@ -8,31 +8,31 @@ use std::path::PathBuf;
 
 use strop_workspace::ResourceLocation;
 
-use super::ExCall;
+use super::{ExCall, ExResult};
 use crate::editor::{DocumentSource, Editor};
 
 /// `:cd` (home), `:cd -` (back), `:cd dir` (relative to the root, `~`
 /// is home). The directory is resolved on a worker; the root changes
 /// when the answer lands.
-pub(crate) fn ex_cd(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_cd(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     let home = || std::env::var_os("HOME").map(PathBuf::from);
     let target = match call.arg {
         "" | "~" => home(),
-        "-" => editor.pending.ex.previous_directory.clone(),
+        "-" => editor.cmdline.ex.previous_directory.clone(),
         arg => match arg.strip_prefix("~/") {
             Some(rest) => home().map(|home| home.join(rest)),
             None => Some(editor.cwd.join(arg)),
         },
     };
     let Some(target) = target else {
-        editor.message = if call.arg == "-" {
+        return Err(if call.arg == "-" {
             "no previous directory".into()
         } else {
             "no home directory".into()
-        };
-        return;
+        });
     };
     editor.request_directory(target);
+    Ok(())
 }
 
 /// Why the root cannot move right now, if anything is mid-flight
@@ -97,7 +97,7 @@ pub(crate) fn change_directory(editor: &mut Editor, directory: PathBuf) {
         .workspaces
         .retire_root(ResourceLocation::local(old.clone()));
     editor.cwd = directory;
-    editor.pending.ex.previous_directory = Some(old);
+    editor.cmdline.ex.previous_directory = Some(old);
     editor.request_session_save();
     editor.recovery_enter_project();
     if watching {

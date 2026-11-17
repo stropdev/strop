@@ -119,7 +119,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     readonly = true;
                     continue;
                 }
-                "--log" | "--log=ALL" => {
+                "--log" => {
                     trace_path = Some("strop-log.jsonl".into());
                     continue;
                 }
@@ -134,37 +134,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 "--log-terminal-content" => {
                     content = ContentPolicy::Full;
                     terminal_capture = true;
-                    continue;
-                }
-                "--headless" => {
-                    headless = true;
-                    if args
-                        .peek()
-                        .is_some_and(|value| !value.to_string_lossy().starts_with('-'))
-                    {
-                        script = args.next().map(PathBuf::from);
-                    }
-                    continue;
-                }
-                "--script" => {
-                    headless = true;
-                    script = Some(args.next().ok_or("--script requires a path")?.into());
-                    continue;
-                }
-                "--replay" => {
-                    let trace = args.next().ok_or("--replay requires a trace file")?.into();
-                    if command.is_some() || replay.is_some() || headless {
-                        return Err("--replay conflicts with other launch modes".into());
-                    }
-                    command = Some(Command::ReplayFull { trace });
-                    continue;
-                }
-                "--bench" => {
-                    let scenario = args
-                        .next()
-                        .map(|arg| arg.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "all".into());
-                    command = Some(Command::Bench { scenario });
                     continue;
                 }
                 "config"
@@ -183,11 +152,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                     command = Some(Command::Update { check_only });
                     continue;
                 }
-                // ---- subcommands (flags above remain the synonyms) ----
-                "edit" if command.is_none() && !headless && operand.is_none() => {
-                    continue;
-                }
-                "remote" | "--remote"
+                "remote"
                     if command.is_none() && !headless && replay.is_none() && operand.is_none() =>
                 {
                     let url = args.next().ok_or(
@@ -318,7 +283,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         (Some(command), None, false) => command,
         (None, Some(trace), false) if operand.is_none() => Command::Replay { trace },
         (None, None, true) => Command::Headless {
-            script: script.ok_or("--headless requires a script path")?,
+            script: script.ok_or("headless requires a script path")?,
             path: operand,
             stdin,
         },
@@ -418,11 +383,10 @@ mod tests {
     }
 
     #[test]
-    fn remote_subcommand_and_flag_require_an_ssh_url() {
+    fn remote_subcommand_requires_an_ssh_url() {
         for form in [
             vec!["remote", "ssh://tnawara@123.space:4343/etc/conf"],
-            vec!["--remote", "ssh://tnawara@123.space:4343/etc/conf:99"],
-            vec!["edit", "ssh://tnawara@123.space:4343/etc/conf"],
+            vec!["remote", "ssh://tnawara@123.space:4343/etc/conf:99"],
         ] {
             let options = parse(&form).unwrap();
             assert!(
@@ -439,11 +403,7 @@ mod tests {
                 "{form:?}"
             );
         }
-        for form in [
-            vec!["remote"],
-            vec!["remote", "/tmp/x"],
-            vec!["--remote", "x.txt"],
-        ] {
+        for form in [vec!["remote"], vec!["remote", "/tmp/x"]] {
             assert!(
                 parse(&form)
                     .unwrap_err()
@@ -454,16 +414,18 @@ mod tests {
     }
 
     #[test]
-    fn flag_forms_parse_and_retired_spellings_refuse() {
-        assert!(matches!(
-            parse(&["--headless", "s.txt", "a.rs"]).unwrap().command,
-            Command::Headless { .. }
-        ));
-        assert!(matches!(
-            parse(&["--replay", "t.jsonl"]).unwrap().command,
-            Command::ReplayFull { .. }
-        ));
-        for retired in ["--dump-compat", "--replay-script", "--export-metadata"] {
+    fn command_flags_are_refused() {
+        // Commands are words; there is no flag spelling of any of them.
+        for retired in [
+            "--headless",
+            "--script",
+            "--replay",
+            "--remote",
+            "--bench",
+            "--dump-compat",
+            "--replay-script",
+            "--export-metadata",
+        ] {
             assert!(
                 parse(&[retired, "t.jsonl"])
                     .unwrap_err()

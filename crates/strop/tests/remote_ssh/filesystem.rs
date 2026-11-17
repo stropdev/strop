@@ -38,7 +38,7 @@ fn a_remote_folder_creates_copies_renames_and_deletes_in_one_write() {
         ),
     );
     let output = fixture.run(&[
-        "--headless".into(),
+        "headless".into(),
         steps.into(),
         uri("fixture", &scope).into(),
     ]);
@@ -105,7 +105,7 @@ fn remote_operations_never_replace_an_existing_name() {
              keys :qa!<cr>\nsettle\n",
     );
     let output = fixture.run(&[
-        "--headless".into(),
+        "headless".into(),
         steps.into(),
         uri("fixture", &scope).into(),
     ]);

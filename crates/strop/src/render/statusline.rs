@@ -1,10 +1,12 @@
 //! The modeline (0032, 0088 §2, 0098): one quiet row on the surface
 //! plane at the terminal's bottom edge.
 //!
-//! `  NORMAL    main*  crates/strop/src/render/statusline.rs ●      d2        LSP!  ●1 ▲2   17%   98:9  `
+//! `  NORMAL    main*  crates/strop/src/render/statusline.rs ●  impl Modeline › gather     d2        LSP!  ●1 ▲2   17%   98:9  `
 //!
 //! The left half says what this is: a fixed 10-cell mode chip, so the
-//! path never jumps; recording; branch; file. The right half says what
+//! path never jumps; recording; branch; file; the breadcrumb — the
+//! symbols that contain the cursor, outer to inner, in a slot as wide as
+//! the file's widest (0107). The right half says what
 //! is happening: the pending keys in their slot (the grammar's spec
 //! footer, in the accent — 0001 §4), then diagnostics only when
 //! non-zero, a 4-cell `LSP!` badge only on failure, `Spaces:N` only
@@ -35,8 +37,9 @@ use super::clip::{clip_end, clip_start, width};
 use super::file_name;
 use super::style::Tokens;
 
-mod chip;
+pub(super) mod chip;
 mod layout;
+mod scope;
 mod services;
 mod spec;
 #[cfg(test)]
@@ -47,6 +50,9 @@ use layout::{Grants, Part};
 pub(super) fn render(editor: &Editor, t: &Tokens, frame: &mut Frame, area: Rect) {
     if area.width == 0 || area.height == 0 || editor.panes().is_empty() {
         return; // a 0-sized resize must not underflow (0027 §2)
+    }
+    if super::cmdline::open(editor) {
+        return; // the command line has the row (0110 §3.1)
     }
     let cells = area.width as usize;
     let row = Modeline::gather(editor, t);
@@ -86,6 +92,9 @@ struct Modeline {
     dirty: bool,                 // " ●" after the name
     readonly: bool,              // " [RO]"
     multicursor: Option<String>, // "3×", without its leading pad
+    /// The breadcrumb's names, outermost first, and its slot's cells;
+    /// `None` where the buffer has no symbol list.
+    scope: Option<(Vec<String>, usize)>,
     /// The grammar footer (pending operator, live preview spec, walker
     /// state), in the pending slot.
     spec: String,
@@ -194,6 +203,10 @@ impl Modeline {
             dirty: buf.is_dirty() || editor.collection_unsaved(editor.current()),
             readonly: buf.readonly && !terminal_input && !terminal,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
+            scope: editor.scope_path().map(|path| {
+                let names = path.names().map(|name| printable(name.to_owned()));
+                (names.collect(), path.slot)
+            }),
             spec: printable(spec::spec(editor)),
             hints,
             attention,
@@ -265,6 +278,10 @@ impl Modeline {
                         .add_modifier(Modifier::BOLD),
                 );
             }
+        }
+        if let (Some(cells), Some((names, _))) = (grants.get(Part::Scope), &self.scope) {
+            row.group();
+            scope::draw(&mut row, names, cells, t);
         }
         row.pad(grants.spare());
         if let Some(cells) = grants.get(Part::Spec) {

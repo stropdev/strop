@@ -117,31 +117,15 @@ pub(super) fn strip_leading_slash(path: PathBuf) -> PathBuf {
     bytes_to_path(stripped).expect("rebuilding a decoded path cannot fail")
 }
 
-#[cfg(unix)]
 pub fn bytes_to_path(bytes: Vec<u8>) -> Result<PathBuf, AddressError> {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
-#[cfg(unix)]
 pub fn path_bytes(path: &std::path::Path) -> &[u8] {
     use std::os::unix::ffi::OsStrExt;
     path.as_os_str().as_bytes()
-}
-
-/// Platforms without byte filenames get strict UTF-8, never a lossy
-/// replacement character that could name the wrong remote file.
-#[cfg(not(unix))]
-pub fn bytes_to_path(bytes: Vec<u8>) -> Result<PathBuf, AddressError> {
-    let text = String::from_utf8(bytes).map_err(|_| AddressError::UnrepresentablePath)?;
-    Ok(PathBuf::from(text))
-}
-
-#[cfg(not(unix))]
-pub fn path_bytes(path: &std::path::Path) -> &[u8] {
-    // Built only from strict UTF-8 here, so this is the exact path text.
-    path.as_os_str().as_encoded_bytes()
 }
 
 #[cfg(test)]

@@ -205,8 +205,9 @@ impl Editor {
     pub fn current_search_query(
         &self,
     ) -> Result<Option<grammar::CompiledQuery>, grammar::QueryError> {
-        if let Some(pattern) = self.search_pattern() {
-            grammar::CompiledQuery::compile(pattern, false).map(Some)
+        if self.search_pattern().is_some() {
+            // the open line's pattern, compiled once for this revision
+            self.cmdline.parsed.search.clone().transpose()
         } else {
             Ok(self.last_search.as_ref().map(|search| search.query.clone()))
         }

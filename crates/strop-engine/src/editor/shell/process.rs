@@ -6,20 +6,6 @@
 use super::jobs::ProcessOutput;
 use strop_core::worker::{CancelToken, FailureKind, Outcome};
 
-#[cfg(not(unix))]
-pub(super) fn run_shell(
-    _command: &str,
-    _cwd: &std::path::Path,
-    _input: Option<String>,
-    _token: &CancelToken,
-) -> Outcome<ProcessOutput> {
-    Outcome::failed(
-        FailureKind::Unavailable,
-        "shell process-group supervision requires Unix",
-    )
-}
-
-#[cfg(unix)]
 pub(super) fn run_shell(
     command: &str,
     cwd: &std::path::Path,
@@ -29,7 +15,6 @@ pub(super) fn run_shell(
     unix::run(command, cwd, input, token)
 }
 
-#[cfg(unix)]
 mod unix {
     use super::*;
     use std::io::{self, Read, Write};

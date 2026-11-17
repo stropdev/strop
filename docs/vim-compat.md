@@ -248,32 +248,122 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :q :bd!` — :q hides a running terminal (space b returns), :bd! stops it; :qa refuses while terminals run, :qa! stops them
 - `✓ :r !cmd` — insert a command's output below the cursor
 
-## Ex commands
+## Command line
 
-- `✓ :` — ex command line (from Visual it opens with '<,'>)
+- `✓ :` — the command line (from Visual it opens with '<,'>)
 - `✓ :N :N,M :. :$ :% :'a :'<,'> :/pat/ :?pat? :.+N :N;+M` — ranges: lines, marks, searches and offsets; :N alone goes to the line
-- `✓ :s/pat/new/[flags] :& :&& :~` — substitute with live preview (& \1 ~ \r \u \U in the replacement; flags g i I n c &) / repeat it
-- `✓ :g/pat/cmd :g!/pat/cmd :v/pat/cmd :norm {keys}` — run a command on matching (or the other) lines / type Normal keys on each line
-- `✓ :d {x} :y {x} :m {addr} :t {addr} :co {addr} :j :pu {x}` — delete / yank / move / copy / join / put lines (x: a register; a count may follow)
-- `✓ :> :< :sort :!cmd` — indent / unindent / sort lines (! reversed; u n i) / run a command, or with a range filter the lines through it
-- `✓ :k {a} :mark {a} :delm {a} :marks :reg {x} :di {x}` — set / delete marks; list marks and registers
-- `✓ :u :red :@: :@{x}` — undo / redo / repeat the last command line / run register x as commands
-- `✓ :b {n|name} :bn :bp :bN :bd {n} :ls :buffers :files` — go to a buffer by number or name fragment / next / previous / delete / list
-- `✓ :w :w {file} :up :wa` — write / write-as / write if modified / write every modified buffer
-- `✓ :q :q! :wq :x :exi :clo :on :trust` — quit (force) / write-quit / close this window / only this window / trust the project
-- `✓ :qa :qall :quita :wqa :xa` — quit all (fails on unsaved; bang discards) / write all and quit
-- `✓ :e :e {file} :ene :new :vne` — edit file / new unnamed buffer (here, split, vertical split)
-- `✓ :cd {dir|-} :pwd` — change the project root (Files, Search, terminals) / go back / show it
-- `✓ :help :mes :explain` — help buffer (this text — / searches it) / message history / why: workspaces, LSP, config
-- `✓ :theme` — choose a built-in interface palette
-- `✓ :jumps :symbols` — jumplist / document symbols picker
-- `✓ :format :rename` — format buffer / rename symbol: :rename NEW
-- `✓ :recover` — recover unsaved text after a crash: list, restore N, discard N
-- `✓ :select-next :select-all :select-skip :select-pop` — occurrence selection: next / all / skip / pop last-added
-- `✓ :view :set` — readonly browsing (:set ro/noro; CLI: -R)
-- `✓ :tab-size :indent-style` — indent width and tabs or spaces for this file
-- `✓ :remote :terminal-local` — SSH hosts / a local shell even from an SSH context
-- `✓ :copen :cwindow :cnext :cprevious :cNext :cc :cdo :cfdo` — the collection's hits (quickfix): show it, step hits, run a command at each hit line or file
+- `✓ enter ctrl-j ctrl-m` — run the line (a failed line says so in error ink)
+- `✓ esc ctrl-[ ctrl-c` — cancel; the view returns to where it was
+- `✓ backspace ctrl-h` — delete before the cursor; on an empty line, cancel
+- `✓ delete` — delete under the cursor (at the end: before it)
+- `✓ ctrl-w` — delete the word before the cursor
+- `✓ ctrl-u` — delete everything before the cursor
+- `✓ left` — one character left
+- `✓ right` — one character right
+- `✓ ctrl-b home` — start of the line
+- `✓ ctrl-e end` — end of the line; with a completion selected: put back what was typed
+- `✓ ctrl-r` — insert a register (" a-z 0 : / +); ctrl-r ctrl-w / ctrl-a: the word / WORD under the cursor
+- `✓ tab` — next completion, written into the line (after the last: what was typed)
+- `✓ s-tab` — previous completion
+- `✓ ctrl-p` — older history line; previous completion while the menu is open
+- `✓ ctrl-n` — newer history line; next completion while the menu is open
+- `✓ up` — older history line that starts with what is typed; the row above once one is selected
+- `✓ down` — newer history line that starts with what is typed; the row below once one is selected
+- `✓ ctrl-y` — keep the selected completion, close the menu
+- `✓ ctrl-d` — list the completions
+- `✓ ctrl-f` — edit this line in the command-line window
+- `✓ ctrl-l` — repaint the screen
+- `✓ q: q/ q?` — the command-line window: the : (or / ?) history as a buffer, the line being typed last
+- `✓ enter` — in the command-line window: run the cursor's line (Insert too)
+- `✓ ctrl-c :q` — in the command-line window: close it
+
+## Command line: text
+
+- `✓ :s/pat/new/[flags]` — replace matches, with a live preview (flags g i I c n &)
+- `✓ :&[&]` — repeat the last :s (:&& keeps its flags)
+- `✓ :~` — repeat the last :s with the last search pattern
+- `✓ :g[!]/pat/cmd` — run cmd on every matching line (! on the others)
+- `✓ :v/pat/cmd` — run cmd on every line that does not match
+- `✓ :norm[al] {keys}` — type Normal-mode keys on each line of the range
+- `✓ :d [x] [count]` — delete lines (into register x)
+- `✓ :y [x] [count]` — yank lines (into register x)
+- `✓ :m {address}` — move lines below the address
+- `✓ :t {address}` — copy lines below the address (also :copy)
+- `✓ :j[!] [count]` — join lines (! keeps the white space)
+- `✓ :pu[!] [x]` — put register x below the line (! above)
+- `✓ :> [count]` — indent lines (:>> twice)
+- `✓ :< [count]` — unindent lines (:<< twice)
+- `✓ :sor[t][!] [u][n][i]` — sort lines (! reversed)
+- `✓ :[range]!cmd` — run a shell command; with a range, filter the lines through it
+- `✓ :@: :@x` — repeat the last command line / run register x as commands
+- `✓ :r !cmd` — insert the command's output below the cursor
+- `✓ :u[ndo]` — undo one change
+- `✓ :red[o]` — redo one undone change
+- `✓ :k {a}` — set mark a on the line (also :mark)
+- `✓ :marks` — list the marks
+- `✓ :delm[arks][!] {a b c-e}` — delete marks (! every lowercase mark)
+- `✓ :reg [names]` — list the registers (also :display)
+- `✓ :noh[lsearch]` — clear the persistent search highlight
+
+## Command line: buffers
+
+- `✓ :b {number|name}` — go to a buffer by number or unique name fragment
+- `✓ :bn[ext]` — go to the next buffer
+- `✓ :bp[revious]` — go to the previous buffer (also :bNext)
+- `✓ :bd[elete][!] [number]` — delete a buffer (! discards changes, stops a terminal)
+- `✓ :ls[!]` — list the buffers (also :buffers :files)
+
+## Command line: files and windows
+
+- `✓ :w[!] [file]` — write the buffer (! over a file changed on disk)
+- `✓ :wa[ll][!]` — write every modified buffer
+- `✓ :wq[!] [file]` — write and quit
+- `✓ :wqa[ll][!]` — write every modified buffer and quit (also :xall)
+- `✓ :x[it][!] [file]` — write if modified, then quit (also :exit)
+- `✓ :up[date][!] [file]` — write if modified
+- `✓ :q[uit][!]` — close the window, or the buffer in the last one
+- `✓ :qa[ll][!]` — quit all (fails on unsaved; ! discards) (also :quitall)
+- `✓ :clo[se]` — close the window (never the last one)
+- `✓ :on[ly]` — close every other window
+- `✓ :e[dit][!] [file]` — edit a file, or reload this one
+- `✓ :ene[w]` — edit a new, unnamed buffer
+- `✓ :new` — split with a new, unnamed buffer
+- `✓ :vne[w]` — split vertically with a new, unnamed buffer
+- `✓ :vie[w] {file}` — open a file readonly
+- `✓ :sp[lit] [file]` — split below
+- `✓ :vs[plit] [file]` — split to the right
+- `✓ :cd [dir|-]` — change the project root (- goes back)
+- `✓ :pw[d]` — show the project root (Files, Search, terminals)
+- `✓ :se[t] {ro|noro}` — make this buffer readonly, or writable again
+- `✓ :h[elp] [topic]` — the help buffer (this text; / searches it)
+- `✓ :mes[sages]` — the last 50 echo-row messages
+- `✓ :ju[mps]` — the jumplist picker
+
+## Command line: strop
+
+- `✓ :ter[minal] [cmd]` — an interactive shell in the selected namespace
+- `✓ :terminal-local [cmd]` — a local shell, even from an SSH context
+- `✓ :theme [name]` — choose a built-in interface palette
+- `✓ :filter [text]` — narrow the folder to matching names; alone it clears
+- `✓ :remote [root|home|connect|disconnect|clear|list]` — choose a remote destination, or manage connections
+- `✓ :trust` — authorize the pending endpoint or project command
+- `✓ :explain` — why: workspaces, LSP readiness/failures, effective config
+- `✓ :format` — format the buffer through the language server
+- `✓ :rename {new}` — rename the symbol under the cursor
+- `✓ :symbols` — the document symbols picker
+- `✓ :cope[n]` — show the collection, on its current hit (the quickfix list) (also :cwindow)
+- `✓ :cn[ext]` — next hit of the collection
+- `✓ :cp[revious]` — previous hit of the collection (also :cNext)
+- `✓ :cc [N]` — hit N of the collection
+- `✓ :cdo {cmd}` — run a command on every hit line of the collection
+- `✓ :cfdo {cmd}` — run a command once in every file of the collection
+- `✓ :select-next` — select the next occurrence of the word or selection
+- `✓ :select-all` — select every occurrence in the buffer
+- `✓ :select-skip` — skip the next occurrence candidate
+- `✓ :select-pop` — drop the last-added occurrence
+- `✓ :tab-size [N|auto]` — indentation width for this file (alone: a selector)
+- `✓ :indent-style [spaces|tabs|auto]` — indent with tabs or spaces in this file
+- `✓ :recover [list|restore N|discard N]` — recover unsaved text after a crash
 
 ## Missing
 
@@ -287,7 +377,6 @@ commands.
 - Normal: `==` `=j` `=ip` — the reindent operator
 - Normal: `gqq` `gqip` `gwip` — reflow text to the text width
 - Normal: `dis` `das` — the sentence text objects
-- Normal: `q:` `q/` — the command-line window
 - Normal: `ga` `g8` — show the character under the cursor as a code
 - Normal: `gx` `gf` `gF` — open the URL or file name under the cursor
 - Normal: `gR` — virtual replace mode

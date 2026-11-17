@@ -444,18 +444,6 @@ impl Buffer {
     pub fn restore_revision(&mut self, revision: usize) -> Result<Option<HistoryMove>, EditError> {
         self.move_history(crate::history::HistoryAction::Jump(revision))
     }
-    /// Preflight a grouped undo without changing history or buffer contents.
-    pub fn check_undo(&self) -> Result<bool, EditError> {
-        self.check_history_move(crate::history::HistoryAction::Undo)
-            .map(|cost| cost.is_some())
-    }
-
-    /// Preflight a grouped history restore, including authority and revision capacity.
-    pub fn check_restore_revision(&self, revision: usize) -> Result<bool, EditError> {
-        self.check_history_move(crate::history::HistoryAction::Jump(revision))
-            .map(|cost| cost.is_some())
-    }
-
     fn check_history_move(
         &self,
         action: crate::history::HistoryAction,

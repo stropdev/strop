@@ -196,6 +196,7 @@ impl Editor {
                 badge: None,
                 text: self.action_title(entry),
                 payload: Payload::Action(index),
+                facts: Default::default(),
             })
             .collect()
     }

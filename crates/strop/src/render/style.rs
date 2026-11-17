@@ -197,7 +197,7 @@ impl Tokens {
     pub(crate) fn kind(&self, kind: &str) -> Color {
         match kind {
             "fn" | "meth" | "new" | "func" | "ctor" => self.syn.function,
-            "struct" | "class" | "iface" | "enum" | "variant" | "T" | "type" | "unit" => {
+            "struct" | "class" | "iface" | "enum" | "variant" | "T" | "type" | "unit" | "impl" => {
                 self.syn.r#type
             }
             "const" | "var" | "field" | "prop" | "value" => self.syn.string,

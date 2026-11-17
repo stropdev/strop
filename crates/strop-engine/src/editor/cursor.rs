@@ -12,10 +12,24 @@ impl Editor {
         self.sels().primary().head
     }
 
+    /// Move the primary head. Outside Visual a caret stays a caret: its
+    /// anchor moves with it, so no anchor is left behind at an offset
+    /// the text since lost (plan 0108 D2). A stretched selection (an
+    /// occurrence seed, a snippet placeholder) keeps its anchor.
     #[inline]
     pub fn set_head(&mut self, pos: impl Into<strop_core::id::ByteOffset>) {
         self.view_mut().desired_column = None;
-        self.sels_mut().set_head(pos.into().get());
+        let pos = pos.into().get();
+        let primary = self.sels().primary();
+        let visual = matches!(
+            self.mode,
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock
+        );
+        if !visual && primary.anchor == primary.head {
+            self.sels_mut().collapse_primary(pos);
+        } else {
+            self.sels_mut().set_head(pos);
+        }
     }
 
     /// The visual anchor (== head when not in visual mode).
@@ -136,15 +150,19 @@ impl Editor {
         self.sels_mut().normalize();
     }
 
-    /// Remap cursors after a mirrored edit of `delta` bytes at each of
-    /// `positions` (pre-edit, sorted, deduped): every cursor shifts by
-    /// its own edit plus every edit below it (0013 §3).
-    pub(crate) fn remap_after_mirrored_edit(&mut self, positions: &[usize], delta: isize) {
-        let map = |old: usize| -> usize {
-            let below = positions.partition_point(|&p| p < old);
-            let own = usize::from(positions.contains(&old));
-            (old as isize + delta * (below + own) as isize).max(0) as usize
-        };
+    /// Insert `text` at each of `positions` (pre-edit, sorted, deduped),
+    /// back to front, then move every cursor endpoint through the inserts
+    /// that applied (0013 §3): a cursor shifts by its own insert and every
+    /// insert below it. A refused insert (a collection view's chrome) moves
+    /// nothing (0108 B5).
+    pub(crate) fn mirror_insert(&mut self, positions: &[usize], text: &str) {
+        let mut journal = Vec::with_capacity(positions.len());
+        for &at in positions.iter().rev() {
+            if self.buf_mut().insert(at, text) {
+                journal.push((at, at, at + text.len()));
+            }
+        }
+        let map = |old: usize| strop_kernel::editmap::map_through_edits(old, &journal);
         // remap every endpoint: stretched selections (occurrences, 0049
         // §7.4) keep their anchors and direction through mirrored edits
         self.sels_mut().map_positions(map);

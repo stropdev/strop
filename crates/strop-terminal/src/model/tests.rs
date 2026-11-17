@@ -98,7 +98,7 @@ fn styled_and_wide_cells_survive_the_run_wire() {
 }
 
 #[test]
-fn legacy_per_column_cell_arrays_still_decode() {
+fn per_column_cell_arrays_are_refused() {
     let style = serde_json::to_value(Style::default()).unwrap();
     let cell = |end: u32| serde_json::json!({"end": end, "width": 1, "style": style});
     let wire = serde_json::to_string(&serde_json::json!({
@@ -107,9 +107,7 @@ fn legacy_per_column_cell_arrays_still_decode() {
         "wrapped": false,
     }))
     .unwrap();
-    let row = serde_json::from_str::<Row>(&wire).unwrap();
-    assert_eq!(row.cells.len(), 3);
-    assert_eq!(row.symbol(1), Some("b"));
+    assert!(serde_json::from_str::<Row>(&wire).is_err());
 }
 
 #[test]
@@ -353,7 +351,7 @@ fn frame_wire_derives_projection_and_offsets() {
 }
 
 #[test]
-fn legacy_frames_with_explicit_projection_still_decode() {
+fn frames_with_an_explicit_projection_are_refused() {
     let style = serde_json::to_value(Style::default()).unwrap();
     let cell = |end: u32| serde_json::json!({"end": end, "width": 1, "style": style});
     let palette = serde_json::to_value(Palette {
@@ -397,7 +395,5 @@ fn legacy_frames_with_explicit_projection_still_decode() {
         "projection": ["ab\n"],
     }))
     .unwrap();
-    let frame: Frame = serde_json::from_str(&wire).unwrap();
-    frame.validate().unwrap();
-    assert_eq!(frame.projection.to_string(), "ab\n");
+    assert!(serde_json::from_str::<Frame>(&wire).is_err());
 }

@@ -10,7 +10,7 @@ use std::sync::{mpsc, Arc};
 
 use strop_core::id::{BufferRevision, DocumentId, LineIndex};
 use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket};
-use strop_lsp::{ProtoSymbol, ServerColumn, ServerLocation, ServerPosition};
+use strop_lsp::{LineSpan, ProtoSymbol, ServerColumn, ServerLocation, ServerPosition};
 use strop_syntax::languages::LanguageId;
 use strop_syntax::symbols::DeclExtractor;
 use strop_workspace::ResourceLocation;
@@ -61,13 +61,17 @@ pub(crate) fn extract(
             .map(|declaration| ProtoSymbol {
                 name: declaration.name,
                 container: String::new(),
-                kind: declaration.kind.lsp_name().into(),
+                kind: declaration.kind,
                 location: ServerLocation {
                     doc: work.location.clone(),
                     position: ServerPosition {
                         line: LineIndex::new(declaration.line.saturating_sub(1)),
                         column: ServerColumn::new(declaration.col.saturating_sub(1)),
                     },
+                },
+                span: LineSpan {
+                    first: LineIndex::new(declaration.line.saturating_sub(1)),
+                    last: LineIndex::new(declaration.end_line.saturating_sub(1)),
                 },
             })
             .collect(),

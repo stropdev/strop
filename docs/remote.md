@@ -9,8 +9,8 @@ strop +120 ssh://user@devbox/var/log/app.log
 strop remote "ssh://user@devbox:2222/~/project/src/lib.rs"
 ```
 
-`strop remote URL` and `--remote URL` are the same command (see
-[cli.md](cli.md)). `-R` opens read-only, as for a local file.
+`strop remote URL` is described in [cli.md](cli.md). `-R` opens
+read-only, as for a local file.
 
 ## Connecting
 

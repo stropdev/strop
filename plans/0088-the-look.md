@@ -46,7 +46,8 @@ and draws chrome through one primitive module (`render/card.rs`). Nothing in
 8. **Four greys:** `fg.text`, `fg.secondary`, `fg.muted`, `fg.faint`. Comments are
    muted italic, punctuation secondary — never the same ink.
 9. **Widths from content**, cards capped at 60 % of columns and ≥ 32; the picker is
-   `columns − 4` at ≥ 100 columns and full-bleed below.
+   `columns − 4` at ≥ 100 columns and full-bleed below. Amended by 0110: the
+   command line is the bottom row at full width, not a card; its menu follows this rule.
 10. **Hints are whole chords or nothing**, everywhere.
 
 **Amendment 2026-11-10 — File names.** A path is two inks, through one helper
@@ -63,6 +64,8 @@ header is a *ruled heading*: name, a `fg.faint` leader `───`, the hit coun
 `fg.secondary` — the same grammar as a pane title in its border, so grouping
 reads without relying on how a terminal draws bold. File names are never
 chips (rule 6 stands), never the accent (rule 2), never a syntax ink.
+*In the file finder the folder stands at one column per list; a name too
+wide for it is shown alone ([0106](0106-find-alignment.md)).*
 
 Messages get their own **echo row** above the statusline, present only while a
 message is live, ordered by severity (error > warning > info). Errors stay until
@@ -119,6 +122,10 @@ The planes drop to `#141312` / `#1c1b19` / `#262421` (cursor line
 from 14:1 to 16:1, secondary from 8:1 to 10:1, comments from 5.1:1 to 5.6:1,
 selection from 1.77:1 to 1.93:1. The accent and syntax inks are unchanged;
 every ladder step stays within 1.07–1.30.
+
+**Amendment 2026-11-16 — Hone is the default again.** The owner asked for
+`hone` back as the default palette. `kiln` stays selectable, unchanged. No
+contrast rule moves.
 
 ## 4. Adoption of 0087, finding by finding
 

@@ -4,15 +4,15 @@ description = "strop git: libgit2 hunks vs live buffers, log/blame/permalinks"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
-strop-core = { path = "../strop-core", version = "0.69.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.69.0" }
-strop-remote = { path = "../strop-remote", version = "0.69.0" }
+strop-core = { path = "../strop-core" }
+strop-workspace = { path = "../strop-workspace" }
+strop-remote = { path = "../strop-remote" }
 
 [dev-dependencies]
 tempfile = "3"
 serde_json = "1"
-sha2 = "0.10"

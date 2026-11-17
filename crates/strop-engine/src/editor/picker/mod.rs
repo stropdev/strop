@@ -16,6 +16,8 @@ mod accept;
 mod drain;
 #[cfg(test)]
 mod find_tests;
+#[cfg(test)]
+mod generation_guard_tests;
 mod keys;
 #[cfg(test)]
 mod lifecycle_traces;
@@ -125,11 +127,6 @@ pub struct PickerGlue {
     /// Recorded at every warm-up decision point; lives and dies with
     /// the workspace-symbols surface that owns it.
     pub(crate) project_statuses: Vec<(PathBuf, ProjectStatus)>,
-    /// The document-symbols reply, retained whole (0063 §3):
-    /// `textDocument/documentSymbol` carries no query, so Boolean and
-    /// `kind:` narrowing re-filters these candidates locally as the
-    /// picker's query changes.
-    pub(crate) symbols_candidates: std::sync::Arc<Vec<strop_lsp::ProtoSymbol>>,
     /// `Space a`: the typed owners behind the rows.
     pub(crate) actions: Option<super::actions::ActionOwner>,
 }
@@ -172,10 +169,17 @@ impl PickerGlue {
             indent_target: None,
             search: None,
             preview_witness: None,
-            symbols_candidates: Default::default(),
             wsymbols_generation: 0,
             actions: None,
         }
+    }
+
+    /// The field holds a query that is not Ready: its first diagnostic
+    /// is on the card and the list stays as it was (0109 decision 3).
+    pub fn query_diagnosed(&self) -> bool {
+        self.query
+            .as_ref()
+            .is_some_and(|query| query.state != strop_picker::query::QueryState::Ready)
     }
 
     /// Revoke the active request without touching the model: cancel
@@ -202,7 +206,7 @@ impl Editor {
             self.lsp_state.attach.warm_queue.clear();
             self.lsp_state.attach.warm_attempts.clear();
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         self.close_picker();
         let id = match self.worker_ids.allocate() {
             Ok(id) => id,
@@ -526,6 +530,8 @@ pub(crate) enum Deferred {
 
 pub struct PreviewEntry {
     pub rope: ropey::Rope,
+    /// Detected once at load: the path, else the rope's shebang.
+    pub language: Option<strop_syntax::languages::LanguageId>,
 }
 
 pub enum PreviewSource {

@@ -7,7 +7,6 @@ pub(crate) mod worker;
 use super::matching::{MatchKey, PairMatch, PairState};
 use super::{document::DocumentSource, Editor};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use strop_core::id::{BufferRevision, DocumentId};
@@ -28,8 +27,10 @@ pub struct AnalysisKey {
     pub guides: bool,
     pub left: usize,
     pub right: usize,
-    #[serde(with = "strop_core::path_serde::option")]
-    pub syntax_path: Option<PathBuf>,
+    /// Syntax identity: the detected language, not the path — a rename
+    /// within a language keeps the parser, a re-detection on write
+    /// changes it (0111 decision 7).
+    pub language: Option<strop_syntax::languages::LanguageId>,
     pub search: Option<strop_grammar::CompiledQuery>,
 }
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -131,6 +132,20 @@ impl AnalysisState {
         self.registered.insert(target);
     }
 
+    /// Record a decided window. Only the key's own revision and tab are
+    /// kept: every probe compares the full key against the live revision
+    /// and revisions are never reused, so older frames could never be
+    /// served again. The interim display lives in the presentation (0066).
+    fn remember(&mut self, key: AnalysisKey, value: Option<Arc<FrameAnalysis>>) {
+        const CACHED_WINDOWS: usize = 8;
+        let entries = self.cache.entry(key.target.clone()).or_default();
+        entries.retain(|entry| entry.key.revision == key.revision && entry.key.tab == key.tab);
+        if entries.len() == CACHED_WINDOWS {
+            entries.remove(0);
+        }
+        entries.push(Cached { key, value });
+    }
+
     pub(crate) fn worker(&self) -> Option<&worker::Worker> {
         self.worker.as_ref()
     }
@@ -140,7 +155,7 @@ impl AnalysisState {
         // work (0051 §7 R09): its delivery would fail the revision
         // recheck anyway — cancel the scan itself, not only the guard
         self.pair.cancel_target(&target);
-        self.symbols.edited(document);
+        self.symbols.edited(document, changes);
         if !self.registered.contains(&target) {
             return;
         }
@@ -210,7 +225,8 @@ impl Editor {
         } else {
             None
         };
-        if !guides && doc.syntax_path().is_none() && search.is_none() {
+        let language = doc.syntax_language();
+        if !guides && language.is_none() && search.is_none() {
             return None;
         }
         Some(AnalysisKey {
@@ -222,37 +238,43 @@ impl Editor {
             guides,
             left,
             right: left.saturating_add(width),
-            syntax_path: doc.syntax_path().map(std::path::Path::to_path_buf),
+            language,
             search,
         })
     }
 
-    /// Exact cache hit for a key, if a successful result is cached.
-    fn exact_analysis(&self, key: &AnalysisKey) -> Option<Arc<FrameAnalysis>> {
+    /// The decided entry for a key: a frame, or a remembered failure
+    /// (`value: None`). A failure is decided too — it is not re-requested
+    /// until the key changes (0111 decision 1).
+    fn exact_entry(&self, key: &AnalysisKey) -> Option<&Cached> {
         self.analysis
             .cache
             .get(&key.target)
             .and_then(|entries| entries.iter().find(|entry| entry.key == *key))
-            .and_then(|entry| entry.value.clone())
     }
 
-    /// Exact cache hit only. The declared pane bounds probe (0066): an
-    /// edit-mapped interim frame is displayed, but it is not a cached
-    /// exact result, so a window whose fresh analysis is in flight
-    /// still reports `WindowBounds::Loading`.
-    pub(crate) fn exact_analysis_cached(
+    /// Exact cache hit for a key, if a successful result is cached.
+    fn exact_analysis(&self, key: &AnalysisKey) -> Option<Arc<FrameAnalysis>> {
+        self.exact_entry(key).and_then(|entry| entry.value.clone())
+    }
+
+    /// The declared pane bounds probe (0066): whether the window needs
+    /// analysis that is not decided yet. An edit-mapped interim frame is
+    /// displayed, but it is not a decided result, so a window whose fresh
+    /// analysis is in flight still reports `WindowBounds::Loading`; a
+    /// window whose analysis failed is decided and does not.
+    pub(crate) fn window_analysis_pending_for(
         &self,
         document: DocumentId,
         first: usize,
         last: usize,
         left: usize,
         width: usize,
-    ) -> Option<Arc<FrameAnalysis>> {
-        if self.finishing {
-            return None;
-        }
-        let key = self.analysis_key(document, first, last, left, width)?;
-        self.exact_analysis(&key)
+    ) -> bool {
+        let Some(key) = self.analysis_key(document, first, last, left, width) else {
+            return false;
+        };
+        self.finishing || self.exact_entry(&key).is_none()
     }
 
     /// The 0066 interim frame: previously accepted syntax, mapped
@@ -308,8 +330,8 @@ impl Editor {
             return None;
         }
         let key = self.analysis_key(document, first, last, left, width)?;
-        if let Some(cached) = self.exact_analysis(&key) {
-            return Some(cached);
+        if let Some(entry) = self.exact_entry(&key) {
+            return entry.value.clone().or_else(|| self.interim_analysis(&key));
         }
         // An edit changes the revision before the worker's fresh frame
         // lands. The 0066 interim frame keeps the accepted colors on
@@ -339,8 +361,20 @@ impl Editor {
         if self.finishing {
             return None;
         }
-        self.previews.get(path)?;
-        let key = AnalysisKey {
+        let entry = self.previews.get(path)?;
+        let key = self.preview_key(path, entry, first, last, width);
+        self.exact_analysis(&key)
+    }
+
+    fn preview_key(
+        &self,
+        path: &strop_workspace::ResourceLocation,
+        entry: &crate::editor::picker::PreviewEntry,
+        first: usize,
+        last: usize,
+        width: usize,
+    ) -> AnalysisKey {
+        AnalysisKey {
             target: AnalysisTarget::Preview(path.clone()),
             revision: BufferRevision::new(0),
             first,
@@ -349,14 +383,9 @@ impl Editor {
             guides: false,
             left: 0,
             right: width,
-            syntax_path: Some(path.path.clone()),
+            language: entry.language,
             search: None,
-        };
-        self.analysis
-            .cache
-            .get(&key.target)
-            .and_then(|entries| entries.iter().find(|entry| entry.key == key))
-            .and_then(|entry| entry.value.clone())
+        }
     }
 
     pub fn preview_analysis(
@@ -370,24 +399,8 @@ impl Editor {
             return None;
         }
         let entry = self.previews.get(path)?;
-        let key = AnalysisKey {
-            target: AnalysisTarget::Preview(path.clone()),
-            revision: BufferRevision::new(0),
-            first,
-            last,
-            tab: self.tab_width_for_location(path).max(1),
-            guides: false,
-            left: 0,
-            right: width,
-            syntax_path: Some(path.path.clone()),
-            search: None,
-        };
-        if let Some(cached) = self
-            .analysis
-            .cache
-            .get(&key.target)
-            .and_then(|entries| entries.iter().find(|entry| entry.key == key))
-        {
+        let key = self.preview_key(path, entry, first, last, width);
+        if let Some(cached) = self.exact_entry(&key) {
             return cached.value.clone();
         }
         if self.analysis.pending.contains_key(&key.target) {
@@ -440,11 +453,7 @@ impl Editor {
     fn request_analysis(&mut self, key: AnalysisKey, rope: ropey::Rope) {
         if let Err(error) = self.analysis.start(&self.tape) {
             self.message = format!("analysis: {error}");
-            self.analysis
-                .cache
-                .entry(key.target.clone())
-                .or_default()
-                .push(Cached { key, value: None });
+            self.analysis.remember(key, None);
             return;
         }
         let request = match self.worker_ids.allocate() {
@@ -572,17 +581,7 @@ impl Editor {
             }
             Outcome::Cancelled(_) => return,
         };
-        let entries = self.analysis.cache.entry(key.target.clone()).or_default();
-        // Keep the previous revision's frames for the newest-first exact
-        // probes; the interim display itself lives in the presentation
-        // (0066), which accept() just refreshed.
-        let previous = key.revision.get().saturating_sub(1);
-        entries.retain(|entry| entry.key.revision.get() >= previous && entry.key.tab == key.tab);
-        const CACHED_WINDOWS: usize = 8;
-        if entries.len() == CACHED_WINDOWS {
-            entries.remove(0);
-        }
-        entries.push(Cached { key, value });
+        self.analysis.remember(key, value);
     }
 }
 
@@ -630,111 +629,4 @@ impl Editor {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use strop_core::worker::WorkerId;
-    use strop_core::Buffer;
-    use strop_syntax::Span;
-
-    /// 0066 S1: after an edit, the readonly paint query serves the
-    /// accepted colors at journal-mapped coordinates — not a blank
-    /// pane — while the fresh exact analysis is still in flight. The
-    /// worker completion is deliberately left unpumped.
-    #[test]
-    fn an_edit_serves_edit_mapped_spans_instead_of_blanking() {
-        let mut e = Editor::new(Buffer::from_text("fn main() {}\nfn other() {}\n"));
-        e.buf_mut().path = Some(PathBuf::from("/workspace/a.rs"));
-        let doc = e.current();
-        let warm = e.analysis_fixture().spans.clone();
-        assert!(!warm.is_empty(), "the rust grammar analyzes this source");
-        // one space inserted at byte zero: every warm span shifts by one
-        e.feed_text("i <esc>");
-        let served = e
-            .document_analysis_cached(doc, 0, e.buf().len_bytes(), 0, 100)
-            .expect("the interim frame serves the accepted colors");
-        let expected: Vec<Span> = warm
-            .iter()
-            .map(|span| Span {
-                start: span.start + 1,
-                end: span.end + 1,
-                ..*span
-            })
-            .collect();
-        assert_eq!(served.spans, expected, "spans follow the edit");
-        // preparation admits the fresh window; it is still in flight
-        let _ = e.document_analysis(doc, 0, e.buf().len_bytes(), 0, 100);
-        assert!(
-            e.analysis_pending_probe(),
-            "this is the interim frame, not the fresh result"
-        );
-        e.wait_analysis(); // drain the cancelled pre-edit request
-        let exact = e.analysis_fixture_width(100);
-        assert_eq!(exact.spans, expected, "the settled parse agrees");
-    }
-
-    /// 0066: a viewport that moved without an edit keeps its covered
-    /// overlap colored while the new window's analysis is in flight —
-    /// scrolling must not blank the pane either.
-    #[test]
-    fn a_scrolled_viewport_serves_the_covered_overlap() {
-        let mut e = Editor::new(Buffer::from_text(
-            "fn one() {}\nfn two() {}\nfn three() {}\n",
-        ));
-        e.buf_mut().path = Some(PathBuf::from("/workspace/a.rs"));
-        let doc = e.current();
-        let warm = e.analysis_fixture_width(80).spans.clone();
-        let len = e.buf().len_bytes();
-        let line1 = e.buf().line_end(0);
-        let served = e
-            .document_analysis_cached(doc, line1, len, 0, 100)
-            .expect("the covered overlap stays colored");
-        let expected: Vec<Span> = warm
-            .iter()
-            .filter(|span| span.start.max(line1) < span.end.min(len))
-            .map(|span| Span {
-                start: span.start.max(line1),
-                end: span.end.min(len),
-                ..*span
-            })
-            .collect();
-        assert!(!expected.is_empty());
-        assert_eq!(served.spans, expected);
-    }
-
-    /// 0066 §3C: a real analysis failure invalidates the window's
-    /// provisional coverage instead of leaving it looking settled.
-    #[test]
-    fn a_failed_window_loses_its_provisional_coverage() {
-        let mut e = Editor::new(Buffer::from_text("fn main() {}\n"));
-        e.buf_mut().path = Some(PathBuf::from("/workspace/a.rs"));
-        let doc = e.current();
-        e.analysis_fixture();
-        e.feed_text("i <esc>");
-        let key = e
-            .analysis_key(doc, 0, e.buf().len_bytes(), 0, 100)
-            .expect("syntax surface");
-        let target = key.target.clone();
-        e.analysis.pending.insert(
-            target.clone(),
-            Pending {
-                ticket: Ticket {
-                    request: WorkerId::new(1),
-                    key: key.clone(),
-                },
-                cancel: Arc::new(AtomicBool::new(false)),
-            },
-        );
-        e.handle_analysis(AnalysisEvent::Completed(Box::new(Completion {
-            ticket: Ticket {
-                request: WorkerId::new(1),
-                key,
-            },
-            outcome: Outcome::failed(strop_core::worker::FailureKind::Io, "boom".to_string()),
-        })));
-        assert!(
-            e.document_analysis_cached(doc, 0, e.buf().len_bytes(), 0, 100)
-                .is_none(),
-            "failed coverage must not keep serving projected colors"
-        );
-    }
-}
+mod tests;

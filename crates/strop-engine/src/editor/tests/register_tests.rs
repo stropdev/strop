@@ -166,5 +166,57 @@ fn a_plain_yank_reaches_the_system_clipboard_and_a_delete_does_not() {
     e.feed_text("yy");
     assert_eq!(e.osc52, None);
     assert!(e.message.contains("too large"), "{}", e.message);
-    assert_eq!(e.register(None).text.len(), (1 << 20) + 1);
+    // (a linewise register ends in a break, as in Vim)
+    assert_eq!(e.register(None).text.len(), (1 << 20) + 2);
+}
+
+/// 0108 H1: a linewise put below a last row without its break grows the
+/// break; the landing is the first non-blank of the pasted row, counted
+/// on the register text — never sliced by the grown break's length.
+#[test]
+fn linewise_put_below_an_unterminated_last_row_lands_on_the_first_non_blank() {
+    for sep in ["\n", "\r\n"] {
+        for terminated in [true, false] {
+            for first in ["a", "é", "日", "🎉", "  é", "\t日"] {
+                let tail = if terminated { sep } else { "" };
+                let text = format!("{first}x{sep}{first}y{tail}");
+                for keys in ["Gyyp", "GyyP", "Gyy]p", "ggyyGp"] {
+                    let mut e = editor(&text);
+                    e.feed_text(keys);
+                    let row = e.buf().line_of(e.head());
+                    let start = e.buf().line_start(row);
+                    let blank = first.len() - first.trim_start().len();
+                    assert_eq!(
+                        e.head(),
+                        start + blank,
+                        "{keys} on {text:?} -> {:?}",
+                        e.buf().text().to_string()
+                    );
+                    let pasted = e.buf().line_text(row);
+                    assert!(pasted.starts_with(first), "{keys} on {text:?}: {pasted:?}");
+                    e.feed_text("u");
+                    assert_eq!(e.buf().text().to_string(), text, "{keys} undo");
+                }
+            }
+        }
+    }
+}
+
+/// 0108 H1: a bracketed paste of whole lines in Normal mode is a
+/// linewise put; an empty buffer or a last row without its break must
+/// not slice the payload by the grown break.
+#[test]
+fn bracketed_linewise_paste_below_an_unterminated_row_is_whole_chars() {
+    for (buffer, payload) in [("", "é日\r\n"), ("ab", "🎉x\n"), ("aé\r\nb", "é\r\n")] {
+        let mut e = editor(buffer);
+        e.feed_text("G");
+        e.paste_bracketed(payload);
+        let row = e.buf().line_of(e.head());
+        assert_eq!(
+            e.head(),
+            e.buf().line_start(row),
+            "{buffer:?} + {payload:?}"
+        );
+        assert!(e.buf().text().to_string().contains(payload.trim_end()));
+    }
 }

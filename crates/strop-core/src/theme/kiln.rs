@@ -1,4 +1,4 @@
-//! Kiln — the default. Fired clay on warm charcoal, after the Claude Code
+//! Kiln. Fired clay on warm charcoal, after the Claude Code
 //! terminal look: one terracotta accent, cream text, periwinkle for
 //! functions and info, sage for additions (0088 §3, amendment 2026-11-14).
 

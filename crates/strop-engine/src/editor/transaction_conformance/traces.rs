@@ -1,22 +1,20 @@
-//! EditorProtocol.tla freshness correspondence (0057 VF03): named model
-//! traces replayed step by step through the ACTUAL admission handlers —
+//! Ticket freshness (0057 VF03): named protocol traces replayed step by step through the ACTUAL admission handlers —
 //! `Editor::apply` (the worker-ticket gateway), `Buffer::
 //! prepare_replacements` + `apply_prepared` (PublishLocal), and the
 //! generational document arena (`docs.try_insert` / removal) — asserting
-//! the invariants the model claims, on the real editor state, after every
+//! the protocol invariants on the real editor state, after every
 //! step. Where the generated-stream oracles in `service.rs` quantify over
 //! random schedules, each test here pins ONE documented trace so a
 //! regression names the exact broken transition.
 //!
-//! Trace steps are labelled with the TLA+ action they replay
-//! (specs/EditorProtocol.tla):
+//! Trace steps are labelled with the protocol step they exercise:
 //!
 //!   OpenDoc/CloseDoc     arena insert/remove; reopen = new generation
 //!   PublishLocal         the two-phase buffer lease publishing a batch
 //!   Arm                  capture (DocumentId, BufferRevision) at ask time
 //!   Deliver              Editor::apply — Fresh(r) lands, else typed Err
 //!
-//! Invariants under correspondence:
+//! Invariants checked:
 //!
 //!   NoMisapply        no delivery lands on a dead doc, a reincarnation,
 //!                     or a moved revision — the typed Err paths ARE this

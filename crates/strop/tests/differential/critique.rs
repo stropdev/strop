@@ -95,7 +95,7 @@ pub const CASES: &[(&str, &str)] = &[
     ("[{", "4G[{dd"),
     ("])", "f(l])x"),
     ("gn", "/edge<cr>cgnX<esc>.."),
-    ("q:", "q:"),
+    ("q:", ":s/a/A/<cr>jq:k<cr>"),
     ("@:", ":s/a/A/<cr>j@:"),
     ("ctrl-v r", "<c-v>jlrX"),
     ("vip", "3Gvipd"),

@@ -31,7 +31,7 @@ fn remote_git_log_and_signs_run_git_on_the_host() {
         "settle\nkeys ggciwONE<esc>\nsettle\nstate\nkeys <space>gl\nsettle\nframe\nkeys :qa!<cr>\nsettle\n",
     );
     let output = fixture.run(&[
-        "--headless".into(),
+        "headless".into(),
         steps.into(),
         uri("fixture", &source).into(),
     ]);

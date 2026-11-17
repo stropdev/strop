@@ -309,7 +309,9 @@ impl Editor {
 
     /// Merge one server's workspace-symbol reply into the open picker
     /// (0063 §2): same row convention as the syntax tier, duplicates
-    /// by (location, name) skipped, then a local re-rank.
+    /// by (location, name) skipped, then a local re-rank. The rows go in
+    /// whole: the ranking pass applies the query's filters to them and
+    /// to the syntax tier's rows alike (0109 §3.2d).
     fn merge_workspace_symbols(
         &mut self,
         server: strop_lsp::ServerId,
@@ -329,7 +331,7 @@ impl Editor {
             trace::services::rejected("lsp", "workspace-symbol reply superseded");
             return;
         }
-        use strop_picker::{Item, Payload};
+        use strop_picker::Payload;
         let mut known: std::collections::HashSet<(Filesystem, std::path::PathBuf, usize, String)> =
             self.picker
                 .as_ref()
@@ -337,25 +339,28 @@ impl Editor {
                     glue.picker
                         .items
                         .iter()
-                        .filter_map(|item| match &item.payload {
-                            Payload::Grep { location, line, .. } => Some((
-                                location.filesystem.clone(),
-                                location.path.clone(),
-                                *line,
-                                item_symbol_name(item).to_owned(),
-                            )),
-                            Payload::Remote {
-                                endpoint,
-                                path,
-                                line,
-                                ..
-                            } => Some((
-                                Filesystem::Remote(endpoint.clone()),
-                                path.clone(),
-                                *line,
-                                item_symbol_name(item).to_owned(),
-                            )),
-                            _ => None,
+                        .filter_map(|item| {
+                            let name = item.facts().text.to_owned();
+                            match &item.payload {
+                                Payload::Grep { location, line, .. } => Some((
+                                    location.filesystem.clone(),
+                                    location.path.clone(),
+                                    *line,
+                                    name,
+                                )),
+                                Payload::Remote {
+                                    endpoint,
+                                    path,
+                                    line,
+                                    ..
+                                } => Some((
+                                    Filesystem::Remote(endpoint.clone()),
+                                    path.clone(),
+                                    *line,
+                                    name,
+                                )),
+                                _ => None,
+                            }
                         })
                         .collect()
                 })
@@ -368,56 +373,14 @@ impl Editor {
             .find(|attachment| attachment.server == server)
             .map(|attachment| attachment.root.clone())
             .unwrap_or_else(|| self.cwd.clone());
-        // Local AST admission (0063 §4): the wire carried only bare
-        // content text, so returned candidates are filtered against
-        // the full query before merging — content atoms against the
-        // symbol name (or its qualified container form), `kind:`
-        // against the server's own classification, path-family atoms
-        // against the workspace-relative path. Undecidable evidence
-        // admits (no catalog here, so `repo:` overfetches honestly).
-        // Operator-free queries leave narrowing to the local ranker,
-        // exactly as before the grammar existed. Only the incoming
-        // candidates are tested — engine-appended per-project status
-        // rows (Payload::ProjectStatus) are informational, never
-        // symbol candidates, and never enter this path.
-        let admission = self
-            .picker
-            .as_ref()
-            .and_then(|glue| glue.query.as_deref())
-            .filter(|query| {
-                query.state == strop_picker::query::QueryState::Ready && query.boolean.is_some()
-            })
-            .and_then(|query| {
-                strop_picker::query::ContentPlan::compile(query)
-                    .ok()
-                    .flatten()
-            });
+        let mut paths = RelativePaths::new(&root);
+        // symbol rows show no source line: one shared empty text for all
+        let no_text: std::sync::Arc<str> = "".into();
         let items = symbols
             .into_iter()
-            .map(|symbol| (short_kind(&symbol.kind), symbol))
-            .filter_map(|(badge, symbol)| {
+            .filter_map(|symbol| {
                 let line = symbol.location.position.line.get() + 1;
-                let col = symbol.location.position.column.get() + 1;
                 let path = symbol.location.doc.path.clone();
-                if let Some(plan) = &admission {
-                    let qualified = if symbol.container.is_empty() {
-                        None
-                    } else {
-                        Some(format!("{}::{}", symbol.container, symbol.name))
-                    };
-                    let evidence = strop_picker::query::Evidence {
-                        path: path.strip_prefix(&root).ok().and_then(|path| path.to_str()),
-                        line: Some(line),
-                        symbol: Some(strop_picker::query::SymbolEvidence {
-                            kind: lsp_symbol_kind(&symbol.kind),
-                            qualified: qualified.as_deref(),
-                        }),
-                        ..Default::default()
-                    };
-                    if !plan.admits(evidence, &symbol.name) {
-                        return None;
-                    }
-                }
                 if !known.insert((
                     symbol.location.doc.filesystem.clone(),
                     path.clone(),
@@ -431,26 +394,13 @@ impl Editor {
                     .map(strop_picker::display_path)
                     .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
                     .into_owned();
-                let payload = match symbol.location.doc.filesystem {
-                    Filesystem::Local => Payload::Grep {
-                        location: strop_workspace::ResourceLocation::local(path),
-                        line,
-                        col,
-                        match_len: 1,
-                        line_text: "".into(),
-                    },
-                    Filesystem::Remote(endpoint) => Payload::Remote {
-                        endpoint,
-                        path,
-                        line,
-                        col,
-                    },
-                };
-                Some(Item {
-                    badge: Some(badge.into()),
-                    text: format!("{}  {} · :{}", symbol.name, shown, line),
-                    payload,
-                })
+                Some(symbol_item(
+                    &symbol,
+                    None,
+                    format_args!("{shown} · :{line}"),
+                    paths.of(&path),
+                    &no_text,
+                ))
             })
             .collect::<Vec<_>>();
         if let Some(glue) = self.picker.as_mut() {
@@ -458,162 +408,93 @@ impl Editor {
         }
         self.request_picker_ranking();
     }
+}
 
-    /// Re-derive the document-symbols rows from the retained reply
-    /// (0063 §3): `textDocument/documentSymbol` has no query parameter,
-    /// so a moved admission surface — the Boolean AST or a flat
-    /// qualifier — re-filters the full tree locally, the same
-    /// narrowing file find gives. Operator-free content never enters
-    /// admission; the local ranker narrows it.
-    pub(crate) fn rebuild_document_symbols(&mut self) {
-        let admission = self
-            .picker
-            .as_ref()
-            .filter(|glue| glue.picker.kind == strop_picker::Kind::Symbols)
-            .and_then(|glue| glue.query.as_deref())
-            .filter(|query| query.state == strop_picker::query::QueryState::Ready)
-            .and_then(|query| {
-                strop_picker::query::BooleanPlan::compile_retained(query)
-                    .ok()
-                    .flatten()
-            });
-        let root = self
-            .lsp_state
-            .bindings
-            .get(&self.current())
-            .map(|binding| binding.root.clone())
-            .unwrap_or_else(|| self.cwd.clone());
-        let Some(glue) = self
-            .picker
-            .as_mut()
-            .filter(|glue| glue.picker.kind == strop_picker::Kind::Symbols)
-        else {
-            return;
-        };
-        let items = document_symbol_items(&glue.symbols_candidates, admission.as_ref(), &root);
-        glue.picker.clear_items();
-        glue.rank_pending = None;
-        glue.ranked_query = None;
-        glue.picker.append(items);
+/// Workspace-relative path facts, one allocation per file: the rows of
+/// one file share it.
+struct RelativePaths<'a> {
+    root: &'a std::path::Path,
+    last: Option<(std::path::PathBuf, std::sync::Arc<str>)>,
+}
+
+impl<'a> RelativePaths<'a> {
+    fn new(root: &'a std::path::Path) -> Self {
+        Self { root, last: None }
+    }
+
+    fn of(&mut self, path: &std::path::Path) -> Option<std::sync::Arc<str>> {
+        if let Some((last, shared)) = &self.last {
+            if last == path {
+                return Some(shared.clone());
+            }
+        }
+        let relative: std::sync::Arc<str> = path.strip_prefix(self.root).ok()?.to_str()?.into();
+        self.last = Some((path.to_path_buf(), relative.clone()));
+        Some(relative)
     }
 }
 
-/// Document-symbol rows from one `documentSymbol` reply (0063 §3): the
-/// kind rides in the chip; the row text is name, container, line. The
-/// wire carries no query, so a Ready Boolean AST filters candidates
-/// locally instead — content atoms against the name (or its qualified
-/// container form), `kind:` against the server's own classification,
-/// path-family atoms against the workspace-relative path. Undecidable
-/// evidence admits (three-valued), exactly like the workspace-symbols
-/// merge; operator-free queries pass no plan and admit everything.
-pub(crate) fn document_symbol_items(
-    symbols: &[strop_lsp::ProtoSymbol],
-    admission: Option<&strop_picker::query::BooleanPlan>,
-    root: &std::path::Path,
-) -> Vec<strop_picker::Item> {
-    use strop_picker::{Item, Payload};
-    symbols
-        .iter()
-        .map(|symbol| (short_kind(&symbol.kind), symbol))
-        .filter_map(|(badge, symbol)| {
-            let line = symbol.location.position.line.get() + 1;
-            let col = symbol.location.position.column.get() + 1;
-            let path = symbol.location.doc.path.clone();
-            if let Some(plan) = admission {
-                let qualified = if symbol.container.is_empty() {
-                    None
-                } else {
-                    Some(format!("{}::{}", symbol.container, symbol.name))
-                };
-                let evidence = strop_picker::query::Evidence {
-                    path: path.strip_prefix(root).ok().and_then(|path| path.to_str()),
-                    line: Some(line),
-                    symbol: Some(strop_picker::query::SymbolEvidence {
-                        kind: lsp_symbol_kind(&symbol.kind),
-                        qualified: qualified.as_deref(),
-                    }),
-                    ..Default::default()
-                };
-                if !plan.admits(&evidence, &symbol.name) {
-                    return None;
-                }
-            }
-            let payload = match &symbol.location.doc.filesystem {
-                Filesystem::Local => Payload::Grep {
-                    location: strop_workspace::ResourceLocation::local(path),
-                    line,
-                    col,
-                    match_len: 1,
-                    line_text: "".into(),
-                },
-                Filesystem::Remote(endpoint) => Payload::Remote {
-                    endpoint: endpoint.clone(),
-                    path,
-                    line,
-                    col,
-                },
-            };
-            // The kind moves into the chip; the row text is
-            // name, container path, line.
-            let text = if symbol.container.is_empty() {
-                format!("{}  · :{}", symbol.name, line)
-            } else {
-                format!("{}  {} · :{}", symbol.name, symbol.container, line)
-            };
-            Some(Item {
-                badge: Some(badge.into()),
-                text,
-                payload,
-            })
-        })
-        .collect()
-}
-
-/// The name field of a symbol row ("name  container · :line").
-fn item_symbol_name(item: &strop_picker::Item) -> &str {
-    item.text
-        .split_once("  ")
-        .map(|(name, _)| name.trim())
-        .unwrap_or(item.text.trim())
-}
-
-/// The LSP SymbolKind name → the canonical classification deciding
-/// `kind:` atoms for server candidates (0063 §4). Names outside the
-/// canonical vocabulary stay Unknown — admitting, never false.
-fn lsp_symbol_kind(name: &str) -> Option<strop_syntax::symbols::SymbolKind> {
-    use strop_syntax::symbols::SymbolKind::*;
-    Some(match name {
-        "Function" => Function,
-        "Method" | "Constructor" => Method,
-        "Class" => Class,
-        "Struct" => Struct,
-        "Enum" => Enum,
-        "Interface" => Interface,
-        "Module" | "Namespace" | "Package" => Module,
-        "Constant" => Constant,
-        _ => return None,
+/// One server or outline symbol as a list row (0109): the kind is the
+/// chip and a fact the ranking pass filters on.
+fn symbol_item(
+    symbol: &strop_lsp::ProtoSymbol,
+    container: Option<&str>,
+    detail: std::fmt::Arguments<'_>,
+    path: Option<std::sync::Arc<str>>,
+    no_text: &std::sync::Arc<str>,
+) -> strop_picker::Item {
+    use strop_picker::Payload;
+    let line = symbol.location.position.line.get() + 1;
+    let col = symbol.location.position.column.get() + 1;
+    let location = symbol.location.doc.path.clone();
+    let payload = match &symbol.location.doc.filesystem {
+        Filesystem::Local => Payload::Grep {
+            location: strop_workspace::ResourceLocation::local(location),
+            line,
+            col,
+            match_len: 1,
+            line_text: no_text.clone(),
+        },
+        Filesystem::Remote(endpoint) => Payload::Remote {
+            endpoint: endpoint.clone(),
+            path: location,
+            line,
+            col,
+        },
+    };
+    strop_picker::Item::symbol(strop_picker::SymbolRow {
+        name: &symbol.name,
+        container,
+        detail,
+        kind: symbol.kind,
+        path,
+        payload,
     })
 }
 
-/// Compact chip text for a symbol kind (the picker's badge column).
-fn short_kind(kind: &str) -> &'static str {
-    match kind {
-        "Function" => "fn",
-        "Method" => "meth",
-        "Constructor" => "new",
-        "Struct" => "struct",
-        "Class" => "class",
-        "Interface" => "iface",
-        "Enum" => "enum",
-        "EnumMember" => "variant",
-        "Constant" => "const",
-        "Variable" => "var",
-        "Field" => "field",
-        "Property" => "prop",
-        "Module" => "mod",
-        "Namespace" => "ns",
-        "Package" => "pkg",
-        "TypeParameter" => "T",
-        _ => "sym",
-    }
+/// Document-symbol rows from one `documentSymbol` reply or outline
+/// (0063 §3): the kind rides in the chip; the row text is name,
+/// container, line. The wire carries no query: the ranking pass filters
+/// these rows as the field changes, and they are built once per list.
+pub(crate) fn document_symbol_items(
+    symbols: &[strop_lsp::ProtoSymbol],
+    root: &std::path::Path,
+) -> Vec<strop_picker::Item> {
+    let mut paths = RelativePaths::new(root);
+    // symbol rows show no source line: one shared empty text for all
+    let no_text: std::sync::Arc<str> = "".into();
+    symbols
+        .iter()
+        .map(|symbol| {
+            let line = symbol.location.position.line.get() + 1;
+            let path = paths.of(&symbol.location.doc.path);
+            symbol_item(
+                symbol,
+                Some(&symbol.container),
+                format_args!("· :{line}"),
+                path,
+                &no_text,
+            )
+        })
+        .collect()
 }

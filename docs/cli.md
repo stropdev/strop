@@ -17,7 +17,6 @@ With no command, strop opens the file or directory, or an empty buffer.
 
 | Command | What it does |
 | --- | --- |
-| `strop edit [FILE]` | open a file, directory, or an empty buffer (the default) |
 | `strop remote URL` | open an `ssh://` file or directory for editing |
 | `strop headless SCRIPT [FILE]` | run a script of keys against a file, with no screen |
 | `strop replay LOG` | show a recorded session again (`--script` prints its keys as a script) |
@@ -38,15 +37,12 @@ Scripts, recordings and replay are described in
 | `-R`, `--readonly` | open read-only |
 | `+LINE` | initial line for FILE (or use `FILE:LINE`) |
 | `--theme NAME` | colour theme for this run (see [Themes](editor.md#themes)) |
-| `--remote URL` | same as `strop remote URL` |
-| `--script PATH` | same as `strop headless PATH` |
 | `--log[=PATH]` | record this session to a file, for a bug report (`STROP_LOG=PATH` works too; without PATH the file is `strop-log.jsonl`) |
 | `--log-content` | include file text in the recording (sensitive) |
 | `--log-terminal-content` | also what you type and see in terminals |
 | `-h`, `--help` / `-V`, `--version` | help and version |
 
-Older spellings still work: `--log-file PATH` for `--log=PATH`, and
-`--headless SCRIPT` for `--script SCRIPT`.
+`--log-file PATH` is `--log=PATH` with the path as its own argument.
 
 ## Remote locations
 
@@ -54,9 +50,8 @@ Older spellings still work: `--log-file PATH` for `--log=PATH`, and
 ssh://[user@]host[:port]/absolute/path[:LINE]
 ```
 
-`strop --remote "ssh://user@devbox:2222/etc/app.conf:120"` and
-`strop remote ssh://user@devbox:2222/etc/app.conf:120` are the same
-command. Once connected you can edit and save; `-R` opens read-only. To
+`strop remote ssh://user@devbox:2222/etc/app.conf:120` opens that file
+at line 120; a plain `strop ssh://…` operand does the same. Once connected you can edit and save; `-R` opens read-only. To
 read a growing log, pipe it in: `ssh devbox tail -f /var/log/app.log | strop -`.
 Details are in [remote.md](remote.md).
 

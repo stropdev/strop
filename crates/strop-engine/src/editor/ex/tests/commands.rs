@@ -63,11 +63,7 @@ fn vims_abbreviations_name_their_commands() {
         (">", ">"),
         ("!", "!"),
     ] {
-        assert_eq!(
-            lookup(typed).map(|command| command.name),
-            Some(name),
-            ":{typed}"
-        );
+        assert_eq!(lookup(typed).map(|(_, name)| name), Some(name), ":{typed}");
     }
     // shorter than Vim allows is not a command
     for typed in ["nor", "no", "de-", "sy", "apply", "p", "c"] {
@@ -77,13 +73,15 @@ fn vims_abbreviations_name_their_commands() {
 
 #[test]
 fn every_row_is_reached_by_its_name_and_its_shortest_form() {
-    for command in COMMANDS {
-        for typed in [command.name, &command.name[..command.min]] {
-            assert_eq!(
-                lookup(typed).map(|found| found.name),
-                Some(command.name),
-                ":{typed}"
-            );
+    for command in COMMANDS.iter() {
+        for name in command.names {
+            for typed in [name.name, &name.name[..name.min]] {
+                assert_eq!(
+                    lookup(typed).map(|(_, found)| found),
+                    Some(name.name),
+                    ":{typed}"
+                );
+            }
         }
     }
 }
@@ -160,7 +158,7 @@ fn ex_normal_abandons_what_the_keys_leave_open() {
         e.ex_normal(None, keys);
         assert_eq!(e.mode, Mode::Normal, "{keys}");
         assert!(e.walker.is_ground(), "{keys}");
-        assert!(!e.pending.is_active(), "{keys}");
+        assert!(!e.cmdline.is_open(), "{keys}");
     }
 }
 
@@ -241,11 +239,16 @@ fn marks_set_and_deleted_from_the_command_line() {
 
 #[test]
 fn completion_offers_the_tables_names() {
-    let mut e = editor("x\n");
+    let mut e = editor(
+        "x
+",
+    );
     e.feed_text(":bn");
-    assert_eq!(e.ex_candidates(), vec![("bnext", "go to the next buffer")]);
-    // a range is not a name to complete
-    e.feed_text("<esc><esc>V:");
-    assert_eq!(e.pending.text(), ":'<,'>");
-    assert!(e.ex_candidates().is_empty());
+    let menu = e.cmdline_menu().expect("the menu opens as you type");
+    assert_eq!(menu.rows()[0].text(), "bnext");
+    assert_eq!(menu.rows()[0].doc(), "go to the next buffer");
+    // a range alone is not a name to complete
+    e.feed_text("<esc>V:");
+    assert_eq!(e.cmdline.text(), ":'<,'>");
+    assert!(e.cmdline_menu().is_none());
 }

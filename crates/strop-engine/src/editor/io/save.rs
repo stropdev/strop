@@ -282,6 +282,7 @@ impl Editor {
         };
         let previous_path = document.buf.path.clone();
         let saved = document.buf.accept_save(receipt);
+        document.redetect_syntax();
         if saved {
             // A confirmed save IS the fresh observation: external-change
             // state clears only here or on a guarded reload, never on a
@@ -335,12 +336,10 @@ impl Editor {
                     .destination_after
                     .and_then(|after| after.modified)
                     .map(super::open::filetime_to_systemtime);
-                let canonical = std::fs::canonicalize(&attempt.write_target)
-                    .unwrap_or_else(|_| attempt.write_target.clone());
                 let receipt = SaveReceipt::from_store(
                     attempt.origin.clone(),
                     attempt.target.clone(),
-                    canonical,
+                    attempt.canonical.clone(),
                     attempt.revision,
                     stamp,
                 );
@@ -431,6 +430,7 @@ fn store_document(
             origin: plan.origin.clone(),
             target: plan.target.clone(),
             write_target: write_target.clone(),
+            canonical: canonical_spelling(&write_target),
             close,
             force: plan.force,
             focus,
@@ -456,12 +456,10 @@ fn store_document(
                 .as_ref()
                 .and_then(|after| after.modified)
                 .map(super::open::filetime_to_systemtime);
-            let canonical =
-                std::fs::canonicalize(&write_target).unwrap_or_else(|_| write_target.clone());
             Outcome::Success(SaveOutcome::Written(SaveReceipt::from_store(
                 plan.origin.clone(),
                 plan.target.clone(),
-                canonical,
+                canonical_spelling(&write_target),
                 plan.revision,
                 stamp,
             )))
@@ -472,5 +470,20 @@ fn store_document(
             detail: detail.clone(),
             attempt: attempt(receipt),
         }),
+    }
+}
+
+/// `path` with its symlinks resolved: the file's own when it exists,
+/// else its directory's with the name kept (a store that is not yet
+/// confirmed), else `path` as given. Worker side only.
+fn canonical_spelling(path: &std::path::Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => std::fs::canonicalize(parent)
+            .map(|parent| parent.join(name))
+            .unwrap_or_else(|_| path.to_path_buf()),
+        _ => path.to_path_buf(),
     }
 }

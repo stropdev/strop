@@ -41,7 +41,7 @@ fn capture(root: &Path, script: &str, flag: Option<&str>) -> (String, Vec<Value>
     std::fs::write(root.join("steps.keys"), script).unwrap();
     let mut command = command(root);
     command.args([
-        "--headless",
+        "headless",
         "steps.keys",
         "--log-file",
         "trace.jsonl",
@@ -154,7 +154,7 @@ fn live_selector_accept_cancel_and_invalid_choice_preserve_session_ownership() {
         command(dir.path())
             .env("PATH", dir.path().join("no-native-executables"))
             .env("XDG_CONFIG_HOME", dir.path().join("no-config"))
-            .args(["--replay", "trace.jsonl"])
+            .args(["replay", "trace.jsonl"])
             .output()
             .unwrap(),
     );
@@ -200,7 +200,7 @@ fn paper_variants_switch_through_picker_and_replay() {
         command(dir.path())
             .env("PATH", dir.path().join("no-native-executables"))
             .env("XDG_CONFIG_HOME", dir.path().join("no-config"))
-            .args(["--replay", "trace.jsonl"])
+            .args(["replay", "trace.jsonl"])
             .output()
             .unwrap(),
     );
@@ -242,7 +242,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
         .args([
             "--theme",
             "catppuccin-mocha",
-            "--headless",
+            "headless",
             "steps.keys",
             "source.txt",
         ])
@@ -251,7 +251,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("kiln, hone, slate, carbide, vellum, paper, paper-dark"),
+        stderr.contains("hone, kiln, slate, carbide, vellum, paper, paper-dark"),
         "{stderr}"
     );
     assert_eq!(
@@ -269,7 +269,7 @@ fn invalid_launch_theme_refuses_before_editing_and_invalid_config_stays_usable()
         "the warning names the rejected theme: {output}"
     );
     assert!(
-        output.contains("kiln"),
+        output.contains("hone"),
         "the warning names the choices: {output}"
     );
 }

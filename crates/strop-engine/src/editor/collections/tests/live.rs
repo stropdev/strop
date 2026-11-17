@@ -18,6 +18,7 @@ fn context_merges_preserve_same_line_matches_and_source_position() {
             match_len: 3,
             line_text: "fn hit() { hit(); }".into(),
         },
+        facts: Default::default(),
     });
     editor.picker_items_fixture(items.to_vec());
     editor.feed(strop_core::frontend_input::Key::CtrlO);
@@ -151,6 +152,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
                 match_len: 5,
                 line_text: "alpha 00".into(),
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -162,6 +164,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
                 match_len: 5,
                 line_text: "alpha 14".into(),
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -173,6 +176,7 @@ fn gap_refresh_keeps_carets_and_history_on_their_own_sources() {
                 match_len: 4,
                 line_text: "beta one".into(),
             },
+            facts: Default::default(),
         },
     ]);
     editor.feed(strop_core::frontend_input::Key::CtrlO);

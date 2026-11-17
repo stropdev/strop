@@ -154,6 +154,7 @@ impl NotifyManager {
         Ok(identity)
     }
 
+    #[cfg(test)]
     /// Retire one subscription by full identity. Stale generations and
     /// unknown ids are typed refusals; a live retire closes the instance
     /// and drops its pending queue immediately — no late event can be

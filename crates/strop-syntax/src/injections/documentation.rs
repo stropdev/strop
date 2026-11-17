@@ -78,12 +78,16 @@ impl Policy {
                         start += 1;
                     }
                     // Some grammar versions include the newline in the doc node,
-                    // others leave it between comments. Keep exactly one newline.
-                    if end < rope.len_bytes() && rope.byte(end) == b'\r' {
-                        end += 1;
-                    }
-                    if end < rope.len_bytes() && rope.byte(end) == b'\n' {
-                        end += 1;
+                    // others leave it between comments. Keep exactly one newline:
+                    // a node that already ends with one must not swallow the
+                    // next (blank) line's.
+                    if rope.byte(end - 1) != b'\n' {
+                        if end < rope.len_bytes() && rope.byte(end) == b'\r' {
+                            end += 1;
+                        }
+                        if end < rope.len_bytes() && rope.byte(end) == b'\n' {
+                            end += 1;
+                        }
                     }
                     push(rope, start, end, &mut ranges);
                     let Some(next) = current.next_named_sibling() else {

@@ -25,6 +25,10 @@ use super::Editor;
 pub struct Document {
     pub buf: Buffer,
     pub(crate) syntax_hint: Option<std::path::PathBuf>,
+    /// The language the first line's shebang named when the text last
+    /// met the disk — open, write, reload (0111 decision 7). A shebang
+    /// typed into an extensionless file takes effect at `:w`.
+    pub(crate) shebang: Option<strop_syntax::languages::LanguageId>,
     /// Resolved at open/reload and after `:tab-size`/`:indent-style`
     /// (0051 R08): manual override → confident detection → config.
     pub indent: Indent,
@@ -77,9 +81,11 @@ impl Document {
     }
     pub fn new(buf: Buffer) -> Self {
         let detection = Some(detect_indent(buf.text()));
+        let shebang = strop_syntax::languages::shebang_in(buf.text());
         Self {
             buf,
             syntax_hint: None,
+            shebang,
             indent: Indent::default(),
             indent_override: IndentOverride::default(),
             detection,
@@ -92,9 +98,11 @@ impl Document {
     /// A scratch document (no file).
     pub fn scratch(buf: Buffer) -> Self {
         let detection = Some(detect_indent(buf.text()));
+        let shebang = strop_syntax::languages::shebang_in(buf.text());
         Self {
             buf,
             syntax_hint: None,
+            shebang,
             indent: Indent::default(),
             indent_override: IndentOverride::default(),
             detection,
@@ -111,6 +119,7 @@ impl Document {
         Self {
             buf,
             syntax_hint: None,
+            shebang: None,
             indent: Indent::default(),
             source: DocumentSource::Surface(Box::new(surfaces::GitSurface {
                 context,
@@ -132,6 +141,7 @@ impl Document {
         Self {
             buf,
             syntax_hint: None,
+            shebang: None,
             indent: Indent::default(),
             indent_override: IndentOverride::default(),
             detection: None,
@@ -139,6 +149,19 @@ impl Document {
             external_change: false,
             loan: None,
         }
+    }
+
+    /// The language analysis colours this document with: its syntax
+    /// path's basename or extension, else the shebang recorded when the
+    /// text last met the disk.
+    pub fn syntax_language(&self) -> Option<strop_syntax::languages::LanguageId> {
+        let path = self.syntax_path()?;
+        strop_syntax::languages::detect_id(path, None).or(self.shebang)
+    }
+
+    /// Re-read the shebang: the text just met the disk (write, reload).
+    pub(crate) fn redetect_syntax(&mut self) {
+        self.shebang = strop_syntax::languages::shebang_in(self.buf.text());
     }
 
     /// Syntax identity is data; parsers live on the display-analysis worker.
@@ -277,6 +300,7 @@ impl Editor {
         !self.docs.is_empty()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     /// Admit an already-constructed document (0056 AR02/AR13): checked
     /// identity allocation is the whole operation — failure changes
     /// nothing, so the caller decides how to surface it.
@@ -318,7 +342,7 @@ impl Editor {
             self.remember_directory_view();
             self.remember_terminal_view();
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         self.focus_epoch += 1;
         if switching {
@@ -431,6 +455,7 @@ impl Editor {
         self.close_buffer(force);
     }
 
+    #[cfg(test)]
     /// Any path-backed or scratch document holding unsaved content.
     pub fn any_dirty(&self) -> bool {
         self.docs.iter().any(|(_, d)| d.buf.is_dirty())

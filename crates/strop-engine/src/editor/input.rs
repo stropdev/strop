@@ -234,24 +234,6 @@ impl Walker {
         self.state.empty() && self.path.is_empty() && self.motion.is_empty()
     }
 
-    /// What a surface-intercepted operator key (visual `d y c x`) acts
-    /// with: `Some(None)` at ground, `Some(Some(r))` when exactly a
-    /// completed `"r` selector is pending, `None` mid any other walk
-    /// (including a selector still waiting for its name).
-    pub fn operator_register(&self) -> Option<Option<char>> {
-        let bare = self.path.is_empty()
-            && self.motion.is_empty()
-            && self.state.op.is_none()
-            && self.state.count_before_register.is_none()
-            && self.state.count1.is_none()
-            && self.state.count2.is_none();
-        match self.state.register {
-            Some('\0') => None,
-            register if bare => Some(register),
-            _ => None,
-        }
-    }
-
     /// The walk sits exactly on these table tokens (e.g. ["ctrl-w"]).
     pub fn at_prefix(&self, tokens: &[&str]) -> bool {
         self.motion.is_empty()
@@ -637,6 +619,9 @@ fn key_token(key: Key) -> String {
         Key::Char(' ') => "space".into(), // the table's leader token
         Key::Char(c) => c.to_string(),
         Key::CtrlSpace => "ctrl-space".into(),
+        Key::Home => "home".into(),
+        Key::End => "end".into(),
+        Key::Delete => "delete".into(),
         Key::CtrlC => "ctrl-c".into(),
         Key::CtrlN => "ctrl-n".into(),
         Key::CtrlP => "ctrl-p".into(),

@@ -51,7 +51,6 @@ pub enum TraceError {
 #[derive(Default)]
 struct Failure {
     message: Mutex<Option<(Severity, String)>>,
-    reported: AtomicBool,
 }
 
 /// How a capture ends short of complete. `Degraded` means the session
@@ -149,11 +148,8 @@ pub fn start(path: &Path, options: TraceOptions) -> Result<TraceSession, TraceEr
     }
     let mut open = OpenOptions::new();
     open.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        open.mode(0o600);
-    }
+    use std::os::unix::fs::OpenOptionsExt;
+    open.mode(0o600);
     let file = open.open(path).map_err(|source| TraceError::Open {
         path: path.to_path_buf(),
         source,
@@ -308,14 +304,6 @@ pub fn mark_incomplete(message: &'static str) {
     recorder.failure.degraded(|| message.into());
     recorder.admission.lock().sender.take();
     CONTENT.store(false, Ordering::Release);
-}
-
-/// Report once to the editor's status line; `finish` still fails on the
-/// fatal kind, while a degraded capture is only marked in the file.
-pub fn take_failure() -> Option<String> {
-    let recorder = ACTIVE.lock().clone()?;
-    let (_, message) = recorder.failure.message.lock().clone()?;
-    (!recorder.failure.reported.swap(true, Ordering::Relaxed)).then_some(message)
 }
 
 impl TraceSession {

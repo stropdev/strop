@@ -90,30 +90,6 @@ impl Editor {
             .map(|d| (d.severity, d.message.as_str()))
     }
 
-    /// Diagnostic spans on a 1-based line as (col, end_col, severity)
-    /// — the undercurl layer (0009 UX). Same-line diags only; columns
-    /// are byte offsets into the line.
-    pub fn diag_ranges_at(
-        &self,
-        idx: strop_core::id::DocumentId,
-        line_1based: usize,
-    ) -> Vec<(usize, usize, Severity)> {
-        self.diags_for(idx)
-            .map(|ds| {
-                ds.iter()
-                    .filter(|d| d.line.get() + 1 == line_1based)
-                    .map(|d| {
-                        (
-                            d.col.get(),
-                            d.end_col.get().max(d.col.get() + 1),
-                            d.severity,
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
     /// Worst diagnostic severity for a 1-based line of buffer `idx`, if
     /// any (0001 pillar 4: merges with the git gutter). Per-buffer, so
     /// panes show their own diagnostics.

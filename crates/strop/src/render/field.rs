@@ -9,6 +9,10 @@ use strop_picker::query::{HighlightSpan, Role};
 pub(super) struct FieldLine {
     pub line: Line<'static>,
     pub cursor: Option<u16>,
+    /// The cells of the first diagnosed span (an error or an unfinished
+    /// value), as (column, width), when it is on screen: where a located
+    /// message points (0109 decision 3).
+    pub marked: Option<(u16, u16)>,
 }
 
 pub(super) fn project(
@@ -24,9 +28,14 @@ pub(super) fn project(
         return FieldLine {
             line: Line::default(),
             cursor: None,
+            marked: None,
         };
     }
-    let label = format!("{label} ");
+    let label = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{label} ")
+    };
     let label_budget = usize::from(width.saturating_sub(1));
     // A narrow field ellipsizes the label instead of letting it vanish
     // into clipped blanks (0068 B3).
@@ -52,6 +61,11 @@ pub(super) fn project(
     let caret_cell = layout.cell_at_byte(caret.min(value.len())).get();
     let origin = DisplayColumn::new(caret_cell.saturating_sub(available.saturating_sub(1)));
     let mut used = 0;
+    let diagnosed = highlights
+        .iter()
+        .find(|span| matches!(span.role, Role::Error | Role::Incomplete))
+        .map(|span| span.range.clone());
+    let mut marked: Option<(usize, usize)> = None;
     for (glyph, grapheme) in RopeGraphemes::new(value.into(), 4) {
         if glyph.cell.get() >= origin.get() + available {
             break;
@@ -73,6 +87,13 @@ pub(super) fn project(
             " ".repeat(visible.width)
         };
         spans.push(Span::styled(text, style));
+        if diagnosed
+            .as_ref()
+            .is_some_and(|range| range.contains(&glyph.byte))
+        {
+            let start = marked.map_or(visible.x, |(start, _)| start);
+            marked = Some((start, visible.x + visible.width));
+        }
         used = visible.x + visible.width;
     }
     if active && caret == value.len() && used < available {
@@ -81,6 +102,7 @@ pub(super) fn project(
     FieldLine {
         line: Line::from(spans),
         cursor: active.then_some((prefix + caret_cell.saturating_sub(origin.get())) as u16),
+        marked: marked.map(|(start, end)| ((prefix + start) as u16, (end - start) as u16)),
     }
 }
 

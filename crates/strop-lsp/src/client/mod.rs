@@ -15,6 +15,7 @@ mod outbound;
 mod process;
 mod queue;
 mod spawn;
+mod symbols;
 mod sync;
 #[cfg(test)]
 mod tests;

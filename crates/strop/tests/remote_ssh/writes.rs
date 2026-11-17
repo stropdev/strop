@@ -18,7 +18,7 @@ fn remote_edit_and_save_keep_the_native_path_and_mode() {
     );
     let trace = fixture.root().join("write.jsonl");
     let output = fixture.run(&[
-        "--headless".into(),
+        "headless".into(),
         script.into(),
         uri("fixture", &path).into(),
         "--log-file".into(),
@@ -39,7 +39,7 @@ fn remote_edit_and_save_keep_the_native_path_and_mode() {
         .collect();
     assert!(names.is_empty(), "{names:?}");
     std::fs::write(fixture.root().join("bin/ssh"), "#!/bin/sh\nexit 99\n").unwrap();
-    fixture.run(&["--replay".into(), trace.into()]);
+    fixture.run(&["replay".into(), trace.into()]);
 }
 
 #[test]

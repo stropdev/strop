@@ -199,9 +199,7 @@ impl Editor {
             return;
         }
         self.begin_text_line(':', Default::default());
-        self.feed_pending_event(super::pending::PendingEvent::Paste(format!(
-            "rename {name}"
-        )));
+        self.cmdline_paste(&format!("rename {name}"));
     }
 
     /// `:rename <new>` — workspace rename through a change plan.
@@ -276,47 +274,70 @@ impl Editor {
         });
         let mut items: Vec<Item> = Vec::new();
         for (doc, diags) in by_doc {
+            // what path filters judge: one shared path per file (0109)
+            let path: Option<std::sync::Arc<str>> = doc
+                .path
+                .strip_prefix(&self.cwd)
+                .unwrap_or(&doc.path)
+                .to_str()
+                .map(Into::into);
             for d in diags {
                 let line = d.line.get() + 1;
                 let col = d.col.get() + 1;
+                let facts = |text: &str| strop_picker::ItemFacts {
+                    path: path.clone(),
+                    // content filters match the message
+                    subject: Some((text.len() - d.message.len()) as u32..text.len() as u32),
+                    ..Default::default()
+                };
                 match &doc.filesystem {
-                    Filesystem::Local => items.push(Item {
-                        badge: None,
-                        text: format!(
+                    Filesystem::Local => {
+                        let text = format!(
                             "{}:{} {} {}",
                             doc.path.display(),
                             line,
                             d.severity_char(),
                             d.message
-                        ),
-                        payload: Payload::Grep {
-                            location: strop_workspace::ResourceLocation::local(doc.path.clone()),
-                            line,
-                            col,
-                            match_len: 1,
-                            line_text: d.message.clone().into(),
-                        },
-                    }),
+                        );
+                        items.push(Item {
+                            badge: None,
+                            facts: facts(&text),
+                            text,
+                            payload: Payload::Grep {
+                                location: strop_workspace::ResourceLocation::local(
+                                    doc.path.clone(),
+                                ),
+                                line,
+                                col,
+                                match_len: 1,
+                                line_text: d.message.clone().into(),
+                            },
+                        })
+                    }
                     // Remote diagnostics carry their endpoint: the
                     // preview stays local-clean and acceptance opens
                     // the remote target (0036).
-                    Filesystem::Remote(endpoint) => items.push(Item {
-                        badge: None,
-                        text: format!(
+                    Filesystem::Remote(endpoint) => {
+                        let text = format!(
                             "{}{}:{} {} {}",
                             endpoint,
                             doc.path.display(),
                             line,
                             d.severity_char(),
                             d.message
-                        ),
-                        payload: Payload::Remote {
-                            endpoint: endpoint.clone(),
-                            path: doc.path.clone(),
-                            line,
-                            col,
-                        },
-                    }),
+                        );
+                        items.push(Item {
+                            badge: None,
+                            facts: facts(&text),
+                            text,
+                            payload: Payload::Remote {
+                                endpoint: endpoint.clone(),
+                                path: doc.path.clone(),
+                                line,
+                                col,
+                            },
+                        })
+                    }
                 }
             }
         }
@@ -340,11 +361,23 @@ impl Editor {
     pub(crate) fn lsp_hover_pub(&mut self) {
         self.lsp_hover();
     }
-    pub fn lsp_code_actions_pub(&mut self) {
-        self.lsp_code_actions();
-    }
     pub fn lsp_document_symbols_pub(&mut self) {
         self.lsp_document_symbols();
+    }
+    /// The breadcrumb (0107): the names of the symbols containing the
+    /// cursor, outermost first, and the slot's cells. `None` where the
+    /// current buffer has no symbol list. A lookup in a kept index: no
+    /// request, no parse, no allocation.
+    pub fn scope_path(&self) -> Option<super::symbols::scope::ScopePath<'_>> {
+        let scope = self.analysis.symbols.scope.as_ref()?;
+        if self.docs.is_empty()
+            || scope.document != self.current()
+            || scope.revision != self.buf().revision()
+            || scope.slot() == 0
+        {
+            return None;
+        }
+        Some(scope.at(self.head()))
     }
     pub fn lsp_locations_pub(&mut self, kind: strop_lsp::LocKind) {
         self.lsp_locations(kind);

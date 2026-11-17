@@ -188,6 +188,7 @@ impl Repo {
         Some(base.to_string())
     }
 
+    #[cfg(test)]
     pub fn head_content(&self, path: &Path) -> Option<String> {
         self.head_content_res(path).ok().flatten()
     }

@@ -11,12 +11,15 @@
 //! - every span lies inside coverage — a byte never analyzed must not
 //!   borrow a class;
 //! - rails are line-indexed, sorted and disjoint;
-//! - `mapped_revision` names the coordinate space of all three.
+//! - `mapped_revision` names the coordinate space of all three;
+//! - spans belong to `language`: a frame of another syntax identity
+//!   replaces them and never borrows them (0111 decision 8).
 
 use std::cell::RefCell;
 use std::sync::Arc;
 
 use strop_core::id::{BufferRevision, DisplayColumn};
+use strop_syntax::languages::LanguageId;
 use strop_syntax::{GuideFrame, Span};
 
 use super::{AnalysisKey, FrameAnalysis};
@@ -42,6 +45,8 @@ pub(crate) struct Presentation {
     /// journal edit has been folded through it (projected, not exact).
     exact_at: Option<BufferRevision>,
     mapped_revision: BufferRevision,
+    /// The syntax identity the retained spans were produced under.
+    language: Option<LanguageId>,
     /// Memoized interim frame. Presentation data is read from the
     /// readonly paint path, so the memo is interior-mutable; it keys on
     /// everything the frame depends on and any mutation clears it.
@@ -50,6 +55,7 @@ pub(crate) struct Presentation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MemoKey {
+    language: Option<LanguageId>,
     revision: u64,
     first: usize,
     last: usize,
@@ -70,6 +76,7 @@ impl Default for Presentation {
             rail_tab: 0,
             exact_at: None,
             mapped_revision: BufferRevision::new(0),
+            language: None,
             interim: RefCell::new(None),
         }
     }
@@ -80,11 +87,19 @@ impl Presentation {
     /// projected spans inside `[first, last)` are replaced, coverage
     /// grows by the window and rails are re-stated for its lines.
     pub(crate) fn accept(&mut self, key: &AnalysisKey, frame: &FrameAnalysis) {
-        if self.spans.len().saturating_add(frame.spans.len()) > MAX_SPANS
+        debug_assert!(
+            self.coverage.is_empty() || self.mapped_revision == key.revision,
+            "retained data at {:?} accepts a frame of {:?}",
+            self.mapped_revision,
+            key.revision
+        );
+        if self.language != key.language
+            || self.spans.len().saturating_add(frame.spans.len()) > MAX_SPANS
             || self.coverage.len() >= MAX_COVERAGE_INTERVALS
         {
             self.spans.clear();
             self.coverage.clear();
+            self.language = key.language;
         }
         if self.rails.len().saturating_add(frame.guides.rows.len()) > MAX_RAIL_LINES {
             self.rails.clear();
@@ -170,6 +185,7 @@ impl Presentation {
         let last = key.last.min(len_bytes);
         let first = key.first.min(last);
         let memo = MemoKey {
+            language: key.language,
             revision: self.mapped_revision.get(),
             first,
             last,
@@ -185,7 +201,9 @@ impl Presentation {
             }
         }
         let mut spans = Vec::new();
-        clip_into(&self.spans, first, last, &mut spans);
+        if key.language == self.language {
+            clip_into(&self.spans, first, last, &mut spans);
+        }
         let guides = if self.rail_clip == (key.left, key.right) && self.rail_tab == key.tab {
             GuideFrame {
                 first_line,
@@ -242,20 +260,6 @@ impl Presentation {
     }
 }
 
-/// The fragments of `[a, b)` that provably survive `[start, old_end)`
-/// being replaced by `[start, new_end)`: the part strictly before the
-/// edit keeps its coordinates, the part from `old_end` on shifts by the
-/// delta, and the replaced interval itself carries nothing forward.
-/// Order is preserved — the before-fragment precedes the after-fragment.
-fn fragments(a: usize, b: usize, edit: &strop_core::InputEdit) -> [Option<(usize, usize)>; 2] {
-    let before = (a < edit.start_byte).then(|| (a, b.min(edit.start_byte)));
-    let after = (b > edit.old_end_byte).then(|| {
-        let shift = |byte: usize| edit.new_end_byte + (byte - edit.old_end_byte);
-        (shift(a.max(edit.old_end_byte)), shift(b))
-    });
-    [before, after]
-}
-
 /// A half-open byte range that can be re-stated at new coordinates.
 trait ByteRange: Copy {
     fn bounds(&self) -> (usize, usize);
@@ -285,18 +289,24 @@ impl ByteRange for (usize, usize) {
 }
 
 /// Fold one edit through a sorted disjoint range list, mapping each
-/// range's surviving fragments (0066 §3B). A multiline token keeps its
-/// color up to the edit and resumes after it; the replaced bytes never
+/// range's surviving fragments (0066 §3B) with the proved projection
+/// (`strop_kernel::intervals::project`, 0111 D9): a multiline token keeps
+/// its color up to the edit and resumes after it; the replaced bytes never
 /// inherit a class.
 fn project_ranges<T: ByteRange>(ranges: &mut Vec<T>, edit: &strop_core::InputEdit) {
+    let bounds: Vec<(usize, usize)> = ranges.iter().map(ByteRange::bounds).collect();
     let mut out = Vec::with_capacity(ranges.len() + 4);
-    for range in ranges.iter() {
-        let (a, b) = range.bounds();
-        for (start, end) in fragments(a, b, edit).into_iter().flatten() {
-            out.push(range.with_bounds(start, end));
-        }
-    }
-    *ranges = out;
+    strop_kernel::intervals::project(
+        &bounds,
+        edit.start_byte,
+        edit.old_end_byte,
+        edit.new_end_byte,
+        &mut out,
+    );
+    *ranges = out
+        .into_iter()
+        .map(|(start, end, source)| ranges[source].with_bounds(start, end))
+        .collect();
 }
 
 /// Rails are line-indexed. A single-line edit cannot renumber any line,
@@ -329,87 +339,43 @@ fn project_rails(rails: &mut Vec<(usize, Vec<DisplayColumn>)>, edit: &strop_core
 /// Replace the spans inside `[first, last)` with `fresh` (sorted,
 /// disjoint, within the window). A retained span straddling a boundary
 /// keeps its outside fragment, so scrolling back never loses the edge
-/// of a previously accepted region.
+/// of a previously accepted region (`strop_kernel::intervals::replace_window`).
 fn replace_window(spans: &mut Vec<Span>, first: usize, last: usize, fresh: &[Span]) {
-    let mut kept: Vec<Span> = Vec::with_capacity(spans.len());
-    for span in spans.iter() {
-        let (a, b) = (span.start, span.end);
-        if b <= first || a >= last {
-            kept.push(*span);
-        } else {
-            if a < first {
-                kept.push(Span {
-                    end: first,
-                    ..*span
-                });
-            }
-            if b > last {
-                kept.push(Span {
-                    start: last,
-                    ..*span
-                });
-            }
-        }
-    }
-    let mut out = Vec::with_capacity(kept.len() + fresh.len());
-    let (mut index, mut at) = (0usize, 0usize);
-    while index < kept.len() && at < fresh.len() {
-        if fresh[at].start < kept[index].start {
-            out.push(fresh[at]);
-            at += 1;
-        } else {
-            out.push(kept[index]);
-            index += 1;
-        }
-    }
-    out.extend_from_slice(&fresh[at..]);
-    out.extend_from_slice(&kept[index..]);
-    *spans = out;
+    let old: Vec<(usize, usize)> = spans.iter().map(|span| (span.start, span.end)).collect();
+    let new: Vec<(usize, usize)> = fresh.iter().map(|span| (span.start, span.end)).collect();
+    let mut out = Vec::with_capacity(old.len() + new.len() + 2);
+    strop_kernel::intervals::replace_window(&old, first, last, &new, &mut out);
+    *spans = out
+        .into_iter()
+        .map(|(start, end, source)| {
+            let span = if source < old.len() {
+                spans[source]
+            } else {
+                fresh[source - old.len()]
+            };
+            Span { start, end, ..span }
+        })
+        .collect();
 }
 
 /// Insert `[first, last)` into the sorted disjoint coverage, coalescing
 /// touching or overlapping intervals (sequential scrolling keeps the
 /// list small — one growing interval, not one per frame).
 fn cover(coverage: &mut Vec<(usize, usize)>, first: usize, last: usize) {
-    if first >= last {
-        return;
-    }
     let mut merged = Vec::with_capacity(coverage.len() + 1);
-    let mut pending = (first, last);
-    let mut flushed = false;
-    for &(a, b) in coverage.iter() {
-        if b < pending.0 {
-            merged.push((a, b));
-        } else if a > pending.1 {
-            if !flushed {
-                merged.push(pending);
-                flushed = true;
-            }
-            merged.push((a, b));
-        } else {
-            pending = (pending.0.min(a), pending.1.max(b));
-        }
-    }
-    if !flushed {
-        merged.push(pending);
-    }
+    strop_kernel::intervals::cover(coverage, first, last, &mut merged);
     *coverage = merged;
 }
 
 /// Remove `[first, last)` from the coverage, truncating straddling
 /// intervals to their outside parts.
 fn uncover(coverage: &mut Vec<(usize, usize)>, first: usize, last: usize) {
-    let mut out = Vec::with_capacity(coverage.len() + 2);
-    for &(a, b) in coverage.iter() {
-        if a < first {
-            out.push((a, b.min(first)));
-        }
-        if b > last {
-            out.push((last.max(a), b));
-        }
-    }
-    out.retain(|&(a, b)| a < b);
-    *coverage = out;
+    let mut parts = Vec::with_capacity(coverage.len() + 2);
+    strop_kernel::intervals::uncover(coverage, first, last, &mut parts);
+    *coverage = parts
+        .into_iter()
+        .map(|(start, end, _)| (start, end))
+        .collect();
 }
 
 /// Replace the retained rails for lines `[first, last)` with `fresh`
@@ -442,19 +408,22 @@ fn replace_lines(
 
 /// Copy the spans intersecting `[first, last)` into `out`, truncated to
 /// the window — the interim frame serves exactly what it can vouch for.
+/// Binary search narrows the spans to those that can reach the window;
+/// the kernel clips them (`strop_kernel::intervals::clip`).
 fn clip_into(spans: &[Span], first: usize, last: usize, out: &mut Vec<Span>) {
-    let mut index = spans.partition_point(|span| span.end <= first);
-    while let Some(span) = spans.get(index) {
-        if span.start >= last {
-            break;
-        }
-        out.push(Span {
-            start: span.start.max(first),
-            end: span.end.min(last),
-            ..*span
-        });
-        index += 1;
-    }
+    let from = spans.partition_point(|span| span.end <= first);
+    let until = from + spans[from..].partition_point(|span| span.start < last);
+    let reach: Vec<(usize, usize)> = spans[from..until]
+        .iter()
+        .map(|span| (span.start, span.end))
+        .collect();
+    let mut parts = Vec::with_capacity(reach.len());
+    strop_kernel::intervals::clip(&reach, first, last, &mut parts);
+    out.extend(parts.into_iter().map(|(start, end, source)| Span {
+        start,
+        end,
+        ..spans[from + source]
+    }));
 }
 
 #[cfg(test)]
@@ -479,7 +448,7 @@ mod tests {
             guides: false,
             left: 0,
             right: 80,
-            syntax_path: None,
+            language: None,
             search: None,
         }
     }

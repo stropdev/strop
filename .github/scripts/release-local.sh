@@ -2,6 +2,9 @@
 # Local Linux/WSL release entrypoint (plans/0079, plans/0086 §8).
 # qualify: every blocking gate on the exact clean source, including the
 # GitHub ci run for HEAD and the local-only Lean proofs gate.
+# package: runs qualify itself, then builds and checks the artifact, so an
+# artifact can only come from a commit that passed qualification in the
+# same invocation (no receipt files: plans/0108 D3).
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -43,8 +46,7 @@ catalog() {
         --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json"
 }
 
-case "$COMMAND" in
-qualify)
+qualify() {
     clean_source
     head=$(git rev-parse HEAD)
     conclusion=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$head" \
@@ -56,11 +58,15 @@ qualify)
     sh tests/release-catalog.sh
     sh tests/install.sh
     docker compose run --build --rm test
-    docker compose run --build --rm model
     docker compose run --build --rm proofs
+}
+
+case "$COMMAND" in
+qualify)
+    qualify
     ;;
 package)
-    clean_source
+    qualify
     mkdir -p "$DIST"
     if [ -e "$ARCHIVE" ]; then
         echo "reusing existing artifact without rebuilding: $ARCHIVE"
@@ -83,15 +89,15 @@ package)
     "$BINARY" --version
     printf 'fn main() { let x = 1; }\n' > "$WORK/smoke.rs"
     printf 'frame\n' > "$WORK/smoke.txt"
-    "$BINARY" --headless "$WORK/smoke.txt" "$WORK/smoke.rs" | grep -q "fn main"
+    "$BINARY" headless "$WORK/smoke.txt" "$WORK/smoke.rs" | grep -q "fn main"
     # The find budgets (plans/0093 §7): finder paint and per-key list,
     # search first hit and completion; the symbols budgets (plans/0099
     # §7); and the history budgets (plans/0101 §5.1, needs git). Each
     # exits non-zero past its budget.
-    TMPDIR="$WORK" "$BINARY" --bench find
-    TMPDIR="$WORK" "$BINARY" --bench search
-    TMPDIR="$WORK" "$BINARY" --bench symbols
-    TMPDIR="$WORK" "$BINARY" --bench history
+    TMPDIR="$WORK" "$BINARY" bench find
+    TMPDIR="$WORK" "$BINARY" bench search
+    TMPDIR="$WORK" "$BINARY" bench symbols
+    TMPDIR="$WORK" "$BINARY" bench history
     catalog
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
     echo "qualified local release directory: $DIST"

@@ -18,6 +18,7 @@
 //!   handlers, `async_pending` as the settle barrier — no competing
 //!   editor loop, no sleeps for correctness.
 
+mod cmdline;
 mod completion;
 mod find;
 mod history;
@@ -666,6 +667,9 @@ pub fn run(which: &str) -> io::Result<()> {
     }
     if all || which == "completion" {
         completion::run()?;
+    }
+    if all || which == "cmdline" {
+        cmdline::run();
     }
     Ok(())
 }

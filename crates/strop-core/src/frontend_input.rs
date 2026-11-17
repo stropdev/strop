@@ -16,6 +16,10 @@ pub enum Key {
     Down,
     Left,
     Right,
+    Home,
+    End,
+    /// The forward-delete key.
+    Delete,
     Tab,
     Backtab,
     /// Replace picker: exclude the row's whole file (vscode's toggle).

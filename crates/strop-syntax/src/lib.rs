@@ -10,10 +10,14 @@
 
 use streaming_iterator::StreamingIterator;
 pub mod comments;
+mod compiled;
 mod guides;
 pub mod languages;
+use languages::LanguageId;
+mod window;
 pub use guides::{GuideFrame, IndentGuides};
 pub use languages::ColonPolicy;
+pub use window::LINE_BUDGET;
 mod indentation;
 pub use indentation::{DelimiterKind, IndentContext, OpeningDelimiter};
 mod injections;
@@ -23,11 +27,11 @@ mod splicery;
 pub mod symbols;
 mod weft;
 pub use spans::Emphasis;
-use spans::{CaptureStyle, LayeredSpan};
+use spans::LayeredSpan;
 
 use ropey::Rope;
 use strop_core::id::BufferRevision;
-use tree_sitter::{Parser, Query, QueryCursor, TextProvider};
+use tree_sitter::{Parser, QueryCursor, TextProvider};
 
 /// Semantic classes the renderer maps to palette colors. Kept small and
 /// stable; the query capture names map onto these.
@@ -105,8 +109,6 @@ pub enum HighlightError {
     Parse,
     /// Superseded analysis is not a parser failure.
     Cancelled,
-    /// Recursive injected language structure exceeded the owned parser bound.
-    InjectionDepth,
 }
 
 impl std::fmt::Display for HighlightError {
@@ -114,9 +116,6 @@ impl std::fmt::Display for HighlightError {
         match self {
             HighlightError::Parse => f.write_str("tree-sitter produced no parse tree"),
             HighlightError::Cancelled => f.write_str("syntax analysis superseded"),
-            HighlightError::InjectionDepth => {
-                f.write_str("syntax injection nesting exceeds eight levels")
-            }
         }
     }
 }
@@ -171,42 +170,42 @@ impl<'a> Iterator for RopeSlices<'a> {
     }
 }
 
-/// One language's parser + highlight query. The tree tracks the buffer's
-/// journal (0022 §1): edits apply as a cheap pointer walk at commit time
-/// and reparsing is incremental against the kept tree — a full parse is
-/// the cold-start path, not the rule.
+/// One language's parser and tree; the compiled queries are shared per
+/// language (0111 decision 3). The tree tracks the buffer's journal
+/// (0022 §1): edits apply as a cheap pointer walk at commit time and
+/// reparsing is incremental against the kept tree — a full parse is the
+/// cold-start path, not the rule.
 pub struct Highlighter {
+    compiled: &'static compiled::Compiled,
+    language: LanguageId,
     parser: Parser,
-    query: Query,
-    /// Capture index → class, resolved once at construction.
-    classes: Vec<CaptureStyle>,
     source_hash: Option<BufferRevision>,
     spans: Vec<Span>,
     /// The parse tree covering `tree_revision`.
     tree: Option<tree_sitter::Tree>,
     tree_revision: BufferRevision,
     span_window: Option<(usize, usize)>,
-    injection_query: Option<Query>,
     injection_depth: usize,
     children: Vec<injections::InjectedHighlighter>,
 }
 
 impl Highlighter {
-    pub fn invalidate(&mut self) {
-        self.tree = None;
-        self.source_hash = None;
-        self.span_window = None;
-        self.children.clear();
-    }
-
     /// Feed the pre-edit journal to the kept tree (0022 §1): a cheap
     /// pointer walk at commit time; the reparse stays lazy. The edits
     /// arrive exactly as `strop-core` published them — tuple points
     /// converted to tree-sitter points once, here — so the editor hands
     /// over `&[change.edit]` with `change.revision` untouched.
+    ///
+    /// `publish_change` numbers each change exactly one past the last, so
+    /// a revision that does not follow the kept tree's means a batch this
+    /// tree never saw: the tree is dropped rather than reused for text it
+    /// does not describe (0111 decision 8).
     pub fn apply_edits(&mut self, edits: &[strop_core::InputEdit], revision: BufferRevision) {
         if revision == self.tree_revision {
             return;
+        }
+        if revision.get() != self.tree_revision.get().saturating_add(1) {
+            self.tree = None;
         }
         if let Some(tree) = &mut self.tree {
             for edit in edits {
@@ -243,48 +242,41 @@ impl Highlighter {
     /// fallback. Nothing here reads the filesystem: UI dispatch never
     /// blocks on disk.
     pub fn for_path(path: &std::path::Path, rope: &Rope) -> Option<Self> {
-        let spec = languages::detect(path, Some(&first_line_bounded(rope)))?;
-        Self::from_spec(spec)
+        let first_line = languages::first_line_bounded(rope);
+        Self::for_language(languages::detect_id(path, Some(&first_line))?)
     }
 
-    fn from_spec(spec: languages::LanguageSpec) -> Option<Self> {
+    /// A highlighter for a language already detected — the analysis
+    /// worker builds from the identity its key carries.
+    pub fn for_language(language: LanguageId) -> Option<Self> {
+        let compiled = compiled::compiled(language)?;
         let mut parser = Parser::new();
-        parser.set_language(&spec.language).ok()?;
-        let query = Query::new(&spec.language, spec.highlights).ok()?;
-        let injection_query = if spec.injections.is_empty() {
-            None
-        } else {
-            Some(Query::new(&spec.language, spec.injections).ok()?)
-        };
-        let classes = query
-            .capture_names()
-            .iter()
-            .map(|name| CaptureStyle {
-                class: Class::from_capture(name),
-                emphasis: Emphasis::from_capture(name),
-            })
-            .collect();
+        parser.set_language(&compiled.language).ok()?;
         Some(Self {
+            compiled,
+            language,
             parser,
-            query,
-            classes,
             source_hash: None,
             spans: Vec::new(),
             tree: None,
             tree_revision: BufferRevision::new(0),
             span_window: None,
-            injection_query,
             injection_depth: 0,
             children: Vec::new(),
         })
     }
 
+    pub fn language(&self) -> LanguageId {
+        self.language
+    }
+
     /// Highlight spans intersecting `[first_byte, last_byte)` of the rope.
     /// Reparses only when the text changed. `revision` is the document's
     /// edit counter (0020 §5: the len+first+last key under-invalidated
-    /// same-length middle edits deterministically). A parse that cannot
-    /// complete is a typed [`HighlightError`] — never a hidden reparse
-    /// fallback, never a panic.
+    /// same-length middle edits deterministically). A line is highlighted
+    /// only up to [`LINE_BUDGET`] bytes (0111 decision 6). A parse that
+    /// cannot complete is a typed [`HighlightError`] — never a hidden
+    /// reparse fallback, never a panic.
     pub fn highlight(
         &mut self,
         rope: &Rope,
@@ -303,67 +295,78 @@ impl Highlighter {
         last_byte: usize,
         cancelled: impl Fn() -> bool,
     ) -> Result<Vec<Span>, HighlightError> {
-        self.highlight_cancellable(rope, revision, first_byte, last_byte, &cancelled)
+        let len = rope.len_bytes();
+        let window = (first_byte.min(len), last_byte.min(len));
+        let segments = window::segments(rope, window.0, window.1);
+        Ok(self
+            .spans_in(rope, revision, window, &segments, &cancelled)?
+            .to_vec())
     }
 
-    fn highlight_cancellable(
+    /// The flattened spans of `window`, restricted to `segments` (the
+    /// window minus over-budget line tails), cached per window until the
+    /// next reparse. Injected layers receive the host's segments.
+    fn spans_in(
         &mut self,
         rope: &Rope,
         revision: BufferRevision,
-        first_byte: usize,
-        last_byte: usize,
+        window: (usize, usize),
+        segments: &[(usize, usize)],
         cancelled: &dyn Fn() -> bool,
-    ) -> Result<Vec<Span>, HighlightError> {
+    ) -> Result<&[Span], HighlightError> {
         if cancelled() {
             return Err(HighlightError::Cancelled);
         }
         self.ensure_tree(rope, revision, cancelled)?;
-        let window = (
-            first_byte.min(rope.len_bytes()),
-            last_byte.min(rope.len_bytes()),
-        );
         if self.span_window != Some(window) {
+            let compiled = self.compiled;
             let tree = self.tree.as_ref().ok_or(HighlightError::Parse)?;
             let mut cursor = QueryCursor::new();
-            cursor.set_byte_range(window.0..window.1);
             let mut progress = |_: &tree_sitter::QueryCursorState| cancelled();
             let mut captures = Vec::new();
-            let mut matches = cursor.matches_with_options(
-                &self.query,
-                tree.root_node(),
-                RopeText { rope },
-                tree_sitter::QueryCursorOptions::new().progress_callback(&mut progress),
-            );
-            while let Some(m) = { StreamingIterator::next(&mut matches) } {
-                if cancelled() {
-                    return Err(HighlightError::Cancelled);
-                }
-                for cap in m.captures {
-                    let node = cap.node;
-                    if node.end_byte() <= window.0 || node.start_byte() >= window.1 {
-                        continue;
+            for &(start, end) in segments {
+                cursor.set_byte_range(start..end);
+                let mut matches = cursor.matches_with_options(
+                    &compiled.highlights,
+                    tree.root_node(),
+                    RopeText { rope },
+                    tree_sitter::QueryCursorOptions::new().progress_callback(&mut progress),
+                );
+                while let Some(m) = { StreamingIterator::next(&mut matches) } {
+                    if cancelled() {
+                        return Err(HighlightError::Cancelled);
                     }
-                    let style = self.classes[cap.index as usize];
-                    captures.push(LayeredSpan {
-                        span: Span {
-                            start: node.start_byte(),
-                            end: node.end_byte(),
-                            class: style.class,
-                            emphasis: style.emphasis,
-                        },
-                        injected: false,
-                    });
+                    for cap in m.captures {
+                        let node = cap.node;
+                        if node.end_byte() <= start || node.start_byte() >= end {
+                            continue;
+                        }
+                        let style = compiled.classes[cap.index as usize];
+                        captures.push(LayeredSpan {
+                            span: Span {
+                                start: node.start_byte(),
+                                end: node.end_byte(),
+                                class: style.class,
+                                emphasis: style.emphasis,
+                            },
+                            injected: false,
+                        });
+                    }
                 }
             }
             if cancelled() {
                 return Err(HighlightError::Cancelled);
             }
-            drop(matches);
-            captures.extend(self.injection_spans(rope, revision, window.0, window.1, cancelled)?);
-            self.spans = spans::flatten(captures, window.0, window.1);
+            captures.extend(self.injection_spans(rope, revision, window, segments, cancelled)?);
+            let spans = spans::flatten(captures, window.0, window.1);
+            self.spans = if segments == [window] {
+                spans
+            } else {
+                window::clip_to(spans, segments)
+            };
             self.span_window = Some(window);
         }
-        Ok(self.spans.clone())
+        Ok(&self.spans)
     }
 
     /// Parse (incrementally against the kept tree) until `revision` is
@@ -409,47 +412,6 @@ impl Highlighter {
         self.span_window = None;
         Ok(())
     }
-}
-
-/// Largest char-boundary-aligned length of `head` that is at most `want`.
-/// A byte cap can land inside a multibyte character; walking back at most
-/// three bytes keeps the slice valid UTF-8.
-fn cut_at_boundary(head: &str, want: usize) -> usize {
-    let mut take = want.min(head.len());
-    while take > 0 && !head.is_char_boundary(take) {
-        take -= 1;
-    }
-    take
-}
-
-/// The rope's first line, capped at 256 bytes so a minified no-newline
-/// blob can't turn shebang detection into a full-text copy. Assembled
-/// chunk-wise, so a first line spanning rope chunks comes out whole
-/// (up to the cap).
-fn first_line_bounded(rope: &Rope) -> String {
-    const CAP: usize = 256;
-    // only a shebang can match — skip the copy for the common case
-    if rope.len_bytes() == 0 || rope.byte(0) != b'#' {
-        return String::new();
-    }
-    let limit = rope.len_bytes().min(CAP);
-    let mut line = String::new();
-    let mut byte = 0;
-    while byte < limit {
-        let (chunk, start, ..) = rope.chunk_at_byte(byte);
-        let head = &chunk[byte - start..];
-        let stop = head.find('\n').unwrap_or(head.len());
-        let take = cut_at_boundary(head, stop.min(limit - byte));
-        if take == 0 {
-            break; // the cap cut inside a multibyte char
-        }
-        line.push_str(&head[..take]);
-        if take == stop {
-            break; // consumed through the newline (or the whole chunk had none)
-        }
-        byte += take;
-    }
-    line
 }
 
 #[cfg(test)]

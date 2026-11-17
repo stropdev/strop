@@ -424,17 +424,19 @@ pub(crate) fn visit_matches(
     prog: &Program,
     mut visit: impl FnMut(SearchMatch) -> std::ops::ControlFlow<()>,
 ) -> Result<(), QueryError> {
-    visit_captures(m, prog, |hit, _| visit(hit))
+    visit_captures(m, prog, 0, |hit, _| visit(hit))
 }
 
-/// `visit_matches`, handing each match its capture groups: `groups[n - 1]`
-/// is `\n`, `None` when that group took no part in the match.
+/// `visit_matches` from `from`, handing each match its capture groups:
+/// `groups[n - 1]` is `\n`, `None` when that group took no part in the
+/// match.
 pub(crate) fn visit_captures(
     m: &Matcher<'_>,
     prog: &Program,
+    from: usize,
     mut visit: impl FnMut(SearchMatch, &[Option<SearchMatch>]) -> std::ops::ControlFlow<()>,
 ) -> Result<(), QueryError> {
-    let mut at = 0usize;
+    let mut at = from;
     let mut slots = Vec::new();
     let mut groups = Vec::new();
     while at <= m.len() {

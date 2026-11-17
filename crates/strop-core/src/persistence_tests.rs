@@ -1,7 +1,6 @@
 use crate::Buffer;
 
 #[test]
-#[cfg(unix)]
 fn predictable_staging_symlink_cannot_redirect_a_save() {
     use std::os::unix::fs::{symlink, PermissionsExt};
     let directory = tempfile::tempdir().unwrap();

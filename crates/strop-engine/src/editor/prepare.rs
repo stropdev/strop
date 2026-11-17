@@ -160,6 +160,7 @@ impl Editor {
         &self.prepared
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     /// Worker-ticket admissions since startup (AR01 evidence).
     pub fn admission_probe(&self) -> AdmissionProbe {
         self.admissions
@@ -440,25 +441,10 @@ impl Editor {
     }
 
     /// True when the pane's visible window needs analysis (guides, syntax
-    /// or search) whose exact result is not cached yet — 0066 may paint an
-    /// edit-mapped interim frame meanwhile, but the window's decorations
-    /// are still in flight.
+    /// or search) that is not decided yet — 0066 may paint an edit-mapped
+    /// interim frame meanwhile, but the window's decorations are still in
+    /// flight.
     fn window_analysis_pending(&self, pane: &PreparedPane, document: &super::Document) -> bool {
-        let guides = self.config.indent_guides
-            && matches!(
-                document.source,
-                super::DocumentSource::File
-                    | super::DocumentSource::Scratch
-                    | super::DocumentSource::Remote(_)
-            );
-        let search = if pane.doc == self.current() {
-            self.current_search_query().ok().flatten()
-        } else {
-            None
-        };
-        if !guides && document.syntax_path().is_none() && search.is_none() {
-            return false;
-        }
         let rows = usize::from(pane.budget.height);
         if rows == 0 {
             return false;
@@ -469,14 +455,13 @@ impl Editor {
             .min(document.buf.len_lines());
         let first = document.buf.line_start(pane.view_top);
         let last = document.buf.line_end(last_line.saturating_sub(1));
-        self.exact_analysis_cached(
+        self.window_analysis_pending_for(
             pane.doc,
             first,
             last,
             pane.hscroll.get(),
             usize::from(pane.budget.width),
         )
-        .is_none()
     }
 
     /// Everything stamp-guarded preparation depends on: geometry, focus,

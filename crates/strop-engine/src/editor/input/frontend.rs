@@ -6,6 +6,7 @@ use strop_core::frontend_input::{Input, KeyCode, KeyEvent, KeyKind};
 
 impl Editor {
     pub(crate) fn handle_frontend_input(&mut self, input: Input) {
+        self.cmdline.ex.interrupt.take_key(&input);
         if matches!(&input, Input::Key(key) if key.kind != KeyKind::Press) {
             self.terminals.keyboard = strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS;
         }
@@ -79,6 +80,9 @@ fn editor_key(key: KeyEvent) -> Option<Key> {
         KeyCode::Down => Key::Down,
         KeyCode::Left => Key::Left,
         KeyCode::Right => Key::Right,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::Delete => Key::Delete,
         KeyCode::Char('i') if control => Key::Tab,
         KeyCode::Char('m') if control => Key::Enter,
         KeyCode::Char('[') if control => Key::Esc,

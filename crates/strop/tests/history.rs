@@ -71,7 +71,7 @@ fn run(root: &Path, state: &Path, script: &str) -> String {
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
         .env_remove("STROP_LOG")
-        .arg("--headless")
+        .arg("headless")
         .arg(&steps)
         .arg("src/f007.txt")
         .output()

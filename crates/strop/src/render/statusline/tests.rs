@@ -15,6 +15,7 @@ use super::render;
 use crate::render::clip::width;
 use crate::render::tokens;
 
+mod scope;
 mod stability;
 
 /// The modeline cells, including severity styling as well as symbols.
@@ -90,10 +91,10 @@ fn the_chip_is_ten_cells_with_padding_in_every_mode() {
     e.feed_text("d");
     assert_eq!(chip(&e), " PENDING  ");
     e.feed(strop_core::frontend_input::Key::Esc);
+    // the command line draws the same chip on its own row
     e.feed_text(":");
-    assert_eq!(chip(&e), " COMMAND  ");
+    assert_eq!(super::chip::chip(&e, &tokens()).0, " COMMAND  ");
     // the path starts at the same column whatever the mode
-    e.feed(strop_core::frontend_input::Key::Esc);
     e.feed(strop_core::frontend_input::Key::Esc);
     let normal = row(&e, 80, 4);
     e.feed_text("i");

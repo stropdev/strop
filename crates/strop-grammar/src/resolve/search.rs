@@ -160,18 +160,23 @@ pub(crate) fn visit_all(
     }
 }
 
-/// Every match with its capture groups (`:s` replacements read `\1`).
+/// Every match starting at or after `from` (a character boundary) with
+/// its capture groups (`:s` replacements read `\1`). Text before `from`
+/// is still context for anchors.
 /// A plain literal has no groups, so it keeps the streaming walk.
 pub(crate) fn visit_captures(
     buf: &Buffer,
     query: &CompiledQuery,
+    from: usize,
     mut visitor: impl FnMut(SearchMatch, &[Option<SearchMatch>]) -> std::ops::ControlFlow<()>,
 ) -> Result<(), QueryError> {
     let program = query.program();
-    if program.literal.is_some() {
-        visit_all(buf, query, |hit| visitor(hit, &[]))
+    if let Some(needle) = &program.literal {
+        visit(buf, needle, from, query, |offset| {
+            visitor(literal_hit(needle, offset), &[])
+        })
     } else {
-        crate::query::exec::visit_captures(&Matcher::new(buf.text(), query), program, visitor)
+        crate::query::exec::visit_captures(&Matcher::new(buf.text(), query), program, from, visitor)
     }
 }
 
@@ -205,7 +210,7 @@ mod tests {
         let buf = Buffer::from_text("ab cd\n");
         let q = CompiledQuery::compile("\\(a\\)\\(x\\)\\?b\\|\\(c\\)d", false).expect("compiles");
         let mut seen = Vec::new();
-        visit_captures(&buf, &q, |hit, groups| {
+        visit_captures(&buf, &q, 0, |hit, groups| {
             let groups: Vec<_> = groups
                 .iter()
                 .map(|group| group.map(|group| (group.start.get(), group.end.get())))

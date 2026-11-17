@@ -217,6 +217,7 @@ impl Editor {
         Some(info)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     /// A collection view row's role (0049 §6) for the renderer —
     /// structure as data, never text parsing.
     pub fn collection_row_kind(

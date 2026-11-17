@@ -222,7 +222,13 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     assert!(terminal_inspection(&landed), "{landed}");
     assert!(!landed.contains("out+"), "{landed}");
     tui.send(b"gg/^INSPECTION-READY\ryy:e yank-target.txt\r");
-    tui.until(|screen| screen.contains("yank-target.txt") && !screen.contains("term://"));
+    // the modeline names the file once it is open (while the command line
+    // is open, its own row shows what was typed)
+    tui.until(|screen| {
+        screen.contains(" NORMAL ")
+            && screen.contains("yank-target.txt")
+            && !screen.contains("term://")
+    });
     tui.send(b"p");
     tui.until(|screen| !screen.contains("term://") && numbered_line(screen, "INSPECTION-READY"));
     tui.send(b":q!\r");
@@ -288,7 +294,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     let before = std::fs::read(directory.path().join("run-count")).unwrap();
     assert_eq!(before, b"x");
     let replay = Command::new(env!("CARGO_BIN_EXE_strop"))
-        .arg("--replay")
+        .arg("replay")
         .arg(&trace)
         .env("HOME", directory.path())
         .env("SHELL", "/unavailable-during-replay")
@@ -321,4 +327,58 @@ fn two_escapes_in_one_write_close_a_picker() {
     tui.until(|screen| screen.contains("NORMAL") && !screen.contains("esc  close"));
     tui.send(b":q\r");
     tui.expect_clean_exit("the editor did not exit cleanly");
+}
+
+/// Every file under `root`, read as lossy text, concatenated.
+fn tree_text(root: &std::path::Path) -> String {
+    let mut text = String::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return text;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            text.push_str(&tree_text(&path));
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            text.push_str(&String::from_utf8_lossy(&bytes));
+        }
+    }
+    text
+}
+
+/// 0108 H10: SIGTERM and SIGHUP take the orderly quit — the final
+/// checkpoint holds the unsaved edit, the terminal leaves the alternate
+/// screen and pops the keyboard flags, and the editor exits 0.
+#[test]
+fn sigterm_and_sighup_restore_the_terminal_and_keep_the_draft() {
+    for signal in [libc::SIGTERM, libc::SIGHUP] {
+        let directory = tempfile::tempdir().unwrap();
+        let trace = directory.path().join("terminal.jsonl");
+        let mut tui = Tui::start(directory.path(), &trace);
+        tui.until(|screen| screen.contains("NORMAL"));
+        tui.send(b":e note.txt\r");
+        tui.until(|screen| screen.contains("note.txt"));
+        tui.send(b"iSIGNAL-DRAFT\x1b");
+        tui.until(|screen| screen.contains("SIGNAL-DRAFT") && screen.contains("NORMAL"));
+        let before = tui.output.len();
+        let pid = libc::pid_t::try_from(tui.child.id()).unwrap();
+        // SAFETY: `pid` is this fixture's own live child.
+        assert_eq!(unsafe { libc::kill(pid, signal) }, 0);
+        tui.expect_clean_exit("a signalled editor quits the orderly way");
+        let after = &tui.output[before..];
+        for (sequence, what) in [
+            (&b"\x1b[?1049l"[..], "leaves the alternate screen"),
+            (&b"\x1b[<1u"[..], "pops the keyboard flags"),
+        ] {
+            assert!(
+                after.windows(sequence.len()).any(|bytes| bytes == sequence),
+                "signal {signal}: {what}"
+            );
+        }
+        assert!(
+            tree_text(&directory.path().join("state")).contains("SIGNAL-DRAFT"),
+            "signal {signal}: the final checkpoint holds the unsaved edit"
+        );
+        assert!(!directory.path().join("note.txt").exists(), "nothing saved");
+    }
 }

@@ -104,7 +104,6 @@ fn review_unicode_filename_reports_char_columns() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn review_save_preserves_symlink() {
     let dir = tempfile::tempdir().unwrap();

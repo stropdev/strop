@@ -331,14 +331,17 @@ impl Editor {
                 // (an end standing on a line's end takes its line break:
                 // `v$`, or `vj` onto a shorter line)
                 // — except the buffer's last line, which has none to take
+                // — the whole break: a CRLF is one (plan 0108 D2)
                 let last = self.anchor().max(self.head());
                 let line = self.buf().line_of(last);
-                let at_buffer_end =
-                    line >= self.buf().last_content_line() && last >= self.buf().line_end(line);
+                let at_line_end = last >= self.buf().line_end(line);
+                let at_buffer_end = line >= self.buf().last_content_line() && at_line_end;
                 let (s, e) = (
                     self.anchor().min(self.head()),
                     if at_buffer_end {
                         last
+                    } else if at_line_end {
+                        self.buf().line_start(line + 1)
                     } else {
                         self.buf().ceil_boundary(last + 1)
                     },

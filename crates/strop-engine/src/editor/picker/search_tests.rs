@@ -245,7 +245,6 @@ fn live_preview_witness_cache_rechecks_each_source_revision() {
     assert!(editor.picker_preview_range(&preview).unwrap().is_some());
 }
 
-#[cfg(unix)]
 #[test]
 fn canonical_aliases_prepare_only_one_edit_plan_for_the_source() {
     let (root, mut editor) = fixture();
@@ -263,6 +262,7 @@ fn canonical_aliases_prepare_only_one_edit_plan_for_the_source() {
             match_len: 6,
             line_text: "needle needle".into(),
         },
+        facts: Default::default(),
     }]);
     editor.feed(Key::Tab);
     editor.paste_bracketed("new");
@@ -448,6 +448,7 @@ fn stale_search_results_cannot_publish_after_disconnect_and_new_query() {
                     match_len: 5,
                     line_text: "STALE".into(),
                 },
+                facts: Default::default(),
             }]
             .into(),
         ),

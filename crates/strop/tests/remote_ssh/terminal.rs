@@ -15,7 +15,7 @@ fn ssh_terminal_runs_on_the_host_takes_ctrl_c_and_retains_launch_identity() {
         "terminal.steps",
         "settle\nkeys :terminal /bin/sh<cr>\nkeys echo TYPED_AHEAD<cr>\nwait 1000\nsettle\nkeys sleep 30<cr>\nwait 300\nkeys <c-c>\nkeys echo REMOTE_$((40+2))<cr>\nwait 1000\nsettle\nkeys <c-\\><c-n>\nstate\nframe\nkeys :qa!<cr>\nsettle\n",
     );
-    let output = fixture.run(&["--headless".into(), steps.into(), target.into()]);
+    let output = fixture.run(&["headless".into(), steps.into(), target.into()]);
     let observed = states(&output);
     let terminal = observed.last().unwrap()["terminal"].clone();
     assert!(

@@ -109,11 +109,6 @@ impl Editor {
         }
     }
 
-    /// The modeline's indent segment: `Spaces:4` / `Tabs:4` (0051 R08).
-    pub fn indent_label(&self) -> String {
-        self.indentation_at(self.current(), self.head()).label()
-    }
-
     /// The compact `:tab-size` selector (0051 R08): common widths, the
     /// style choices, Auto for both, and a pinned custom row that
     /// validates the typed number on accept. The current effective
@@ -133,7 +128,7 @@ impl Editor {
         let mut items: Vec<Item> = [2usize, 3, 4, 8]
             .into_iter()
             .map(|width| Item {
-                badge: Some(width.to_string()),
+                badge: Some(width.to_string().into()),
                 text: format!(
                     "spaces per indent{}",
                     current(
@@ -142,6 +137,7 @@ impl Editor {
                     )
                 ),
                 payload: Payload::IndentChoice(IndentChoice::Width(width)),
+                facts: Default::default(),
             })
             .collect();
         items.push(Item {
@@ -154,6 +150,7 @@ impl Editor {
                 )
             ),
             payload: Payload::IndentChoice(IndentChoice::AutoWidth),
+            facts: Default::default(),
         });
         items.push(Item {
             badge: None,
@@ -162,6 +159,7 @@ impl Editor {
                 current(indent.style == IndentStyle::Spaces, indent.style_source)
             ),
             payload: Payload::IndentChoice(IndentChoice::Spaces),
+            facts: Default::default(),
         });
         items.push(Item {
             badge: None,
@@ -170,6 +168,7 @@ impl Editor {
                 current(indent.style == IndentStyle::Tabs, indent.style_source)
             ),
             payload: Payload::IndentChoice(IndentChoice::Tabs),
+            facts: Default::default(),
         });
         items.push(Item {
             badge: None,
@@ -181,6 +180,7 @@ impl Editor {
                 )
             ),
             payload: Payload::IndentChoice(IndentChoice::AutoStyle),
+            facts: Default::default(),
         });
         // Pinned tail: filtering never hides the custom row, and the
         // typed text becomes the width on accept (validated there).
@@ -192,6 +192,7 @@ impl Editor {
                 crate::config::TAB_SIZE_MAX
             ),
             payload: Payload::IndentChoice(IndentChoice::CustomWidth),
+            facts: Default::default(),
         });
         let mut picker = Picker::new(Kind::TabSize, items, false);
         picker.pinned_tail = 1;

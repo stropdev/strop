@@ -3,8 +3,22 @@ members = ["crates/strop-workspace", "crates/strop-trace", "crates/strop-kernel"
 resolver = "2"
 
 [workspace.package]
-version = "0.69.0"
+version = "0.71.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/stropdev/strop"
 homepage = "https://strop.dev"
+
+[workspace.dependencies]
+# A line break is `\n` (CRLF stays one break, its `\r` is the line's
+# last byte), as in Vim and tree-sitter: no Unicode or lone-CR breaks
+# (plan 0108 D1.9). Every crate takes ropey from here so no member can
+# switch `unicode_lines` back on through feature unification.
+ropey = { version = "1", default-features = false, features = ["simd"] }
+
+# One codegen unit and whole-program LTO for the shipped binary (plan 0108
+# D5). Symbols are stripped by the Dockerfile `release` stage, not here, so
+# `cargo test --release` binaries keep readable backtraces.
+[profile.release]
+lto = "fat"
+codegen-units = 1

@@ -1,8 +1,11 @@
 # Search and filters
 
-The same filters work in every search field: Files (`Space f`), Search
-(`Space /`), Replace (`Space R`), document symbols (`Space s`), workspace
-symbols (`Space S`) and the jump list (`Space j`). Learn them once.
+One filter language works in every list that takes filters: Files
+(`Space f`), Search (`Space /`), Replace (`Space R`), document symbols
+(`Space s`), workspace symbols (`Space S`), buffers (`Space b`), the jump
+list (`Space j`), diagnostics (`Space d`) and locations (`grr`). Each list
+takes the filters its rows carry; [What each list takes](#what-each-list-takes)
+says exactly which.
 
 ## Finding files (`Space f`)
 
@@ -43,10 +46,10 @@ to default. A qualifier typed in the query (`case:`, `hidden:`, `ignored:`,
 ## The filters
 
 **Case is smart everywhere:** an all-lowercase query matches either case;
-one capital letter makes case count. In Files, plain words are matched
-fuzzily. In Search, plain words are searched for exactly as typed, unless
-you press `Alt-R` or write `regex:`. Use `case:sensitive` or `case:ignore`
-to decide outright:
+one capital letter makes case count. Plain words are matched fuzzily in
+every list except Search, where they are searched for exactly as typed
+(unless you press `Alt-R` or write `regex:`). Use `case:sensitive` or
+`case:ignore` to decide outright:
 
 ```text
 language:rust
@@ -54,6 +57,7 @@ language:cpp path:src/ request_id
 glob:"src/my files/**/*.rs" -path:generated/ text:"request-id"
 language:rust regex:"\brequest_(id|name)\b"
 hidden:exclude ignored:include text:"-test.rs"
+kind:fn pcfg
 kind:function parse AND NOT wrap
 ```
 
@@ -64,31 +68,92 @@ kind:function parse AND NOT wrap
 - `fpath:TEXT` — the same, matched fuzzily; use `fpath:modules/jweb/ parser`
   to stay in a directory while looking for `parser`.
 - `glob:PATTERN` — a glob over the path inside the project.
+- `kind:KIND` — what a symbol is; in Search, what declaration the line is
+  in. The kinds are listed below.
+- `repo:NAME` — in Search, only the project (repository) of that name.
 - `hidden:include|exclude` / `ignored:include|exclude` — include or exclude
   hidden files and ignored files for this query.
 - `case:sensitive|ignore|smart` — how case is matched, in file names, paths,
   symbols and text. The default is `smart`: a term is case-sensitive only
   when it has a capital in it. `case:insensitive` means `case:ignore`.
-- `kind:` — in the symbol pickers, what the symbol is (`kind:function`,
-  `kind:struct`, …).
-- `text:"..."` — text to search for exactly, even if it looks like a
-  filter. `regex:"..."` — a regular expression.
-- A `-` in front excludes: `-path:generated/`, `-language:json`.
+- `text:"..."` — text to match exactly, even if it looks like a filter.
+  `regex:"..."` — a regular expression.
+- A `-` in front excludes: `-path:generated/`, `-language:json`, `-kind:field`.
 - `AND` / `OR` / `NOT` and parentheses combine terms. A filter next to
-  text means both. In Search, plain words next to each other are one
+  plain words means both, and the words stay fuzzy: `kind:fn pcfg` finds
+  `parse_config`. In Search, plain words next to each other are one
   phrase: `request id` finds exactly that text.
 
-`Ctrl-Space` in any search field suggests what can come next at the
-cursor. `:help query language` covers quoting, errors and examples.
+A filter a list does not take, a misspelt one or an unknown value is an
+error: the field marks the word with `^^^` and says what is wrong on the
+row under it, with the closest correct spelling (`unknown kind: fnc — did
+you mean kind:fn?`). The list stays as it was until the query is fixed; it
+never quietly ignores the filter.
+
+`Ctrl-Space` in any list that takes filters suggests the ones it takes and
+their values. `:help query language` lists every filter with the lists
+that take it, every kind, and how quoting works.
+
+## What each list takes
+
+| List | Filters | Plain words |
+|---|---|---|
+| `space f` files | `language:` `path:` `fpath:` `glob:` `hidden:` `ignored:` `case:` `text:` `regex:` | fuzzy path |
+| `space /` search hits | `language:` `path:` `fpath:` `glob:` `kind:` `repo:` `hidden:` `ignored:` `case:` `text:` `regex:` | literal content |
+| `space s` symbols | `kind:` `language:` `path:` `fpath:` `glob:` `case:` `text:` `regex:` | fuzzy |
+| `space S` workspace symbols | `kind:` `language:` `path:` `fpath:` `glob:` `hidden:` `ignored:` `case:` `text:` `regex:` | fuzzy |
+| `space b` buffers | `language:` `path:` `fpath:` `glob:` `case:` `text:` `regex:` | fuzzy path |
+| `space j` jumps | `language:` `path:` `fpath:` `glob:` `case:` `text:` `regex:` | fuzzy |
+| `space d` diagnostics | `language:` `path:` `fpath:` `glob:` `case:` `text:` `regex:` | fuzzy |
+| `grr gri` locations | `language:` `path:` `fpath:` `glob:` `case:` `text:` `regex:` | fuzzy |
+| `:filter` folder entries | `language:` `path:` `fpath:` `glob:` `hidden:` `ignored:` `case:` `text:` `regex:` | literal content |
+
+`Space R` is Search with the With field showing. Actions (`Space a`), the
+theme and tab-size selectors, branches (`Space g b`) and SSH destinations
+take no filters: what you type there is matched as plain text, so a colon
+is just a colon.
+
+### Kinds
+
+`kind:` takes any word in a row below, in any case, or the start of one
+when only one kind starts that way (`kind:stru` is `struct`; `kind:f` could
+be several and asks for more). The list shows each symbol's chip.
+`kind:function` also keeps methods and constructors.
+
+| `kind:` | Chip | Also | Language servers' kinds |
+|---|---|---|---|
+| `function` | `fn` | `func` `fun` `def` `sub` `proc` | Function |
+| `method` | `meth` | | Method |
+| `constructor` | `ctor` | `new` `init` | Constructor |
+| `class` | `class` | | Class |
+| `struct` | `struct` | `record` | Struct |
+| `interface` | `iface` | `trait` `protocol` | Interface |
+| `impl` | `impl` | `object` | Object |
+| `enum` | `enum` | | Enum |
+| `variant` | `variant` | `enummember` | EnumMember |
+| `module` | `mod` | `namespace` `ns` `package` `pkg` | Module, Namespace, Package |
+| `file` | `file` | | File |
+| `field` | `field` | | Field |
+| `property` | `prop` | `attribute` `attr` | Property |
+| `variable` | `var` | `let` `local` | Variable |
+| `constant` | `const` | `static` | Constant |
+| `type` | `type` | `typeparam` `generic` `alias` | TypeParameter |
+| `event` | `event` | | Event |
+| `operator` | `op` | | Operator |
+| `key` | `key` | | Key |
+| `value` | `val` | `string` `number` `boolean` `array` `null` | String, Number, Boolean, Array, Null |
+| `other` | `sym` | | |
 
 ## Where the filters apply
 
 - In **Files** the filters decide which files are listed.
-- In **Search** and **Replace** they decide which files are searched.
-- In **document symbols** and the **jump list** they filter the rows
-  already in the list, as you type, and plain words rank the rows by fuzzy
-  match. On the jump list, `language:cpp path:tests` keeps the jumps inside
-  C++ files under `tests/`.
+- In **Search** and **Replace** they decide which files are searched, and
+  `kind:` which lines count: `kind:fn retry` finds `retry` inside
+  functions.
+- In the other lists they filter the rows already in the list, as you
+  type, and plain words rank what is left by fuzzy match. On the jump
+  list, `language:cpp path:tests` keeps the jumps inside C++ files under
+  `tests/`.
 - A row a filter cannot judge is kept, not hidden. A buffer with no file
   has no path, so `path:` keeps it.
 

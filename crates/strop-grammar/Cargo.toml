@@ -4,8 +4,10 @@ description = "strop grammar: pure vim operator-pending resolver (motions, text 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.69.0" }
-ropey = "1"
+strop-core = { path = "../strop-core" }
+strop-kernel = { path = "../strop-kernel" }
+ropey.workspace = true
 serde = { version = "1", features = ["derive"] }

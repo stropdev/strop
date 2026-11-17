@@ -162,6 +162,7 @@ pub enum PositionEncoding {
     Utf16,
 }
 
+#[cfg(test)]
 /// Byte column → server column for one line's text.
 pub fn to_server_col(line: &str, byte_col: ByteColumn, enc: PositionEncoding) -> ServerColumn {
     crate::to_server_col_slice(line.into(), byte_col, enc)
@@ -277,9 +278,29 @@ pub struct ServerPosition {
 pub struct ProtoSymbol {
     pub name: String,
     pub container: String,
-    /// SymbolKind's LSP name (`Function`, `Struct`, …).
-    pub kind: String,
+    pub kind: strop_core::symbol_kind::SymbolKind,
     pub location: ServerLocation,
+    /// The lines the whole declaration covers (0107 §6.1).
+    pub span: LineSpan,
+}
+
+/// The first and last line (0-based, inclusive) of a declaration, from
+/// its first attribute or doc comment (when the source includes them) to
+/// the line of its closing token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LineSpan {
+    pub first: LineIndex,
+    pub last: LineIndex,
+}
+
+impl LineSpan {
+    /// One line: a symbol whose extent is only its name.
+    pub const fn line(line: LineIndex) -> Self {
+        Self {
+            first: line,
+            last: line,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

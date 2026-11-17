@@ -209,10 +209,9 @@ pub const RG_PROTECTED_ARGS: &[&str] = &["--glob", "!.git", "--glob", "!.git/**"
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::SearchQuery;
 
     fn collect(cwd: &Path, query: &str, policy: SelectionPolicy) -> Vec<String> {
-        let parsed = SearchQuery::parse(query);
+        let parsed = crate::query::parse_search(query);
         let plan = FileSelectionPlan::compile(&parsed).unwrap();
         let mut out = Vec::new();
         walk(cwd, &plan, policy, &|| false, |rel| {
@@ -277,7 +276,7 @@ mod tests {
         );
         assert!(listed.contains(&".env".to_string()), "{listed:?}");
         // Content search gathers through the same builder.
-        let plan = FileSelectionPlan::compile(&SearchQuery::parse("")).unwrap();
+        let plan = FileSelectionPlan::compile(&crate::query::parse_search("")).unwrap();
         let gathered = super::collect(dir.path(), &plan, everything, &|| false, 2).unwrap();
         assert!(
             !gathered
@@ -377,7 +376,6 @@ mod tests {
 
     /// One dangling link is ineligible, never a walk-stopping error:
     /// the rest of the workspace still streams (0051 §3 boundaries).
-    #[cfg(unix)]
     #[test]
     fn a_broken_symlink_never_empties_the_walk() {
         let dir = fixture();

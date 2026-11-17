@@ -22,114 +22,284 @@ fn push_rule(text: &mut String, title: &str) {
     text.push_str(&format!("\n─ {title} ─\n"));
 }
 
+/// The query language's rows the schema does not generate: how text is
+/// read, quoted and replaced. Every key's row comes from the schema
+/// (0109, see [`push_query_language`]).
+const QUERY_NOTES: &[(&str, &str)] = &[
+    ("-language: -kind: -path:", "Exclude; exclusions win"),
+    (
+        "AND OR NOT ( )",
+        "Combine filters and words; bare words beside a filter stay fuzzy",
+    ),
+    (
+        "ctrl-space",
+        "Suggest the filters and values this list takes",
+    ),
+    (
+        "unknown filter",
+        "An error under the word; the list stays as it was until it is fixed",
+    ),
+    (
+        "scope",
+        "Regular local files; directory links and special files are not searched",
+    ),
+    (
+        "SSH listings",
+        "Hidden entries included; no ignore-file filtering (local search defaults do not apply)",
+    ),
+    (
+        "filter-only Search",
+        "Needs a search expression; file find lists matches",
+    ),
+    (
+        "quoted text",
+        "Stays literal — never a filter (\"language:rust\" searches that text)",
+    ),
+    (
+        "old -t / -g flags",
+        "Now ordinary literal text; use language: and glob:",
+    ),
+    (
+        "file expressions",
+        "Bare words are fuzzy; quoted/text: are literal; regex: is explicit",
+    ),
+    (
+        "quotes",
+        "Single/double quotes; escape the active quote or backslash",
+    ),
+    (
+        "With",
+        "Literal text; after a regex: term with groups, $1 ${name} \\1 expand",
+    ),
+    (
+        ":[range]s/a/b/[g]",
+        "Buffer-search pattern; live before/after preview before Enter",
+    ),
+    (
+        ":s replacement",
+        "Vim's: & \\1 ~ \\r \\u \\U expand; \\& and \\\\ are themselves",
+    ),
+    (
+        "buffer / ?",
+        "Smart case by default; case:sensitive or \\C forces exact case",
+    ),
+    (
+        "buffer case:ignore",
+        "Explicit insensitive search (alias: case:insensitive)",
+    ),
+    (
+        "input ctrl-r {reg}",
+        "Insert a register in any input: insert mode, : / ?, Files, Search, With",
+    ),
+    (
+        "visual ctrl-c",
+        "Toggle line comments on the selected lines",
+    ),
+];
+
+/// "Query language": one row per filter key with the lists that take
+/// it, one per `kind:` value, then the notes — generated from the
+/// schema and the kind table, so the help cannot promise what a list
+/// ignores.
+fn push_query_language(text: &mut String) {
+    use strop_picker::query::schema::{surfaces_of, Field};
+    push_rule(text, "Query language");
+    let mut rows: Vec<(String, String)> = Field::ALL
+        .into_iter()
+        .map(|field| {
+            let surfaces: Vec<&str> = surfaces_of(field).collect();
+            (
+                field.example().to_owned(),
+                format!("{} · {}", field.help(), surfaces.join(", ")),
+            )
+        })
+        .collect();
+    for spec in strop_core::symbol_kind::KINDS {
+        let words: Vec<&str> = spec.words().filter(|word| *word != spec.value).collect();
+        let mut parts = Vec::new();
+        if !words.is_empty() {
+            parts.push(format!("also {}", words.join(", ")));
+        }
+        if !spec.lsp.is_empty() {
+            parts.push(format!("language servers' {}", spec.lsp.join(", ")));
+        }
+        if parts.is_empty() {
+            parts.push("symbols no other kind names".into());
+        }
+        rows.push((format!("kind:{}", spec.value), parts.join(" · ")));
+    }
+    rows.extend(
+        QUERY_NOTES
+            .iter()
+            .map(|(keys, desc)| ((*keys).to_owned(), (*desc).to_owned())),
+    );
+    let width = rows
+        .iter()
+        .map(|(keys, _)| keys.chars().count())
+        .max()
+        .unwrap_or(0);
+    for (keys, desc) in &rows {
+        push_row(text, keys, width, desc, false);
+    }
+}
+
 /// Hand-written rows for surfaces the binding table does not model
-/// (remote browsing, the query language, …): `(title, rows)`.
+/// (remote browsing, search, …): `(title, rows)`.
 const EXTRA: &[(&str, &[(&str, &str)])] = &[
     (
         "Remote",
         &[
-            ("strop ssh://host/path", "How to open: a remote file or directory from the shell"),
-            (":e ssh://host/path/", "How to open: a remote folder from inside the editor"),
-            ("space o / :remote", "Choose an SSH destination; Add a host… enters an address"),
+            (
+                "strop ssh://host/path",
+                "How to open: a remote file or directory from the shell",
+            ),
+            (
+                ":e ssh://host/path/",
+                "How to open: a remote folder from inside the editor",
+            ),
+            (
+                "space o / :remote",
+                "Choose an SSH destination; Add a host… enters an address",
+            ),
             (":remote root / home", "Open the host's root or home folder"),
-            (":w / :wq", "Save to the host; refused if the file changed since it was read"),
+            (
+                ":w / :wq",
+                "Save to the host; refused if the file changed since it was read",
+            ),
             (":w!", "Save to the host even if the file changed there"),
-            (":w ssh://… / :w PATH", "Write a copy on the host; never replaces a file without !"),
-            (":remote connect URI", "Connect to a host; a connected host is editable"),
+            (
+                ":w ssh://… / :w PATH",
+                "Write a copy on the host; never replaces a file without !",
+            ),
+            (
+                ":remote connect URI",
+                "Connect to a host; a connected host is editable",
+            ),
             (":remote disconnect URI", "Close the host's connection"),
             (":remote clear", "Close all connections"),
             (":remote list", "List connections in a buffer"),
             ("tab", "Complete an SSH URI without starting authentication"),
             (":e!", "Reload the remote file, dropping unsaved changes"),
-            (":explain", "Why: workspaces, LSP readiness/failures, effective config"),
-        ],
-    ),
-    (
-        "Query language",
-        &[
-            ("surfaces", "space f, space /, space R, symbols (space S), the space j jumplist"),
-            ("one language", "Identical local-workspace qualifiers on every surface above"),
-            ("language:rust", "Include a language family (alias: language:rs)"),
-            ("scope", "Regular local files; directory links and special files are not searched"),
-            ("SSH listings", "Hidden entries included; no ignore-file filtering (local search defaults do not apply)"),
-            ("path:src/", "Literal substring in the workspace-relative path"),
-            ("glob:\"**/*.rs\"", "Explicit path glob; quote values with spaces"),
-            ("fpath:modules/jweb/", "Fuzzy scope over full workspace-relative path"),
-            ("-language: -glob: -path:", "Exclude; exclusions win"),
-            ("hidden:include|exclude", "Show/hide dotfiles (default: shown)"),
-            ("ignored:include|exclude", "Include/respect ignored files (default: respected)"),
-            ("case:sensitive", "Exact case; the default is smart case in every search field"),
-            ("case:ignore|insensitive", "Ignore case; case:smart (a capital makes case count) is the default"),
-            ("text:\"...\"", "Explicit literal content expression (default for bare words)"),
-            ("regex:\"...\"", "Explicit Rust-regex expression"),
-            ("ctrl-space", "Manual qualifier/language/value suggestions"),
-            ("filter-only Search", "Needs a search expression; file find lists matches"),
-            ("quoted text", "Stays literal — never a filter (\"language:rust\" searches that text)"),
-            ("old -t / -g flags", "Now ordinary literal text; use language: and glob:"),
-            ("file expressions", "Bare words are fuzzy; quoted/text: are literal; regex: is explicit"),
-            ("quotes", "Single/double quotes; escape the active quote or backslash"),
-            ("With", "Literal text; after a regex: term with groups, $1 ${name} \\1 expand"),
-            (":[range]s/a/b/[g]", "Buffer-search pattern; live before/after preview before Enter"),
-            (":s replacement", "Vim's: & \\1 ~ \\r \\u \\U expand; \\& and \\\\ are themselves"),
-            ("buffer / ?", "Smart case by default; case:sensitive or \\C forces exact case"),
-            ("buffer case:ignore", "Explicit insensitive search (alias: case:insensitive)"),
-            ("input ctrl-r {reg}", "Insert a register in any input: insert mode, : / ?, Files, Search, With"),
-            ("visual ctrl-c", "Toggle line comments on the selected lines"),
+            (
+                ":explain",
+                "Why: workspaces, LSP readiness/failures, effective config",
+            ),
         ],
     ),
     (
         "Search workspace",
         &[
-            ("space /", "Open/resume the retained local Search investigation"),
+            (
+                "space /",
+                "Open/resume the retained local Search investigation",
+            ),
             ("space R", "Resume the same Search with replacement visible"),
-            ("ctrl-t", "Toggle With without restarting Search or losing its draft"),
-            ("Find enter", "Open selected source, even when With is visible"),
+            (
+                "ctrl-t",
+                "Toggle With without restarting Search or losing its draft",
+            ),
+            (
+                "Find enter",
+                "Open selected source, even when With is visible",
+            ),
             ("With enter", "Prepare Review; never apply or save directly"),
-            ("tab / s-tab", "Switch visible fields; otherwise move results"),
-            ("ctrl-x / ctrl-d", "Exclude/include match or file in the shared workset"),
-            ("esc", "Dismiss suggestions, enter field Normal, then hide Search"),
-            ("re-entry", "Refresh exact witnesses in the captured scope; report lost decisions"),
-            ("scope", "Local project backend; unsupported namespaces refuse, never fall back"),
+            (
+                "tab / s-tab",
+                "Switch visible fields; otherwise move results",
+            ),
+            (
+                "ctrl-x / ctrl-d",
+                "Exclude/include match or file in the shared workset",
+            ),
+            (
+                "esc",
+                "Dismiss suggestions, enter field Normal, then hide Search",
+            ),
+            (
+                "re-entry",
+                "Refresh exact witnesses in the captured scope; report lost decisions",
+            ),
+            (
+                "scope",
+                "Local project backend; unsupported namespaces refuse, never fall back",
+            ),
         ],
     ),
     (
         "Collections",
         &[
-            ("ctrl-o", "In search results, references or diagnostics: collect the included hits"),
-            ("]q / [q", "Next/previous hit, from the cursor; from a file, in the hit's file"),
+            (
+                "ctrl-o",
+                "In search results, references or diagnostics: collect the included hits",
+            ),
+            (
+                "]q / [q",
+                "Next/previous hit, from the cursor; from a file, in the hit's file",
+            ),
             ("enter", "Open the file at the cursor; Ctrl-O comes back"),
             ("]f / [f", "Next/previous file"),
-            ("+ / -", "Show more/less context around the hits under the cursor"),
-            ("edit", "Edits inside a card change its file; borders and gaps are not text"),
+            (
+                "+ / -",
+                "Show more/less context around the hits under the cursor",
+            ),
+            (
+                "edit",
+                "Edits inside a card change its file; borders and gaps are not text",
+            ),
             (":w", "Write every changed file the collection shows"),
             ("u", "Undo the collection's own edits, in its files too"),
-            (":copen", "Back to the collection, on its current hit (Vim's quickfix names work)"),
-            (":cdo / :cfdo", "Run an ex command at every hit, or once per file: :cdo s/a/b/g"),
+            (
+                ":copen",
+                "Back to the collection, on its current hit (Vim's quickfix names work)",
+            ),
+            (
+                ":cdo / :cfdo",
+                "Run an ex command at every hit, or once per file: :cdo s/a/b/g",
+            ),
         ],
     ),
     (
         "Indentation",
         &[
-            (":tab-size [N|auto]", "Source width, 1-16; no argument opens the selector"),
-            (":indent-style [spaces|tabs|auto]", "Source style or configured/detected policy"),
-            ("detection", "Bounded open/reload sample; ambiguity keeps the configured fallback"),
+            (
+                ":tab-size [N|auto]",
+                "Source width, 1-16; no argument opens the selector",
+            ),
+            (
+                ":indent-style [spaces|tabs|auto]",
+                "Source style or configured/detected policy",
+            ),
+            (
+                "detection",
+                "Bounded open/reload sample; ambiguity keeps the configured fallback",
+            ),
         ],
     ),
     (
         "Review",
         &[
-            ("enter in With", "Prepare the review: the exact diff, nothing changed yet"),
+            (
+                "enter in With",
+                "Prepare the review: the exact diff, nothing changed yet",
+            ),
             ("enter", "In the review: apply every file and write it"),
-            ("u", "In the review: revert the buffers and the files; names what it could not"),
-            ("q", "Close the review; one that was never applied is cancelled"),
+            (
+                "u",
+                "In the review: revert the buffers and the files; names what it could not",
+            ),
+            (
+                "q",
+                "Close the review; one that was never applied is cancelled",
+            ),
             ("$1 \\1", "With a regex: term, captures expand in With"),
         ],
     ),
     (
         "Documentation",
-        &[
-            ("enter on hover", "Open full searchable documentation; Ctrl-O returns"),
-        ],
+        &[(
+            "enter on hover",
+            "Open full searchable documentation; Ctrl-O returns",
+        )],
     ),
 ];
 
@@ -168,6 +338,20 @@ impl Editor {
                 push_row(&mut text, b.keys, width, b.desc, !b.live);
             }
         }
+        // One row per command, written from the registry (0110 §3.1).
+        for family in super::ex::Family::ALL {
+            push_rule(&mut text, family.title());
+            let rows: Vec<_> = super::ex::help_rows(family).collect();
+            let width = rows
+                .iter()
+                .map(|(usage, _)| usage.chars().count())
+                .max()
+                .unwrap_or(0);
+            for (usage, desc) in rows {
+                push_row(&mut text, usage, width, &desc, false);
+            }
+        }
+        push_query_language(&mut text);
         for (title, rows) in EXTRA {
             push_rule(&mut text, title);
             let width = rows
@@ -232,12 +416,23 @@ impl Editor {
             .map(|section| section.title.to_owned())
             .unwrap_or_else(|| topic.to_owned());
         let heading = format!("─ {title} ─");
-        let line = self.buf().text().lines().position(|line| {
+        let mut line = self.buf().text().lines().position(|line| {
             line.chars()
                 .take_while(|&c| c != '\n' && c != '\r')
                 .collect::<String>()
                 .eq_ignore_ascii_case(&heading)
         });
+        // `:help write`, `:help :w`: the command's own row
+        if line.is_none() {
+            if let Some(named) = super::ex::split_command(topic.trim_start_matches(':')) {
+                let usage = format!("   {} ", named.command.usage);
+                line = self
+                    .buf()
+                    .text()
+                    .lines()
+                    .position(|line| line.to_string().starts_with(&usage));
+            }
+        }
         if let Some(line) = line {
             self.set_head(self.buf().line_start(line));
             self.view_mut().view_top = line;
@@ -268,8 +463,8 @@ mod tests {
             last = at;
         }
         let missing: Vec<_> = [
-            ":theme", ":jumps", ":noh", ":format", ":rename", ":recover", ":qa", ":qall",
-            ":symbols",
+            ":theme", ":ju", ":noh", ":format", ":rename", ":recover", ":qa", ":quitall",
+            ":symbols", ":bNext", ":buffers",
         ]
         .into_iter()
         .filter(|command| !text.contains(*command))
@@ -311,6 +506,43 @@ mod tests {
         assert_eq!(e.buf().name.as_deref(), None);
     }
 
+    /// 0109 decision 7: one row per filter key, naming every list that
+    /// takes it, and one per kind value — all read from the schema and
+    /// the kind table, so the help cannot promise what a list ignores.
+    #[test]
+    fn help_query_language_rows_come_from_the_schema() {
+        use strop_picker::query::schema::{surfaces_of, Field};
+        let mut e = Editor::new(Buffer::from_text("x\n"));
+        e.feed_text(":help\r");
+        let text = e.buf().text().to_string();
+        let start = text.find("─ Query language ─").expect("the section");
+        let section = &text[start..];
+        let section = match section.find("\n\n─ ") {
+            Some(end) => &section[..end],
+            None => section,
+        };
+        let rows: Vec<&str> = section.lines().skip(1).map(str::trim_start).collect();
+        for field in Field::ALL {
+            let row: Vec<&&str> = rows
+                .iter()
+                .filter(|row| row.starts_with(&format!("{} ", field.example())))
+                .collect();
+            assert_eq!(row.len(), 1, "{field:?}: {row:?}");
+            assert!(row[0].contains(field.help()), "{row:?}");
+            for surface in surfaces_of(field) {
+                assert!(
+                    row[0].contains(surface),
+                    "{field:?} names {surface}: {row:?}"
+                );
+            }
+        }
+        for spec in strop_core::symbol_kind::KINDS {
+            let key = format!("kind:{} ", spec.value);
+            assert!(rows.iter().any(|row| row.starts_with(&key)), "{key}");
+        }
+        assert!(!section.contains("type:"), "type: is retired");
+    }
+
     #[test]
     fn space_question_opens_help_and_topics_reach_sections() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
@@ -326,6 +558,17 @@ mod tests {
         e.feed_text(":h git\r");
         let line = e.buf().line_of(e.head());
         assert!(e.buf().text().line(line).to_string().starts_with("─ Git ─"));
+        // a command by any of its names lands on its row
+        for topic in ["write", ":w", "w", ":wri"] {
+            e.feed_text("q");
+            e.feed_text(&format!(":help {topic}\r"));
+            let line = e.buf().line_of(e.head());
+            let row = e.buf().text().line(line).to_string();
+            assert!(
+                row.trim_start().starts_with(":w[!] [file]"),
+                "{topic}: {row:?}"
+            );
+        }
     }
 
     #[test]

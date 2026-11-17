@@ -38,21 +38,6 @@ pub struct GitRun {
     pub stderr_dropped: u64,
 }
 
-impl GitRun {
-    /// Fail typed when the caller needs the complete stdout record
-    /// stream: a truncated head must never parse as "everything git
-    /// said".
-    pub fn require_full_stdout(&self, op: &str) -> Result<&[u8], String> {
-        if self.stdout_dropped > 0 {
-            return Err(format!(
-                "{op}: output truncated ({} bytes dropped)",
-                self.stdout_dropped
-            ));
-        }
-        Ok(&self.stdout)
-    }
-}
-
 /// Why a bounded `git` run could not produce its bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitExecError {
@@ -126,27 +111,35 @@ impl<'a> GitExec<'a> {
         }
     }
 
-    /// Run `git <argv>` in the selected repository. No argument is
+    /// Run the read `git <argv>` in the selected repository, guarded
+    /// against the repository's own config ([`guarded`]). No argument is
     /// executable shell text, even with control bytes: the remote line
     /// quotes every word.
     pub fn run(&self, argv: &[OsString], cancel: &CancelToken) -> Result<GitRun, GitExecError> {
-        self.run_within(argv, DEADLINE, cancel)
+        self.run_guarded(&guarded(argv, Hooks::Off), DEADLINE, cancel)
     }
 
-    /// [`Self::run`] with the caller's deadline: a commit runs the
-    /// repository's hooks, which may lint or test for minutes.
-    pub fn run_within(
+    /// A commit or branch switch the user asked for, with the caller's
+    /// deadline. It keeps the repository's hooks — a commit's pre-commit
+    /// and commit-msg hooks are the user's own checks and may lint or
+    /// test for minutes — and is otherwise guarded like a read.
+    pub fn run_porcelain(
+        &self,
+        argv: &[OsString],
+        deadline: Duration,
+        cancel: &CancelToken,
+    ) -> Result<GitRun, GitExecError> {
+        self.run_guarded(&guarded(argv, Hooks::Run), deadline, cancel)
+    }
+
+    fn run_guarded(
         &self,
         argv: &[OsString],
         deadline: Duration,
         cancel: &CancelToken,
     ) -> Result<GitRun, GitExecError> {
         match self {
-            Self::Local { workdir } => {
-                let mut command = Command::new("git");
-                command.arg("-C").arg(workdir).args(argv);
-                capture(&mut command, deadline, cancel)
-            }
+            Self::Local { workdir } => capture(&mut local_git(workdir, argv), deadline, cancel),
             Self::Remote { host, workdir } => {
                 run_program(host, "git", workdir, argv, deadline, cancel)
             }
@@ -201,8 +194,7 @@ impl<'a> GitExec<'a> {
             consume(&stdout);
             return Ok(());
         };
-        let mut command = Command::new("git");
-        command.arg("-C").arg(workdir).args(argv);
+        let mut command = local_git(workdir, &guarded(argv, Hooks::Off));
         for (name, value) in env {
             command.env(name, value);
         }
@@ -260,12 +252,79 @@ pub(crate) fn local_run(
     deadline: Duration,
     cancel: &CancelToken,
 ) -> Result<GitRun, GitExecError> {
-    let mut command = Command::new("git");
-    command.arg("-C").arg(workdir).args(argv);
+    let mut command = local_git(workdir, &guarded(argv, Hooks::Off));
     for (name, value) in env {
         command.env(name, value);
     }
     capture(&mut command, deadline, cancel)
+}
+
+/// Whether a git command runs the repository's hooks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Hooks {
+    /// A commit or switch the user asked for: their hooks are theirs.
+    Run,
+    /// Everything else.
+    Off,
+}
+
+/// Config a repository can carry that makes git run a program while
+/// strop only reads it (plan 0108 H9): a project unpacked from an
+/// archive brings its own `.git/config`. Every git strop starts
+/// overrides these on the command line, before the subcommand.
+const GUARDS: &[&str] = &[
+    "--no-pager",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "log.showSignature=false",
+];
+
+/// Subcommands that produce diffs: textconv drivers and external diff
+/// programs are refused after the subcommand (they have no global
+/// override).
+const DIFF_GUARDS: &[(&str, &[&str])] = &[
+    ("blame", &["--no-textconv"]),
+    ("diff", &["--no-textconv", "--no-ext-diff"]),
+    ("log", &["--no-textconv", "--no-ext-diff"]),
+    ("show", &["--no-textconv", "--no-ext-diff"]),
+];
+
+/// `argv` with the guards every git command strop starts carries.
+fn guarded(argv: &[OsString], hooks: Hooks) -> Vec<OsString> {
+    let mut words: Vec<OsString> = GUARDS.iter().map(OsString::from).collect();
+    if hooks == Hooks::Off {
+        words.extend(["-c", "core.hooksPath=/dev/null"].map(OsString::from));
+    }
+    let mut rest = argv.iter();
+    // `-c key=value` pairs the caller put first stay before the subcommand
+    while let Some(word) = rest.next() {
+        let option = word == "-c";
+        words.push(word.clone());
+        if option {
+            words.extend(rest.next().cloned());
+            continue;
+        }
+        if let Some((_, flags)) = DIFF_GUARDS.iter().find(|(name, _)| word == *name) {
+            words.extend(flags.iter().map(OsString::from));
+        }
+        break;
+    }
+    words.extend(rest.cloned());
+    words
+}
+
+/// A local `git` in `workdir`; optional locks are off, so a read never
+/// rewrites the index behind the user's own git.
+fn local_git(workdir: &Path, argv: &[OsString]) -> Command {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(workdir)
+        .args(argv)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_PAGER", "cat");
+    command
 }
 
 fn capture(
@@ -323,7 +382,6 @@ pub(crate) fn with_token<T>(work: impl FnOnce(CancelToken) -> T) -> T {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn native_path_arguments_select_the_exact_index_entry() {
         use std::os::unix::ffi::OsStrExt;
@@ -378,20 +436,5 @@ mod tests {
             with_token(|token| exec.run_records("git log", &argv, &token)).is_err(),
             "an invalid revision must not become an empty successful record set"
         );
-    }
-
-    /// require_full_stdout refuses a head posing as the whole stream.
-    #[test]
-    fn truncated_stdout_is_refused() {
-        let run = GitRun {
-            success: true,
-            code: Some(0),
-            stdout: b"only-a-head".to_vec(),
-            stderr: Vec::new(),
-            stdout_dropped: 4096,
-            stderr_dropped: 0,
-        };
-        let error = run.require_full_stdout("git log").unwrap_err();
-        assert!(error.contains("truncated"), "{error}");
     }
 }

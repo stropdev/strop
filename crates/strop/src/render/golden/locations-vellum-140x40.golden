@@ -6,7 +6,7 @@
    6                                                                                                                                        
    7  /// G╭ locations ───────────────────────────────────────────────────────────────────────────────────────────────────── 3 ╮            
    8  pub s│ ❯ ▏                                                                                                               │            
-   9  │   c│                                                                                                                   │            
+   9  │   c│ language:rust path:src/ glob:"**/*.rs" case:sensitive · ctrl-space lists all                                      │            
   10  │   d│ ▌ src/render/statusline.rs:3  //! Every width is a display c… │ src/render/statusline.rs:3                        │            
   11  │   l│   src/render/mod.rs:4  pub fn render() {                      │   1  //! The modeline: one quiet row at the botto │            
   12  }    │   src/render/mod.rs:5  statusline::render();                  │   2  //!                                          │            
@@ -31,7 +31,7 @@
 ~          │                                                               │                                                   │            
 ~          │                                                               │                                                   │            
 ~          │                                                               │                                                   │            
-~          ╰  enter  open   ctrl-o  collect   esc  close ──────────────────────────────────────────────────────────────────────╯            
+~          ╰  enter  open   ctrl-o  collect   esc  close   ctrl-space  filters ────────────────────────────────────────────────╯            
 ~                                                                                                                                           
 ~                                                                                                                                           
 ~                                                                                                                                           
@@ -47,7 +47,7 @@
   5: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 133:reset/#f6f2e9 1:reset/reset
   6: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 5:#b6b6b5/#f6f2e9+i 1:#656d7b/#fdfbf6 11:#262a30/#fdfbf6+b 105:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   7: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 3:#b89fcb/#f6f2e9 1:#989795/#f6f2e9 1:#b89fcb/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#fdfbf6 111:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
-  8: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 4:#989795/#f6f2e9 1:#656d7b/#fdfbf6 115:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+  8: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 4:#989795/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 113:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
   9: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 4:#989795/#f6f2e9 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#8a510f/#e5dfd0 1:reset/#e5dfd0 11:#4b525c/#e5dfd0 13:#262a30/#e5dfd0 2:#4b525c/#e5dfd0 2:reset/#e5dfd0 31:#262a30/#e5dfd0 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 11:#4b525c/#fdfbf6 13:#262a30/#fdfbf6+b 3:#4b525c/#fdfbf6 23:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  10: 1:#b4b6b7/#f6f2e9+b 5:#b4b6b7/#f6f2e9 1:#e8e3da/#f6f2e9 4:#989795/#f6f2e9 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 11:#4b525c/#fdfbf6 6:#262a30/#fdfbf6 2:#4b525c/#fdfbf6 2:reset/#fdfbf6 17:#262a30/#fdfbf6 22:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 5:#656d7b/#fdfbf6 44:#696d77/#fdfbf6+i 1:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  11: 1:#b4b6b7/#f6f2e9+b 6:#b4b6b7/#f6f2e9 4:reset/#f6f2e9 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 11:#4b525c/#fdfbf6 6:#262a30/#fdfbf6 2:#4b525c/#fdfbf6 2:reset/#fdfbf6 21:#262a30/#fdfbf6 18:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 5:#656d7b/#fdfbf6 3:#696d77/#fdfbf6+i 42:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
@@ -72,7 +72,7 @@
  30: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 1:#656d7b/#fdfbf6 63:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 51:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  31: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 1:#656d7b/#fdfbf6 63:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 51:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  32: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 1:#656d7b/#fdfbf6 63:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 51:reset/#fdfbf6 1:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
- 33: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 8:#8a510f/#e5dfd0+b 10:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 78:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
+ 33: 1:#d5d5d3/#f6f2e9 10:reset/#f6f2e9 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 8:#8a510f/#e5dfd0+b 10:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 8:#656d7b/#fdfbf6 12:#8a510f/#e5dfd0+b 58:#656d7b/#fdfbf6 11:reset/#f6f2e9 1:reset/reset
  34: 1:#d5d5d3/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  35: 1:#d5d5d3/#f6f2e9 138:reset/#f6f2e9 1:reset/reset
  36: 1:#d5d5d3/#f6f2e9 138:reset/#f6f2e9 1:reset/reset

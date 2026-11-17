@@ -47,7 +47,6 @@ while True:
         sys.exit(0)
 "#;
 
-#[cfg(unix)]
 #[test]
 fn initialize_carries_workspace_folders_and_config_answers_pulls() {
     let dir = tempfile::tempdir().unwrap();
@@ -217,7 +216,6 @@ fn missing_local_program_fails_with_a_hint_naming_the_command() {
 /// The remote shape: `ssh` runs the server through the remote shell, so
 /// a missing program is exit 127 with the shell's complaint on stderr.
 /// That is still "cannot run", not a crash.
-#[cfg(unix)]
 #[test]
 fn remote_command_not_found_is_a_cannot_run_failure() {
     let dir = tempfile::tempdir().unwrap();
@@ -239,7 +237,6 @@ fn remote_command_not_found_is_a_cannot_run_failure() {
 }
 
 /// Exit 255 from the remote command is `ssh` failing, and says so.
-#[cfg(unix)]
 #[test]
 fn remote_ssh_failure_is_named_in_the_exit() {
     let dir = tempfile::tempdir().unwrap();
@@ -259,7 +256,6 @@ fn remote_ssh_failure_is_named_in_the_exit() {
 
 /// A quit the client asked for is not a failure: shutdown/exit reach the
 /// server, it leaves, and no `Failed` event follows.
-#[cfg(unix)]
 #[test]
 fn requested_quit_reports_no_failure() {
     let dir = tempfile::tempdir().unwrap();

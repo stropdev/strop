@@ -268,7 +268,7 @@ fn messages_retains_refusals_errors_and_feedback() {
     let save = editor.feedback()[0].summary().to_owned();
     let text = messages_text(&mut editor);
     assert_eq!(
-        text.matches(&format!("› {refusal}")).count(),
+        text.matches(&format!("✗ {refusal}")).count(),
         2,
         "each refusal is logged when it is said: {text}"
     );

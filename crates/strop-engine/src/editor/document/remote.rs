@@ -32,9 +32,11 @@ impl Document {
         );
         buffer.name = Some(source.file.to_string());
         let detection = Some(super::detect_indent(buffer.text()));
+        let shebang = strop_syntax::languages::shebang_in(buffer.text());
         Self {
             buf: buffer,
             syntax_hint: None,
+            shebang,
             indent: super::Indent::default(),
             indent_override: super::IndentOverride::default(),
             detection,

@@ -151,13 +151,15 @@ whatever is left.
 ### 3.2 The row, left to right
 
 ```
-  NORMAL    REC @a  main*  src/render/statusline.rs ●      d2        LSP!  ●1 ▲2  1/4   50%  10:1
-└─ chip ─┘ └ rec ┘ └ git ┘ └───────── file ────────┘      └ keys ──┘ └── signals ──┘ └── where ───┘
-└──────────────── what this is ───────────────────┘      └──────── what is happening ─────────────┘
+  NORMAL    REC @a  main*  src/render/statusline.rs ●  impl Modeline › gather      d2        LSP!  ●1 ▲2  1/4   50%  10:1
+└─ chip ─┘ └ rec ┘ └ git ┘ └───────── file ────────┘   └──── breadcrumb ────┘     └ keys ──┘ └── signals ──┘ └── where ───┘
+└─────────────────────────────── what this is ──────────────────────────────┘     └──────── what is happening ─────────────┘
 ```
 
-- **Left half: identity.** Mode chip, recording, branch, file. These change
-  when you change mode, branch or buffer.
+- **Left half: identity.** Mode chip, recording, branch, file, and (0107) the
+  breadcrumb — the symbols containing the cursor, in a slot whose width
+  belongs to the file. These change when you change mode, branch or buffer;
+  only the breadcrumb's text changes as you move.
 - **Right half: state.** Pending keys, terminal hints, service badge,
   diagnostics, indent (only when it differs from the default), search count,
   percentage, `line:col`.
@@ -192,6 +194,9 @@ readout on the right you actually look for, and it now reads one step above the
 percentage beside it. The pending keys are the accent (rule 2, unchanged).
 
 ### 3.3 What gives way: shrink before drop
+
+*Amended by [0107](0107-breadcrumb.md): the breadcrumb sits between the
+percentage and the branch; the branch takes two turns.*
 
 Each part of the row has a *floor* (the fewest cells worth showing) and a
 *natural* width. Layout is one pass over one table — data, not a chain of
@@ -237,7 +242,8 @@ even chip, position and badge fit, the row is the bare `chip · line:col` of
   0088's 60 % width. It is a typed field: it must not move or resize under the
   caret, and the top is the one place neither the echo row nor the key card ever
   occupies. The two cards now have the same margin from the edge they hang
-  from.
+  from. Amended by 0110: there is no `:` card — the line is the modeline's
+  own row while it is open, and its menu is a card anchored above it.
 - **Inside the `:` card there is one text column** (C3): the sigil and the
   row markers (`▌`, `-`, `+`) live in a two-cell gutter; what you type,
   completion names, the summary and the changed lines all start in the column

@@ -110,9 +110,6 @@ pub enum RemoteFailureKind {
     /// (`SSH_FX_FAILURE`: a non-empty directory, a full disk, a name that
     /// already exists); the session stays sound.
     Failure,
-    /// Process supervision is unavailable on this platform.
-    #[cfg(not(unix))]
-    Unsupported,
 }
 
 impl RemoteFailureKind {
@@ -144,8 +141,6 @@ impl RemoteFailureKind {
             Self::Changed => "changed on disk",
             Self::Exists => "file exists",
             Self::Failure => "refused by the server",
-            #[cfg(not(unix))]
-            Self::Unsupported => "unsupported platform",
         }
     }
 }
@@ -361,8 +356,6 @@ impl RemoteError {
                 "the server does not advertise expand-path@openssh.com; address \
                  the file by its absolute path instead of `~`",
             ),
-            #[cfg(not(unix))]
-            RemoteFailureKind::Unsupported => Some("remote reads require Unix process supervision"),
             _ => None,
         }
     }

@@ -33,11 +33,8 @@ fn readonly_evidence_is_the_observation() {
     let path = directory.path().join("locked.txt");
     std::fs::write(&path, "read only\n").unwrap();
     let mut permissions = std::fs::metadata(&path).unwrap().permissions();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        permissions.set_mode(0o444);
-    }
+    use std::os::unix::fs::PermissionsExt;
+    permissions.set_mode(0o444);
     std::fs::set_permissions(&path, permissions).unwrap();
     let mut editor = Editor::new(Buffer::from_text(""));
     editor.open_fixture(&path).unwrap();

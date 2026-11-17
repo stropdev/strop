@@ -119,7 +119,11 @@ fn execute(
             stdin,
         } => {
             let script = std::fs::read_to_string(script)?;
-            let (mut buffer, directory) = initial_buffer(&path)?;
+            let Initial {
+                mut buffer,
+                directory,
+                refusal,
+            } = initial_buffer(&path)?;
             if stdin {
                 // Headless is deterministic: stdin is read whole, up front.
                 let mut bytes = Vec::new();
@@ -135,8 +139,8 @@ fn execute(
             editor.set_config(configuration);
             editor.reresolve_indents();
             editor.set_state_dir(session::state_root());
-            if let Some(error) = error {
-                editor.set_message(error);
+            if let Some(message) = refusal.or(error) {
+                editor.set_message(message);
             }
             apply_initial_line(
                 &mut editor,
@@ -157,7 +161,11 @@ fn execute(
             readonly,
             stdin,
         } => {
-            let (mut buffer, directory) = initial_buffer(&path)?;
+            let Initial {
+                mut buffer,
+                directory,
+                refusal,
+            } = initial_buffer(&path)?;
             // The CLI --readonly flag lands on the buffer before
             // admission; the editor never sees a post-hoc mutation.
             buffer.readonly = readonly;
@@ -182,8 +190,8 @@ fn execute(
                 path.as_ref().and_then(|location| location.line),
             );
             editor.trace_state();
-            if let Some(error) = error {
-                editor.set_message(error);
+            if let Some(message) = refusal.or(error) {
+                editor.set_message(message);
             }
             if editor.tape().observes() {
                 editor
@@ -203,7 +211,7 @@ fn execute(
     io::stdout().flush()?;
     Ok(())
 }
-fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<(Buffer, bool), Box<dyn Error>> {
+fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<Initial, Box<dyn Error>> {
     let local = location
         .as_ref()
         .and_then(|location| location.path.local_path());
@@ -218,11 +226,30 @@ fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<(Buffer, bool)
     if let Some(directory) = directory {
         std::env::set_current_dir(directory)?;
     }
-    let buffer = match local.filter(|_| directory.is_none()) {
-        Some(path) => Buffer::open(path)?,
-        None => Buffer::from_text(""),
+    // The file goes through the guarded read `:e` uses (plan 0108 H6):
+    // a device, FIFO or undecodable file is refused with `:e`'s message
+    // and the editor starts on an empty buffer.
+    let (buffer, refusal) = match local.filter(|_| directory.is_none()) {
+        Some(path) => match editor::io::open_startup_file(std::env::current_dir()?.join(path)) {
+            Ok(buffer) => (buffer, None),
+            Err(refusal) => (Buffer::from_text(""), Some(refusal)),
+        },
+        None => (Buffer::from_text(""), None),
     };
-    Ok((buffer, directory.is_some()))
+    Ok(Initial {
+        buffer,
+        directory: directory.is_some(),
+        refusal,
+    })
+}
+
+/// What the command line opens before the editor starts.
+struct Initial {
+    buffer: Buffer,
+    /// The operand is a directory (the editor browses it).
+    directory: bool,
+    /// Why the operand's file could not be opened, shown as `:e` shows it.
+    refusal: Option<String>,
 }
 
 /// The open a remote operand needs at startup (a local one is the
@@ -315,10 +342,6 @@ fn print_help() {
     rows(
         &mut out,
         &[
-            (
-                "edit",
-                "open a file, directory, or an empty buffer (the default)",
-            ),
             ("remote", "open an ssh:// file or directory for editing"),
             (
                 "headless",
@@ -349,8 +372,6 @@ fn print_help() {
                 "    --theme NAME",
                 "colour theme for this run; :theme lists and switches",
             ),
-            ("    --remote URL", "shorthand for `strop remote URL`"),
-            ("    --script PATH", "same as `strop headless PATH`"),
             (
                 "    --log[=PATH]",
                 "record this session for a bug report (or STROP_LOG)",

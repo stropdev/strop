@@ -25,7 +25,6 @@ use std::time::Duration;
 use strop_core::worker::CancelToken;
 use strop_workspace::{RemoteEndpoint, RemoteFile, RemoteLocation};
 
-#[cfg(unix)]
 use crate::transport::{mutate, process::Physical, save, session};
 
 /// Jobs one endpoint actor will hold before admission blocks a worker.
@@ -212,44 +211,32 @@ impl Registry {
         &self,
         endpoint: &RemoteEndpoint,
     ) -> Result<Arc<EndpointHandle>, RemoteError> {
-        #[cfg(not(unix))]
+        if let Some(handle) = self.upgrade(endpoint) {
+            return Ok(handle);
+        }
+        let mut slots = self.slots.write();
+        if let Some(handle) = slots
+            .get(endpoint)
+            .and_then(Weak::upgrade)
+            .filter(|handle| !handle.stop.signalled())
         {
-            let _ = endpoint;
-            return Err(RemoteError::bare(
+            return Ok(handle);
+        }
+        let handle = spawn_actor(
+            endpoint.clone(),
+            connector(endpoint, &self.control, Arc::clone(&self.masters)),
+        )
+        .map_err(|error| {
+            RemoteError::bare(
                 RemoteStage::Session,
-                RemoteFailureKind::Unsupported,
-                "remote sessions require Unix process supervision",
-            ));
-        }
-        #[cfg(unix)]
-        {
-            if let Some(handle) = self.upgrade(endpoint) {
-                return Ok(handle);
-            }
-            let mut slots = self.slots.write();
-            if let Some(handle) = slots
-                .get(endpoint)
-                .and_then(Weak::upgrade)
-                .filter(|handle| !handle.stop.signalled())
-            {
-                return Ok(handle);
-            }
-            let handle = spawn_actor(
-                endpoint.clone(),
-                connector(endpoint, &self.control, Arc::clone(&self.masters)),
+                RemoteFailureKind::Io,
+                format!("starting the session actor: {error}"),
             )
-            .map_err(|error| {
-                RemoteError::bare(
-                    RemoteStage::Session,
-                    RemoteFailureKind::Io,
-                    format!("starting the session actor: {error}"),
-                )
-            })?;
-            // Prune dead weak entries while the writer lock is held.
-            slots.retain(|_, weak| weak.strong_count() > 0);
-            slots.insert(endpoint.clone(), Arc::downgrade(&handle));
-            Ok(handle)
-        }
+        })?;
+        // Prune dead weak entries while the writer lock is held.
+        slots.retain(|_, weak| weak.strong_count() > 0);
+        slots.insert(endpoint.clone(), Arc::downgrade(&handle));
+        Ok(handle)
     }
 
     /// Remove one endpoint's slot and signal its actor to stop. Later work
@@ -302,7 +289,6 @@ pub(crate) type Connector = Box<
 >;
 
 /// The production connector: the endpoint's master in `control`.
-#[cfg(unix)]
 fn connector(
     endpoint: &RemoteEndpoint,
     control: &std::path::Path,
@@ -346,7 +332,6 @@ struct Actor {
 /// Spawn the dedicated actor thread for one endpoint incarnation. The
 /// thread is detached: its lifetime is governed by the stop signal and the
 /// job channel, never by a joiner.
-#[cfg(unix)]
 fn spawn_actor(
     endpoint: RemoteEndpoint,
     connector: Connector,
@@ -384,7 +369,6 @@ fn spawn_actor(
 /// Working --success--> ConnectedIdle --stop--> teardown --> exit
 /// Working --transport/protocol error or cancel--> teardown --> Disconnected
 /// ```
-#[cfg(unix)]
 fn actor_loop(actor: Actor) {
     let Actor {
         receiver,
@@ -427,7 +411,6 @@ fn actor_loop(actor: Actor) {
     stop.complete(outcome);
 }
 
-#[cfg(unix)]
 fn cancelled_before_dispatch() -> RemoteError {
     RemoteError::bare(
         RemoteStage::Session,
@@ -436,7 +419,6 @@ fn cancelled_before_dispatch() -> RemoteError {
     )
 }
 
-#[cfg(unix)]
 fn not_connected() -> RemoteError {
     RemoteError::bare(
         RemoteStage::Session,
@@ -455,7 +437,6 @@ fn refuse(job: Job, error: RemoteError) {
 /// fail only this job; transport/protocol failures, cancellation, stop and
 /// failed cleanup retire the physical connection. Nothing is retried
 /// silently — a later job may establish a new epoch on its own behalf.
-#[cfg(unix)]
 fn dispatch(
     stop: &Arc<StopSignal>,
     status: &Arc<StatusCell>,
@@ -579,7 +560,6 @@ fn dispatch(
 }
 
 /// Clean SFTP refusals that leave the framing sound: the connection stays.
-#[cfg(unix)]
 fn connection_survives(kind: RemoteFailureKind) -> bool {
     matches!(
         kind,
@@ -599,7 +579,6 @@ fn connection_survives(kind: RemoteFailureKind) -> bool {
 }
 
 /// Run one job's protocol script on the actor's connection.
-#[cfg(unix)]
 fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result<Reply, Fault> {
     use crate::client::RemoteEntryKind;
 
@@ -766,7 +745,6 @@ fn execute(physical: &mut Physical, job: &Job, stop: &Arc<StopSignal>) -> Result
 }
 
 /// Drive one script under the cancellation/stop/deadline race.
-#[cfg(unix)]
 fn block_on_guarded<T, F>(
     runtime: &tokio::runtime::Runtime,
     work: F,

@@ -322,9 +322,10 @@ fn operated(
         kind = Kind::Linewise;
     }
     let end_line = buf.line_of(end);
-    // One past the last operated byte of a characterwise span.
+    // One past the last operated character of a characterwise span —
+    // with its combining marks (Vim's characters are clusters).
     let past = if kind == Kind::Inclusive && end < buf.line_end(end_line) {
-        buf.ceil_boundary(end + 1)
+        buf.cluster_end(end)
     } else {
         end
     };
@@ -459,16 +460,19 @@ impl ActionPlan {
         }
         targets.sort_by_key(|target| target.range.start);
         targets.dedup_by_key(|target| (target.range.start, target.range.end));
-        let mut kept: Vec<PlannedTarget> = Vec::with_capacity(targets.len());
-        for target in targets {
-            if kept
-                .last()
-                .is_none_or(|previous| target.range.start >= previous.range.end)
-            {
-                kept.push(target);
-            }
-        }
-        Some(Self { targets: kept })
+        // The proved filter (strop_kernel::editmap::keep_disjoint): a target
+        // survives when it starts at or after the end of every target kept
+        // before it, so the kept non-empty ranges are a batch the buffer's
+        // admission accepts.
+        let ranges: Vec<(usize, usize)> = targets
+            .iter()
+            .map(|target| (target.range.start.get(), target.range.end.get()))
+            .collect();
+        let mut keep = vec![false; ranges.len()];
+        strop_kernel::editmap::keep_disjoint(&ranges, &mut keep);
+        let mut verdicts = keep.into_iter();
+        targets.retain(|_| verdicts.next() == Some(true));
+        Some(Self { targets })
     }
 }
 

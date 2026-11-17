@@ -160,7 +160,6 @@ mod tests {
     /// Write a fake ssh that records its argv and prints canned
     /// effective configuration. Hermetic: no real ssh, no HOME read,
     /// no network — `ssh -G` output is decided by the script.
-    #[cfg(unix)]
     fn fake_ssh(dir: &std::path::Path, hostname: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let path = dir.join("fake-ssh");
@@ -201,7 +200,6 @@ mod tests {
     /// The spawn boundary: the host is ONE argv element after `-G` —
     /// never a shell string, never an option position — and the
     /// effective hostname maps through.
-    #[cfg(unix)]
     #[test]
     fn effective_host_spawns_one_safe_argv_element() {
         let dir = tempfile::tempdir().unwrap();
@@ -219,7 +217,6 @@ mod tests {
 
     /// Option-shaped host text never reaches a process: InvalidHost,
     /// and the binary was not executed.
-    #[cfg(unix)]
     #[test]
     fn option_shaped_hosts_never_spawn() {
         let dir = tempfile::tempdir().unwrap();
@@ -236,7 +233,6 @@ mod tests {
     }
 
     /// A failing `ssh -G` surfaces its stderr, not a guess.
-    #[cfg(unix)]
     #[test]
     fn failing_ssh_reports_stderr() {
         use std::os::unix::fs::PermissionsExt;

@@ -4,9 +4,15 @@ description = "strop syntax: statically-linked tree-sitter highlighting, curated
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
+
+[features]
+# Inspection hooks for dependents' tests (parse-error probes); never in
+# release artifacts.
+test-support = []
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.69.0" }
+strop-core = { path = "../strop-core" }
 serde = { version = "1", features = ["derive"] }
 imbl = "7"
 tree-sitter = "0.25"
@@ -32,7 +38,7 @@ tree-sitter-sequel = "0.3.11"
 tree-sitter-typescript = "0.23"
 tree-sitter-toml-ng = "0.7"
 tree-sitter-yaml = "0.7"
-ropey = "1"
+ropey.workspace = true
 streaming-iterator = "0.1"
 tree-sitter-language = "0.1.8"
 

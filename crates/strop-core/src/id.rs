@@ -1,7 +1,7 @@
 //! Stable identities and typed coordinates (0014 wave 2).
 //!
 //! Two families:
-//! - **IDs**: generational arena keys (`DocumentId`, `ViewId`, …). A
+//! - **IDs**: generational arena keys (`DocumentId`, `WorkspaceId`). A
 //!   closed document's id fails lookup instead of silently resolving to
 //!   whatever moved into its old vector slot.
 //! - **Coordinates**: newtypes so byte offsets, line indexes, and the
@@ -39,17 +39,11 @@ impl<K> Id<K> {
 /// Marker kinds for the arena's identities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DocumentKind;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ViewKind;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PaneKind;
 /// Registry keys for bound workspace contexts (0042 slice 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WorkspaceKind;
 
 pub type DocumentId = Id<DocumentKind>;
-pub type ViewId = Id<ViewKind>;
-pub type PaneId = Id<PaneKind>;
 pub type WorkspaceId = Id<WorkspaceKind>;
 
 /// A minimal generational arena (house rule: 40 boring lines beat a
@@ -342,9 +336,6 @@ impl BufferRevision {
     }
     pub const fn get(self) -> u64 {
         self.0
-    }
-    pub fn checked_next(self) -> Option<Self> {
-        self.0.checked_add(1).map(Self)
     }
 }
 

@@ -65,6 +65,21 @@ impl Editor {
         Ok(())
     }
 
+    /// The command line's path listing lands (local-channel fixture).
+    pub fn wait_path_completion(&mut self) {
+        while self.remote_completion.pending.is_some() {
+            let Some(event) = self
+                .remote_completion
+                .rx
+                .as_ref()
+                .and_then(|rx| rx.recv_timeout(std::time::Duration::from_secs(30)).ok())
+            else {
+                return;
+            };
+            self.handle_remote_completion(event);
+        }
+    }
+
     pub fn wait_picker(&mut self) {
         while self
             .picker
@@ -162,6 +177,49 @@ impl Editor {
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .expect("analysis settles");
             self.handle_analysis(event);
+        }
+    }
+
+    /// Resolution fixture barrier: a resolution that holds input (an
+    /// indent, a motion) settles, and the keys typed behind it run.
+    pub fn wait_resolution(&mut self) {
+        while self.resolution.pending() {
+            if !self.resolution.blocked() && !self.resolution.queue.is_empty() {
+                self.resume_deferred_input();
+                continue;
+            }
+            let event = self
+                .resolution
+                .rx
+                .as_ref()
+                .expect("local resolution channel")
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("resolution settles");
+            self.handle_resolution(event);
+        }
+    }
+
+    /// Symbols fixture barrier (0099, 0107): one after-event turn
+    /// decides and starts the current document's build, then every
+    /// analysis event runs through the loop as a live one does — the
+    /// event, then the after-event work — so the breadcrumb follows the
+    /// list that lands.
+    pub fn wait_symbols(&mut self) {
+        let turn = |editor: &mut Self, event| {
+            editor
+                .apply_recorded(trace::drive::Action::Event(event))
+                .expect("a fixture turn applies");
+        };
+        turn(self, super::events::AppEvent::Notify);
+        while self.analysis.pending() {
+            let event = self
+                .analysis
+                .rx
+                .as_ref()
+                .expect("local analysis channel")
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("analysis settles");
+            turn(self, super::events::AppEvent::Analysis(event));
         }
     }
 

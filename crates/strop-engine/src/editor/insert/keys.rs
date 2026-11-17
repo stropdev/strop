@@ -58,8 +58,15 @@ fn back_target(editor: &Editor, pos: usize, back: Back) -> usize {
             floor = indent;
         }
     }
-    if let Some(origin) = editor.insert_keys.origin.filter(|origin| *origin < pos) {
-        floor = floor.max(origin);
+    // the origin is the primary caret's: another cursor's edits shift
+    // text under it, so it is clamped onto a character before it bounds
+    // anything
+    if let Some(origin) = editor
+        .insert_keys
+        .origin
+        .filter(|origin| pos == editor.head() && *origin < pos)
+    {
+        floor = floor.max(buf.ceil_boundary(origin).min(pos));
     }
     if back == Back::Line {
         return floor;
@@ -180,10 +187,13 @@ pub(crate) fn resume_insert(editor: &mut Editor) {
         editor.insert_keys.one_command = None;
         return;
     }
-    if editor.mode != Mode::Normal || !editor.walker.is_ground() || editor.pending.is_active() {
+    if editor.mode != Mode::Normal || !editor.walker.is_ground() || editor.cmdline.is_open() {
         return;
     }
     editor.insert_keys.one_command = None;
+    // the command may have moved the caret or edited anywhere: Insert
+    // resumes as a new insert, with a fresh origin (vim's Insstart)
+    editor.insert_keys.origin = None;
     editor.mode = Mode::Insert;
     let line_end = editor.buf().line_end(editor.buf().line_of(editor.head()));
     // the cursor stood past the last character: it goes back there

@@ -1,6 +1,6 @@
-//! 0063 §6.6 production correspondence: SearchLifecycle.tla's
-//! EditBuffer → Accept trace replayed through the actual symbol-evidence
-//! seam the spec names (`SymbolIndex::overlay`, `kind_decides`) — the
+//! 0063 §6.6 search lifecycle: the edit-buffer → accept trace replayed
+//! through the actual symbol-evidence seam (`SymbolIndex::overlay`,
+//! `kind_decides`) — the
 //! dirty-source revision bump and the acceptance re-check that keeps
 //! StaleAcceptsNever (no known-stale symbol acceptance). The revision
 //! decision itself is the verified kernel's
@@ -9,7 +9,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::symbols::SymbolIndex;
-    use strop_syntax::symbols::SymbolKind;
+    use strop_core::symbol_kind::SymbolKind;
 
     /// Trace: extract rows against the disk revision, bump the source
     /// revision (a dirty buffer overlays the path), then re-check

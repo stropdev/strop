@@ -238,9 +238,6 @@ impl FeedbackRecord {
     pub const fn unresolved(&self) -> bool {
         self.lifecycle.unresolved()
     }
-    pub fn action_labels(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.actions.iter().map(TypedAction::label)
-    }
 
     pub(crate) fn replace(
         &mut self,

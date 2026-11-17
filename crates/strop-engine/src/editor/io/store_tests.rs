@@ -51,6 +51,7 @@ fn inject_unconfirmed(
         origin: editor.buf().path.clone(),
         target: path.to_path_buf(),
         write_target: path.to_path_buf(),
+        canonical: path.to_path_buf(),
         close: false,
         force: false,
         focus: editor.focus_epoch,
@@ -164,7 +165,6 @@ fn save_as_refuses_an_occupied_name_unless_forced() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn save_preserves_permissions_through_the_atomic_replace() {
     use std::os::unix::fs::PermissionsExt;

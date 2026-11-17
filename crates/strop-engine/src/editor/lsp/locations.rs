@@ -49,9 +49,17 @@ pub(crate) fn rows(editor: &Editor, items: Vec<ServerLocation>, sources: Vec<Str
                     let path = &location.doc.path;
                     let relative = path.strip_prefix(&editor.cwd).unwrap_or(path);
                     let label = strop_picker::display_path(relative);
+                    let text = format!("{label}:{line}  {source}");
+                    // content filters match the source line (0109)
+                    let subject = (text.len() - source.len()) as u32..text.len() as u32;
                     Item {
                         badge: None,
-                        text: format!("{label}:{line}  {source}"),
+                        facts: strop_picker::ItemFacts {
+                            path: relative.to_str().map(Into::into),
+                            subject: Some(subject),
+                            ..Default::default()
+                        },
+                        text,
                         payload: Payload::Grep {
                             location: strop_workspace::ResourceLocation::local(path.clone()),
                             line,
@@ -64,6 +72,10 @@ pub(crate) fn rows(editor: &Editor, items: Vec<ServerLocation>, sources: Vec<Str
                 Filesystem::Remote(endpoint) => Item {
                     badge: None,
                     text: format!("{remote_label}:{line}"),
+                    facts: strop_picker::ItemFacts {
+                        path: location.doc.path.to_str().map(Into::into),
+                        ..Default::default()
+                    },
                     payload: Payload::Remote {
                         endpoint,
                         path: location.doc.path,

@@ -218,7 +218,6 @@ fn write_atomic(target: &Path, contents: &Rope, overwrite: bool) -> io::Result<(
         temporary.persist_noclobber(target)
     };
     result.map_err(|error| error.error)?;
-    #[cfg(unix)]
     fs::File::open(parent)?.sync_all()?;
     Ok(())
 }

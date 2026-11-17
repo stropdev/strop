@@ -46,11 +46,8 @@ pub(crate) fn publish(
         .ok_or_else(|| SessionError::Invalid("state path has no parent".into()))?;
     let mut directory = fs::DirBuilder::new();
     directory.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        directory.mode(0o700);
-    }
+    use std::os::unix::fs::DirBuilderExt;
+    directory.mode(0o700);
     directory.create(parent).map_err(|e| io(parent, e))?;
     // NamedTempFile creates with 0600 before any sensitive bytes are written.
     let mut staged = tempfile::Builder::new()
@@ -77,7 +74,6 @@ pub(crate) fn publish(
             }),
         };
     }
-    #[cfg(unix)]
     File::open(parent)
         .and_then(|file| file.sync_all())
         .map_err(|e| io(parent, e))?;

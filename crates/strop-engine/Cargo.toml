@@ -4,31 +4,33 @@ description = "strop editor engine: documents, grammar, services and sessions â€
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 repository.workspace = true
 homepage.workspace = true
 
 [features]
 # test-support also enables the in-process worker transport seam (WK04):
 # dependents' tests cross the real codec against the in-process serve loop.
-test-support = ["strop-trace/test-support"]
+test-support = ["strop-trace/test-support", "strop-syntax/test-support"]
 [dependencies]
 strop-kernel = { path = "../strop-kernel" }
-strop-trace = { path = "../strop-trace", version = "0.69.0" }
-strop-core = { path = "../strop-core", version = "0.69.0" }
-strop-terminal = { path = "../strop-terminal", version = "0.69.0" }
-strop-grammar = { path = "../strop-grammar", version = "0.69.0" }
-strop-picker = { path = "../strop-picker", version = "0.69.0" }
-strop-git = { path = "../strop-git", version = "0.69.0" }
-strop-syntax = { path = "../strop-syntax", version = "0.69.0" }
-strop-lsp = { path = "../strop-lsp", version = "0.69.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.69.0" }
-strop-remote = { path = "../strop-remote", version = "0.69.0" }
-strop-fs = { path = "../strop-fs", version = "0.69.0" }
+strop-trace = { path = "../strop-trace" }
+strop-core = { path = "../strop-core" }
+strop-terminal = { path = "../strop-terminal" }
+strop-grammar = { path = "../strop-grammar" }
+strop-picker = { path = "../strop-picker" }
+strop-git = { path = "../strop-git" }
+strop-syntax = { path = "../strop-syntax" }
+strop-lsp = { path = "../strop-lsp" }
+strop-workspace = { path = "../strop-workspace" }
+strop-remote = { path = "../strop-remote" }
+strop-fs = { path = "../strop-fs" }
 imbl = { version = "7", features = ["serde"] }
 unicode-segmentation = "1"
 unicode-width = "0.2"
-ropey = "1"
+ropey.workspace = true
 regex = "1"
+nucleo-matcher = "0.3"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 toml = "0.8"
@@ -38,7 +40,8 @@ sha2 = "0.10"
 parking_lot = "0.12"
 
 [dev-dependencies]
-strop-trace = { path = "../strop-trace", version = "0.69.0", features = ["test-support"] }
+strop-trace = { path = "../strop-trace", features = ["test-support"] }
+strop-syntax = { path = "../strop-syntax", features = ["test-support"] }
 # WK04: the engine's own tests cross the real worker codec against the
 # in-process serve loop (transport seam, not a policy twin).
 ratatui = "0.29"

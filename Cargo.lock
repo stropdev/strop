@@ -1565,9 +1565,10 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "libc",
+ "loom",
  "parking_lot",
  "ropey",
  "serde",
@@ -1583,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "crossterm",
  "flate2",
@@ -1614,10 +1615,11 @@ dependencies = [
 
 [[package]]
 name = "strop-engine"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "imbl",
  "loom",
+ "nucleo-matcher",
  "parking_lot",
  "ratatui",
  "regex",
@@ -1646,7 +1648,7 @@ dependencies = [
 
 [[package]]
 name = "strop-fs"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "getrandom 0.4.3",
  "libc",
@@ -1663,12 +1665,11 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "git2",
  "serde",
  "serde_json",
- "sha2",
  "strop-core",
  "strop-remote",
  "strop-workspace",
@@ -1677,20 +1678,21 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "ropey",
  "serde",
  "strop-core",
+ "strop-kernel",
 ]
 
 [[package]]
 name = "strop-kernel"
-version = "0.69.0"
+version = "0.71.0"
 
 [[package]]
 name = "strop-lsp"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "async-lsp",
  "loom",
@@ -1710,7 +1712,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "base64",
  "flate2",
@@ -1730,17 +1732,15 @@ dependencies = [
  "strop-syntax",
  "strop-workspace",
  "tempfile",
- "thiserror",
 ]
 
 [[package]]
 name = "strop-remote"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "parking_lot",
  "rustix 1.1.4",
  "serde",
- "serde_json",
  "strop-core",
  "strop-workspace",
  "tempfile",
@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "cc",
  "imbl",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "strop-terminal"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "cc",
  "flate2",
@@ -1807,7 +1807,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1819,7 +1819,7 @@ dependencies = [
 
 [[package]]
 name = "strop-workspace"
-version = "0.69.0"
+version = "0.71.0"
 dependencies = [
  "serde",
  "serde_json",

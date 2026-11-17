@@ -1,4 +1,5 @@
 use super::*;
+use strop_core::Buffer;
 
 fn save(editor: &Editor) -> Result<bool, SessionError> {
     let Some(request) = capture_save(editor) else {
@@ -32,6 +33,28 @@ fn roundtrip_restores_buffers_and_position() {
         1,
         "dirty history must not replay against the disk version"
     );
+}
+
+#[test]
+fn command_line_history_roundtrips_per_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+    let mut e = Editor::new(Buffer::open(root.join("a.txt")).unwrap());
+    e.cwd = root.to_path_buf();
+    e.state_dir = Some(root.join("state"));
+    e.feed_text(":2<cr>/thr<cr>:1<cr>");
+    assert!(save(&e).unwrap());
+    let mut e2 = Editor::new(Buffer::from_text(""));
+    e2.cwd = root.to_path_buf();
+    e2.state_dir = Some(root.join("state"));
+    assert!(restore(&mut e2).unwrap());
+    let ex: Vec<_> = e2.cmdline.history.ex.iter().collect();
+    let search: Vec<_> = e2.cmdline.history.search.iter().collect();
+    assert_eq!(ex, ["2", "1"]);
+    assert_eq!(search, ["thr"]);
+    e2.feed_text(":<up><up>");
+    assert_eq!(e2.cmdline.text(), ":2");
 }
 
 #[test]
@@ -125,7 +148,7 @@ fn changed_files_clamp_restored_jump_records() {
     session.restore(&mut restored).unwrap();
     let record = &restored.view().jumps.entries[1];
     assert_eq!(record.offset, restored.buf().len_bytes());
-    assert_eq!(record.anchor, 0);
+    assert_eq!(record.anchor, restored.buf().len_bytes());
     assert_eq!(record.view_top, restored.buf().len_bytes());
 }
 
@@ -153,17 +176,6 @@ fn quit_all_persists_every_buffer_and_the_complete_jump_history() {
     assert!(session.buffers.iter().any(|buffer| buffer.path == b));
     assert!(session.jumps.entries.iter().any(|jump| jump.path == a));
     assert!(session.jumps.entries.iter().any(|jump| jump.path == b));
-}
-
-#[test]
-fn old_sessions_default_to_empty_jump_history() {
-    let session: Session = serde_json::from_value(serde_json::json!({
-        "buffers": [{"path": "a.txt", "line": 0, "col": 0, "view_top": 0, "undo": null}],
-        "current": 0
-    }))
-    .unwrap();
-    assert!(session.jumps.entries.is_empty());
-    assert_eq!(session.jumps.position, None);
 }
 
 #[test]
@@ -246,19 +258,13 @@ fn failed_restore_leaves_live_state_untouched() {
 }
 
 #[test]
-fn legacy_paths_migrate_and_ambiguous_paths_fail() {
-    let make = |path: &str| {
-        serde_json::json!({"buffers": [{
-        "path": path, "line": 0, "col": 0, "view_top": 0, "undo": null
-    }], "current": 0})
-    };
-    let session: Session = serde_json::from_value(make("safe.rs")).unwrap();
-    let value = serde_json::to_value(session).unwrap();
-    assert_eq!(value["buffers"][0]["path"]["version"], 1);
-    assert!(serde_json::from_value::<Session>(make("bad\u{fffd}.rs")).is_err());
+fn bare_string_paths_are_refused() {
+    let session = serde_json::json!({"buffers": [{
+        "path": "safe.rs", "line": 0, "col": 0, "view_top": 0, "undo": null
+    }], "current": 0});
+    assert!(serde_json::from_value::<Session>(session).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn native_paths_roundtrip_without_loss() {
     use std::os::unix::ffi::OsStrExt;
@@ -296,11 +302,8 @@ fn failed_publication_preserves_previous_session_and_cleans_staging() {
     let path = directory.path().join("session.json");
     std::fs::write(&path, b"previous session").unwrap();
     let result = persistence::publish(&path, |file| {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(file.metadata()?.permissions().mode() & 0o777, 0o600);
-        }
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(file.metadata()?.permissions().mode() & 0o777, 0o600);
         file.write_all(b"partial private content")?;
         Err(std::io::Error::other("injected sync failure"))
     });
@@ -319,7 +322,6 @@ fn failed_publication_preserves_previous_session_and_cleans_staging() {
     assert_eq!(std::fs::read(&path).unwrap(), b"next session");
 }
 
-#[cfg(unix)]
 #[test]
 fn atomic_publication_replaces_destination_symlink_without_touching_target() {
     use std::io::Write;
@@ -370,13 +372,10 @@ fn trust_rejects_unusable_native_paths() {
     // 0057 VF15: invalid native paths cannot manufacture a capability.
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
-    #[cfg(unix)]
     let bad = {
         use std::os::unix::ffi::OsStrExt;
         PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/nul\0byte"))
     };
-    #[cfg(not(unix))]
-    let bad = PathBuf::new();
     assert!(trust(Some(&state), &bad).is_err());
     assert!(
         !trust(Some(&state), Path::new("/tmp/valid")).is_ok()
@@ -412,5 +411,31 @@ fn cd_saves_the_session_under_the_new_root() {
     assert_eq!(
         restarted.buf().path.as_deref(),
         Some(one.join("a.rs").as_path())
+    );
+}
+
+/// 0108 H6: a restored buffer goes through `:e`'s guarded read — a path
+/// that has since become a device is refused, never read without end.
+#[test]
+fn restore_refuses_a_buffer_path_that_became_a_device() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+    let mut e = Editor::new(Buffer::open(root.join("a.rs")).unwrap());
+    e.cwd = root.to_path_buf();
+    e.state_dir = Some(root.join("state"));
+    e.feed_text("x");
+    assert!(save(&e).unwrap());
+    std::fs::remove_file(root.join("a.rs")).unwrap();
+    std::os::unix::fs::symlink("/dev/zero", root.join("a.rs")).unwrap();
+    let mut e2 = Editor::new(Buffer::from_text(""));
+    e2.cwd = root.to_path_buf();
+    e2.state_dir = Some(root.join("state"));
+    let error = restore(&mut e2).expect_err("a device is not restored");
+    assert!(
+        error
+            .to_string()
+            .ends_with("only regular files and directories can be opened"),
+        "{error}"
     );
 }

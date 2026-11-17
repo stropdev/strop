@@ -1,17 +1,15 @@
-//! 0063 §6.6 production correspondence: SearchLifecycle.tla's transition
-//! vocabulary replayed through the actual admission/publication
-//! handlers — `handle_picker_event`, `handle_lsp_event`'s
-//! workspace-symbols merge and the warm-queue drain — asserting the
-//! model's named invariants (RowsCurrent, CompletionHonest,
-//! WarmBounded) at each step, including the negative traces the model
-//! rejects (a retired generation's late publish, a truncated
-//! completion). This is correspondence, not a re-test of the e2e: the
+//! 0063 §6.6 search lifecycle: named transitions replayed through the
+//! actual admission/publication handlers — `handle_picker_event`,
+//! `handle_lsp_event`'s workspace-symbols merge and the warm-queue
+//! drain — asserting the named invariants (RowsCurrent,
+//! CompletionHonest, WarmBounded) at each step, including the negative
+//! traces (a retired generation's late publish, a truncated
+//! completion). This is not a re-test of the e2e: the
 //! seams are driven directly, streams hand-armed like the established
 //! worker-lifecycle tests (deterministic — no rg, no sleeps).
 //!
 //! The publication decisions under test are `strop_core::searchguard`'s:
-//! each guard site below calls it, and the traces mirror
-//! specs/SearchLifecycle.tla.
+//! each guard site below calls it.
 
 #[cfg(test)]
 mod tests {
@@ -28,6 +26,7 @@ mod tests {
             badge: None,
             text: text.into(),
             payload: Payload::File(PathBuf::from(text)),
+            facts: Default::default(),
         }
     }
 
@@ -194,7 +193,7 @@ mod tests {
         let symbol = |name: &str| ProtoSymbol {
             name: name.into(),
             container: String::new(),
-            kind: "Function".into(),
+            kind: strop_core::symbol_kind::SymbolKind::Function,
             location: ServerLocation {
                 doc: strop_workspace::ResourceLocation::local(dir.path().join("lib.rs")),
                 position: ServerPosition {
@@ -202,6 +201,7 @@ mod tests {
                     column: ServerColumn::new(3),
                 },
             },
+            span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(0)),
         };
         // ProviderPartial(g): the live generation merges.
         e.handle_lsp_event(LspEvent::WorkspaceSymbols {

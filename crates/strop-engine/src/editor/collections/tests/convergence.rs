@@ -91,6 +91,7 @@ fn twin(seed: u64) -> Twin {
                     match_len: 4,
                     line_text: format!("file{file} line {} word", line - 1).into(),
                 },
+                facts: Default::default(),
             });
         }
     }

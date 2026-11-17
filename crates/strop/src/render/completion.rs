@@ -175,9 +175,7 @@ pub(super) fn render(
     }
     let selected = menu.selected();
     let rows = usize::from(inner.height);
-    let start = selected
-        .map_or(0, |index| index.saturating_sub(rows.saturating_sub(1)))
-        .min(menu.len().saturating_sub(rows));
+    let start = super::menu::first_visible(selected, menu.len(), rows);
     for offset in 0..rows {
         let index = start + offset;
         let row = Rect::new(inner.x, inner.y + offset as u16, inner.width, 1);

@@ -611,7 +611,7 @@ fn frame(env: &WireEnv, shared: &Shared, retired: &mut Vec<Rope>, job: WireJob) 
             // Same ordered-lane rule as requests: earlier frames
             // are on the wire before the query leaves.
             let launch = std::panic::AssertUnwindSafe(|| {
-                env.handle.spawn(super::api::workspace_symbols(
+                env.handle.spawn(super::symbols::workspace_symbols(
                     env.clone(),
                     generation,
                     query,

@@ -387,6 +387,23 @@ impl Buffer {
         offset
     }
 
+    /// One past the character at `offset` as Vim counts characters: a
+    /// base character with the combining marks that follow it (one
+    /// grapheme cluster). Reads at most a short window of the line, never
+    /// past its end.
+    pub fn cluster_end(&self, offset: impl Into<id::ByteOffset>) -> usize {
+        use unicode_segmentation::UnicodeSegmentation;
+        const WINDOW: usize = 64;
+        let offset = self.ceil_boundary(offset);
+        let end = self.line_end(self.line_of(offset));
+        if offset >= end {
+            return self.ceil_boundary(offset + 1);
+        }
+        let limit = self.ceil_boundary((offset + WINDOW).min(end));
+        let text: std::borrow::Cow<'_, str> = self.rope.byte_slice(offset..limit).into();
+        offset + text.graphemes(true).next().map_or(0, str::len).max(1)
+    }
+
     /// Smallest char boundary >= offset. Byte arithmetic on a cursor
     /// (`cursor + 1` in x/a/r/~) lands inside a multibyte char; deleting
     /// or inserting there panics ropey. Round up, never down — a
@@ -528,5 +545,29 @@ mod safety_tests {
             std::fs::read_to_string(&weird).unwrap(),
             "// x\nfn main() {}\n"
         );
+    }
+
+    /// 0108 D1.9: a line break is `\n`, as in Vim and tree-sitter. CRLF
+    /// stays one break whose `\r` the line's end excludes; a lone CR,
+    /// a form feed, NEL and the Unicode separators are text.
+    #[test]
+    fn only_newline_breaks_a_line() {
+        for text in [
+            "a\rb\n",
+            "a\u{b}b\n",
+            "a\u{c}b\n",
+            "a\u{85}b\n",
+            "a\u{2028}b\n",
+            "a\u{2029}b\n",
+        ] {
+            let b = Buffer::from_text(text);
+            assert_eq!(b.len_lines(), 2, "{text:?}");
+            assert_eq!(b.last_content_line(), 0, "{text:?}");
+            assert_eq!(b.line_end(0), text.len() - 1, "{text:?}");
+        }
+        let b = Buffer::from_text("one\r\ntwo\r\n");
+        assert_eq!(b.len_lines(), 3);
+        assert_eq!((b.line_start(1), b.line_end(0), b.line_end(1)), (5, 3, 8));
+        assert_eq!(b.line_of(4), 0, "the CRLF pair belongs to its line");
     }
 }

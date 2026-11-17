@@ -54,7 +54,7 @@ pub fn write_script(path: &Path, out: &mut dyn Write) -> io::Result<()> {
                     && fields["value"]["Event"].get("TerminalUpdate").is_some() =>
             {
                 return Err(io::Error::other(
-                    "terminal captures require --replay; input-only extraction cannot reproduce PTY state",
+                    "terminal captures require `strop replay TRACE`; input-only extraction cannot reproduce PTY state",
                 ));
             }
             Some("replay") if !initial && fields["kind"] == "seed" => {
@@ -166,7 +166,7 @@ fn metadata_only(out: &mut dyn Write, path: Option<std::path::PathBuf>) -> io::R
     }
 }
 
-/// Full forensic replay (`--replay TRACE`): reconstruct the seeded editor
+/// Full forensic replay (`strop replay TRACE`): reconstruct the seeded editor
 /// and re-run every recorded action with native launches suppressed. The
 /// final logical state is printed; divergence is an error, not a diff.
 pub fn run_full(path: &Path, out: &mut dyn Write) -> io::Result<()> {

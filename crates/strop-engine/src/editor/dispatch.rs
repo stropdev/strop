@@ -12,8 +12,8 @@ use strop_core::frontend_input::Key;
 /// A late hover/blame reply never steals a modal field's input or paint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputOwner {
-    /// A live `: / ? |` line.
-    Pending,
+    /// An open command line (`: / ? |`).
+    Cmdline,
     /// An open `:s///c` question: the next key is its answer.
     SubstituteConfirm,
     /// The LSP hover card — a transient overlay.
@@ -46,8 +46,8 @@ impl InputOwner {
 impl Editor {
     /// The typed owner of the next key, computed from state.
     pub fn input_owner(&self) -> InputOwner {
-        if self.pending.is_active() {
-            return InputOwner::Pending;
+        if self.cmdline.is_open() {
+            return InputOwner::Cmdline;
         }
         if super::ex::confirm_active(self) {
             return InputOwner::SubstituteConfirm;
@@ -90,7 +90,7 @@ impl Editor {
             return;
         }
         match owner {
-            InputOwner::Pending => self.feed_pending(key),
+            InputOwner::Cmdline => self.feed_cmdline(key),
             InputOwner::SubstituteConfirm => super::ex::feed_confirm(self, key),
             InputOwner::HoverCard => {
                 if key == Key::Enter {
@@ -119,7 +119,11 @@ impl Editor {
                     self.feed_document(key);
                 }
             }
-            InputOwner::Document => self.feed_document(key),
+            InputOwner::Document => {
+                if !super::cmdline::window::key(self, key) {
+                    self.feed_document(key);
+                }
+            }
             InputOwner::Terminal => {
                 self.message =
                     "terminal input needs physical events; use keys or input in scripts".into();
@@ -140,7 +144,7 @@ impl Editor {
     }
 
     /// The mode machine: insert/visual/normal dispatch.
-    fn feed_document(&mut self, key: Key) {
+    pub(crate) fn feed_document(&mut self, key: Key) {
         // Terminal-input entry is a bare-key interception: a walker
         // mid-sequence (mark absorber, register, operator) keeps its
         // grammar — `ma` sets a mark, it never opens the PTY (0065 W2).
@@ -151,10 +155,19 @@ impl Editor {
         {
             return;
         }
+        let visual = |mode| matches!(mode, Mode::Visual | Mode::VisualLine | Mode::VisualBlock);
+        let was_visual = visual(self.mode);
         match self.mode {
             Mode::Insert => self.feed_insert(key),
             Mode::Visual | Mode::VisualLine | Mode::VisualBlock => self.feed_visual(key),
             Mode::Normal => self.feed_normal(key),
+        }
+        // Leaving Visual leaves a caret, as in Vim (`gv` and the `'<`
+        // `'>` marks keep the selection): an anchor left behind would
+        // point into text the next edits change (plan 0108 D2).
+        if was_visual && !visual(self.mode) {
+            let head = self.head();
+            self.sels_mut().collapse_primary(head);
         }
     }
 }

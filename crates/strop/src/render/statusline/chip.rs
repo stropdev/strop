@@ -14,25 +14,25 @@ pub(super) const WIDTH: usize = 10;
 const LABEL: usize = WIDTH - 2;
 
 /// The chip text (padded to [`WIDTH`]) and its colour.
-pub(super) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
+pub(in crate::render) fn chip(editor: &Editor, t: &Tokens) -> (String, Color) {
     let typing = |normal: bool| if normal { t.accent } else { t.mode_insert };
     let (label, color) = if let Some(glue) = editor.picker() {
         (
             picker_label(glue.picker.kind),
             typing(glue.picker.input_normal()),
         )
-    } else if let Some(sigil) = editor.pending_sigil() {
+    } else if let Some(sigil) = editor.cmdline_sigil() {
         let label = match sigil {
             ':' => "COMMAND",
             '|' => "PIPE",
             _ => "SEARCH",
         };
-        (label, typing(editor.input_normal()))
+        (label, t.mode_insert)
     } else if editor.terminal_input_active() {
         // TERMINAL is its own mode (0090 §4); NORMAL on a terminal buffer
         // is plain NORMAL.
         ("TERMINAL", t.mode_terminal)
-    } else if editor.pending().is_active()
+    } else if editor.cmdline().is_open()
         || !editor.walker().prefix_display().is_empty()
         || !editor.walker().state.empty()
     {

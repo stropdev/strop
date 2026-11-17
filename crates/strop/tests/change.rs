@@ -1,6 +1,6 @@
 //! Journeys on the real binary (plans/0094 §4, the 0091 acceptance tests):
 //! every way of changing many places is one surface with one undo. Each
-//! runs the shipped `strop --headless` in a tempdir and reads the disk.
+//! runs the shipped `strop headless` in a tempdir and reads the disk.
 use std::path::Path;
 use std::process::Command;
 
@@ -17,7 +17,7 @@ fn run(root: &Path, script: &str, file: &str) -> String {
         .env("XDG_CONFIG_HOME", outside.join("config"))
         .env("XDG_STATE_HOME", outside.join("state"))
         .env_remove("STROP_LOG")
-        .arg("--headless")
+        .arg("headless")
         .arg(&steps)
         .arg(file)
         .output()

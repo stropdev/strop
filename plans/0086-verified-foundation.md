@@ -66,7 +66,7 @@ normalisation, count arithmetic, admission bounds). Therefore:
 
 | Ring | Contents | Checked by |
 |---|---|---|
-| **0 Kernel** (`strop-kernel`: `no_std`, no deps, Aeneas-shaped) | edit-map algebra (position mapping, batch admission, composition); frame-size admission; arena generation arithmetic. **Next:** `Range`/`MotionShape` normalisation, operator-pending parser + count arithmetic, byte-slice motion scanners, worker session/deploy admission | Lean theorems over the Aeneas translation, axiom audit, one calibration mutant per theorem family |
+| **0 Kernel** (`strop-kernel`: `no_std`, no deps, Aeneas-shaped) | edit-map algebra (position and span mapping, batch admission, composition, the multicursor plan filter); retained-syntax interval algebra (0111); cache slots; window tiling; arena generation arithmetic. **Next:** `Range`/`MotionShape` normalisation, operator-pending parser + count arithmetic, byte-slice motion scanners, worker session/deploy admission | Lean theorems over the Aeneas translation, axiom audit, one calibration mutant per claim, paired with the model for properties (0108 D4) |
 | **1 Protocol** (sans-IO machines) | worker session/stream machine, save/conflict plan, draft-recovery cohort decisions, LSP queue admission, event-channel policy | property tests with shrinking (`transaction_conformance`), Loom, crash harness; ≤3 TLC models on probation |
 | **2 Host** | `strop-fs`, `strop-worker`, `strop-remote`, `strop-containers`, `strop-git`, `strop-terminal`, `strop-trace` | small enough to read; fault injection; gated e2e over real sshd/docker |
 | **3 Edge** | LSP wire, tree-sitter grammars, SSH/SFTP output, `docker inspect`, `devcontainer.json`, release catalog + tarball, terminal input | typed admission and bounds; fuzzing of the parsers (weekly) |
@@ -156,11 +156,15 @@ worker session/deploy admission, save-conflict plan, recovery cohort decisions.
 |---|---|---|
 | `test` | fmt, clippy `-D warnings`, `cargo test`, Loom campaign | every push, release |
 | `proofs` | regenerate `proofs/Extracted`, refuse drift, `lake build`, axiom audit, mutants | CI when `crates/strop-kernel/**` or `proofs/**` change; always at release |
-| `model` | the ≤3 probation TLC models | every push (cheap), release |
 | `container-test`, `ssh-pythonfree` | real Docker / real sshd journeys | every push, release |
 | `release` | static musl tarball | release |
 
 A lane that fails blocks. There is no advisory lane.
+
+*2026-11-17 (plan 0108 D3):* the `model` lane (the probation TLC models in
+`specs/`) is deleted: no recorded catch, fifteen releases past probation. Its
+replacements check shipped code: a Loom test of the worker's cancel/finish
+exactly-once and an exhaustive sequence test of the picker generation guard.
 
 ## 9. Implementation record (0.53.0)
 

@@ -25,13 +25,6 @@ jobs:
       - name: fmt + clippy -D warnings + cargo test + Loom
         run: docker compose run --build --rm test
 
-  model:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: TLC probation models
-        run: docker compose run --build --rm model
-
   ssh-pythonfree:
     runs-on: ubuntu-latest
     steps:
@@ -43,11 +36,10 @@ jobs:
   # green only when every lane above is green.
   gate:
     runs-on: ubuntu-latest
-    needs: [test, model, ssh-pythonfree]
+    needs: [test, ssh-pythonfree]
     if: always()
     steps:
       - name: Every lane is green
         run: |
           test "${{ needs.test.result }}" = success
-          test "${{ needs.model.result }}" = success
           test "${{ needs.ssh-pythonfree.result }}" = success

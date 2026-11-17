@@ -57,7 +57,6 @@ pub const MISSING: &[Missing] = &[
         "reflow text to the text width",
     ),
     missing(Where::Normal, &["dis", "das"], "the sentence text objects"),
-    missing(Where::Normal, &["q:", "q/"], "the command-line window"),
     missing(
         Where::Normal,
         &["ga", "g8"],

@@ -336,7 +336,7 @@ fn private_terminal_command_paste_is_classified_before_action_capture() {
             tape.now(),
         )
         .unwrap();
-    assert_eq!(editor.pending.text(), ":terminal printf PRIVATE-COMMAND");
+    assert_eq!(editor.cmdline.text(), ":terminal printf PRIVATE-COMMAND");
     assert!(tape.content_omitted());
     assert!(!serde_json::to_string(&tape.fixture_nodes())
         .unwrap()

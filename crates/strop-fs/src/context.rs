@@ -119,14 +119,7 @@ impl ExecutionContext {
 
 /// The calling process's effective principal, when the platform has one.
 fn principal() -> Option<u32> {
-    #[cfg(unix)]
-    {
-        Some(rustix::process::geteuid().as_raw())
-    }
-    #[cfg(not(unix))]
-    {
-        None
-    }
+    Some(rustix::process::geteuid().as_raw())
 }
 
 /// 128 bits of fresh randomness as hex: session incarnations and private

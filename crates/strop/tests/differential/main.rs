@@ -6,7 +6,8 @@
 //!
 //! The corpus is five lists: `hand` (cases somebody once got wrong),
 //! `critique` (the everyday sequences of plan 0091 §2), `keys` (what
-//! plan 0095 added), `ex` (the command line) and `generated` (each
+//! plan 0095 added), `ex` (the commands), `cmdline` (the line's own keys,
+//! plan 0110) and `generated` (each
 //! operator × each motion or text object × count × Normal, Visual and
 //! dot-repeat).
 //!
@@ -24,6 +25,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+mod cmdline;
 mod critique;
 mod divergences;
 mod ex;
@@ -61,6 +63,7 @@ fn corpus() -> Vec<Run> {
     }));
     runs.extend(written("keys/", keys::CASES));
     runs.extend(written("ex/", ex::CASES));
+    runs.extend(written("cmdline/", cmdline::CASES));
     runs.extend(generated::cases());
     runs.extend(windows::cases());
     runs
@@ -72,8 +75,8 @@ fn keys_to_bytes(keys: &str) -> Vec<u8> {
     let mut out = Vec::new();
     let mut rest = keys;
     while let Some(c) = rest.chars().next() {
-        if let Some((byte, len)) = token(rest) {
-            out.push(byte);
+        if let Some((bytes, len)) = token(rest) {
+            out.extend_from_slice(bytes);
             rest = &rest[len..];
             continue;
         }
@@ -84,28 +87,47 @@ fn keys_to_bytes(keys: &str) -> Vec<u8> {
     out
 }
 
-/// A leading `<name>` token: its byte and its length in the source.
-fn token(text: &str) -> Option<(u8, usize)> {
+/// A leading `<name>` token: its bytes and its length in the source.
+/// Keys with no byte of their own are Neovim's internal key codes
+/// (`K_SPECIAL`, what `"\<Left>"` evaluates to).
+fn token(text: &str) -> Option<(&'static [u8], usize)> {
+    const CONTROL: [[u8; 1]; 26] = {
+        let mut bytes = [[0u8; 1]; 26];
+        let mut at = 0;
+        while at < 26 {
+            bytes[at][0] = at as u8 + 1;
+            at += 1;
+        }
+        bytes
+    };
     let end = text.strip_prefix('<')?.find('>')?;
-    let byte = match &text[1..=end] {
-        "cr" | "enter" => b'\r',
-        "esc" => 0x1b,
+    let bytes: &[u8] = match &text[1..=end] {
+        "cr" | "enter" => b"\r",
+        "esc" => b"\x1b",
         // Ctrl-H: a raw DEL byte is not Backspace to feedkeys()
-        "bs" => 0x08,
-        "tab" => b'\t',
-        "space" => b' ',
-        "lt" => b'<',
-        "gt" => b'>',
+        "bs" => b"\x08",
+        "tab" => b"\t",
+        "space" => b" ",
+        "lt" => b"<",
+        "gt" => b">",
+        "left" => b"\x80kl",
+        "right" => b"\x80kr",
+        "up" => b"\x80ku",
+        "down" => b"\x80kd",
+        "home" => b"\x80kh",
+        "end" => b"\x80@7",
+        "delete" => b"\x80kD",
+        "s-tab" => b"\x80kB",
         control if control.len() == 3 && control.starts_with("c-") => {
             let key = control.as_bytes()[2];
             if !key.is_ascii_lowercase() {
                 return None;
             }
-            key - b'a' + 1
+            &CONTROL[usize::from(key - b'a')]
         }
         _ => return None,
     };
-    Some((byte, end + 2))
+    Some((bytes, end + 2))
 }
 
 #[derive(PartialEq, Eq)]
@@ -203,6 +225,8 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
         "V" => "V-LINE",
         "\u{16}" => "V-BLOCK",
         "i" => "INSERT",
+        // a command line still open (strop's state says so too)
+        "c" => "COMMAND",
         other => other,
     }
     .to_owned();
@@ -219,7 +243,13 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
     })
 }
 
+/// Neovim's 'fileformats' detection: every line of the file ends CRLF.
+fn is_crlf(text: &str) -> bool {
+    text.contains("\r\n") && text.matches('\n').count() == text.matches("\r\n").count()
+}
+
 fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, String> {
+    let crlf = is_crlf(text);
     let file = dir.join("fixture.txt");
     std::fs::write(&file, text).unwrap();
     let script = dir.join("script.strop");
@@ -231,7 +261,7 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
     )
     .unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_strop"));
-    command.arg("--headless").arg(&script).arg("fixture.txt");
+    command.arg("headless").arg(&script).arg("fixture.txt");
     hermetic(&mut command, dir);
     let out = command.output().expect("strop runs");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -245,16 +275,30 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
             )
         })?;
     let v: serde_json::Value = serde_json::from_str(json.trim_start_matches("─── state ")).unwrap();
+    // Neovim reads a CRLF file as 'fileformat' dos: its lines and
+    // registers carry no `\r`. strop keeps the bytes; compare the lines.
+    let lines = |text: &str| {
+        if crlf {
+            text.replace("\r\n", "\n")
+        } else {
+            text.to_owned()
+        }
+    };
+    let registers: std::collections::BTreeMap<String, String> =
+        serde_json::from_value(v["registers"].clone()).unwrap();
     Ok(State {
         text: {
-            let text = std::fs::read_to_string(&file).unwrap();
+            let text = lines(&std::fs::read_to_string(&file).unwrap());
             text.strip_suffix('\n').unwrap_or(&text).to_owned()
         },
         line: v["line"].as_u64().unwrap() as usize,
         col: v["col"].as_u64().unwrap() as usize,
         mode: v["mode"].as_str().unwrap().to_owned(),
-        register: v["register"].as_str().unwrap().to_owned(),
-        registers: serde_json::from_value(v["registers"].clone()).unwrap(),
+        register: lines(v["register"].as_str().unwrap()),
+        registers: registers
+            .into_iter()
+            .map(|(name, text)| (name, lines(&text)))
+            .collect(),
         modified: v["dirty"].as_bool().unwrap(),
         windows: serde_json::json!([v["layout"], v["active_pane"].as_u64().unwrap() + 1])
             .to_string(),

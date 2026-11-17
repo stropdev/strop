@@ -60,14 +60,6 @@ impl Operator {
     }
 }
 
-/// Recognized qualifier keys (0051 §3 vocabulary; `kind`/`repo` join with
-/// 0063 §2 — they narrow workspace symbols and repositories once project
-/// discovery lands, and never silently disappear).
-pub const QUALIFIERS: &[&str] = &[
-    "language", "path", "fpath", "glob", "hidden", "ignored", "case", "text", "regex", "kind",
-    "type", "repo",
-];
-
 /// Lex the whole input. Never fails: an unclosed quote is a token, not
 /// an exception. A query containing a Boolean operator re-lexes once in
 /// grouping mode, where parentheses delimit tokens; operator-free input
@@ -219,7 +211,7 @@ fn classify(text: &str, range: std::ops::Range<usize>, quoted: bool) -> TokenKin
             None => (false, text),
         };
         if let Some((key, value)) = rest.split_once(':') {
-            if QUALIFIERS.contains(&key) {
+            if super::schema::Field::from_key(key).is_some() {
                 let key_start = range.start + usize::from(negated);
                 return TokenKind::Qualifier {
                     key: key.to_string(),

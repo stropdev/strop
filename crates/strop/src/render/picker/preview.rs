@@ -325,6 +325,7 @@ mod tests {
                 match_len: 8,
                 line_text: "fn dispatch() {}".into(),
             },
+            facts: Default::default(),
         }]);
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
@@ -363,6 +364,7 @@ mod tests {
                 match_len: 8,
                 line_text: "fn dispatch() {}".into(),
             },
+            facts: Default::default(),
         }]);
         // The real full-screen picker workspace: the wider preview pane must
         // carry the numbered gutter, the ▌ marker on the symbol's line and

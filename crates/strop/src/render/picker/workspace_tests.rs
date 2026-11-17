@@ -97,6 +97,7 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
             match_len: 0,
             line_text: "dispatch".into(),
         },
+        facts: Default::default(),
     }]);
     let grid = draw(&mut editor, 100, 30);
     assert_eq!(grid[(2, 0)].symbol(), "╭");
@@ -137,6 +138,7 @@ fn long_file_paths_keep_basename_and_preview_identity_visible() {
         badge: None,
         text: strop_picker::display_path(&path).into_owned(),
         payload: strop_picker::Payload::Buffer(document),
+        facts: Default::default(),
     }]);
 
     let grid = draw(&mut editor, 100, 30);
@@ -213,6 +215,7 @@ fn symbol_fixture(path: &std::path::Path, n: usize) -> strop_picker::Item {
             match_len: 0,
             line_text: format!("fn dispatch_{n}() {{}}").into(),
         },
+        facts: Default::default(),
     }
 }
 
@@ -316,6 +319,7 @@ fn floating_card_picker_uses_the_same_scrollbar_vocabulary() {
                 badge: None,
                 text: format!("buffer_{n}.rs"),
                 payload: strop_picker::Payload::Buffer(scratch),
+                facts: Default::default(),
             })
             .collect(),
     );
@@ -352,6 +356,7 @@ fn jump_preview_marks_the_live_buffer_destination_line() {
         badge: None,
         text: "jump to dispatch".into(),
         payload: strop_picker::Payload::Jump { document, offset },
+        facts: Default::default(),
     }]);
     editor.wait_picker();
     editor.feed_text("<esc>j");
@@ -608,4 +613,50 @@ fn the_workspace_card_margin_shows_no_backdrop() {
         (0..120).any(|x| grid[(x, 29)].symbol() != " "),
         "the statusline row stays"
     );
+}
+
+/// 0106 A2: the finder's folder column is measured once per list, so a
+/// long name scrolling into view or out of it moves no folder.
+#[test]
+fn file_finder_folder_column_does_not_move_while_scrolling() {
+    let root = tempfile::tempdir().unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    editor.open_picker(strop_picker::Kind::Files);
+    editor.wait_picker();
+    editor.picker_reset_fixture();
+    let items = (0..60)
+        .map(|i| {
+            let name = if i == 40 {
+                "a-name-of-thirty-cells-long.rs".to_string()
+            } else {
+                format!("f{i:02}.rs")
+            };
+            let path = format!("src/{name}");
+            strop_picker::Item {
+                badge: None,
+                payload: strop_picker::Payload::File(path.clone().into()),
+                text: path,
+                facts: Default::default(),
+            }
+        })
+        .collect();
+    editor.picker_items_fixture(items);
+
+    let mut columns = std::collections::BTreeSet::new();
+    for step in 0..=45 {
+        if step > 0 {
+            editor.feed(Key::Down);
+        }
+        let grid = draw(&mut editor, 140, 30);
+        let list = editor.prepared_view().picker.unwrap().results.unwrap();
+        for y in list.y..list.y + list.height {
+            let row: Vec<&str> = (list.x..list.x + list.width - 1)
+                .map(|x| grid[(x, y)].symbol())
+                .collect();
+            if let Some(at) = row.windows(4).position(|w| w.concat() == "src/") {
+                columns.insert(at);
+            }
+        }
+    }
+    assert_eq!(columns.len(), 1, "folders started at cells {columns:?}");
 }

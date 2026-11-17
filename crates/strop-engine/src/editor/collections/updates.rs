@@ -18,19 +18,37 @@ struct ProjectedEdit {
 impl Collection {
     pub(super) fn map_view_changes(&mut self, changes: &[Change]) {
         for change in changes {
-            let edit = change.edit;
-            let delta = edit.new_end_byte as isize - edit.old_end_byte as isize;
-            let lines = edit.new_end_point.0 as isize - edit.old_end_point.0 as isize;
+            let (s, e, new_end) = change.extent();
+            let lines = change.edit.new_end_point.0 as isize - change.edit.old_end_point.0 as isize;
             for excerpt in &mut self.excerpts {
-                if edit.start_byte >= excerpt.view_start && edit.old_end_byte <= excerpt.view_end {
-                    excerpt.view_end = excerpt.view_end.saturating_add_signed(delta);
+                let inside = s >= excerpt.view_start && e <= excerpt.view_end;
+                let before = !inside && e <= excerpt.view_start;
+                // Admission (`excerpt::admits`) keeps view edits out of the
+                // chrome: an edit lies inside a body, wholly before it or
+                // wholly after it, never across its edge.
+                debug_assert!(
+                    inside || before || s >= excerpt.view_end,
+                    "view edit {s}..{e} straddles body {}..{}",
+                    excerpt.view_start,
+                    excerpt.view_end
+                );
+                // A body takes in what is typed at its end: the view's own
+                // edits there are the excerpt's last line growing.
+                (excerpt.view_start, excerpt.view_end) = strop_kernel::editmap::map_span(
+                    excerpt.view_start,
+                    excerpt.view_end,
+                    s,
+                    e,
+                    new_end,
+                    true,
+                );
+                if inside {
                     excerpt.view_lines = excerpt.view_lines.saturating_add_signed(lines);
-                } else if excerpt.view_start >= edit.old_end_byte {
-                    excerpt.view_start = excerpt.view_start.saturating_add_signed(delta);
-                    excerpt.view_end = excerpt.view_end.saturating_add_signed(delta);
+                } else if before {
                     excerpt.view_line = excerpt.view_line.saturating_add_signed(lines);
                 }
             }
+            let edit = change.edit;
             let row = edit.start_point.0;
             self.rows.splice(
                 row..edit.old_end_point.0,
@@ -89,6 +107,14 @@ impl Editor {
                         continue;
                     }
                     if start < excerpt.start || end > excerpt.end {
+                        rebuild = true;
+                        continue;
+                    }
+                    if start == excerpt.end {
+                        // An insertion at the end joins the excerpt only
+                        // when it continues a last line that has no
+                        // newline (`transact.rs`): render from the
+                        // sources rather than decide twice.
                         rebuild = true;
                         continue;
                     }

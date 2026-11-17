@@ -182,6 +182,9 @@ retire the pair first (`place_spec`).
 
 ### 4.1 Symbols — `editor/symbols/` (landed)
 
+*Amended by [0107](0107-breadcrumb.md): a symbol carries its line span; the
+modeline reads the kept list at the cursor.*
+
 State lives in `Editor::analysis.symbols`, so the edit, close and stop
 lifecycle `AnalysisState` already has covers it; no field and no `impl` block
 was added to `Editor`.

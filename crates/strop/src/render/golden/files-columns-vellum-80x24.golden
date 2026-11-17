@@ -1,0 +1,49 @@
+╭ files ──────────────────────────────────────────────────────────────────── 9 ╮
+│ ❯ ▏                                                                          │
+│ language:rust path:src/ glob:"**/*.rs" case:sensitive · ctrl-space lists all │
+│   statusline.rs       src/render/         │ src/main.rs                      │
+│   Makefile                                │preview: No such file or director │
+│ ▌ main.rs             src/                │                                  │
+│   mod.rs              src/render/         │                                  │
+│   render.rs           …or/changes/review/ │                                  │
+│   remote.md           docs/               │                                  │
+│   0081-product-coherence-and-workspace-e… │                                  │
+│   collection-blocks-vellum-200x50.golden  │                                  │
+│   a-file-name-that-is-longer-than-the-wh… │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+│                                           │                                  │
+╰  enter  open   ↑↓  move   ctrl-r "  paste yank   esc  close ─────────────────╯
+  FILES     src/render/statusline.rs                                  5%   1:1  
+
+  0: 1:#656d7b/#fdfbf6 7:#262a30/#fdfbf6+b 72:#656d7b/#fdfbf6
+  1: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 3:#8a510f/#fdfbf6 74:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  2: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 76:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  3: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 13:#262a30/#fdfbf6 7:reset/#fdfbf6 11:#4b525c/#fdfbf6 9:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 1:reset/#fdfbf6 4:#4b525c/#fdfbf6 7:#262a30/#fdfbf6+b 1:#4b525c/#fdfbf6 21:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  4: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 8:#262a30/#fdfbf6 32:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  5: 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#8a510f/#e5dfd0 1:reset/#e5dfd0 7:#262a30/#e5dfd0 13:reset/#e5dfd0 4:#4b525c/#e5dfd0 15:reset/#e5dfd0 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  6: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 6:#262a30/#fdfbf6 14:reset/#fdfbf6 11:#4b525c/#fdfbf6 9:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  7: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 9:#262a30/#fdfbf6 11:reset/#fdfbf6 19:#4b525c/#fdfbf6 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  8: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 9:#262a30/#fdfbf6 11:reset/#fdfbf6 5:#4b525c/#fdfbf6 15:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+  9: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 38:#262a30/#fdfbf6 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 10: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 38:#262a30/#fdfbf6 2:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 11: 1:#656d7b/#fdfbf6 3:reset/#fdfbf6 38:#262a30/#fdfbf6 1:#656d7b/#fdfbf6 1:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 12: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 13: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 14: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 15: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 16: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 17: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 18: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 19: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 20: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 21: 1:#656d7b/#fdfbf6 43:reset/#fdfbf6 1:#aeb3ba/#fdfbf6 34:reset/#fdfbf6 1:#656d7b/#fdfbf6
+ 22: 2:#656d7b/#fdfbf6 7:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 4:#8a510f/#e5dfd0+b 7:#656d7b/#fdfbf6 10:#8a510f/#e5dfd0+b 13:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 25:#656d7b/#fdfbf6
+ 23: 10:#f5f1e8/#a3bb9a+b 2:reset/#f8f5ee 11:#a8a9a9/#f8f5ee 13:#989795/#f8f5ee 32:reset/#f8f5ee 4:#b4b6b7/#f8f5ee 2:reset/#f8f5ee 6:#a8a9a9/#f8f5ee

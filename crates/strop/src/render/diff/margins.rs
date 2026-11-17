@@ -174,7 +174,6 @@ mod tests {
         assert!(label.contains('…'));
     }
 
-    #[cfg(unix)]
     #[test]
     fn non_utf8_paths_keep_distinct_identity() {
         use std::ffi::OsString;

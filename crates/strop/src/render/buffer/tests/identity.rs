@@ -36,6 +36,7 @@ fn open_through(route: OpenRoute, root: &std::path::Path, path: &std::path::Path
                 badge: None,
                 text: "src/sample.rs".into(),
                 payload: strop_picker::Payload::File(path.to_path_buf()),
+                facts: Default::default(),
             }]);
             editor.feed(strop_core::frontend_input::Key::Enter);
             editor.wait_io().unwrap();
@@ -281,7 +282,6 @@ fn workspace_title_clipping_prints_controls_and_preserves_graphemes() {
     assert!(titles.contains("e\u{301}.rs"), "{titles:?}");
 }
 
-#[cfg(unix)]
 #[test]
 fn non_utf8_workspace_title_uses_lossy_display_without_changing_identity() {
     use std::os::unix::ffi::OsStrExt;

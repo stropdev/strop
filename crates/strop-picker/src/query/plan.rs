@@ -3,11 +3,11 @@
 //! search expression. Filters compile once per query revision; changing
 //! only the needle never rebuilds the file catalog.
 
-mod boolean;
+mod admission;
 mod content;
 mod file;
 
-pub use boolean::{BooleanPlan, Evidence, SymbolEvidence};
+pub use admission::{Admission, Evidence};
 pub use content::{ContentPlan, ReplacementTarget};
 pub use file::FileSelectionPlan;
 

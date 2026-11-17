@@ -85,8 +85,10 @@ Messages appear on a row above the status line, and only while there is
 one to show: first the answer to your last key, then any message still
 waiting for you (`✗` failure, `▲` warning, `●` info) with the key that
 deals with it, `Space a` or `:explain`. The status line itself shows the
-mode, the branch, the path, then, only when not zero, the diagnostics count
-(`●1 ▲2`), the language-server badge, the indent and the position.
+mode, the branch, the path, the class and method the cursor is in
+(`impl Modeline › fit`, from the same list as `Space s`), then, only when
+not zero, the diagnostics count (`●1 ▲2`), the language-server badge, the
+indent and the position.
 
 A failed save, a failed connection or a terminal that needs a decision
 leaves a message that stays until you deal with it. Moving, searching or a
@@ -111,8 +113,8 @@ least 10:1, secondary text 7:1, comments and syntax colours 4.5:1.
 
 | Name | Character |
 | --- | --- |
-| `kiln` | Warm charcoal with a terracotta accent, after the Claude Code terminal look; the default |
-| `hone` | Graphite dark with an amber accent |
+| `hone` | Graphite dark with an amber accent; the default |
+| `kiln` | Warm charcoal with a terracotta accent, after the Claude Code terminal look |
 | `slate` | Muted dark: syntax told apart by brightness, one brass accent |
 | `carbide` | High-contrast dark for projectors and bright rooms (every colour at least 7:1) |
 | `vellum` | Warm paper, graphite text, burnt-umber accent |
@@ -173,9 +175,10 @@ goes away. Messages about other projects or other problems stay.
 `Space s` lists the current file's symbols. The list is fetched when the
 file is opened and after each edit, so it opens with the key and without
 asking the server again; it is never a list from before an edit. In Rust,
-Python, C, C++ and Lua files that no server serves, the list comes from
-the syntax tree (functions, methods, types, modules, constants) and the
-message line says so.
+Python, C, C++, Lua, Go, Java, JavaScript, TypeScript, C#, PHP and Ruby
+files that no server serves, the list comes from the syntax tree
+(functions, methods, types, modules, constants, Rust `impl` blocks) and
+the message line says so.
 
 A server that crashes after it was ready restarts by itself, up to three
 times per project: a message says `restarting (1/3)`, the `LSP!` badge
@@ -259,6 +262,33 @@ binds that strop does not (**Missing**) or uses differently (**Reassigned**).
   are not supported.
 
 ## The command line
+
+`:`, `/`, `?` and `|` open the command line on the bottom row, beside the
+mode chip. `Esc` or `Ctrl-C` cancels it at once, and so does `Backspace` on
+an empty line. It edits like Vim's: `Ctrl-W` deletes a word, `Ctrl-U`
+everything before the cursor, `Ctrl-B` / `Home` and `Ctrl-E` / `End` go to
+the start and end, `Ctrl-R {register}` inserts a register and
+`Ctrl-R Ctrl-W` / `Ctrl-R Ctrl-A` the word or WORD under the cursor.
+
+- **History**: `Up` / `Down` recall older and newer lines that start with
+  what you typed; `Ctrl-P` / `Ctrl-N` recall any line. `:` and `/ ?` keep
+  200 lines each, per project, with the session.
+- **Completion**: a menu of commands opens as you type a name; its top row
+  is the command `Enter` runs. `Tab` / `Shift-Tab` (or `Ctrl-N` / `Ctrl-P`
+  while it shows) write the next row into the line, and after the last one
+  put back what you typed; `Ctrl-Y` keeps a row, `Ctrl-E` puts back what you
+  typed. After a name, `Tab` or `Ctrl-D` lists what the command takes:
+  files (`:e`, `:w`, `:sp`, `:vs`, `:view`), directories (`:cd`), buffers
+  (`:b`, `:bd`), themes, help topics, or the command's own words (`:set`,
+  `:remote`, `:recover`, `:tab-size`, `:indent-style`, `:sort`).
+- The right end of the line says what the command takes (`:w[!] [file]`),
+  how many matches a search has, the lines a range names, or what a `:s`
+  will change — while it is typed, `:s` shows each changed line as it will
+  read, in place.
+- **The command-line window**: `q:` (or `q/`, `q?`, or `Ctrl-F` on an open
+  line) opens the history in a split below as an ordinary buffer, the line
+  being typed last. Edit with any key; `Enter` runs the line under the
+  cursor, `Ctrl-C` or `:q` closes it.
 
 `:` takes Vim's ranges and Vim's names. A range is line numbers, `.`, `$`,
 `%`, marks (`'a`, and `'<,'>` — which `:` typed from Visual mode fills in),

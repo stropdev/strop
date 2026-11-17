@@ -8,7 +8,7 @@ fn t() -> Tokens {
 
 fn sym(name: &str, container: &str, line: usize, kind: &str) -> Item {
     Item {
-        badge: Some(kind.into()),
+        badge: Some(kind.to_owned().into()),
         text: format!("{name}  {container} · :{line}"),
         payload: Payload::Grep {
             location: strop_workspace::ResourceLocation::local(PathBuf::from("/p/net.cpp")),
@@ -17,6 +17,7 @@ fn sym(name: &str, container: &str, line: usize, kind: &str) -> Item {
             match_len: 1,
             line_text: "".into(),
         },
+        facts: Default::default(),
     }
 }
 
@@ -56,6 +57,7 @@ fn grep_item(path: &str, line: usize, col: usize, len: usize, text: &str) -> Ite
             match_len: len,
             line_text: text.into(),
         },
+        facts: Default::default(),
     }
 }
 
@@ -180,6 +182,7 @@ fn buffer_rows_split_the_directory_from_the_name_and_keep_terminals_whole() {
         badge: None,
         text: "crates/strop/src/render/card.rs".into(),
         payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+        facts: Default::default(),
     };
     let line = buffer_row(&t, &file, &[], 60, false);
     assert_eq!(
@@ -197,6 +200,7 @@ fn buffer_rows_split_the_directory_from_the_name_and_keep_terminals_whole() {
         badge: Some("!".into()),
         text: "term:///w//1:sh · running".into(),
         payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+        facts: Default::default(),
     };
     let line = buffer_row(&t, &terminal, &[], 60, false);
     assert_eq!(line.spans[2].content, "term:///w//1:sh");
@@ -408,6 +412,7 @@ fn diagnostic_rows_show_severity_message_and_location() {
             match_len: 1,
             line_text: "cannot find function `xyz` in this scope".into(),
         },
+        facts: Default::default(),
     };
     let line = diagnostic_row(&t, &item, std::path::Path::new("/w"), 80, true);
     let text = line_text(&line);
@@ -454,35 +459,5 @@ fn source_rows_are_total_and_cell_bounded_at_degenerate_widths() {
             width,
         );
         assert!(header.width() <= width as usize);
-    }
-}
-
-/// Files rows: basename first, directory after it at one shared column.
-#[test]
-fn file_rows_put_the_directory_after_the_name_at_a_shared_column() {
-    let t = t();
-    let a = file_row(&t, "plans/STATUS.md", &[0, 1], 14, 44, true);
-    let b = file_row(
-        &t,
-        "crates/strop-engine/src/editor/lsp/status.rs",
-        &[],
-        14,
-        44,
-        false,
-    );
-    let a_text = line_text(&a);
-    let b_text = line_text(&b);
-    let column =
-        |text: &str, needle: &str| text.find(needle).map(|byte| text[..byte].chars().count());
-    assert!(a_text.starts_with("▌ STATUS.md"), "{a_text:?}");
-    assert_eq!(
-        column(&a_text, "plans/"),
-        column(&b_text, "…"),
-        "shared directory column: {b_text:?}"
-    );
-    assert!(b_text.contains("lsp/"), "elided from the left: {b_text:?}");
-    assert_eq!(a.width(), 44);
-    for width in 0..30 {
-        assert!(file_row(&t, "plans/STATUS.md", &[], 14, width, true).width() <= width as usize);
     }
 }

@@ -33,10 +33,8 @@ const CATALOG_URL: &str = "https://github.com/stropdev/strop/releases/latest/dow
 pub enum Channel {
     /// install.sh / release tarball — self-updates.
     Tarball,
-    Brew,
-    Cargo,
-    Mise,
-    /// A receipt channel we do not recognize: honest unknown.
+    /// Any other receipt channel (retired brew/cargo installs included):
+    /// honest unknown.
     Unknown,
 }
 
@@ -44,9 +42,6 @@ impl Channel {
     fn named(name: &str) -> Channel {
         match name {
             "tarball" => Channel::Tarball,
-            "brew" => Channel::Brew,
-            "cargo" => Channel::Cargo,
-            "mise" => Channel::Mise,
             _ => Channel::Unknown,
         }
     }
@@ -54,9 +49,6 @@ impl Channel {
     fn name(self) -> &'static str {
         match self {
             Channel::Tarball => "tarball",
-            Channel::Brew => "brew",
-            Channel::Cargo => "cargo",
-            Channel::Mise => "mise",
             Channel::Unknown => "unknown",
         }
     }
@@ -359,16 +351,6 @@ pub fn update(check_only: bool) -> Result<(), String> {
         ));
     };
     match receipt.channel {
-        Channel::Brew | Channel::Cargo => {
-            return Err(format!(
-                "installation receipt says {}, a retired channel that no longer receives \
-                 releases — reinstall with install.sh to move to the release tarball",
-                receipt.channel.name()
-            ))
-        }
-        Channel::Mise => {
-            return Err("installation receipt says mise — run: mise upgrade strop".into())
-        }
         Channel::Unknown => {
             return Err(format!(
                 "installation receipt at {} names an unrecognized channel — not guessing \
@@ -428,14 +410,11 @@ pub fn update(check_only: bool) -> Result<(), String> {
     let mut source =
         std::fs::File::open(&new_bin).map_err(|error| format!("extracted binary: {error}"))?;
     std::io::copy(&mut source, staged.as_file_mut()).map_err(|error| format!("stage: {error}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        staged
-            .as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o755))
-            .map_err(|error| format!("permissions: {error}"))?;
-    }
+    use std::os::unix::fs::PermissionsExt;
+    staged
+        .as_file()
+        .set_permissions(std::fs::Permissions::from_mode(0o755))
+        .map_err(|error| format!("permissions: {error}"))?;
     staged
         .as_file()
         .sync_all()
@@ -522,9 +501,7 @@ fn channel_identity_comes_from_the_receipt() {
     let exe = dir.path().join("strop");
     for (name, want) in [
         ("tarball", Channel::Tarball),
-        ("brew", Channel::Brew),
-        ("cargo", Channel::Cargo),
-        ("mise", Channel::Mise),
+        ("brew", Channel::Unknown),
         ("flatpak", Channel::Unknown),
     ] {
         std::fs::write(
@@ -669,16 +646,13 @@ fn archive_extracts_binary_and_executable_permissions_in_process() {
         std::fs::read(&binary).expect("extracted binary"),
         b"new strop binary"
     );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            std::fs::metadata(&binary)
-                .expect("binary metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o755
-        );
-    }
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(&binary)
+            .expect("binary metadata")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o755
+    );
 }

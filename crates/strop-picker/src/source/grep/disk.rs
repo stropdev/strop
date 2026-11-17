@@ -11,7 +11,7 @@ use grep::searcher::{sinks::UTF8, Searcher, SearcherBuilder};
 use strop_core::worker::{CancelReason, CancelToken, FailureKind, Outcome};
 
 use super::super::flow::StreamSender;
-use crate::query::{CaseMode, ContentPlan, Evidence};
+use crate::query::{CaseMode, ContentPlan, Evidence, RowFacts};
 use crate::source::{catalog::ProjectCatalog, symbols::SymbolIndex};
 
 /// ripgrep stops adding threads at twelve; past eight a warm tree is
@@ -121,16 +121,17 @@ fn search_file(
             return Ok(false);
         }
         let text: std::sync::Arc<str> = text.strip_suffix('\n').unwrap_or(text).into();
-        if !content.admits(
-            Evidence {
-                catalog: scope.catalog,
-                symbols: scope.symbols,
-                path: Some(&relative),
-                line: Some(line as usize),
-                symbol: None,
-            },
-            &text,
-        ) {
+        let row = RowFacts {
+            path: Some(&relative),
+            line: Some(line as usize),
+            text: &text,
+            ..RowFacts::default()
+        };
+        let evidence = Evidence {
+            catalog: scope.catalog,
+            symbols: scope.symbols,
+        };
+        if !content.admits(&row, &evidence) {
             return Ok(true);
         }
         let short: String = text.trim().chars().take(80).collect();
@@ -154,6 +155,7 @@ fn search_file(
                     match_len: hit.len(),
                     line_text: text.clone(),
                 },
+                facts: Default::default(),
             };
             expanded = expanded.saturating_add(super::super::flow::row_bytes(&item));
             if expanded > super::super::flow::BACKLOG_BYTES {
