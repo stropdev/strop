@@ -32,7 +32,12 @@ COPY docs ./docs
 
 # The gate: fmt, clippy -D warnings, the workspace tests (including the real
 # sshd suites) and the Loom campaign over the shipped synchronization seams.
+# A name filter matching nothing passes silently, so the Loom lane first
+# counts the campaigns it selects and refuses any number but LOOM_TESTS:
+# a renamed or cfg'd-out campaign fails the gate, and a new one is counted
+# by bumping this number in the same change.
 FROM builder AS test
+ARG LOOM_TESTS=7
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-test,sharing=locked \
@@ -40,8 +45,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
     && STROP_REQUIRE_SSH_TESTS=1 STROP_REQUIRE_NVIM=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
-    && CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
-        cargo test --locked -p strop-engine -p strop-lsp loom
+    && export CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
+    && loom_tests=$(cargo test --locked -p strop-core -p strop-engine -p strop-lsp loom -- --list \
+        | grep -c ': test$' || true) \
+    && { [ "$loom_tests" -eq "$LOOM_TESTS" ] \
+        || { echo "Loom lane matched $loom_tests tests, expected $LOOM_TESTS" >&2; exit 1; }; } \
+    && cargo test --locked -p strop-core -p strop-engine -p strop-lsp loom
 
 # Remote editing over plain SSH on a host with no Python interpreter:
 # OpenSSH, rg and git on the Rust builder, never python3. The exec journeys
