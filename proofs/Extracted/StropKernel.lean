@@ -706,6 +706,442 @@ def generation.index_for_len (len : Std.Usize) : Result (Option Std.U32) := do
   else let i1 ← lift (UScalar.cast .U32 len)
        ok (some i1)
 
+/-- [strop_kernel::intervals::least]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 25:0-31:1 -/
+def intervals.least (a : Std.Usize) (b : Std.Usize) : Result Std.Usize := do
+  if a < b
+  then ok a
+  else ok b
+
+/-- [strop_kernel::intervals::most]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 33:0-39:1 -/
+def intervals.most (a : Std.Usize) (b : Std.Usize) : Result Std.Usize := do
+  if a < b
+  then ok b
+  else ok a
+
+/-- [strop_kernel::intervals::project]: loop body 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 53:4-64:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.project_loop.body
+  (ranges : Slice (Std.Usize × Std.Usize)) (start : Std.Usize)
+  (old_end : Std.Usize) (new_end : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) ×
+    Std.Usize) (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len ranges
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize ranges k
+    let out1 ←
+      if i1 < start
+      then
+        do
+        let i3 ← intervals.least i2 start
+        alloc.vec.Vec.push out (i1, i3, k)
+      else ok out
+    let out2 ←
+      if i2 > old_end
+      then
+        do
+        let i3 ← intervals.most i1 old_end
+        let «from» ← editmap.map_position i3 start old_end new_end
+        let «to» ← editmap.map_position i2 start old_end new_end
+        alloc.vec.Vec.push out1 («from», «to», k)
+      else ok out1
+    let k1 ← k + 1#usize
+    ok (cont (out2, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::project]: loop 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 53:4-64:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.project_loop
+  (ranges : Slice (Std.Usize × Std.Usize)) (start : Std.Usize)
+  (old_end : Std.Usize) (new_end : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.project_loop.body ranges start old_end new_end
+      out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::project]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 45:0-65:1
+    Visibility: public -/
+@[reducible]
+def intervals.project
+  (ranges : Slice (Std.Usize × Std.Usize)) (start : Std.Usize)
+  (old_end : Std.Usize) (new_end : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  intervals.project_loop ranges start old_end new_end out 0#usize
+
+/-- [strop_kernel::intervals::cover]: loop body 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 77:8-80:9
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.cover_loop0.body
+  (coverage : Slice (Std.Usize × Std.Usize))
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize)) × Std.Usize)
+    (alloc.vec.Vec (Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len coverage
+  if k < i
+  then
+    let p ← Slice.index_usize coverage k
+    let out1 ← alloc.vec.Vec.push out p
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::cover]: loop 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 77:8-80:9
+    Visibility: public -/
+@[rust_loop]
+def intervals.cover_loop0
+  (coverage : Slice (Std.Usize × Std.Usize))
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.cover_loop0.body coverage out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::cover]: loop body 1:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 85:4-94:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.cover_loop1.body
+  (coverage : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize) (out : alloc.vec.Vec (Std.Usize × Std.Usize))
+  (k : Std.Usize) (low : Std.Usize) (high : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize)) × Std.Usize ×
+    Std.Usize × Std.Usize) ((alloc.vec.Vec (Std.Usize × Std.Usize)) ×
+    Std.Usize × Std.Usize))
+  := do
+  let i := Slice.len coverage
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize coverage k
+    let (out1, low1, high1) ←
+      if i2 < first
+      then do
+           let out2 ← alloc.vec.Vec.push out (i1, i2)
+           ok (out2, low, high)
+      else
+        do
+        let (i3, i4) ←
+          if i1 <= last
+          then
+            do
+            let low2 ← intervals.least low i1
+            let high2 ← intervals.most high i2
+            ok (low2, high2)
+          else ok (low, high)
+        ok (out, i3, i4)
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1, low1, high1))
+  else ok (done (out, low, high))
+
+/-- [strop_kernel::intervals::cover]: loop 1:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 85:4-94:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.cover_loop1
+  (coverage : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize) (out : alloc.vec.Vec (Std.Usize × Std.Usize))
+  (k : Std.Usize) (low : Std.Usize) (high : Std.Usize) :
+  Result ((alloc.vec.Vec (Std.Usize × Std.Usize)) × Std.Usize × Std.Usize)
+  := do
+  loop
+    (fun (out1, k1, low1, high1) => intervals.cover_loop1.body coverage first
+      last out1 k1 low1 high1)
+    (out, k, low, high)
+
+/-- [strop_kernel::intervals::cover]: loop body 2:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 97:4-103:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.cover_loop2.body
+  (coverage : Slice (Std.Usize × Std.Usize)) (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize)) × Std.Usize)
+    (alloc.vec.Vec (Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len coverage
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize coverage k
+    let out1 ← if i1 > last
+                 then alloc.vec.Vec.push out (i1, i2)
+                 else ok out
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::cover]: loop 2:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 97:4-103:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.cover_loop2
+  (coverage : Slice (Std.Usize × Std.Usize)) (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.cover_loop2.body coverage last out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::cover]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 69:0-104:1
+    Visibility: public -/
+def intervals.cover
+  (coverage : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize) (out : alloc.vec.Vec (Std.Usize × Std.Usize)) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize))
+  := do
+  if first >= last
+  then intervals.cover_loop0 coverage out 0#usize
+  else
+    let (out1, low, high) ←
+      intervals.cover_loop1 coverage first last out 0#usize first last
+    let out2 ← alloc.vec.Vec.push out1 (low, high)
+    intervals.cover_loop2 coverage last out2 0#usize
+
+/-- [strop_kernel::intervals::uncover]: loop body 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 115:4-126:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.uncover_loop.body
+  (coverage : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) ×
+    Std.Usize) (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len coverage
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize coverage k
+    let below ← intervals.least i2 first
+    let out1 ←
+      if i1 < below
+      then alloc.vec.Vec.push out (i1, below, k)
+      else ok out
+    let above ← intervals.most i1 last
+    let out2 ←
+      if above < i2
+      then alloc.vec.Vec.push out1 (above, i2, k)
+      else ok out1
+    let k1 ← k + 1#usize
+    ok (cont (out2, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::uncover]: loop 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 115:4-126:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.uncover_loop
+  (coverage : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.uncover_loop.body coverage first last out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::uncover]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 108:0-127:1
+    Visibility: public -/
+@[reducible]
+def intervals.uncover
+  (coverage : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  intervals.uncover_loop coverage first last out 0#usize
+
+/-- [strop_kernel::intervals::replace_window]: loop body 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 141:4-148:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.replace_window_loop0.body
+  (spans : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) ×
+    Std.Usize) (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len spans
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize spans k
+    let below ← intervals.least i2 first
+    let out1 ←
+      if i1 < below
+      then alloc.vec.Vec.push out (i1, below, k)
+      else ok out
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::replace_window]: loop 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 141:4-148:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.replace_window_loop0
+  (spans : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.replace_window_loop0.body spans first out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::replace_window]: loop body 1:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 150:4-153:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.replace_window_loop1.body
+  (spans : Slice (Std.Usize × Std.Usize))
+  (fresh : Slice (Std.Usize × Std.Usize))
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) ×
+    Std.Usize) (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len fresh
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize fresh k
+    let i3 := Slice.len spans
+    let i4 ← i3 + k
+    let out1 ← alloc.vec.Vec.push out (i1, i2, i4)
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::replace_window]: loop 1:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 150:4-153:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.replace_window_loop1
+  (spans : Slice (Std.Usize × Std.Usize))
+  (fresh : Slice (Std.Usize × Std.Usize))
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.replace_window_loop1.body spans fresh out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::replace_window]: loop body 2:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 155:4-162:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.replace_window_loop2.body
+  (spans : Slice (Std.Usize × Std.Usize)) (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) ×
+    Std.Usize) (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len spans
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize spans k
+    let above ← intervals.most i1 last
+    let out1 ←
+      if above < i2
+      then alloc.vec.Vec.push out (above, i2, k)
+      else ok out
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::replace_window]: loop 2:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 155:4-162:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.replace_window_loop2
+  (spans : Slice (Std.Usize × Std.Usize)) (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.replace_window_loop2.body spans last out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::replace_window]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 133:0-163:1
+    Visibility: public -/
+def intervals.replace_window
+  (spans : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize) (fresh : Slice (Std.Usize × Std.Usize))
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  let out1 ← intervals.replace_window_loop0 spans first out 0#usize
+  let out2 ← intervals.replace_window_loop1 spans fresh out1 0#usize
+  intervals.replace_window_loop2 spans last out2 0#usize
+
+/-- [strop_kernel::intervals::clip]: loop body 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 175:4-183:5
+    Visibility: public -/
+@[rust_loop_body]
+def intervals.clip_loop.body
+  (spans : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) ×
+    Std.Usize) (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)))
+  := do
+  let i := Slice.len spans
+  if k < i
+  then
+    let (i1, i2) ← Slice.index_usize spans k
+    let low ← intervals.most i1 first
+    let high ← intervals.least i2 last
+    let out1 ←
+      if low < high
+      then alloc.vec.Vec.push out (low, high, k)
+      else ok out
+    let k1 ← k + 1#usize
+    ok (cont (out1, k1))
+  else ok (done out)
+
+/-- [strop_kernel::intervals::clip]: loop 0:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 175:4-183:5
+    Visibility: public -/
+@[rust_loop]
+def intervals.clip_loop
+  (spans : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) (k : Std.Usize) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  loop
+    (fun (out1, k1) => intervals.clip_loop.body spans first last out1 k1)
+    (out, k)
+
+/-- [strop_kernel::intervals::clip]:
+    Source: 'crates/strop-kernel/src/intervals.rs', lines 168:0-184:1
+    Visibility: public -/
+@[reducible]
+def intervals.clip
+  (spans : Slice (Std.Usize × Std.Usize)) (first : Std.Usize)
+  (last : Std.Usize)
+  (out : alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize)) :
+  Result (alloc.vec.Vec (Std.Usize × Std.Usize × Std.Usize))
+  := do
+  intervals.clip_loop spans first last out 0#usize
+
 /-- [strop_kernel::layout::Span]
     Source: 'crates/strop-kernel/src/layout.rs', lines 28:0-31:1
     Visibility: public -/

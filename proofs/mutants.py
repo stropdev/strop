@@ -295,6 +295,51 @@ PAIRED = (
            lean=(Patch("Kernel/Excerpt.lean",
                        "def toSource (vs ss se p : Nat) : Nat := ss + min (p - vs) (se - ss)",
                        "def toSource (vs ss se p : Nat) : Nat := ss + min (p - vs) ((se - ss) / 2)"),)),
+    # K1: only the part strictly before the edit keeps its coordinates
+    Mutant("project-empty-fragment", "intervals.rs",
+           "        if range.0 < start {",
+           "        if range.0 <= start {",
+           ("Strop.Kernel.project_loop_spec",)),
+    # K1: the replaced bytes never inherit a class
+    Mutant("project-paints-insert", "intervals.rs",
+           "            out.push((range.0, least(range.1, start), k));",
+           "            out.push((range.0, range.1, k));",
+           ("Strop.Kernel.project_loop_spec",)),
+    # K1: an interval ending at the old end has nothing after the edit
+    Mutant("project-after-at-end", "intervals.rs",
+           "        if range.1 > old_end {",
+           "        if range.1 >= old_end {",
+           ("Strop.Kernel.project_loop_spec",)),
+    # K2: the merged interval is part of the union
+    Mutant("cover-drops-merged", "intervals.rs",
+           "    out.push((low, high));\n",
+           "",
+           ("Strop.Kernel.cover_merge_spec", "Strop.Kernel.cover_spec")),
+    # K2: an interval touching the window merges with it
+    Mutant("cover-touching-kept-apart", "intervals.rs",
+           "        } else if interval.0 <= last {",
+           "        } else if interval.0 < last {",
+           ("Strop.Kernel.cover_merge_spec",)),
+    # K2: what survives a window is non-empty
+    Mutant("uncover-empty-part", "intervals.rs",
+           "        if interval.0 < below {\n            out.push((interval.0, below, k));",
+           "        if interval.0 <= below {\n            out.push((interval.0, below, k));",
+           ("Strop.Kernel.uncover_loop_spec",)),
+    # K2: an old span's part below the window ends at the window
+    Mutant("replace-below-overlaps", "intervals.rs",
+           "        let below = least(span.1, first);\n        if span.0 < below {\n            out.push((span.0, below, k));",
+           "        let below = least(span.1, first);\n        if span.0 < below {\n            out.push((span.0, span.1, k));",
+           ("Strop.Kernel.replace_below_spec",)),
+    # K2: an old span's part above the window starts at the window
+    Mutant("replace-above-overlaps", "intervals.rs",
+           "        if above < span.1 {\n            out.push((above, span.1, k));",
+           "        if above < span.1 {\n            out.push((span.0, span.1, k));",
+           ("Strop.Kernel.replace_above_spec",)),
+    # K2: a clipped part never reaches past the window
+    Mutant("clip-unclamped", "intervals.rs",
+           "        let high = least(span.1, last);",
+           "        let high = span.1;",
+           ("Strop.Kernel.clip_loop_spec", "Strop.Kernel.clip_spec")),
     # T1 with the model updated to match: an unclamped span passes the frame
     Mutant("layout-overrun-paired", "layout.rs",
            "            least(minimum(tracks[k], unit, gap) + extra, left)\n",

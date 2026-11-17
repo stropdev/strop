@@ -25,6 +25,17 @@
    coverage algebra (`cover`/`uncover`/`replace_window`/`clip_into`) move
    into `strop-kernel` on top of the proved edit map, with theorems and
    mutants (K1, K2). K3/K4 deferred to the roadmap.
+   Implementation record (D9): `strop_kernel::intervals` holds `project`
+   (K1, over `map_position`), `cover`, `uncover`, `replace_window` and
+   `clip` (K2); `presentation.rs` keeps its signatures and calls them.
+   `project_spec`: a byte after the edit is covered by source `i` exactly
+   when it lies before the edit and was, or after the inserted text and its
+   pre-image was; sorted stays sorted. `cover_spec` union, `uncover_spec`
+   difference, `clip_spec` intersection, `replace_window_spec` fresh inside
+   the window and old outside — each keeping lists sorted. `cover` and
+   `replace_window` became three passes (before, merged or fresh, after),
+   equal to the old merge for sorted input; `clip` clips the slice binary
+   search finds (the search stays in the engine, from `std`).
 10. **Properties that block**: seeded "incremental == from scratch" and
     "windowed == full, clipped" over rs/md/html/php/py, and an interleaving
     property on the analysis worker seam, with bounded step budgets.

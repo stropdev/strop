@@ -16,4 +16,5 @@ pub mod cache;
 pub mod editmap;
 pub mod excerpt;
 pub mod generation;
+pub mod intervals;
 pub mod layout;
