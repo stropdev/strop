@@ -164,17 +164,17 @@ pub(crate) fn plan(buf: &Buffer, spec: &SubstituteSpec) -> Result<SubstitutionPl
     let mut edits = Vec::new();
     let mut changed_lines = Vec::new();
     let mut previous_line = None;
-    strop_grammar::search_visit_captures(buf, &spec.query, |hit: SearchMatch, groups| {
+    // the search starts at the range: `:s` inside `:g` costs its line,
+    // not the text above it
+    strop_grammar::search_visit_captures(buf, &spec.query, start, |hit: SearchMatch, groups| {
         let hit_start = hit.start.get();
         if hit_start > end {
             return std::ops::ControlFlow::Break(());
         }
         // A match belongs to the line it starts on (Vim): one that starts
-        // inside the range may run past it, one that starts above may not
-        // reach in.
-        if hit_start < start {
-            return std::ops::ControlFlow::Continue(());
-        }
+        // inside the range may run past it; the search began at the
+        // range, so none starts above it.
+        debug_assert!(hit_start >= start);
         if !spec.within.is_empty() {
             let after = spec.within.partition_point(|span| span.0 <= hit_start);
             // strictly inside: the span's last byte is its line terminator

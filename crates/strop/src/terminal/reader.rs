@@ -16,7 +16,10 @@ use strop_trace::{record_with, EventKind};
 /// a read that fills it says more bytes are already waiting.
 const READ_BYTES: usize = 4096;
 
-pub(super) fn spawn(sender: EventSender) -> io::Result<()> {
+pub(super) fn spawn(
+    sender: EventSender,
+    interrupt: crate::editor::interrupt::Interrupt,
+) -> io::Result<()> {
     // Without a controlling terminal, a terminal stdin is the keyboard.
     let tty: Box<dyn Read + Send> = match std::fs::File::open("/dev/tty") {
         Ok(tty) => Box::new(tty),
@@ -54,7 +57,7 @@ pub(super) fn spawn(sender: EventSender) -> io::Result<()> {
             }
         }
     });
-    std::thread::spawn(move || read_keys(tty, sender));
+    std::thread::spawn(move || read_keys(tty, sender, interrupt));
     Ok(())
 }
 
@@ -118,7 +121,11 @@ fn take_text(pending: &mut Vec<u8>, end: bool) -> String {
     text
 }
 
-fn read_keys(mut tty: Box<dyn Read + Send>, sender: EventSender) {
+fn read_keys(
+    mut tty: Box<dyn Read + Send>,
+    sender: EventSender,
+    interrupt: crate::editor::interrupt::Interrupt,
+) {
     let mut decoder = Decoder::default();
     let mut bytes = [0u8; READ_BYTES];
     let mut decoded = Vec::new();
@@ -142,6 +149,12 @@ fn read_keys(mut tty: Box<dyn Read + Send>, sender: EventSender) {
                 Decoded::Paste(text) => AppEvent::Input(Input::Paste(text)),
                 Decoded::Focus(focused) => AppEvent::Focus(focused),
             };
+            // A command running on the input thread sees Ctrl-C now;
+            // the key itself follows in order.
+            if matches!(&event, AppEvent::Input(input) if crate::editor::interrupt::is_interrupt(input))
+            {
+                interrupt.raise();
+            }
             // FIFO input ownership is resolved by the engine, never here.
             if sender.send_blocking(event).is_err() {
                 return;

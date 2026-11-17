@@ -191,6 +191,8 @@ pub const CASES: &[Case] = &[
     ("g yank appends", WORDS, ":g/alpha/y A<cr>"),
     ("global spelled out", WORDS, ":global/gamma/d<cr>"),
     ("g shift", WORDS, ":g/beta/><cr>"),
+    ("g records one jump", "x\na\nb\na\nb\n", "G:g/a/s/a/c/<cr>``"),
+    ("g normal jumps record nothing", "x\na\nb\na\nb\n", "G:g/a/norm gg<cr>``"),
     // :norm
     ("norm at the cursor", FIVE, "j:norm dw<cr>"),
     ("norm range", FIVE, ":2,4norm Ax<cr>"),

@@ -41,6 +41,7 @@ mod help;
 mod indent;
 mod input;
 pub(crate) mod insert;
+pub mod interrupt;
 pub mod io;
 mod jumps;
 mod lsp;
