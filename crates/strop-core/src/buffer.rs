@@ -529,4 +529,28 @@ mod safety_tests {
             "// x\nfn main() {}\n"
         );
     }
+
+    /// 0108 D1.9: a line break is `\n`, as in Vim and tree-sitter. CRLF
+    /// stays one break whose `\r` the line's end excludes; a lone CR,
+    /// a form feed, NEL and the Unicode separators are text.
+    #[test]
+    fn only_newline_breaks_a_line() {
+        for text in [
+            "a\rb\n",
+            "a\u{b}b\n",
+            "a\u{c}b\n",
+            "a\u{85}b\n",
+            "a\u{2028}b\n",
+            "a\u{2029}b\n",
+        ] {
+            let b = Buffer::from_text(text);
+            assert_eq!(b.len_lines(), 2, "{text:?}");
+            assert_eq!(b.last_content_line(), 0, "{text:?}");
+            assert_eq!(b.line_end(0), text.len() - 1, "{text:?}");
+        }
+        let b = Buffer::from_text("one\r\ntwo\r\n");
+        assert_eq!(b.len_lines(), 3);
+        assert_eq!((b.line_start(1), b.line_end(0), b.line_end(1)), (5, 3, 8));
+        assert_eq!(b.line_of(4), 0, "the CRLF pair belongs to its line");
+    }
 }
