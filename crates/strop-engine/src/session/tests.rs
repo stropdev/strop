@@ -126,7 +126,7 @@ fn changed_files_clamp_restored_jump_records() {
     session.restore(&mut restored).unwrap();
     let record = &restored.view().jumps.entries[1];
     assert_eq!(record.offset, restored.buf().len_bytes());
-    assert_eq!(record.anchor, 0);
+    assert_eq!(record.anchor, restored.buf().len_bytes());
     assert_eq!(record.view_top, restored.buf().len_bytes());
 }
 

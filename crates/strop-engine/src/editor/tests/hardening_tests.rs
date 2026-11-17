@@ -46,3 +46,30 @@ fn undo_lands_cursor_at_change_start() {
     // pulls 5 onto the last char of the line
     assert_eq!(e.head(), 4);
 }
+
+/// 0108 D2 (found by the key fuzzer): outside Visual the primary is a
+/// caret. A head moved after an edit (`Esc` stepping back, a delete)
+/// takes its anchor along, and leaving Visual leaves no anchor behind —
+/// a left-behind anchor pointed past the end of text later edits
+/// shortened, off any character boundary.
+#[test]
+fn outside_visual_the_anchor_follows_the_caret() {
+    for (text, keys) in [
+        ("étude", "ox<esc>"),
+        ("étude", ":%norm I日\rddp"),
+        ("one two\nfour\n", "v$<esc>"),
+        ("one two\nfour\n", "vjd"),
+        ("one two\nfour\n", "<c-v>j$y"),
+        ("aé\nb\n", "Vjc日<esc>"),
+    ] {
+        let mut e = Editor::new(Buffer::from_text(text));
+        e.feed_text(keys);
+        assert_eq!(e.anchor(), e.head(), "{text:?} {keys:?}");
+        e.feed_text("dd");
+        let len = e.buf().len_bytes();
+        assert!(
+            e.anchor() <= len && e.buf().is_boundary(e.anchor()),
+            "{keys:?}"
+        );
+    }
+}

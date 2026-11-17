@@ -151,10 +151,19 @@ impl Editor {
         {
             return;
         }
+        let visual = |mode| matches!(mode, Mode::Visual | Mode::VisualLine | Mode::VisualBlock);
+        let was_visual = visual(self.mode);
         match self.mode {
             Mode::Insert => self.feed_insert(key),
             Mode::Visual | Mode::VisualLine | Mode::VisualBlock => self.feed_visual(key),
             Mode::Normal => self.feed_normal(key),
+        }
+        // Leaving Visual leaves a caret, as in Vim (`gv` and the `'<`
+        // `'>` marks keep the selection): an anchor left behind would
+        // point into text the next edits change (plan 0108 D2).
+        if was_visual && !visual(self.mode) {
+            let head = self.head();
+            self.sels_mut().collapse_primary(head);
         }
     }
 }

@@ -12,10 +12,24 @@ impl Editor {
         self.sels().primary().head
     }
 
+    /// Move the primary head. Outside Visual a caret stays a caret: its
+    /// anchor moves with it, so no anchor is left behind at an offset
+    /// the text since lost (plan 0108 D2). A stretched selection (an
+    /// occurrence seed, a snippet placeholder) keeps its anchor.
     #[inline]
     pub fn set_head(&mut self, pos: impl Into<strop_core::id::ByteOffset>) {
         self.view_mut().desired_column = None;
-        self.sels_mut().set_head(pos.into().get());
+        let pos = pos.into().get();
+        let primary = self.sels().primary();
+        let visual = matches!(
+            self.mode,
+            Mode::Visual | Mode::VisualLine | Mode::VisualBlock
+        );
+        if !visual && primary.anchor == primary.head {
+            self.sels_mut().collapse_primary(pos);
+        } else {
+            self.sels_mut().set_head(pos);
+        }
     }
 
     /// The visual anchor (== head when not in visual mode).
