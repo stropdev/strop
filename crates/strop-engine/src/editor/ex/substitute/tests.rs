@@ -1,5 +1,4 @@
 use super::*;
-use crate::editor::{PendingFieldEscape, PendingFieldMode};
 use std::time::Duration;
 use strop_core::frontend_input::Key;
 
@@ -17,6 +16,11 @@ fn ready(editor: &Editor) -> SubstitutionPreview<'_> {
         Some(SubstitutePreviewState::NoTarget) => panic!("substitution preview has no target"),
         None => panic!("substitution preview is absent"),
     }
+}
+
+/// The previewed text of `line` (zero-based).
+fn previewed(preview: &SubstitutionPreview<'_>, line: usize) -> String {
+    preview.line(line).expect("a changed line").text.clone()
 }
 
 fn settle_resolution(editor: &mut Editor) {
@@ -52,18 +56,18 @@ fn preview_apply_and_cancel_share_one_plan_without_composition_effects() {
     assert_eq!(preview.count(), 3);
     assert_eq!(preview.changed_line_count(), 2);
     assert_eq!(preview.scope(), (0, 1));
-    assert!(preview.diff_text().contains("-alpha one"));
-    assert!(preview.diff_text().contains("+omega one"));
-    assert!(preview.diff_text().contains("-alpha two alpha"));
-    assert!(preview.diff_text().contains("+omega two omega"));
+    assert_eq!(previewed(&preview, 0), "omega one");
+    assert_eq!(previewed(&preview, 1), "omega two omega");
+    assert_eq!(
+        preview.line(1).unwrap().added,
+        [(0, 5), (10, 15)],
+        "the new text is marked"
+    );
     assert_eq!(editor.preview().unwrap().unwrap().0.len(), 3);
 
+    // one Esc cancels (0110 §3.1)
     editor.feed(Key::Esc);
-    let field = editor.pending_field_state().unwrap();
-    assert_eq!(field.mode, PendingFieldMode::Normal);
-    assert_eq!(field.next_escape, PendingFieldEscape::CancelPrompt);
-    editor.feed(Key::Esc);
-    assert!(!editor.pending.is_active());
+    assert!(!editor.cmdline.is_open());
     assert_eq!(editor.buf().text().to_string(), original);
     assert_eq!(editor.buf().revision(), revision);
     assert!(editor.last_search.is_none());
@@ -99,10 +103,8 @@ fn the_replacement_is_vims_and_the_preview_shows_the_same_text() {
     // groups, `&`, case and a line break, seen in the card before Enter
     editor.feed_text(r":s/\(key\)=\(value\)/\2=\U\1\E [&]\rnext/");
     let preview = ready(&editor);
-    assert!(preview
-        .diff_text()
-        .contains("+x/y\\z value=KEY [key=value]"));
-    assert!(preview.diff_text().contains("+next"));
+    // the added line break is drawn on the same row
+    assert_eq!(previewed(&preview, 0), "x/y\\z value=KEY [key=value]↵next");
     editor.feed(Key::Enter);
     assert_eq!(
         editor.buf().text().to_string(),
@@ -122,10 +124,8 @@ fn unicode_crlf_and_deletion_preview_keep_exact_apply_semantics() {
     editor.feed_text(":%s/α//g");
     let preview = ready(&editor);
     assert_eq!(preview.count(), 3);
-    assert!(preview.diff_text().contains("-α α"));
-    assert!(preview.diff_text().contains("+ "));
-    assert!(preview.diff_text().contains("-βα"));
-    assert!(preview.diff_text().contains("+β"));
+    assert_eq!(previewed(&preview, 0), " ");
+    assert_eq!(previewed(&preview, 1), "β");
     assert_eq!(editor.buf().text().to_string(), "α α\r\nβα\r\n");
     editor.feed(Key::Enter);
     assert_eq!(editor.buf().text().to_string(), " \r\nβ\r\n");
@@ -200,11 +200,11 @@ fn cursor_identity_no_target_and_offscreen_counts_are_truthful() {
     editor.feed_text(":%s/alpha/omega/g");
     let preview = ready(&editor);
     assert_eq!(preview.count(), 6);
-    assert_eq!(preview.offscreen_count(), 4);
-    assert!(preview.diff_text().contains("@@"));
-    assert_eq!(preview.diff_text().matches("-alpha").count(), 6);
-    assert_eq!(preview.diff_text().matches("+omega").count(), 6);
-    assert!(preview.summary().contains("4 offscreen"));
+    assert_eq!(preview.offscreen(), (1, 3));
+    for line in 0..6 {
+        assert_eq!(previewed(&preview, line), "omega");
+    }
+    assert_eq!(preview.summary(), "6 changes · 1 above · 3 below");
 }
 
 #[test]
@@ -247,26 +247,67 @@ fn large_preview_resolves_without_mutating_and_enter_waits_for_the_same_work() {
 }
 
 #[test]
-fn outer_operator_field_mode_and_next_escape_are_exposed_for_ex_and_search() {
-    for (prompt, outer_operator) in [
-        (":%s/alpha/omega/g", None),
-        ("/alpha", Some(strop_grammar::Op::Delete)),
-    ] {
+fn one_escape_cancels_ex_and_search_lines_with_an_outer_operator() {
+    for (prompt, outer_operator) in [(":%s/alpha/omega/g", false), ("/alpha", true)] {
         let mut editor = Editor::new(Buffer::from_text("alpha\n"));
-        if outer_operator.is_some() {
+        if outer_operator {
             editor.feed_text("d");
         }
         editor.feed_text(prompt);
-        let field = editor.pending_field_state().unwrap();
-        assert_eq!(field.outer_operator, outer_operator);
-        assert_eq!(field.mode, PendingFieldMode::Insert);
-        assert_eq!(field.next_escape, PendingFieldEscape::EnterNormal);
         editor.feed(Key::Esc);
-        let field = editor.pending_field_state().unwrap();
-        assert_eq!(field.mode, PendingFieldMode::Normal);
-        assert_eq!(field.next_escape, PendingFieldEscape::CancelPrompt);
-        editor.feed(Key::Esc);
-        assert!(!editor.pending.is_active());
+        assert!(!editor.cmdline.is_open());
+        assert!(
+            editor.walker.is_ground(),
+            "{prompt}: the operator is gone too"
+        );
         assert_eq!(editor.buf().text().to_string(), "alpha\n");
+    }
+}
+
+/// The doctrine as an assertion (0001: the preview cannot lie): for
+/// many buffers and `:s` lines, every line the preview shows reads
+/// exactly as that line does after Enter.
+#[test]
+fn the_previewed_text_of_every_changed_line_is_the_line_after_enter() {
+    const WORDS: [&str; 6] = ["ab", "b", "abc", "  ", "ba", "\t"];
+    const PATTERNS: [&str; 8] = ["a", "b", "ab", "a.", "^", "$", "b*", "\\w\\+"];
+    const REPLACEMENTS: [&str; 6] = ["x", "", "&&", "<&>", "\\u&", "yy"];
+    let mut seed: u64 = 0x5eed;
+    let mut next = |limit: usize| {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (seed >> 33) as usize % limit
+    };
+    for case in 0..300 {
+        let lines = 1 + next(5);
+        let text: String = (0..lines)
+            .map(|_| {
+                let words = next(4);
+                let line: String = (0..words).map(|_| WORDS[next(WORDS.len())]).collect();
+                line + "\n"
+            })
+            .collect();
+        let pattern = PATTERNS[next(PATTERNS.len())];
+        let replacement = REPLACEMENTS[next(REPLACEMENTS.len())];
+        let flags = if next(2) == 0 { "g" } else { "" };
+        let range = if next(2) == 0 { "%" } else { "" };
+        let command = format!(":{range}s/{pattern}/{replacement}/{flags}");
+        let mut editor = Editor::new(Buffer::from_text(&text));
+        editor.feed_text(&command);
+        let expected: Vec<(usize, String)> = match editor.substitute_preview() {
+            Some(SubstitutePreviewState::Ready(preview)) => (0..lines)
+                .filter_map(|line| preview.line(line).map(|shown| (line, shown.text.clone())))
+                .collect(),
+            _ => Vec::new(),
+        };
+        editor.feed(Key::Enter);
+        for (line, shown) in expected {
+            assert_eq!(
+                editor.buf().line_text(line),
+                shown,
+                "case {case}: {command:?} on {text:?}"
+            );
+        }
     }
 }

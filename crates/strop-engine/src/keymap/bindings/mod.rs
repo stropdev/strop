@@ -3,8 +3,8 @@
 //! help and which-key keep reading one flat table.
 use super::{Binding, Handler};
 
+mod cmdline;
 mod editing;
-mod ex;
 mod folder;
 mod git;
 mod insert;
@@ -27,7 +27,7 @@ const TOTAL: usize = moving::ROWS.len()
     + folder::ROWS.len()
     + pickers::ROWS.len()
     + terminal::ROWS.len()
-    + ex::ROWS.len();
+    + cmdline::ROWS.len();
 
 const PLACEHOLDER: Binding = Binding {
     keys: "",
@@ -68,5 +68,5 @@ pub static BINDINGS: &[Binding] = &concat(&[
     folder::ROWS,
     pickers::ROWS,
     terminal::ROWS,
-    ex::ROWS,
+    cmdline::ROWS,
 ]);

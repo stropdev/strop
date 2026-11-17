@@ -338,6 +338,19 @@ impl Editor {
                 push_row(&mut text, b.keys, width, b.desc, !b.live);
             }
         }
+        // One row per command, written from the registry (0110 §3.1).
+        for family in super::ex::Family::ALL {
+            push_rule(&mut text, family.title());
+            let rows: Vec<_> = super::ex::help_rows(family).collect();
+            let width = rows
+                .iter()
+                .map(|(usage, _)| usage.chars().count())
+                .max()
+                .unwrap_or(0);
+            for (usage, desc) in rows {
+                push_row(&mut text, usage, width, &desc, false);
+            }
+        }
         push_query_language(&mut text);
         for (title, rows) in EXTRA {
             push_rule(&mut text, title);
@@ -403,12 +416,23 @@ impl Editor {
             .map(|section| section.title.to_owned())
             .unwrap_or_else(|| topic.to_owned());
         let heading = format!("─ {title} ─");
-        let line = self.buf().text().lines().position(|line| {
+        let mut line = self.buf().text().lines().position(|line| {
             line.chars()
                 .take_while(|&c| c != '\n' && c != '\r')
                 .collect::<String>()
                 .eq_ignore_ascii_case(&heading)
         });
+        // `:help write`, `:help :w`: the command's own row
+        if line.is_none() {
+            if let Some(named) = super::ex::split_command(topic.trim_start_matches(':')) {
+                let usage = format!("   {} ", named.command.usage);
+                line = self
+                    .buf()
+                    .text()
+                    .lines()
+                    .position(|line| line.to_string().starts_with(&usage));
+            }
+        }
         if let Some(line) = line {
             self.set_head(self.buf().line_start(line));
             self.view_mut().view_top = line;
@@ -439,8 +463,8 @@ mod tests {
             last = at;
         }
         let missing: Vec<_> = [
-            ":theme", ":jumps", ":noh", ":format", ":rename", ":recover", ":qa", ":qall",
-            ":symbols",
+            ":theme", ":ju", ":noh", ":format", ":rename", ":recover", ":qa", ":quitall",
+            ":symbols", ":bNext", ":buffers",
         ]
         .into_iter()
         .filter(|command| !text.contains(*command))
@@ -534,6 +558,17 @@ mod tests {
         e.feed_text(":h git\r");
         let line = e.buf().line_of(e.head());
         assert!(e.buf().text().line(line).to_string().starts_with("─ Git ─"));
+        // a command by any of its names lands on its row
+        for topic in ["write", ":w", "w", ":wri"] {
+            e.feed_text("q");
+            e.feed_text(&format!(":help {topic}\r"));
+            let line = e.buf().line_of(e.head());
+            let row = e.buf().text().line(line).to_string();
+            assert!(
+                row.trim_start().starts_with(":w[!] [file]"),
+                "{topic}: {row:?}"
+            );
+        }
     }
 
     #[test]

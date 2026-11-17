@@ -1,6 +1,6 @@
 //! Resolve every cursor before publishing a motion; query failures are atomic.
 use crate::editor::Editor;
-use strop_grammar::{self as grammar, Command};
+use strop_grammar::{self as grammar, Command, Parse};
 
 impl Editor {
     pub(crate) fn move_cursor(&mut self, command: &Command) {
@@ -103,7 +103,47 @@ impl Editor {
             self.view_mut().desired_column = Some(column);
         }
         if is_search && primary.is_none() {
-            self.message = "pattern not found".into();
+            self.fail("pattern not found".into());
+        }
+    }
+
+    /// vim Enter: [count] lines down, first non-blank. With the blame
+    /// gutter on, Enter dives into the line's commit instead (0011 §3).
+    pub fn enter_pub(&mut self) {
+        if self.dive_from_blame() {
+            return;
+        }
+        // 0097 §3.2: Enter in a collection opens the file at the cursor;
+        // on a row that shows no file it keeps its vim meaning.
+        if self.collection_enter() {
+            return;
+        }
+        // 0102: Enter in a folder opens the entry under the cursor.
+        if self.directory_key(strop_core::frontend_input::Key::Enter) {
+            return;
+        }
+        let n = self.walker.state.count1.unwrap_or(1);
+        let line = (self.buf().line_of(self.head()) + n).min(self.buf().last_content_line());
+        let s = self.buf().line_start(line);
+        let e = self.buf().line_end(line);
+        let mut p = s;
+        while p < e
+            && self
+                .buf()
+                .byte_at(p)
+                .is_some_and(|b| b == b' ' || b == b'\t')
+        {
+            p += 1;
+        }
+        self.set_head(p.min(e));
+        self.clamp_cursor();
+    }
+
+    pub fn run_motion(&mut self, keys: &str) {
+        match grammar::parse(keys) {
+            Parse::Complete(cmd) => self.move_cursor(&cmd),
+            Parse::QueryError(error) => self.message = error.to_string(),
+            Parse::Incomplete | Parse::Invalid => {}
         }
     }
 }

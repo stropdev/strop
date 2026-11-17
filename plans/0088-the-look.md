@@ -46,7 +46,8 @@ and draws chrome through one primitive module (`render/card.rs`). Nothing in
 8. **Four greys:** `fg.text`, `fg.secondary`, `fg.muted`, `fg.faint`. Comments are
    muted italic, punctuation secondary — never the same ink.
 9. **Widths from content**, cards capped at 60 % of columns and ≥ 32; the picker is
-   `columns − 4` at ≥ 100 columns and full-bleed below.
+   `columns − 4` at ≥ 100 columns and full-bleed below. Amended by 0110: the
+   command line is the bottom row at full width, not a card; its menu follows this rule.
 10. **Hints are whole chords or nothing**, everywhere.
 
 **Amendment 2026-11-10 — File names.** A path is two inks, through one helper

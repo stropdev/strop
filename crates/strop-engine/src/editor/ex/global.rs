@@ -209,17 +209,17 @@ fn typed_key(c: char) -> Key {
 fn compound_begin(editor: &mut Editor) -> (DocumentId, bool) {
     let document = editor.current();
     let deferring = editor.resolution.enabled;
-    if editor.pending.ex.compound == 0 {
+    if editor.cmdline.ex.compound == 0 {
         editor.buf_mut().hold_undo_group();
         editor.resolution.enabled = false;
     }
-    editor.pending.ex.compound += 1;
+    editor.cmdline.ex.compound += 1;
     (document, deferring)
 }
 
 fn compound_end(editor: &mut Editor, (document, deferring): (DocumentId, bool)) {
-    editor.pending.ex.compound -= 1;
-    if editor.pending.ex.compound == 0 {
+    editor.cmdline.ex.compound -= 1;
+    if editor.cmdline.ex.compound == 0 {
         editor.resolution.enabled = deferring;
         if editor.docs.get(document).is_some() {
             editor.doc_mut(document).buf.release_undo_group();
@@ -230,7 +230,7 @@ fn compound_end(editor: &mut Editor, (document, deferring): (DocumentId, bool)) 
 /// `:[range]g/pattern/command`, `:g!`, `:v`: mark the lines first,
 /// then run the command with the cursor on each that still exists.
 pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
-    if editor.pending.ex.marked.document.is_some() {
+    if editor.cmdline.ex.marked.document.is_some() {
         editor.message = "cannot do :global recursive".into();
         return;
     }
@@ -306,8 +306,8 @@ pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
     let command = command.to_owned();
     editor.push_jump();
     let compound = compound_begin(editor);
-    editor.pending.ex.marked = MarkedLines::new(compound.0, lines.into_iter());
-    while let Some(line) = editor.pending.ex.marked.pop_front() {
+    editor.cmdline.ex.marked = MarkedLines::new(compound.0, lines.into_iter());
+    while let Some(line) = editor.cmdline.ex.marked.pop_front() {
         if editor.current() != compound.0 || editor.should_quit {
             break;
         }
@@ -317,7 +317,7 @@ pub(crate) fn ex_global(editor: &mut Editor, call: &ExCall<'_>) {
         editor.set_head(line.start.min(editor.buf().len_bytes()));
         run_ex(editor, &command);
     }
-    editor.pending.ex.marked = MarkedLines::default();
+    editor.cmdline.ex.marked = MarkedLines::default();
     compound_end(editor, compound);
     if editor.current() == compound.0 {
         editor.clamp_cursor();
@@ -336,7 +336,7 @@ pub(crate) fn run_ex_in_batch(editor: &mut Editor, command: &str) {
 /// Whether `Ctrl-C` stops the running compound command before its next
 /// line (vim's `got_int`); it says so.
 fn interrupted(editor: &mut Editor) -> bool {
-    match editor.pending.ex.interrupt.raised(&editor.tape) {
+    match editor.cmdline.ex.interrupt.raised(&editor.tape) {
         Ok(false) => false,
         Ok(true) => {
             editor.message = "Interrupted".into();
@@ -407,8 +407,8 @@ fn type_normal(editor: &mut Editor, keys: &[Key]) {
         editor.feed(*key);
     }
     editor.macro_depth = depth;
-    if editor.pending.is_active() {
-        editor.cancel_pending();
+    if editor.cmdline.is_open() {
+        editor.cancel_cmdline();
     }
     if editor.mode != Mode::Normal || !editor.walker.is_ground() {
         let message = std::mem::take(&mut editor.message);

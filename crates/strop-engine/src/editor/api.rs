@@ -72,7 +72,7 @@ impl Editor {
     /// [`Editor::note_tape_divergence`], never a direct message write.
     /// The flag a terminal's key reader raises on `Ctrl-C`.
     pub fn interrupt(&self) -> super::interrupt::Interrupt {
-        self.pending.ex.interrupt.clone()
+        self.cmdline.ex.interrupt.clone()
     }
 
     pub fn tape(&self) -> &strop_trace::replay::Tape {
@@ -122,6 +122,11 @@ impl Editor {
     /// The statusline message (readonly; AR02).
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// The message says why a command failed (drawn in error ink).
+    pub fn message_failed(&self) -> bool {
+        !self.message.is_empty() && self.message == self.feedback.failure
     }
 
     /// The admitted message write (0056 AR02): startup/load failures and
@@ -174,10 +179,10 @@ impl Editor {
         &self.resolution
     }
 
-    /// The free-text pending line (readonly; AR02): `:`/`/` input in
-    /// flight, drawn by the command card and statusline.
-    pub fn pending(&self) -> &pending::PendingInput {
-        &self.pending
+    /// The open command line (readonly; AR02): `: / ? |` input in
+    /// flight, drawn on the bottom row.
+    pub fn cmdline(&self) -> &cmdline::Cmdline {
+        &self.cmdline
     }
 
     /// The input walker (readonly; AR02): typed count/register/operator

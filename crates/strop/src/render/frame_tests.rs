@@ -384,13 +384,13 @@ fn backward_prompt_is_present_in_the_actual_headless_frame() {
     e.feed_text("?ba");
     let frame = crate::headless::frame_string(&mut e, 40, 8).unwrap();
     assert!(
-        frame.contains("? ba"),
-        "the backward prompt retains its typed pattern: {frame}"
+        frame.contains("SEARCH    ?ba"),
+        "the backward line is the bottom row with its pattern: {frame}"
     );
 }
 
 #[test]
-fn pipe_prompt_owns_a_visible_input_card_on_normal_and_visual_surfaces() {
+fn pipe_line_is_the_bottom_row_on_normal_and_visual_surfaces() {
     for visual in [false, true] {
         let mut e = Editor::new(Buffer::from_text("unchanged\n"));
         if visual {
@@ -398,8 +398,7 @@ fn pipe_prompt_owns_a_visible_input_card_on_normal_and_visual_surfaces() {
         }
         e.feed_text(" |tr a-z A-Z");
         let frame = crate::headless::frame_string(&mut e, 60, 10).unwrap();
-        assert!(frame.contains("pipe"), "{frame}");
-        assert!(frame.contains("tr a-z A-Z"), "{frame}");
+        assert!(frame.contains("   PIPE     |tr a-z A-Z"), "{frame}");
         assert_eq!(e.buf().text().to_string(), "unchanged\n");
     }
 }

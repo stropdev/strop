@@ -160,19 +160,6 @@ fn groups_are_two_cells_apart_and_the_halves_never_closer() {
 }
 
 #[test]
-fn the_substitution_summary_stays_in_its_card() {
-    let mut e = on_a_branch("alpha one\nalpha two\n", "/w/src/f.rs", "main");
-    e.feed_text(":%s/alpha/omega/g");
-    let shown = row(&e, 120, 4);
-    assert!(!shown.contains("substitution"), "{shown:?}");
-    assert!(
-        shown.contains("main"),
-        "the branch keeps its place: {shown:?}"
-    );
-    assert!(shown.contains("src/f.rs"), "{shown:?}");
-}
-
-#[test]
 fn a_recording_macro_is_named_until_it_stops() {
     let mut e = editor("alpha\nbeta\n", Some("/w/f.rs"));
     assert!(!row(&e, 80, 4).contains("REC"));

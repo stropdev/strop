@@ -100,7 +100,7 @@ fn search_and_hover_survive_tiny_resize_and_restore() {
         5,
         "resize must preserve the live search destination"
     );
-    assert_eq!(editor.pending().text(), "/needle");
+    assert_eq!(editor.cmdline().text(), "/needle");
     let column = editor
         .buf()
         .cell_col_with_tab(editor.head(), editor.config().tab_size)

@@ -12,6 +12,9 @@ pub(crate) struct FeedbackStore {
     /// `:messages`: every summary this store presented, and the echo row's
     /// ephemeral messages.
     pub(crate) log: super::messages::MessageLog,
+    /// The message a failed command left (`Editor::fail`): while the echo
+    /// row still says exactly this, it says it in error ink.
+    pub(crate) failure: String,
 }
 
 impl FeedbackStore {

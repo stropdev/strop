@@ -49,7 +49,7 @@ impl Editor {
         true
     }
     pub(super) fn finish_refresh(&mut self, document: DocumentId, mut replacement: Document) {
-        self.cancel_pending();
+        self.cancel_cmdline();
         if self.docs.get(document).is_none() {
             return;
         }

@@ -187,7 +187,7 @@ pub(crate) fn resume_insert(editor: &mut Editor) {
         editor.insert_keys.one_command = None;
         return;
     }
-    if editor.mode != Mode::Normal || !editor.walker.is_ground() || editor.pending.is_active() {
+    if editor.mode != Mode::Normal || !editor.walker.is_ground() || editor.cmdline.is_open() {
         return;
     }
     editor.insert_keys.one_command = None;

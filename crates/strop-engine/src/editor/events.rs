@@ -51,7 +51,7 @@ pub enum AppEvent {
     LspAttach(super::lsp::attach::AttachRecord),
     Shell(ShellResult),
     Io(super::io::IoEvent),
-    RemoteCompletion(Box<super::remote_completion::RemoteCompletionEvent>),
+    RemoteCompletion(Box<super::ex::complete::paths::RemoteCompletionEvent>),
     Git(super::GitJob),
     Picker(super::picker::PickerEvent),
     PickerRanking(super::picker::ranking::Event),

@@ -1,0 +1,25 @@
+   1  //! The modeline: one quiet row at the bo▮
+   2                                           ▮
+   3  /// Gather the row.                      ▮
+   4  pub struct Modeline {                    ▮
+   5  │   chip: String,                        ▮
+   6  │   dirty: bool,                         ▮
+   7  │   line:╭ commands ───────────────── 3 ╮▮
+   8  }        │  delete    d                 │ 
+   9           │  delmarks  delm              │ 
+  10  impl Mode│  display   di                │ 
+  11  │   fn ga╰  tab  next ──────────────────╯ 
+ COMMAND    :'<,'>d▏              4–6 · 3 lines 
+
+  0: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 41:#696d77/#f6f2e9+i 1:#656d7b/#f6f2e9
+  1: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 41:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  2: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 19:#696d77/#f6f2e9+i 22:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  3: 1:#656d7b/#efeadf+b 5:#8a510f/#efeadf 3:#6f3aa8/#efeadf 1:#262a30/#efeadf 6:#6f3aa8/#efeadf 1:#262a30/#efeadf 8:#1f6e5c/#efeadf 1:#262a30/#efeadf 1:#656d7b/#efeadf 20:#efeadf/#efeadf 1:#656d7b/#f6f2e9
+  4: 1:#656d7b/#f6f2e9+b 5:#8a510f/#f6f2e9 1:#d8d3c8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 24:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  5: 1:#656d7b/#f6f2e9+b 5:#8a510f/#f6f2e9 1:#d8d3c8/#f6f2e9 8:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#f6f2e9 25:reset/#f6f2e9 1:#656d7b/#f6f2e9
+  6: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 7:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#656d7b/#fdfbf6 10:#262a30/#fdfbf6+b 21:#656d7b/#fdfbf6 1:#656d7b/#f6f2e9
+  7: 1:#656d7b/#f6f2e9+b 6:#656d7b/#f6f2e9 8:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:#8a510f/#fdfbf6 1:#262a30/#fdfbf6 1:#8a510f/#fdfbf6+b 7:#262a30/#fdfbf6 6:#656d7b/#fdfbf6 14:#262a30/#fdfbf6 1:#656d7b/#fdfbf6 1:reset/reset
+  8: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 9:reset/#f6f2e9 1:#656d7b/#fdfbf6 1:#8a510f/#fdfbf6 1:#262a30/#fdfbf6 1:#8a510f/#fdfbf6+b 7:#262a30/#fdfbf6 6:#656d7b/#fdfbf6 14:#262a30/#fdfbf6 1:#656d7b/#fdfbf6 1:reset/reset
+  9: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 4:#6f3aa8/#f6f2e9 1:#262a30/#f6f2e9 4:#1f6e5c/#f6f2e9 1:#656d7b/#fdfbf6 1:#8a510f/#fdfbf6 1:#262a30/#fdfbf6 1:#8a510f/#fdfbf6+b 7:#262a30/#fdfbf6 6:#656d7b/#fdfbf6 14:#262a30/#fdfbf6 1:#656d7b/#fdfbf6 1:reset/reset
+ 10: 1:#656d7b/#f6f2e9+b 5:#656d7b/#f6f2e9 1:#d8d3c8/#f6f2e9 3:#262a30/#f6f2e9 2:#6f3aa8/#f6f2e9 3:#262a30/#f6f2e9 2:#656d7b/#fdfbf6 5:#8a510f/#e5dfd0+b 25:#656d7b/#fdfbf6 1:reset/reset
+ 11: 10:#f6f2e9/#3f7a3a+b 2:reset/#fdfbf6 1:#8a510f/#fdfbf6 6:#262a30/#fdfbf6 1:#8a510f/#fdfbf6 14:reset/#fdfbf6 13:#656d7b/#fdfbf6 1:reset/#fdfbf6

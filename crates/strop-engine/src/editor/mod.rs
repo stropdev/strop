@@ -16,6 +16,7 @@ pub mod trace;
 pub(crate) mod analysis;
 pub(crate) mod cache;
 mod changes;
+pub(crate) mod cmdline;
 pub use changes::review::ReviewRow;
 pub use dispatch::InputOwner;
 pub mod collections;
@@ -56,7 +57,6 @@ mod occurrence;
 #[cfg(test)]
 mod occurrence_tests;
 mod panes;
-pub mod pending;
 mod permalink;
 mod picker;
 pub mod prepare;
@@ -64,7 +64,6 @@ mod privacy;
 pub mod recovery;
 mod registers;
 pub mod remote;
-mod remote_completion;
 mod shell;
 mod snippet;
 mod structural_indent;
@@ -100,17 +99,15 @@ pub use registers::{ClipboardKey, ClipboardResult, Register, RegisterError};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 pub use symbols::scope::{cells as scope_cells, ScopePath, SCOPE_CAP, SEGMENT_CAP};
 
-pub use ex::{
-    PendingFieldEscape, PendingFieldMode, PendingFieldState, SubstitutePreviewState,
-    SubstitutionPreview,
-};
+pub use ex::complete::paths::{RemoteCompletionKey, RemoteCompletionResult};
+pub use ex::complete::{Completion as CmdlineMenu, MenuKind, Row as MenuRow};
+pub use ex::{PreviewLine, SubstitutePreviewState, SubstitutionPreview};
 pub use lsp::attach::{AttachDecision, AttachRecord};
 pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
 pub use picker::RecentFiles;
 pub use remote::RemoteEvent;
-pub use remote_completion::{RemoteCompletionKey, RemoteCompletionResult};
 pub use resolution::{ResolutionEvent, ResolutionState};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -166,7 +163,7 @@ pub struct Editor {
     /// bounded landing queue and the guarded-reload state.
     pub(crate) notify: notify::NotifyState,
     pub(crate) io: io::IoState,
-    pub(crate) remote_completion: remote_completion::RemoteCompletionState,
+    pub(crate) remote_completion: ex::complete::paths::RemoteCompletionState,
     pub(crate) completion: completion::CompletionState,
     /// 0069 D05: the live snippet tabstop session (after a snippet
     /// acceptance; `None` otherwise).
@@ -187,7 +184,7 @@ pub struct Editor {
         HashMap<strop_core::id::DocumentId, strop_core::worker::Ticket<git_memory::DiveKey>>,
     pub(crate) git_work: git_work::GitWork,
     pub(crate) mode: Mode,
-    pub(crate) pending: pending::PendingInput,
+    pub(crate) cmdline: cmdline::Cmdline,
     /// The input walker (0008 stage 2): typed parser state for
     /// counts/registers/operators/prefixes — pending stays for the
     /// free-text lines only.
@@ -435,7 +432,7 @@ impl Editor {
             remote: remote::RemoteState::default(),
             directories: directory::DirectoryState::default(),
             filesystem: filesystem::FsState::default(),
-            remote_completion: remote_completion::RemoteCompletionState::default(),
+            remote_completion: ex::complete::paths::RemoteCompletionState::default(),
             completion: completion::CompletionState::default(),
             snippet: None,
             notify: notify::NotifyState::default(),
@@ -465,7 +462,7 @@ impl Editor {
             collection_build: None,
             mode: Mode::Normal,
             occurrence: None,
-            pending: pending::PendingInput::default(),
+            cmdline: cmdline::Cmdline::default(),
             walker: input::Walker::new(),
             last_search: None,
             undo_browser: None,
@@ -608,17 +605,18 @@ impl Editor {
         }
         self.revoke_shell_focus();
         self.message.clear();
+        self.feedback.failure.clear();
         self.feedback.log.forget_echo();
         if key == Key::Esc
             && self.mode == Mode::Normal
-            && !self.pending.is_active()
+            && !self.cmdline.is_open()
             && self.review.preparing.is_some()
         {
             self.review_cancel_pub();
             return;
         }
         if key == Key::Esc
-            && !self.pending.is_active()
+            && !self.cmdline.is_open()
             && self.cancel_open(strop_core::worker::CancelReason::Dismissed)
         {
             self.message = "open cancelled".into();
@@ -630,7 +628,7 @@ impl Editor {
         // `@a` inside `qa` replay itself without end.
         if self.recording.is_some() && self.macro_depth == 0 {
             let at_ground =
-                self.walker.is_ground() && !self.pending.is_active() && self.mode != Mode::Insert;
+                self.walker.is_ground() && !self.cmdline.is_open() && self.mode != Mode::Insert;
             if at_ground && key == Key::Char('q') {
                 self.macro_stop();
                 return;
@@ -643,22 +641,19 @@ impl Editor {
         crate::editor::insert::keys::resume_insert(self);
     }
 
-    /// True when a modal input field sits in normal mode (picker field
-    /// or pending line) — the TUI draws the block cursor for it.
+    /// True when a picker field sits in its Normal mode — the TUI draws
+    /// the block cursor for it. The command line has no Normal mode.
     pub fn input_normal(&self) -> bool {
-        self.pending.normal()
-            || self
-                .picker
-                .as_ref()
-                .is_some_and(|g| g.picker.input_normal())
+        self.picker
+            .as_ref()
+            .is_some_and(|g| g.picker.input_normal())
     }
 
-    /// The modal line's sigil when a free-text line is open (`: / ? |`)
-    /// — the ONE authority; the render card, the terminal's bar-cursor
-    /// shape, and pending dispatch all ask here (a `|sed s/a/b/` body
-    /// is a pipe, not a search).
-    pub fn pending_sigil(&self) -> Option<char> {
-        self.pending.sigil()
+    /// The open command line's sigil (`: / ? |`) — the ONE authority;
+    /// the renderer, the terminal's bar-cursor shape and dispatch all
+    /// ask here (a `|sed s/a/b/` body is a pipe, not a search).
+    pub fn cmdline_sigil(&self) -> Option<char> {
+        self.cmdline.sigil()
     }
 
     /// The current document's indent (config default or detected at
@@ -705,11 +700,19 @@ pub fn state_json(editor: &Editor) -> String {
             .map(|name| (name.to_string(), editor.register(Some(name)).text.into()))
             .collect();
     serde_json::json!({
-        "mode": if editor.terminal_input_active() { "TERMINAL" } else { editor.mode.chip() },
+        // an open command line is its own state (the differential harness
+        // compares it with Neovim's `mode()`)
+        "mode": if editor.terminal_input_active() {
+            "TERMINAL"
+        } else if editor.cmdline.is_open() {
+            "COMMAND"
+        } else {
+            editor.mode.chip()
+        },
         "cursor": editor.head(),
         "line": editor.buf().line_of(editor.head()) + 1,
         "col": editor.buf().col_of(editor.head()) + 1,
-        "pending": editor.pending.text(),
+        "cmdline": editor.cmdline.text(),
         "message": editor.message,
         "extra_cursors": editor.extra_selections().iter().map(|s| s.head).collect::<Vec<_>>(),
         "panes": editor.panes.len(),

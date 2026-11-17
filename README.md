@@ -56,7 +56,7 @@ h j k l w b e 0 ^ _ $ gg G %  motions          i a A o O            insert
 d y c > < + motion/object     operators        dd yy cc D C Y s x   shortcuts
 iw i" i' i( i[ i{             text objects     f t / ? n N          find & search
 v V                           visual           u ctrl-r .           undo, redo, repeat
-"a … "+                       registers        :w :q :e :help        ex line
+"a … "+                       registers        :w :q :e :help        command line
 Q                            multicursor      Space c              cursor below
 
 Space  f files · o remote · b buffers · / Search · R replace · ? help

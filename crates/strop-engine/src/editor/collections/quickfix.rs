@@ -254,7 +254,7 @@ impl Editor {
             return;
         }
         if crate::editor::ex::split_command(command)
-            .is_some_and(|(nested, _, _)| matches!(nested.name, "cdo" | "cfdo"))
+            .is_some_and(|nested| matches!(nested.command.name(), "cdo" | "cfdo"))
         {
             self.message = format!(":{name} does not nest");
             return;

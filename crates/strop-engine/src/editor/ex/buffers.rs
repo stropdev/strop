@@ -3,7 +3,7 @@
 
 use strop_core::id::DocumentId;
 
-use super::ExCall;
+use super::{ExCall, ExResult};
 use crate::editor::ex::*;
 use crate::editor::Editor;
 
@@ -76,27 +76,27 @@ fn show_buffer(editor: &mut Editor, id: DocumentId) {
 }
 
 /// `:b[!] {n|name}`, `:{n}b`
-pub(crate) fn ex_buffer(editor: &mut Editor, call: &ExCall<'_>) {
+pub(crate) fn ex_buffer(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
     match buffer_operand(editor, call) {
         Ok(Some(id)) => show_buffer(editor, id),
         Ok(None) => {}
-        Err(error) => editor.message = error,
+        Err(error) => return Err(error),
     }
+    Ok(())
 }
 
 /// `:[count]bn`, `:[count]bp` / `:bN`: step through the listed
 /// buffers in number order, wrapping at the ends.
-pub(crate) fn ex_buffer_step(editor: &mut Editor, call: &ExCall<'_>, forward: bool) {
+pub(crate) fn ex_buffer_step(editor: &mut Editor, call: &ExCall<'_>, forward: bool) -> ExResult {
     let listed = listed_buffers(editor);
     if listed.is_empty() {
-        return;
+        return Ok(());
     }
     let steps = match call.arg.parse::<usize>() {
         Ok(steps) => steps,
         Err(_) if call.arg.is_empty() => call.range.map_or(1, |range| range.last),
         Err(_) => {
-            editor.message = format!("trailing characters: {}", call.arg);
-            return;
+            return Err(format!("trailing characters: {}", call.arg));
         }
     } % listed.len();
     let current = editor.current();
@@ -108,27 +108,25 @@ pub(crate) fn ex_buffer_step(editor: &mut Editor, call: &ExCall<'_>, forward: bo
         None => listed[listed.len() - 1],
     };
     show_buffer(editor, target);
+    Ok(())
 }
 
 /// `:bd[!] [n|name]`: delete this buffer or the one named. Another
 /// buffer is deleted in place — the window and cursor stay put.
-pub(crate) fn ex_buffer_delete(editor: &mut Editor, call: &ExCall<'_>) {
-    let target = match buffer_operand(editor, call) {
-        Ok(target) => target.unwrap_or(editor.current()),
-        Err(error) => {
-            editor.message = error;
-            return;
-        }
+pub(crate) fn ex_buffer_delete(editor: &mut Editor, call: &ExCall<'_>) -> ExResult {
+    let target = {
+        let target = buffer_operand(editor, call)?;
+        target.unwrap_or(editor.current())
     };
     if target == editor.current() {
         editor.delete_buffer(call.bang);
-        return;
+        return Ok(());
     }
     let pane = editor.view().clone();
     editor.switch_to(target);
     editor.delete_buffer(call.bang);
     if editor.should_quit || editor.docs.get(pane.doc).is_none() {
-        return;
+        return Ok(());
     }
     let refused = editor.docs.get(target).is_some();
     let message = std::mem::take(&mut editor.message);
@@ -139,4 +137,5 @@ pub(crate) fn ex_buffer_delete(editor: &mut Editor, call: &ExCall<'_>) {
         // Say why, and leave the user looking at their own buffer.
         editor.message = message;
     }
+    Ok(())
 }

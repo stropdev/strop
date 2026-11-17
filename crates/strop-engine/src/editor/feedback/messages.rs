@@ -37,15 +37,16 @@ impl MessageLog {
         });
     }
 
-    /// Log the ephemeral message if it is new since the last observation.
-    /// Allocates only when a new message appeared.
-    pub(crate) fn observe(&mut self, message: &str) {
+    /// Log the ephemeral message if it is new since the last observation;
+    /// a failed command's message keeps its kind. Allocates only when a
+    /// new message appeared.
+    pub(crate) fn observe(&mut self, message: &str, failed: bool) {
         if message.is_empty() || message == self.echoed {
             return;
         }
         self.echoed.clear();
         self.echoed.push_str(message);
-        self.push(None, message);
+        self.push(failed.then_some(FeedbackSeverity::Failure), message);
     }
 
     /// The key that clears the echo row forgets it here too.

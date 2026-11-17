@@ -116,7 +116,7 @@ impl Editor {
         if self.panes.len() < 2 {
             return;
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         let only = self.panes.swap_remove(self.active_pane);
         self.panes = vec![only];
         self.layout = Layout::Leaf;
@@ -138,7 +138,7 @@ impl Editor {
     pub fn split_document(&mut self, vertical: bool, doc: strop_core::id::DocumentId) {
         // a text prompt belongs to the pane/document it was opened on:
         // splitting away cancels it (R7) before any view state moves
-        self.cancel_pending();
+        self.cancel_cmdline();
         self.cancel_open(strop_core::worker::CancelReason::Superseded);
         let view = self.view().clone();
         // a same-document split keeps the whole view (hscroll included);
@@ -164,10 +164,18 @@ impl Editor {
 
     /// `:q` closes the pane; the last pane's close is document close.
     pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
+        // `:q` in the command-line window closes it, buffer and all
+        if self
+            .cmdline
+            .window
+            .is_some_and(|window| window.doc == self.current())
+        {
+            return super::cmdline::window::close(self);
+        }
         // closing the commit message is what commits (or aborts): the
         // buffer goes, not only the pane showing it
         if self.panes.len() > 1 && !self.is_commit_message(self.current()) {
-            self.cancel_pending();
+            self.cancel_cmdline();
             self.remove_active_pane();
             self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
             // the surviving pane's document may differ from the closed

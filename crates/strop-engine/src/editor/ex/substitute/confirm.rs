@@ -55,7 +55,7 @@ impl Confirm {
 
 pub(crate) fn begin_confirm(editor: &mut Editor, plan: SubstitutionPlan) {
     editor.push_jump();
-    editor.pending.ex.confirm = Some(Confirm {
+    editor.cmdline.ex.confirm = Some(Confirm {
         document: editor.current(),
         revision: editor.buf().revision(),
         remaining: plan.edits.into(),
@@ -68,19 +68,19 @@ pub(crate) fn begin_confirm(editor: &mut Editor, plan: SubstitutionPlan) {
 
 /// The match a `:s///c` question is about (painted while it waits).
 pub(crate) fn confirm_range(editor: &Editor) -> Option<Range> {
-    let confirm = editor.pending.ex.confirm.as_ref()?;
+    let confirm = editor.cmdline.ex.confirm.as_ref()?;
     (confirm.document == editor.current())
         .then(|| confirm.current())
         .flatten()
 }
 
 pub(crate) fn confirm_active(editor: &Editor) -> bool {
-    editor.pending.ex.confirm.is_some()
+    editor.cmdline.ex.confirm.is_some()
 }
 
 /// Put the cursor on the match in front and ask.
 fn present_confirm(editor: &mut Editor) {
-    let Some(confirm) = editor.pending.ex.confirm.as_ref() else {
+    let Some(confirm) = editor.cmdline.ex.confirm.as_ref() else {
         return;
     };
     let (Some(range), Some(edit)) = (confirm.current(), confirm.remaining.front()) else {
@@ -95,7 +95,7 @@ fn present_confirm(editor: &mut Editor) {
 /// Replace the match in front. False when the text moved under the
 /// plan.
 fn confirm_replace(editor: &mut Editor) -> bool {
-    let Some(confirm) = editor.pending.ex.confirm.as_mut() else {
+    let Some(confirm) = editor.cmdline.ex.confirm.as_mut() else {
         return false;
     };
     let (Some(range), Some(edit)) = (confirm.current(), confirm.remaining.pop_front()) else {
@@ -111,7 +111,7 @@ fn confirm_replace(editor: &mut Editor) -> bool {
             undo_open: true,
         },
     );
-    let (Ok(committed), Some(confirm)) = (applied, editor.pending.ex.confirm.as_mut()) else {
+    let (Ok(committed), Some(confirm)) = (applied, editor.cmdline.ex.confirm.as_mut()) else {
         return false;
     };
     confirm.revision = committed.revision;
@@ -122,7 +122,7 @@ fn confirm_replace(editor: &mut Editor) -> bool {
 }
 
 fn finish_confirm(editor: &mut Editor, ending: Ending) {
-    let Some(confirm) = editor.pending.ex.confirm.take() else {
+    let Some(confirm) = editor.cmdline.ex.confirm.take() else {
         return;
     };
     if editor.current() == confirm.document {
@@ -146,11 +146,11 @@ fn finish_confirm(editor: &mut Editor, ending: Ending) {
 /// One answer: `y` replace, `n` skip, `a` all the rest, `l` this one
 /// and stop, `q` / Esc stop. Any other key asks again.
 pub(crate) fn feed_confirm(editor: &mut Editor, key: Key) {
-    let valid = editor.pending.ex.confirm.as_ref().is_some_and(|confirm| {
+    let valid = editor.cmdline.ex.confirm.as_ref().is_some_and(|confirm| {
         confirm.document == editor.current() && confirm.revision == editor.buf().revision()
     });
     if !valid {
-        editor.pending.ex.confirm = None;
+        editor.cmdline.ex.confirm = None;
         editor.message = "substitute stopped: the buffer changed".into();
         return;
     }
@@ -164,7 +164,7 @@ pub(crate) fn feed_confirm(editor: &mut Editor, key: Key) {
             )
         }
         Key::Char('n') => {
-            if let Some(confirm) = editor.pending.ex.confirm.as_mut() {
+            if let Some(confirm) = editor.cmdline.ex.confirm.as_mut() {
                 confirm.remaining.pop_front();
             }
             (

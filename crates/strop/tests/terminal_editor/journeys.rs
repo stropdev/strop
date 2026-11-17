@@ -222,7 +222,13 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     assert!(terminal_inspection(&landed), "{landed}");
     assert!(!landed.contains("out+"), "{landed}");
     tui.send(b"gg/^INSPECTION-READY\ryy:e yank-target.txt\r");
-    tui.until(|screen| screen.contains("yank-target.txt") && !screen.contains("term://"));
+    // the modeline names the file once it is open (while the command line
+    // is open, its own row shows what was typed)
+    tui.until(|screen| {
+        screen.contains(" NORMAL ")
+            && screen.contains("yank-target.txt")
+            && !screen.contains("term://")
+    });
     tui.send(b"p");
     tui.until(|screen| !screen.contains("term://") && numbered_line(screen, "INSPECTION-READY"));
     tui.send(b":q!\r");

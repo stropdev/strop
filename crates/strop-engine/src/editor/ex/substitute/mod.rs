@@ -14,10 +14,9 @@ mod tests;
 use strop_core::{Buffer, Range, Replacement};
 use strop_grammar::{CompiledQuery, SearchMatch};
 
-use crate::editor::changes::review::render;
 use crate::editor::ex::*;
 use crate::editor::resolution::ResolutionPurpose;
-use crate::editor::{Editor, ReviewRow};
+use crate::editor::Editor;
 
 pub(crate) use confirm::*;
 pub(crate) use parse::*;
@@ -82,32 +81,49 @@ pub(crate) struct LastSubstitute {
     pub flags: Flags,
 }
 
-/// Everything apply needs, plus the immutable changed-text presentation. The
-/// source revision is stamped by the surrounding resolution key, not recomputed.
+/// Everything apply needs, plus each changed line as it will read (the
+/// in-place preview, built once with the plan). The source revision is
+/// stamped by the surrounding resolution key, not recomputed.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SubstitutionPlan {
     pub edits: Vec<Replacement>,
-    pub diff: String,
-    pub rows: Vec<ReviewRow>,
+    /// Ascending, one per source line a replacement starts on.
+    pub lines: Vec<PreviewLine>,
     pub changed_lines: Vec<usize>,
     pub scope: (usize, usize),
+}
+
+/// One source line as `Enter` will leave it: its text with the
+/// replacements made (a line break drawn `↵`), and where the new text is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PreviewLine {
+    /// Zero-based source line.
+    pub line: usize,
+    pub text: String,
+    /// Byte ranges of `text` that are replacement text.
+    pub added: Vec<(usize, usize)>,
 }
 
 /// A ready, revision-stamped substitution preview. This borrows the prepared
 /// plan: rendering never rebuilds a diff or copies all of its changed text.
 pub struct SubstitutionPreview<'a> {
     pub(crate) plan: &'a SubstitutionPlan,
-    pub(crate) offscreen: usize,
+    /// Changed lines above and below the view.
+    pub(crate) above: usize,
+    pub(crate) below: usize,
 }
 impl SubstitutionPreview<'_> {
     pub fn ranges(&self) -> impl Iterator<Item = Range> + '_ {
         self.plan.edits.iter().map(|edit| edit.range)
     }
-    pub fn diff_text(&self) -> &str {
-        &self.plan.diff
-    }
-    pub fn diff_rows(&self) -> &[ReviewRow] {
-        &self.plan.rows
+    /// `line` as it will read, when a replacement starts on it.
+    pub fn line(&self, line: usize) -> Option<&PreviewLine> {
+        let at = self
+            .plan
+            .lines
+            .binary_search_by_key(&line, |preview| preview.line)
+            .ok()?;
+        self.plan.lines.get(at)
     }
     pub fn count(&self) -> usize {
         self.plan.edits.len()
@@ -115,28 +131,25 @@ impl SubstitutionPreview<'_> {
     pub fn changed_line_count(&self) -> usize {
         self.plan.changed_lines.len()
     }
-    pub fn offscreen_count(&self) -> usize {
-        self.offscreen
+    /// Changed lines out of view: above it, below it.
+    pub fn offscreen(&self) -> (usize, usize) {
+        (self.above, self.below)
     }
     /// Inclusive, zero-based source line bounds.
     pub fn scope(&self) -> (usize, usize) {
         self.plan.scope
     }
+    /// `4 changes · 1 below`: what the command line's right side says.
     pub fn summary(&self) -> String {
         let count = self.count();
-        let lines = self.changed_line_count();
-        let (first, last) = self.scope();
-        let scope = if first == last {
-            format!("line {}", first + 1)
-        } else {
-            format!("lines {}–{}", first + 1, last + 1)
-        };
-        let offscreen = self.offscreen;
-        format!(
-            "{count} substitution{} · {offscreen} offscreen · {lines} changed line{} · {scope}",
-            if count == 1 { "" } else { "s" },
-            if lines == 1 { "" } else { "s" }
-        )
+        let mut summary = format!("{count} change{}", if count == 1 { "" } else { "s" });
+        if self.above > 0 {
+            summary.push_str(&format!(" · {} above", self.above));
+        }
+        if self.below > 0 {
+            summary.push_str(&format!(" · {} below", self.below));
+        }
+        summary
     }
 }
 
@@ -217,60 +230,90 @@ pub(crate) fn plan(buf: &Buffer, spec: &SubstituteSpec) -> Result<SubstitutionPl
             }
         }
     }
-    let diff = render::file_diff("substitute", buf, buf.revision(), &edits)
-        .map_err(|error| error.to_string())?;
     Ok(SubstitutionPlan {
+        lines: preview_lines(buf, &edits),
         edits,
-        diff: diff.text,
-        rows: diff.rows,
         changed_lines,
         scope: spec.range,
     })
 }
 
+/// Each line a replacement starts on, as it will read. A replacement that
+/// runs past the line's end takes the line break with it (`↵` in the
+/// new text says where one is, in either direction).
+fn preview_lines(buf: &Buffer, edits: &[Replacement]) -> Vec<PreviewLine> {
+    let mut lines: Vec<PreviewLine> = Vec::new();
+    let mut at = 0;
+    while at < edits.len() {
+        let line = buf.line_of(edits[at].range.start.get());
+        let start = buf.line_start(line);
+        let end = buf.line_end(line);
+        let mut text = String::new();
+        let mut added = Vec::new();
+        let mut copied = start;
+        while at < edits.len() && buf.line_of(edits[at].range.start.get()) == line {
+            let edit = &edits[at];
+            let from = edit.range.start.get().max(copied);
+            text.push_str(&buf.text().byte_slice(copied..from.min(end)).to_string());
+            let first = text.len();
+            text.push_str(&edit.text.replace(['\r', '\n'], "↵"));
+            if edit.range.end.get() > end {
+                text.push('↵');
+            }
+            added.push((first, text.len()));
+            copied = edit.range.end.get().max(copied);
+            at += 1;
+        }
+        if copied < end {
+            text.push_str(&buf.text().byte_slice(copied..end).to_string());
+        }
+        lines.push(PreviewLine { line, text, added });
+    }
+    lines
+}
+
 /// Read only the plan stamped for the exact current Ex body, source,
 /// pane and saved cursors. Parsing happens before consulting that cache.
 pub(crate) fn substitute_preview(editor: &Editor) -> Option<SubstitutePreviewState<'_>> {
-    let prompt = editor.pending.prompt()?;
-    let crate::editor::pending::PromptContext::Ex(origin) = prompt.context() else {
+    let prompt = editor.cmdline.line()?;
+    let crate::editor::cmdline::Context::Ex(origin) = prompt.context() else {
         return None;
     };
-    if !editor.pending_origin_valid(origin)
+    if !editor.cmdline_origin_valid(origin)
         || editor.sels().extra_heads() != origin.pane.sels.extra_heads()
     {
         return Some(SubstitutePreviewState::Unavailable(
             "substitution source, cursor or focus changed".into(),
         ));
     }
-    let spec = match parse_substitute_line(editor, prompt.body(), origin.pane.sels.primary().head) {
-        Ok(Some(spec)) => spec,
-        Ok(None) => return None,
+    // parsed once per change of the line (cmdline/parsed.rs)
+    let spec = match editor.cmdline.parsed.substitute.as_ref()? {
+        Ok(spec) => spec,
         Err(error) if error.is_incomplete() => {
             return Some(SubstitutePreviewState::Incomplete(error.to_string()));
         }
         Err(error) => return Some(SubstitutePreviewState::Invalid(error.to_string())),
     };
     let cursors = origin.pane.sels.heads();
-    if editor.substitution_is_large() && !editor.substitution_ready(&spec, &cursors) {
-        return Some(if editor.substitution_resolving(&spec, &cursors) {
+    if editor.substitution_is_large() && !editor.substitution_ready(spec, &cursors) {
+        return Some(if editor.substitution_resolving(spec, &cursors) {
             SubstitutePreviewState::Resolving
         } else {
             SubstitutePreviewState::Unavailable("substitution resolver is unavailable".into())
         });
     }
-    match editor.prepared_substitution(&spec, &cursors) {
+    match editor.prepared_substitution(spec, &cursors) {
         Some(Ok(plan)) if plan.edits.is_empty() => Some(SubstitutePreviewState::NoTarget),
         Some(Ok(plan)) => {
             let top = origin.pane.view_top;
             let bottom = top.saturating_add(editor.view_rows());
-            let offscreen = plan
-                .changed_lines
-                .iter()
-                .filter(|&&line| line < top || line >= bottom)
-                .count();
+            let above = plan.changed_lines.partition_point(|&line| line < top);
+            let below = plan.changed_lines.len()
+                - plan.changed_lines.partition_point(|&line| line < bottom);
             Some(SubstitutePreviewState::Ready(SubstitutionPreview {
                 plan,
-                offscreen,
+                above,
+                below,
             }))
         }
         Some(Err(error)) => Some(SubstitutePreviewState::Unavailable(error.to_owned())),
@@ -282,23 +325,19 @@ pub(crate) fn substitute_preview(editor: &Editor) -> Option<SubstitutePreviewSta
 
 /// `:s`, `:&`, `:&&`, `:~`: execute the same parsed spec through the
 /// same plan the card showed.
-pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) {
+pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) -> super::ExResult {
     let Some(form) = Form::of(call.name) else {
-        return;
+        return Ok(());
     };
     let line = editor.buf().line_of(editor.head());
     let spec = match parse_substitute(editor, form, call.range, line, call.arg) {
         Ok(spec) => spec,
-        Err(error) => {
-            editor.message = error.to_string();
-            return;
-        }
+        Err(error) => return Err(error.to_string()),
     };
-    if spec.flags.confirm && editor.pending.ex.compound > 0 {
+    if spec.flags.confirm && editor.cmdline.ex.compound > 0 {
         // The question would have to stop a `:g` or `:normal` in the
         // middle of its one undo step.
-        editor.message = "the c flag cannot ask inside :g or :normal".into();
-        return;
+        return Err("the c flag cannot ask inside :g or :normal".into());
     }
     remember_substitute(editor, &spec);
     // Vim: the substitute pattern is the search pattern from here on.
@@ -312,43 +351,47 @@ pub(crate) fn ex_substitute(editor: &mut Editor, call: &super::ExCall<'_>) {
     // A compound command (`:g`, `:normal`) and a confirmation need the
     // answer now; a lone `:s` on a large buffer resolves off the input
     // path.
-    let inline = editor.pending.ex.compound > 0 || spec.flags.confirm;
+    let inline = editor.cmdline.ex.compound > 0 || spec.flags.confirm;
     if !inline && editor.substitution_is_large() && !editor.substitution_ready(&spec, &cursors) {
         editor.defer_substitute(spec, cursors, ResolutionPurpose::Execute);
-        return;
+        return Ok(());
     }
     let plan = match editor.take_substitution(&spec, &cursors) {
         Some(Ok(plan)) => plan,
         Some(Err(error)) => {
-            editor.message = format!("substitution failed: {error}");
-            return;
+            return Err(format!("substitution failed: {error}"));
         }
         None => match plan(editor.buf(), &spec) {
             Ok(plan) => plan,
-            Err(error) => {
-                editor.message = format!("substitution failed: {error}");
-                return;
-            }
+            Err(error) => return Err(format!("substitution failed: {error}")),
         },
     };
-    apply_substitution(editor, spec, plan);
+    apply_substitution(editor, spec, plan)
 }
 
 pub(crate) fn execute_prepared_substitution(editor: &mut Editor, spec: SubstituteSpec) {
     let cursors = editor.all_cursors();
     match editor.take_substitution(&spec, &cursors) {
-        Some(Ok(plan)) => apply_substitution(editor, spec, plan),
-        Some(Err(error)) => editor.message = format!("substitution failed: {error}"),
-        None => editor.message = "substitution plan invalidated before apply".into(),
+        Some(Ok(plan)) => {
+            if let Err(error) = apply_substitution(editor, spec, plan) {
+                editor.fail(error);
+            }
+        }
+        Some(Err(error)) => editor.fail(format!("substitution failed: {error}")),
+        None => editor.fail("substitution plan invalidated before apply".into()),
     }
 }
 
-fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: SubstitutionPlan) {
+fn apply_substitution(
+    editor: &mut Editor,
+    spec: SubstituteSpec,
+    plan: SubstitutionPlan,
+) -> super::ExResult {
     if plan.edits.is_empty() {
         if !spec.flags.quiet {
-            editor.message = format!("pattern not found: {}", spec.pattern);
+            return Err(format!("pattern not found: {}", spec.pattern));
         }
-        return;
+        return Ok(());
     }
     let hits = plan.edits.len();
     let lines = plan.changed_lines.len();
@@ -358,11 +401,11 @@ fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: Substitut
             if hits == 1 { "" } else { "es" },
             if lines == 1 { "" } else { "s" }
         );
-        return;
+        return Ok(());
     }
     if spec.flags.confirm {
         begin_confirm(editor, plan);
-        return;
+        return Ok(());
     }
     let start = editor.buf().line_start(spec.range.0);
     let old_end = editor.buf().line_end(spec.range.1);
@@ -384,8 +427,7 @@ fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: Substitut
         },
     ) {
         editor.view_mut().jumps = previous_jumps;
-        editor.message = format!("substitution failed: {error}");
-        return;
+        return Err(format!("substitution failed: {error}"));
     }
     let end = old_end
         .saturating_add_signed(delta)
@@ -400,4 +442,5 @@ fn apply_substitution(editor: &mut Editor, spec: SubstituteSpec, plan: Substitut
         if hits == 1 { "" } else { "s" },
         if lines == 1 { "" } else { "s" }
     );
+    Ok(())
 }

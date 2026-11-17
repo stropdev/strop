@@ -313,7 +313,7 @@ pub fn sections_for(mode: crate::editor::Mode) -> &'static [&'static str] {
     use crate::editor::Mode;
     match mode {
         Mode::Normal => &[
-            "moving", "editing", "search", "leader", "panes", "git", "pickers", "ex",
+            "moving", "editing", "search", "leader", "panes", "git", "pickers", "cmdline",
         ],
         Mode::Visual | Mode::VisualLine | Mode::VisualBlock => &["visual"],
         Mode::Insert => &[],
@@ -358,6 +358,12 @@ pub fn compat_report() -> String {
             let mark = if b.live { "✓" } else { "·" };
             let soon = if b.live { "" } else { " (soon)" };
             out.push_str(&format!("- `{mark} {}` — {}{}\n", b.keys, b.desc, soon));
+        }
+    }
+    for family in crate::editor::ex::Family::ALL {
+        out.push_str(&format!("\n## {}\n\n", family.title()));
+        for (usage, desc) in crate::editor::ex::help_rows(family) {
+            out.push_str(&format!("- `✓ {usage}` — {desc}\n"));
         }
     }
     out.push_str(

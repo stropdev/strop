@@ -1,0 +1,432 @@
+//! Path completion tests. The worker is suppressed with a fixture
+//! tape (hermetic: no real `~/.ssh` read, no client, no network) and
+//! answered through the production handler — exactly how the TUI's
+//! forwarded deliveries arrive.
+
+use super::*;
+use strop_core::Buffer;
+
+/// The labels the menu shows.
+fn labels(e: &Editor) -> Vec<String> {
+    e.cmdline_menu()
+        .map(|menu| {
+            menu.rows()
+                .iter()
+                .map(|row| row.label().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn editor() -> Editor {
+    Editor::new(Buffer::from_text("x\n"))
+}
+
+fn suppress(e: &mut Editor) {
+    e.tape = std::rc::Rc::new(strop_trace::replay::Tape::fixture(|_, _| {
+        Err(std::io::Error::other(
+            "unexpected remote-completion observation",
+        ))
+    }));
+}
+
+fn cand(uri: &str, directory: bool) -> RemoteCandidate {
+    RemoteCandidate {
+        uri: uri.to_owned(),
+        directory,
+    }
+}
+
+fn hosts_result(uris: &[&str]) -> RemoteCompletionResult {
+    RemoteCompletionResult::Candidates {
+        items: uris.iter().map(|uri| cand(uri, false)).collect(),
+        source: CandidateSource::Config,
+        notes: Vec::new(),
+        listed_directory: None,
+    }
+}
+
+fn deliver(e: &mut Editor, ticket: Ticket<RemoteCompletionKey>, result: RemoteCompletionResult) {
+    e.handle_remote_completion(Completion {
+        ticket,
+        outcome: Outcome::Success(result),
+    });
+}
+
+fn ticket_for(e: &Editor, text: &str, query: RemoteCompletionQuery) -> Ticket<RemoteCompletionKey> {
+    let pending = e.remote_completion.ticket().expect("request in flight");
+    assert_eq!(pending.key.text, text);
+    assert_eq!(pending.key.query, query);
+    pending
+}
+
+fn complete_worker(editor: &mut Editor) {
+    let event = editor
+        .remote_completion
+        .rx
+        .as_ref()
+        .unwrap()
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    editor.handle_remote_completion(event);
+}
+
+#[test]
+fn local_completion_preserves_native_names_and_opens_the_selected_file() {
+    #[cfg(unix)]
+    let name = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(b"odd name\n\xff.txt".to_vec())
+    };
+    #[cfg(not(unix))]
+    let name = std::ffi::OsString::from("odd name.txt");
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join(name);
+    std::fs::write(&path, "native source\n").unwrap();
+    let canonical = std::fs::canonicalize(&path).unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_owned());
+    editor.feed_text(":e odd <tab>");
+    complete_worker(&mut editor);
+    let uri = strop_workspace::ResourceLocation::local(canonical.clone())
+        .uri()
+        .unwrap();
+    assert_eq!(editor.cmdline.text(), format!(":e {uri}"));
+    editor.feed_text("<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(editor.buf().text(), "native source\n");
+    assert_eq!(editor.buf().file_identity(), Some(canonical.as_path()));
+}
+
+#[test]
+fn local_directory_completion_descends_and_rejects_stale_field_results() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join("folder")).unwrap();
+    std::fs::write(root.path().join("folder/child.txt"), "child\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_owned());
+    editor.feed_text(":e fol<tab>");
+    complete_worker(&mut editor);
+    // a relative operand completes as typed, never to an absolute URI
+    assert_eq!(editor.cmdline.text(), ":e folder/");
+    // one match: the menu closes and the next Tab descends
+    editor.feed_text("<tab>");
+    complete_worker(&mut editor);
+    assert_eq!(editor.cmdline.text(), ":e folder/child.txt");
+    editor.feed_text("<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(editor.buf().text(), "child\n");
+    editor.feed_text("<esc>:e fol<tab>x");
+    let edited = editor.cmdline.text().to_owned();
+    complete_worker(&mut editor);
+    assert_eq!(editor.cmdline.text(), edited);
+}
+
+#[test]
+fn host_candidates_apply_then_cycle_without_new_requests() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://al");
+    e.feed_text("<tab>");
+    let ticket = ticket_for(
+        &e,
+        ":e ssh://al",
+        RemoteCompletionQuery::Hosts {
+            partial: "al".into(),
+        },
+    );
+    deliver(
+        &mut e,
+        ticket,
+        hosts_result(&["ssh://alpha.example.com", "ssh://alpine.example.com"]),
+    );
+    assert_eq!(e.cmdline.text(), ":e ssh://alpha.example.com");
+    assert_eq!(labels(&e), ["alpha.example.com", "alpine.example.com"]);
+    assert_eq!(e.cmdline_menu().unwrap().title(), "hosts");
+    // The second Tab cycles the landed list; no new request exists.
+    e.feed_text("<tab>");
+    assert!(e.remote_completion.ticket().is_none());
+    assert_eq!(e.cmdline.text(), ":e ssh://alpine.example.com");
+    // …past the last row back to what was typed, then round again.
+    e.feed_text("<tab>");
+    assert_eq!(e.cmdline.text(), ":e ssh://al");
+    e.feed_text("<tab>");
+    assert_eq!(e.cmdline.text(), ":e ssh://alpha.example.com");
+    // Typing refilters the landed list with no new job.
+    e.feed_text("<c-e>pi");
+    assert!(e.remote_completion.ticket().is_none());
+    assert_eq!(labels(&e), ["alpine.example.com"]);
+}
+
+#[test]
+fn late_results_cannot_replace_edited_input() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://al");
+    e.feed_text("<tab>");
+    let ticket = e.remote_completion.ticket().expect("request in flight");
+    e.feed_text("x"); // the user kept typing after the request
+    deliver(
+        &mut e,
+        ticket,
+        hosts_result(&["ssh://alpha.example.com", "ssh://alpine.example.com"]),
+    );
+    assert_eq!(
+        e.cmdline.text(),
+        ":e ssh://alx",
+        "input must stay untouched"
+    );
+    assert!(e.cmdline_menu().is_none(), "no menu from a stale reply");
+}
+
+#[test]
+fn late_results_after_cancel_are_dropped_not_applied() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://al");
+    e.feed_text("<tab>");
+    let ticket = e.remote_completion.ticket().expect("request in flight");
+    e.feed_text("<esc>"); // Esc closes the line
+    assert!(!e.cmdline.is_open());
+    deliver(&mut e, ticket, hosts_result(&["ssh://alpha.example.com"]));
+    assert!(!e.cmdline.is_open(), "no prompt may be reopened");
+    assert_eq!(e.buf().text().to_string(), "x\n");
+}
+
+#[test]
+fn focus_change_rejects_delivery() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://al");
+    e.feed_text("<tab>");
+    let ticket = e.remote_completion.ticket().expect("request in flight");
+    e.focus_epoch += 1; // a pane switch happened after the request
+    deliver(&mut e, ticket, hosts_result(&["ssh://alpha.example.com"]));
+    assert_eq!(e.cmdline.text(), ":e ssh://al");
+    assert!(e.cmdline_menu().is_none());
+}
+
+#[test]
+fn superseded_tickets_are_rejected() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://al");
+    e.feed_text("<tab>");
+    let stale = e.remote_completion.ticket().expect("request in flight");
+    e.feed_text("p");
+    e.feed_text("<tab>"); // replaces the request
+    let current = e.remote_completion.ticket().expect("request in flight");
+    assert_ne!(stale.request, current.request);
+    deliver(&mut e, stale, hosts_result(&["ssh://stale.example.com"]));
+    assert_eq!(e.cmdline.text(), ":e ssh://alp");
+    deliver(&mut e, current, hosts_result(&["ssh://alpha.example.com"]));
+    assert_eq!(e.cmdline.text(), ":e ssh://alpha.example.com");
+}
+
+#[test]
+fn path_completion_never_connects_and_says_so() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://build/var/l");
+    e.feed_text("<tab>");
+    let ticket = ticket_for(
+        &e,
+        ":e ssh://build/var/l",
+        RemoteCompletionQuery::Path {
+            authority: "build".into(),
+            directory: "/var".into(),
+            segment: "l".into(),
+        },
+    );
+    deliver(
+        &mut e,
+        ticket,
+        RemoteCompletionResult::ConnectRequired {
+            endpoint: "ssh://build".into(),
+        },
+    );
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/l");
+    assert!(e.message.contains("no live connection"));
+    assert!(e.message.contains("never connects"));
+    assert!(e.cmdline_menu().is_none());
+}
+
+#[test]
+fn directories_route_as_prefixes_files_as_full_uris() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://build/var/l");
+    e.feed_text("<tab>");
+    let ticket = e.remote_completion.ticket().expect("request in flight");
+    // Worker-sorted order: directories first, each group by URI.
+    deliver(
+        &mut e,
+        ticket,
+        RemoteCompletionResult::Candidates {
+            items: vec![
+                cand("ssh://build/var/log/", true),
+                cand("ssh://build/var/local", false),
+            ],
+            source: CandidateSource::Connection,
+            notes: Vec::new(),
+            listed_directory: Some("ssh://build/var".into()),
+        },
+    );
+    // Directories apply first and keep a trailing slash…
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/log/");
+    assert_eq!(
+        labels(&e),
+        ["log/", "local"],
+        "directory shown with its slash"
+    );
+    assert_eq!(e.cmdline_menu().unwrap().title(), "ssh://build/var/");
+    assert_eq!(e.cmdline_menu().unwrap().note(), Some("live"));
+    e.feed_text("<tab>");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/local");
+    e.feed_text("<s-tab>");
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/log/");
+    // …and the live listing feeds the fallback cache.
+    assert!(e
+        .remote_completion
+        .cached("ssh://build/var")
+        .is_some_and(|items| items.len() == 2));
+    // Typing into the selected directory starts a deeper query rather than
+    // cycling the original alternatives.
+    e.feed_text("s<tab>");
+    let ticket = ticket_for(
+        &e,
+        ":e ssh://build/var/log/s",
+        RemoteCompletionQuery::Path {
+            authority: "build".into(),
+            directory: "/var/log".into(),
+            segment: "s".into(),
+        },
+    );
+    deliver(
+        &mut e,
+        ticket,
+        RemoteCompletionResult::Candidates {
+            items: vec![cand("ssh://build/var/log/syslog", false)],
+            source: CandidateSource::Cache,
+            notes: Vec::new(),
+            listed_directory: None,
+        },
+    );
+    assert_eq!(e.cmdline.text(), ":e ssh://build/var/log/syslog");
+    assert!(e.message.is_empty(), "{}", e.message);
+}
+
+#[test]
+fn percent_prefixes_classify_into_the_path_segment() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://build/%2");
+    e.feed_text("<tab>");
+    ticket_for(
+        &e,
+        ":e ssh://build/%2",
+        RemoteCompletionQuery::Path {
+            authority: "build".into(),
+            directory: "/".into(),
+            segment: "%2".into(),
+        },
+    );
+    // A bare endpoint prefix stays host completion.
+    e.feed_text("<esc>");
+    e.feed_text(":e ssh://bu");
+    e.feed_text("<tab>");
+    ticket_for(
+        &e,
+        ":e ssh://bu",
+        RemoteCompletionQuery::Hosts {
+            partial: "bu".into(),
+        },
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn applied_uris_keep_native_path_identity() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://build/d");
+    e.feed_text("<tab>");
+    let ticket = e.remote_completion.ticket().expect("request in flight");
+    deliver(
+        &mut e,
+        ticket,
+        RemoteCompletionResult::Candidates {
+            items: vec![cand("ssh://build/caf%FF%20menu.txt", false)],
+            source: CandidateSource::Connection,
+            notes: Vec::new(),
+            listed_directory: None,
+        },
+    );
+    assert_eq!(e.cmdline.text(), ":e ssh://build/caf%FF%20menu.txt");
+    let file = RemoteFile::parse("ssh://build/caf%FF%20menu.txt").unwrap();
+    assert_eq!(
+        file.path().as_os_str().as_encoded_bytes(),
+        b"/caf\xFF menu.txt".as_slice()
+    );
+}
+
+#[test]
+fn home_paths_are_refused_not_guessed() {
+    let mut e = editor();
+    e.feed_text(":e ssh://build/~");
+    e.feed_text("<tab>");
+    assert!(e.message.contains("home"));
+    assert!(e.remote_completion.ticket().is_none());
+    e.feed_text("<esc>");
+    e.feed_text(":e ssh://~/notes");
+    e.feed_text("<tab>");
+    assert!(e.message.contains("home"));
+    assert!(e.remote_completion.ticket().is_none());
+}
+
+#[test]
+fn only_file_commands_complete_paths_and_the_write_family_refuses_remote() {
+    let mut e = editor();
+    e.feed_text(":help ssh://x/y");
+    e.feed_text("<tab>");
+    assert!(e.remote_completion.ticket().is_none());
+    e.feed_text("<esc>:w ssh://build/x<tab>");
+    assert!(e.remote_completion.ticket().is_none());
+    assert_eq!(e.message, "remote save-as completion is unsupported");
+    e.feed_text("<esc>:he");
+    e.feed_text("<tab>");
+    assert_eq!(e.cmdline.text(), ":help");
+}
+
+#[test]
+fn raw_spaces_refuse_with_a_hint_and_a_mid_line_cursor_completes_before_it() {
+    let mut e = editor();
+    suppress(&mut e);
+    e.feed_text(":e ssh://build/a b");
+    e.feed_text("<tab>");
+    assert!(e.message.contains("%20"), "raw space gets an escape hint");
+    e.feed_text("<esc>");
+    e.feed_text(":e ssh://build/lo x");
+    e.feed_text("<left><left><tab>");
+    let ticket = ticket_for(
+        &e,
+        ":e ssh://build/lo x",
+        RemoteCompletionQuery::Path {
+            authority: "build".into(),
+            directory: "/".into(),
+            segment: "lo".into(),
+        },
+    );
+    deliver(
+        &mut e,
+        ticket,
+        RemoteCompletionResult::Candidates {
+            items: vec![
+                cand("ssh://build/log/", true),
+                cand("ssh://build/local/", true),
+            ],
+            source: CandidateSource::Connection,
+            notes: Vec::new(),
+            listed_directory: None,
+        },
+    );
+    assert_eq!(e.cmdline.text(), ":e ssh://build/log/ x");
+}

@@ -87,7 +87,7 @@ pub(crate) fn parse_substitute(
     default: usize,
     arg: &str,
 ) -> Result<SubstituteSpec, SubstituteError> {
-    let previous = editor.pending.ex.last_substitute.as_ref();
+    let previous = editor.cmdline.ex.last_substitute.as_ref();
     let previous_flags = previous.map(|last| last.flags).unwrap_or_default();
     let delimiter = arg.chars().next().filter(|c| valid_delimiter(*c));
     let (pattern, replacement, flags, count) = match (form, delimiter) {
@@ -176,17 +176,18 @@ pub(crate) fn parse_substitute_line(
     head: usize,
 ) -> Result<Option<SubstituteSpec>, SubstituteError> {
     let (range, rest) = parse_ex_range(editor, head, body).map_err(SubstituteError::Invalid)?;
-    let Some((command, _, arg)) = super::super::split_command(rest) else {
+    let Some(named) = super::super::split_command(rest) else {
         return Ok(None);
     };
-    let Some(form) = Form::of(command.name) else {
+    let arg = named.arg;
+    let Some(form) = Form::of(named.name) else {
         return Ok(None);
     };
     parse_substitute(editor, form, range, editor.buf().line_of(head), arg).map(Some)
 }
 
 pub(crate) fn remember_substitute(editor: &mut Editor, spec: &SubstituteSpec) {
-    editor.pending.ex.last_substitute = Some(LastSubstitute {
+    editor.cmdline.ex.last_substitute = Some(LastSubstitute {
         pattern: spec.pattern.clone(),
         replacement: spec.replacement.clone(),
         flags: spec.flags,

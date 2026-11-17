@@ -65,6 +65,21 @@ impl Editor {
         Ok(())
     }
 
+    /// The command line's path listing lands (local-channel fixture).
+    pub fn wait_path_completion(&mut self) {
+        while self.remote_completion.pending.is_some() {
+            let Some(event) = self
+                .remote_completion
+                .rx
+                .as_ref()
+                .and_then(|rx| rx.recv_timeout(std::time::Duration::from_secs(30)).ok())
+            else {
+                return;
+            };
+            self.handle_remote_completion(event);
+        }
+    }
+
     pub fn wait_picker(&mut self) {
         while self
             .picker

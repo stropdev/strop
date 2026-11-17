@@ -147,7 +147,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             } else if editor.input_normal() {
                 SetCursorStyle::SteadyBlock
             } else if editor.picker_open()
-                || editor.pending_sigil().is_some()
+                || editor.cmdline_sigil().is_some()
                 || editor.mode() == Mode::Insert
             {
                 SetCursorStyle::SteadyBar

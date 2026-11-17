@@ -31,9 +31,15 @@ struct Echo {
 
 fn gather(editor: &Editor, t: &Tokens) -> Option<Echo> {
     if !editor.message().is_empty() {
+        // a failed command says so in error ink (0110 §3.2)
+        let (glyph, color) = if editor.message_failed() {
+            ("✗", t.error)
+        } else {
+            ("›", t.text)
+        };
         return Some(Echo {
-            glyph: "›",
-            color: t.text,
+            glyph,
+            color,
             text: editor.message().to_owned(),
             hint: None,
         });

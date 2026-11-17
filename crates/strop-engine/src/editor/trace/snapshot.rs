@@ -9,21 +9,21 @@ pub(super) fn document_id(id: DocumentId) -> serde_json::Value {
 }
 
 fn pending_state(editor: &Editor) -> serde_json::Value {
-    let Some(prompt) = editor.pending.prompt() else {
+    let Some(prompt) = editor.cmdline.line() else {
         return serde_json::Value::Null;
     };
     let origin = prompt.origin();
     let context = match prompt.context() {
-        crate::editor::pending::PromptContext::Ex(_) => json!({"kind":"ex"}),
-        crate::editor::pending::PromptContext::Pipe { range, visual, .. } => {
+        crate::editor::cmdline::Context::Ex(_) => json!({"kind":"ex"}),
+        crate::editor::cmdline::Context::Pipe { range, visual, .. } => {
             json!({"kind":"pipe","range":range,"visual":visual})
         }
-        crate::editor::pending::PromptContext::Search { backward, .. } => {
+        crate::editor::cmdline::Context::Search { backward, .. } => {
             json!({"kind":"search","backward":backward})
         }
     };
     json!({"text":(capture_content() && !editor.private_terminal_prompt()).then(||prompt.text()),"cursor_byte":prompt.cursor(),
-        "normal":prompt.normal(),"context":context,"pane_index":origin.pane_index,
+        "context":context,"pane_index":origin.pane_index,
         "origin":origin.pane,"revision":origin.revision})
 }
 

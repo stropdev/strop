@@ -206,7 +206,7 @@ impl Editor {
             self.lsp_state.attach.warm_queue.clear();
             self.lsp_state.attach.warm_attempts.clear();
         }
-        self.cancel_pending();
+        self.cancel_cmdline();
         self.close_picker();
         let id = match self.worker_ids.allocate() {
             Ok(id) => id,
