@@ -7,7 +7,6 @@
 //! (endpoint, file, location, address errors) live in `strop-workspace` (0042);
 //! this crate is the transport and behavior over them.
 mod client;
-#[cfg(unix)]
 pub mod exec;
 mod hosts;
 mod pool;

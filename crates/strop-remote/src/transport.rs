@@ -11,20 +11,12 @@ pub(crate) mod error;
 
 pub(crate) use error::Fault;
 pub use error::{RemoteError, RemoteFailureKind, RemoteStage};
-#[cfg(unix)]
 pub use mutate::{Mutation, RemoteAttrs};
-#[cfg(unix)]
 pub use save::{Expect, Stamp};
 
-#[cfg(unix)]
 pub(crate) mod mutate;
-#[cfg(unix)]
 pub(crate) mod process;
-#[cfg(unix)]
 pub(crate) mod save;
-#[cfg(unix)]
 pub(crate) mod session;
-#[cfg(unix)]
 mod stderr;
-#[cfg(unix)]
 pub(crate) mod wire;

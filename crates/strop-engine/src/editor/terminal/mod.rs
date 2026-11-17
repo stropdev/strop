@@ -176,10 +176,6 @@ impl Editor {
         let terminal = self.terminal_document(document)?;
         Some(&self.terminals.entries.get(&terminal.session)?.launch)
     }
-    pub fn terminal_launch_directory(&self, document: DocumentId) -> Option<&std::path::Path> {
-        self.terminal_launch_location(document)
-            .map(|location| location.path.as_path())
-    }
 }
 
 /// The frame half of `terminal_fixture`, factored so tests can publish a

@@ -300,6 +300,7 @@ impl Editor {
         !self.docs.is_empty()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     /// Admit an already-constructed document (0056 AR02/AR13): checked
     /// identity allocation is the whole operation — failure changes
     /// nothing, so the caller decides how to surface it.
@@ -454,6 +455,7 @@ impl Editor {
         self.close_buffer(force);
     }
 
+    #[cfg(test)]
     /// Any path-backed or scratch document holding unsaved content.
     pub fn any_dirty(&self) -> bool {
         self.docs.iter().any(|(_, d)| d.buf.is_dirty())

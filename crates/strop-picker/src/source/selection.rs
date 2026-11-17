@@ -376,7 +376,6 @@ mod tests {
 
     /// One dangling link is ineligible, never a walk-stopping error:
     /// the rest of the workspace still streams (0051 §3 boundaries).
-    #[cfg(unix)]
     #[test]
     fn a_broken_symlink_never_empties_the_walk() {
         let dir = fixture();

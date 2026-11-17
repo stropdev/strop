@@ -298,7 +298,6 @@ mod tests {
         assert_eq!(seen.len(), 2);
     }
 
-    #[cfg(unix)]
     #[test]
     fn native_filename_bytes_roundtrip() {
         use std::os::unix::ffi::OsStrExt;
@@ -306,15 +305,6 @@ mod tests {
         assert_eq!(file.path().as_os_str().as_bytes(), b"/l\xFCg\xFF");
         assert_eq!(file.to_string(), "ssh://h/l%FCg%FF");
         assert_eq!(ok(&file.to_string()), file);
-    }
-
-    #[cfg(not(unix))]
-    #[test]
-    fn unrepresentable_native_bytes_are_refused() {
-        assert!(matches!(
-            refused("ssh://h/l%FCg"),
-            Err(AddressError::UnrepresentablePath)
-        ));
     }
 
     #[test]

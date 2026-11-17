@@ -5,8 +5,6 @@
 /// text and every cell's byte end are reconstructed, exactly as frame
 /// validation re-derives them, and the row's trailing default-styled space
 /// padding is dropped — the frame re-pads to its geometry on decode.
-/// Captures written before runs carry the text plus one object per column
-/// with explicit ends; that shape still decodes.
 mod row_serde {
     use super::super::{Cell, Row, Style, MAX_COLUMNS, MAX_ROW_BYTES};
     use serde::de::{Error as _, MapAccess, Visitor};
@@ -24,76 +22,31 @@ mod row_serde {
     }
 
     #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum CellEntry {
-        Run {
-            repeat: u32,
-            width: u8,
-            #[serde(default)]
-            style: Style,
-            text: String,
-        },
-        Single(Cell),
+    struct CellEntry {
+        repeat: u32,
+        width: u8,
+        #[serde(default)]
+        style: Style,
+        text: String,
     }
 
     #[derive(Deserialize, Default)]
     #[serde(default)]
     struct RowWire {
-        text: Option<String>,
         cells: Vec<CellEntry>,
         wrapped: bool,
     }
 
-    fn assemble(
-        text: Option<String>,
-        entries: Vec<CellEntry>,
-        wrapped: bool,
-    ) -> Result<Row, String> {
+    fn assemble(entries: Vec<CellEntry>, wrapped: bool) -> Result<Row, String> {
         let mut cells = Vec::with_capacity(entries.len());
-        if entries
-            .iter()
-            .any(|entry| matches!(entry, CellEntry::Single(_)))
-        {
-            // Legacy shape: explicit ends against the recorded text.
-            let text = text.ok_or("legacy terminal row is missing its text")?;
-            if text.len() > MAX_ROW_BYTES {
-                return Err("terminal row text exceeds its budget".into());
-            }
-            for entry in entries {
-                let CellEntry::Single(cell) = entry else {
-                    return Err("terminal row mixes run and per-column cells".into());
-                };
-                if cells.len() >= usize::from(MAX_COLUMNS)
-                    || cell.end as usize > text.len()
-                    || !text.is_char_boundary(cell.end as usize)
-                {
-                    return Err("terminal cell exceeds its row".into());
-                }
-                cells.push(cell);
-            }
-            return Ok(Row {
-                text,
-                cells,
-                wrapped,
-            });
-        }
-        if entries
-            .iter()
-            .any(|entry| matches!(entry, CellEntry::Single(_)))
-        {
-            return Err("terminal row mixes run and per-column cells".into());
-        }
         let mut text = String::new();
         for entry in entries {
-            let CellEntry::Run {
+            let CellEntry {
                 repeat,
                 width,
                 style,
                 text: symbol,
-            } = entry
-            else {
-                return Err("terminal row mixes run and per-column cells".into());
-            };
+            } = entry;
             let malformed = repeat == 0
                 || repeat as usize > usize::from(MAX_COLUMNS) - cells.len()
                 || (width == 0) != symbol.is_empty()
@@ -172,13 +125,12 @@ mod row_serde {
                     let mut wire = RowWire::default();
                     while let Some(key) = map.next_key::<String>()? {
                         match key.as_str() {
-                            "text" => wire.text = Some(map.next_value()?),
                             "cells" => wire.cells = map.next_value()?,
                             "wrapped" => wire.wrapped = map.next_value()?,
                             _ => return Err(A::Error::custom("unknown terminal row field")),
                         }
                     }
-                    assemble(wire.text, wire.cells, wire.wrapped).map_err(A::Error::custom)
+                    assemble(wire.cells, wire.wrapped).map_err(A::Error::custom)
                 }
             }
             deserializer.deserialize_map(RowVisitor)
@@ -209,7 +161,6 @@ mod frame_serde {
         "history_limited",
         "origin",
         "rows",
-        "projection",
     ];
 
     #[derive(Serialize)]
@@ -226,10 +177,6 @@ mod frame_serde {
         Repeated {
             repeat: u32,
             index: usize,
-        },
-        Projected {
-            absolute_start: u64,
-            row: Row,
         },
         Plain(Row),
     }
@@ -253,18 +200,7 @@ mod frame_serde {
         columns: u16,
         entries: Vec<RowEntry>,
         dictionary: Vec<Row>,
-        legacy_projection: Option<ropey::Rope>,
     ) -> Result<(imbl::Vector<ProjectedRow>, ropey::Rope), String> {
-        let legacy = entries
-            .iter()
-            .any(|entry| matches!(entry, RowEntry::Projected { .. }));
-        if legacy
-            && entries
-                .iter()
-                .any(|entry| !matches!(entry, RowEntry::Projected { .. }))
-        {
-            return Err("terminal frame mixes legacy projected rows".into());
-        }
         if dictionary.len() > MAX_HISTORY_LINES + usize::from(MAX_ROWS) {
             return Err("terminal frame dictionary exceeds its bound".into());
         }
@@ -296,7 +232,6 @@ mod frame_serde {
             builder: &mut ropey::RopeBuilder,
             expected: &mut u64,
             projected: &mut Vec<ProjectedRow>,
-            offset: Option<u64>,
             row: &Arc<Row>,
         ) -> Result<(), String> {
             let advance = row.text.len() as u64 + u64::from(!row.wrapped);
@@ -305,7 +240,7 @@ mod frame_serde {
                 builder.append("\n");
             }
             projected.push(ProjectedRow {
-                absolute_start: offset.unwrap_or(*expected),
+                absolute_start: *expected,
                 row: Arc::clone(row),
             });
             *expected = expected
@@ -323,30 +258,17 @@ mod frame_serde {
                 RowEntry::Repeated { repeat, index } => {
                     let row = Arc::clone(&dictionary[index]);
                     for _ in 0..repeat {
-                        emit(&mut builder, &mut expected, &mut projected, None, &row)?;
+                        emit(&mut builder, &mut expected, &mut projected, &row)?;
                     }
-                }
-                RowEntry::Projected {
-                    absolute_start,
-                    row,
-                } => {
-                    let row = Arc::new(row);
-                    emit(
-                        &mut builder,
-                        &mut expected,
-                        &mut projected,
-                        Some(absolute_start),
-                        &row,
-                    )?;
                 }
                 RowEntry::Plain(mut row) => {
                     pad_to_geometry(&mut row, columns);
                     let row = Arc::new(row);
-                    emit(&mut builder, &mut expected, &mut projected, None, &row)?;
+                    emit(&mut builder, &mut expected, &mut projected, &row)?;
                 }
             }
         }
-        let projection = legacy_projection.unwrap_or_else(|| builder.finish());
+        let projection = builder.finish();
         if projection.len_bytes() > MAX_PROJECTION_BYTES {
             return Err("terminal projection exceeds its budget".into());
         }
@@ -355,11 +277,6 @@ mod frame_serde {
         }
         Ok((rows, projection))
     }
-
-    /// Legacy captures serialized the projection rope in place.
-    #[derive(Deserialize)]
-    #[serde(transparent)]
-    struct ProjectionWire(#[serde(with = "crate::projection::rope_serde")] ropey::Rope);
 
     impl Serialize for Frame {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -441,7 +358,6 @@ mod frame_serde {
                     let mut origin = None;
                     let mut rows: Option<Vec<RowEntry>> = None;
                     let mut dictionary: Option<Vec<Row>> = None;
-                    let mut projection = None;
                     while let Some(key) = map.next_key::<String>()? {
                         match key.as_str() {
                             "session" => session = Some(map.next_value()?),
@@ -458,15 +374,6 @@ mod frame_serde {
                             "origin" => origin = Some(map.next_value()?),
                             "rows" => rows = Some(map.next_value()?),
                             "dictionary" => dictionary = Some(map.next_value()?),
-                            "projection" => {
-                                projection = Some(
-                                    map.next_value::<ProjectionWire>()
-                                        .map_err(|_| {
-                                            A::Error::custom("terminal projection does not decode")
-                                        })?
-                                        .0,
-                                )
-                            }
                             _ => return Err(A::Error::custom("unknown terminal frame field")),
                         }
                     }
@@ -476,9 +383,8 @@ mod frame_serde {
                     let dictionary = dictionary.unwrap_or_default();
                     let geometry =
                         geometry.ok_or_else(|| A::Error::custom("frame is missing geometry"))?;
-                    let (rows, projection) =
-                        rebuild(origin, geometry.columns, rows, dictionary, projection)
-                            .map_err(A::Error::custom)?;
+                    let (rows, projection) = rebuild(origin, geometry.columns, rows, dictionary)
+                        .map_err(A::Error::custom)?;
                     Ok(Frame {
                         session: session
                             .ok_or_else(|| A::Error::custom("frame is missing session"))?,

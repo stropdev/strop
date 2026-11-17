@@ -71,12 +71,6 @@ impl RepoTarget {
             .map(|rel| rel.to_path_buf())
     }
 
-    /// The absolute path of a repo-relative path *on the machine this
-    /// repository lives on*.
-    pub fn abs_of(&self, rel: &Path) -> PathBuf {
-        self.workdir().join(rel)
-    }
-
     pub fn endpoint(&self) -> Option<&RemoteEndpoint> {
         match self {
             Self::Local { .. } => None,
@@ -172,24 +166,5 @@ mod tests {
         let text = serde_json::to_string(&target).unwrap();
         let back: RepoTarget = serde_json::from_str(&text).unwrap();
         assert_eq!(target, back);
-    }
-
-    /// Tapes written with the pre-versioned string path form still decode.
-    #[test]
-    fn legacy_string_paths_still_decode() {
-        // Legacy string-path form (pre-versioned path_serde) still decodes.
-        let legacy_local: RepoTarget =
-            serde_json::from_str(r#"{"local":{"workdir":"/w"}}"#).unwrap();
-        assert_eq!(
-            legacy_local,
-            RepoTarget::Local {
-                workdir: PathBuf::from("/w")
-            }
-        );
-        let legacy_remote: RepoTarget = serde_json::from_str(
-            r#"{"remote":{"endpoint":"ssh://fixture@box.example:2222","workdir":"/srv/proj"}}"#,
-        )
-        .unwrap();
-        assert_eq!(legacy_remote, remote_target());
     }
 }

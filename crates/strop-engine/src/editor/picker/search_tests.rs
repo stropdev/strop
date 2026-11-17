@@ -245,7 +245,6 @@ fn live_preview_witness_cache_rechecks_each_source_revision() {
     assert!(editor.picker_preview_range(&preview).unwrap().is_some());
 }
 
-#[cfg(unix)]
 #[test]
 fn canonical_aliases_prepare_only_one_edit_plan_for_the_source() {
     let (root, mut editor) = fixture();

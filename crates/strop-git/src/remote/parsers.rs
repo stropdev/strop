@@ -123,15 +123,9 @@ fn split_record(bytes: &[u8], separator: u8) -> Option<(&[u8], &[u8])> {
     Some((&bytes[..index], &bytes[index + 1..]))
 }
 
-#[cfg(unix)]
 fn bytes_to_path(bytes: &[u8]) -> PathBuf {
     use std::os::unix::ffi::OsStrExt;
     PathBuf::from(std::ffi::OsStr::from_bytes(bytes))
-}
-
-#[cfg(not(unix))]
-fn bytes_to_path(bytes: &[u8]) -> PathBuf {
-    PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
 }
 
 #[cfg(test)]

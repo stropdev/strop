@@ -4,18 +4,13 @@
 //! multiplexed connection. Frontend state never owns child handles — it
 //! enqueues intents on a service and takes immutable updates; emulation
 //! stays here.
-#[cfg(unix)]
 pub mod client;
 pub mod launch;
-#[cfg(unix)]
 mod local;
 pub mod model;
 mod projection;
-#[cfg(unix)]
 mod pty;
-#[cfg(unix)]
 pub mod service;
-#[cfg(unix)]
 mod transport;
 mod vt;
 

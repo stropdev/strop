@@ -59,14 +59,11 @@ fn trace_lifecycle_is_exclusive_ordered_and_durable() {
         assert_eq!(event["fields"]["value"], producer_order[producer]);
         producer_order[producer] += 1;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
-    }
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     assert!(matches!(
         start(&path, TraceOptions::default()),
         Err(TraceError::Open { .. })

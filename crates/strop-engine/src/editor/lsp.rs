@@ -361,9 +361,6 @@ impl Editor {
     pub(crate) fn lsp_hover_pub(&mut self) {
         self.lsp_hover();
     }
-    pub fn lsp_code_actions_pub(&mut self) {
-        self.lsp_code_actions();
-    }
     pub fn lsp_document_symbols_pub(&mut self) {
         self.lsp_document_symbols();
     }

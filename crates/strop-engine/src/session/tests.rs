@@ -179,17 +179,6 @@ fn quit_all_persists_every_buffer_and_the_complete_jump_history() {
 }
 
 #[test]
-fn old_sessions_default_to_empty_jump_history() {
-    let session: Session = serde_json::from_value(serde_json::json!({
-        "buffers": [{"path": "a.txt", "line": 0, "col": 0, "view_top": 0, "undo": null}],
-        "current": 0
-    }))
-    .unwrap();
-    assert!(session.jumps.entries.is_empty());
-    assert_eq!(session.jumps.position, None);
-}
-
-#[test]
 fn empty_or_readonly_never_persist() {
     let dir = tempfile::tempdir().unwrap();
     let mut e = Editor::new(Buffer::from_text(""));
@@ -269,19 +258,13 @@ fn failed_restore_leaves_live_state_untouched() {
 }
 
 #[test]
-fn legacy_paths_migrate_and_ambiguous_paths_fail() {
-    let make = |path: &str| {
-        serde_json::json!({"buffers": [{
-        "path": path, "line": 0, "col": 0, "view_top": 0, "undo": null
-    }], "current": 0})
-    };
-    let session: Session = serde_json::from_value(make("safe.rs")).unwrap();
-    let value = serde_json::to_value(session).unwrap();
-    assert_eq!(value["buffers"][0]["path"]["version"], 1);
-    assert!(serde_json::from_value::<Session>(make("bad\u{fffd}.rs")).is_err());
+fn bare_string_paths_are_refused() {
+    let session = serde_json::json!({"buffers": [{
+        "path": "safe.rs", "line": 0, "col": 0, "view_top": 0, "undo": null
+    }], "current": 0});
+    assert!(serde_json::from_value::<Session>(session).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn native_paths_roundtrip_without_loss() {
     use std::os::unix::ffi::OsStrExt;
@@ -319,11 +302,8 @@ fn failed_publication_preserves_previous_session_and_cleans_staging() {
     let path = directory.path().join("session.json");
     std::fs::write(&path, b"previous session").unwrap();
     let result = persistence::publish(&path, |file| {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(file.metadata()?.permissions().mode() & 0o777, 0o600);
-        }
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(file.metadata()?.permissions().mode() & 0o777, 0o600);
         file.write_all(b"partial private content")?;
         Err(std::io::Error::other("injected sync failure"))
     });
@@ -342,7 +322,6 @@ fn failed_publication_preserves_previous_session_and_cleans_staging() {
     assert_eq!(std::fs::read(&path).unwrap(), b"next session");
 }
 
-#[cfg(unix)]
 #[test]
 fn atomic_publication_replaces_destination_symlink_without_touching_target() {
     use std::io::Write;
@@ -393,13 +372,10 @@ fn trust_rejects_unusable_native_paths() {
     // 0057 VF15: invalid native paths cannot manufacture a capability.
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
-    #[cfg(unix)]
     let bad = {
         use std::os::unix::ffi::OsStrExt;
         PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/nul\0byte"))
     };
-    #[cfg(not(unix))]
-    let bad = PathBuf::new();
     assert!(trust(Some(&state), &bad).is_err());
     assert!(
         !trust(Some(&state), Path::new("/tmp/valid")).is_ok()

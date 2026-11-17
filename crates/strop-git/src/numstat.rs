@@ -131,9 +131,7 @@ fn split<'a>(buf: &'a [u8], sep: u8, what: &str) -> Result<(&'a [u8], &'a [u8]),
 }
 
 /// One borrowed native path field. Rename sources can be validated without
-/// allocating a pathname that will be discarded. Non-Unix Git emits UTF-8;
-/// malformed encoding is an error, never a lossy filesystem identity.
-#[cfg(unix)]
+/// allocating a pathname that will be discarded.
 fn path_field(buf: &[u8]) -> Result<(&Path, &[u8]), String> {
     use std::os::unix::ffi::OsStrExt;
     let (field, tail) = split(buf, 0, "path")?;
@@ -141,17 +139,6 @@ fn path_field(buf: &[u8]) -> Result<(&Path, &[u8]), String> {
         return Err("git numstat: empty path".into());
     }
     Ok((Path::new(std::ffi::OsStr::from_bytes(field)), tail))
-}
-
-#[cfg(not(unix))]
-fn path_field(buf: &[u8]) -> Result<(&Path, &[u8]), String> {
-    let (field, tail) = split(buf, 0, "path")?;
-    if field.is_empty() {
-        return Err("git numstat: empty path".into());
-    }
-    let text = std::str::from_utf8(field)
-        .map_err(|_| "git numstat: path is not valid UTF-8".to_string())?;
-    Ok((Path::new(text), tail))
 }
 
 #[cfg(test)]
@@ -205,7 +192,6 @@ mod tests {
     }
 
     /// Unix filenames may be non-UTF8; they must arrive byte-for-byte.
-    #[cfg(unix)]
     #[test]
     fn non_utf8_path_arrives_as_bytes() {
         use std::os::unix::ffi::OsStrExt;

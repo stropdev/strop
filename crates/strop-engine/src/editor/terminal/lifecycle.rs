@@ -529,6 +529,7 @@ impl Editor {
         view.terminal_input = false;
     }
 
+    #[cfg(test)]
     pub fn drain_terminals(&mut self) {
         for _ in 0..super::super::events::EVENTS_PER_TURN {
             let session = self

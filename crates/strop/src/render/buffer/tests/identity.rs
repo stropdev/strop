@@ -282,7 +282,6 @@ fn workspace_title_clipping_prints_controls_and_preserves_graphemes() {
     assert!(titles.contains("e\u{301}.rs"), "{titles:?}");
 }
 
-#[cfg(unix)]
 #[test]
 fn non_utf8_workspace_title_uses_lossy_display_without_changing_identity() {
     use std::os::unix::ffi::OsStrExt;

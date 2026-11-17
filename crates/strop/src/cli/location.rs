@@ -95,7 +95,6 @@ pub(crate) fn parse_line(text: &str) -> Result<LineIndex, LocationError> {
         .ok_or(LocationError::InvalidLine)
 }
 
-#[cfg(unix)]
 fn suffix(value: &OsStr) -> Result<Option<(PathBuf, LineIndex)>, LocationError> {
     use std::os::unix::ffi::OsStrExt;
     let bytes = value.as_bytes();
@@ -114,48 +113,6 @@ fn suffix(value: &OsStr) -> Result<Option<(PathBuf, LineIndex)>, LocationError> 
         PathBuf::from(OsStr::from_bytes(&bytes[..colon])),
         line,
     )))
-}
-
-#[cfg(windows)]
-fn suffix(value: &OsStr) -> Result<Option<(PathBuf, LineIndex)>, LocationError> {
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-    let units: Vec<u16> = value.encode_wide().collect();
-    let Some(colon) = units.iter().rposition(|&unit| unit == u16::from(b':')) else {
-        return Ok(None);
-    };
-    let digits = &units[colon + 1..];
-    if digits.is_empty()
-        || !digits
-            .iter()
-            .all(|&unit| (u16::from(b'0')..=u16::from(b'9')).contains(&unit))
-    {
-        return Ok(None);
-    }
-    if colon == 0 {
-        return Err(LocationError::MissingPath);
-    }
-    let text: String = digits.iter().map(|&unit| char::from(unit as u8)).collect();
-    Ok(Some((
-        PathBuf::from(OsString::from_wide(&units[..colon])),
-        parse_line(&text)?,
-    )))
-}
-
-#[cfg(not(any(unix, windows)))]
-fn suffix(value: &OsStr) -> Result<Option<(PathBuf, LineIndex)>, LocationError> {
-    let Some(text) = value.to_str() else {
-        return Ok(None);
-    };
-    let Some((path, digits)) = text.rsplit_once(':') else {
-        return Ok(None);
-    };
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Ok(None);
-    }
-    if path.is_empty() {
-        return Err(LocationError::MissingPath);
-    }
-    Ok(Some((path.into(), parse_line(digits)?)))
 }
 
 #[cfg(test)]
@@ -196,7 +153,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn native_filename_bytes_survive_location_suffix_removal() {
         use std::os::unix::ffi::OsStrExt;

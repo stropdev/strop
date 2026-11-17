@@ -73,13 +73,10 @@ fn complete_worker(editor: &mut Editor) {
 
 #[test]
 fn local_completion_preserves_native_names_and_opens_the_selected_file() {
-    #[cfg(unix)]
     let name = {
         use std::os::unix::ffi::OsStringExt;
         std::ffi::OsString::from_vec(b"odd name\n\xff.txt".to_vec())
     };
-    #[cfg(not(unix))]
-    let name = std::ffi::OsString::from("odd name.txt");
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join(name);
     std::fs::write(&path, "native source\n").unwrap();
@@ -342,7 +339,6 @@ fn percent_prefixes_classify_into_the_path_segment() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn applied_uris_keep_native_path_identity() {
     let mut e = editor();

@@ -14,7 +14,6 @@ mod properties;
 pub mod schema;
 #[cfg(test)]
 mod schema_tests;
-pub mod store;
 pub mod suggest;
 
 pub use facts::{ItemFacts, RowFacts, SymbolRow};
@@ -23,9 +22,6 @@ pub use modes::SearchModes;
 pub use parser::{CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery};
 pub use plan::{Admission, ContentPlan, Evidence, FileSelectionPlan, ReplacementTarget};
 pub use schema::{Bare, Field, Schema};
-pub use store::{
-    canonical_source, migrate_v1, StoredQuery, StoredQueryError, SYNTAX_VERSION_CURRENT,
-};
 
 /// Parse for the widest surface (Search, no toggles): the grammar's own
 /// tests use it where the surface does not matter.

@@ -105,15 +105,9 @@ fn file_status(path: &Path) -> CommandStatus {
 
 /// The exec permission bits execvp would require; non-unix targets have
 /// no portable bit, so existence is the strongest metadata check there.
-#[cfg(unix)]
 fn executable(metadata: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::PermissionsExt;
     metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(not(unix))]
-fn executable(_metadata: &std::fs::Metadata) -> bool {
-    true
 }
 
 struct EmbeddedServer {
@@ -354,15 +348,12 @@ mod tests {
         // absolute, present: the exec bit decides (existence on non-unix)
         let tool = dir.join("tool");
         std::fs::write(&tool, b"#!/bin/sh\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                status_for(tool.to_str().unwrap(), &root, None),
-                CommandStatus::Unrunnable("not executable")
-            );
-            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            status_for(tool.to_str().unwrap(), &root, None),
+            CommandStatus::Unrunnable("not executable")
+        );
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
             status_for(tool.to_str().unwrap(), &root, None),
             CommandStatus::Executable
@@ -403,16 +394,12 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
         let mut permissions = std::fs::metadata(path).unwrap().permissions();
         permissions.set_mode(0o755);
         std::fs::set_permissions(path, permissions).unwrap();
     }
-
-    #[cfg(not(unix))]
-    fn make_executable(_path: &Path) {}
 
     #[test]
     fn root_walks_to_git() {
@@ -439,7 +426,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn root_keeps_the_documents_symlink_namespace() {
         let fixture = tempfile::tempdir().unwrap();

@@ -49,25 +49,39 @@ static ALLOCATOR: Counting = Counting;
 /// async-lsp 0.2.4's private `RawMessage<Message>`, field for field.
 #[derive(serde::Deserialize)]
 struct RawMessage {
-    #[allow(dead_code)]
     jsonrpc: String,
     #[serde(flatten)]
     inner: Message,
 }
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
-#[allow(dead_code)]
 enum Message {
     Request(AnyRequest),
     Response(AnyResponse),
     Notification(AnyNotification),
 }
 #[derive(serde::Deserialize)]
-#[allow(dead_code)]
 struct AnyResponse {
     id: NumberOrString,
     result: Option<serde_json::Value>,
     error: Option<ResponseError>,
+}
+
+/// Hand every decoded field to the optimizer barrier, so the measured
+/// decode is one whose whole result is used.
+fn consume(message: RawMessage) {
+    std::hint::black_box(&message.jsonrpc);
+    match message.inner {
+        Message::Request(request) => {
+            std::hint::black_box(&request);
+        }
+        Message::Response(AnyResponse { id, result, error }) => {
+            std::hint::black_box((&id, &result, &error));
+        }
+        Message::Notification(notification) => {
+            std::hint::black_box(&notification);
+        }
+    }
 }
 
 /// The peak heap of reading and decoding one reply whose `result` is
@@ -91,7 +105,7 @@ fn peak(result: &str, typed: bool) -> (usize, usize, usize) {
             std::hint::black_box(&reply);
         }
     } else {
-        std::hint::black_box(&message);
+        consume(message);
     }
     drop(read);
     (tokens, body.len(), PEAK.load(Relaxed) - base)

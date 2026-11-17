@@ -152,6 +152,7 @@ impl FileSelectionPlan {
         }
     }
 
+    #[cfg(test)]
     /// No file predicates at all (the walk passes everything eligible
     /// by policy).
     pub fn is_unfiltered(&self) -> bool {

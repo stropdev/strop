@@ -165,7 +165,6 @@ fn save_as_refuses_an_occupied_name_unless_forced() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn save_preserves_permissions_through_the_atomic_replace() {
     use std::os::unix::fs::PermissionsExt;

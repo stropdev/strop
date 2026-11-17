@@ -139,36 +139,3 @@ pub(crate) fn cost(row: &Row) -> usize {
         + std::mem::size_of::<Row>()
         + 64
 }
-
-pub(crate) mod rope_serde {
-    use super::MAX_PROJECTION_BYTES;
-    use ropey::{Rope, RopeBuilder};
-    use serde::de::{Error, SeqAccess, Visitor};
-    use serde::Deserializer;
-    use std::fmt;
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Rope, D::Error> {
-        struct Chunks;
-        impl<'de> Visitor<'de> for Chunks {
-            type Value = Rope;
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("bounded terminal text chunks")
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut chunks: A) -> Result<Rope, A::Error> {
-                let mut builder = RopeBuilder::new();
-                let mut bytes = 0usize;
-                while let Some(chunk) = chunks.next_element::<String>()? {
-                    bytes = bytes
-                        .checked_add(chunk.len())
-                        .ok_or_else(|| A::Error::custom("terminal text size overflow"))?;
-                    if bytes > MAX_PROJECTION_BYTES {
-                        return Err(A::Error::custom("terminal text exceeds projection budget"));
-                    }
-                    builder.append(&chunk);
-                }
-                Ok(builder.finish())
-            }
-        }
-        deserializer.deserialize_seq(Chunks)
-    }
-}

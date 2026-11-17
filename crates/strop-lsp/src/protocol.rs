@@ -162,6 +162,7 @@ pub enum PositionEncoding {
     Utf16,
 }
 
+#[cfg(test)]
 /// Byte column → server column for one line's text.
 pub fn to_server_col(line: &str, byte_col: ByteColumn, enc: PositionEncoding) -> ServerColumn {
     crate::to_server_col_slice(line.into(), byte_col, enc)

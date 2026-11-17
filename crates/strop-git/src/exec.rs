@@ -38,21 +38,6 @@ pub struct GitRun {
     pub stderr_dropped: u64,
 }
 
-impl GitRun {
-    /// Fail typed when the caller needs the complete stdout record
-    /// stream: a truncated head must never parse as "everything git
-    /// said".
-    pub fn require_full_stdout(&self, op: &str) -> Result<&[u8], String> {
-        if self.stdout_dropped > 0 {
-            return Err(format!(
-                "{op}: output truncated ({} bytes dropped)",
-                self.stdout_dropped
-            ));
-        }
-        Ok(&self.stdout)
-    }
-}
-
 /// Why a bounded `git` run could not produce its bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitExecError {
@@ -397,7 +382,6 @@ pub(crate) fn with_token<T>(work: impl FnOnce(CancelToken) -> T) -> T {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn native_path_arguments_select_the_exact_index_entry() {
         use std::os::unix::ffi::OsStrExt;
@@ -452,20 +436,5 @@ mod tests {
             with_token(|token| exec.run_records("git log", &argv, &token)).is_err(),
             "an invalid revision must not become an empty successful record set"
         );
-    }
-
-    /// require_full_stdout refuses a head posing as the whole stream.
-    #[test]
-    fn truncated_stdout_is_refused() {
-        let run = GitRun {
-            success: true,
-            code: Some(0),
-            stdout: b"only-a-head".to_vec(),
-            stderr: Vec::new(),
-            stdout_dropped: 4096,
-            stderr_dropped: 0,
-        };
-        let error = run.require_full_stdout("git log").unwrap_err();
-        assert!(error.contains("truncated"), "{error}");
     }
 }

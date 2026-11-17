@@ -68,11 +68,9 @@ fn io(path: &Path, source: std::io::Error) -> SessionError {
 pub struct Session {
     buffers: Vec<BufferState>,
     current: usize,
-    #[serde(default)]
     jumps: JumpListState,
     /// The command-line history (plan 0110): `:` and `/ ?` lines, newest
     /// last.
-    #[serde(default)]
     history: HistoryState,
     #[serde(skip)]
     captured: Vec<ropey::Rope>,
@@ -109,7 +107,6 @@ struct BufferState {
     col: usize,
     view_top: usize,
     undo: Option<History>,
-    #[serde(default)]
     undo_hash: u64,
 }
 

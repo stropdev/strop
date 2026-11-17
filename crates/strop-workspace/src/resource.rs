@@ -1,7 +1,6 @@
 //! One resolved resource path on one filesystem: the identity routing,
 //! diagnostics, bindings and navigation share (0042). Supersedes
-//! strop-lsp's `DocPath`; the serialized field accepts the legacy
-//! `target` name so records written before the move still decode.
+//! strop-lsp's `DocPath`.
 
 use std::path::PathBuf;
 
@@ -13,7 +12,6 @@ use crate::filesystem::Filesystem;
 /// [`crate::addr::RemoteLocation`], never a `ResourceLocation`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ResourceLocation {
-    #[serde(alias = "target")]
     pub filesystem: Filesystem,
     #[serde(with = "strop_core::path_serde")]
     pub path: PathBuf,
@@ -122,25 +120,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decodes_the_legacy_docpath_shape() {
-        // Written by strop-lsp's DocPath (0.19.1): field name `target`.
-        let legacy = serde_json::json!({
-            "target": "Local",
-            "path": "/workspace/a.rs",
-        });
-        let location: ResourceLocation = serde_json::from_value(legacy).unwrap();
-        assert_eq!(location.filesystem, Filesystem::Local);
-        assert_eq!(location.path, PathBuf::from("/workspace/a.rs"));
-        let endpoint = RemoteEndpoint::parse("ssh://user@example.com:2222").unwrap();
-        let legacy = serde_json::json!({
-            "target": { "Remote": endpoint },
-            "path": "/var/log/app.log",
-        });
-        let location: ResourceLocation = serde_json::from_value(legacy).unwrap();
-        assert_eq!(location.filesystem, Filesystem::Remote(endpoint));
-    }
-
-    #[test]
     fn remote_resources_never_expose_a_local_path() {
         let endpoint = RemoteEndpoint::parse("ssh://example.com").unwrap();
         let location = ResourceLocation::remote(endpoint, PathBuf::from("/etc/hostname"));
@@ -160,7 +139,6 @@ mod tests {
         assert!(ResourceLocation::parse_uri("container:a/tmp/a").is_err());
     }
 
-    #[cfg(unix)]
     #[test]
     fn non_utf8_names_and_literal_escape_text_have_distinct_display_and_uri() {
         use std::os::unix::ffi::OsStringExt;

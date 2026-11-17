@@ -160,6 +160,7 @@ impl Editor {
         &self.prepared
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     /// Worker-ticket admissions since startup (AR01 evidence).
     pub fn admission_probe(&self) -> AdmissionProbe {
         self.admissions

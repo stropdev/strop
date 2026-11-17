@@ -559,7 +559,6 @@ mod tests {
 
     /// Unix filenames may be non-UTF8; they must arrive byte-for-byte,
     /// not through a quoted or lossy spelling.
-    #[cfg(unix)]
     #[test]
     fn commit_files_preserve_non_utf8_paths() {
         use std::os::unix::ffi::OsStrExt;

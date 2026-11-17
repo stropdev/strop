@@ -179,11 +179,13 @@ impl HostSources {
         self
     }
 
+    #[cfg(test)]
     pub fn push_known_hosts(&mut self, path: PathBuf) -> &mut Self {
         self.known_hosts.push(path);
         self
     }
 
+    #[cfg(test)]
     /// Relative `Include` arguments resolve against this directory
     /// (ssh_config(5) resolves them against `~/.ssh`).
     pub fn set_include_base(&mut self, base: PathBuf) -> &mut Self {

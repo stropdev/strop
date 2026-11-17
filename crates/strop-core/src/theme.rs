@@ -239,6 +239,7 @@ impl ThemeId {
         }
     }
 
+    #[cfg(test)]
     /// True for the palettes drawn on a light base.
     pub const fn is_light(self) -> bool {
         matches!(self, Self::Vellum | Self::Paper)

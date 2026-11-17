@@ -78,7 +78,6 @@ fn pending_save_as_blocks_a_move_from_an_unrelated_document() {
     assert_eq!(std::fs::read(destination).unwrap(), b"writer\n");
 }
 
-#[cfg(unix)]
 #[test]
 fn an_admitted_move_blocks_save_as_through_a_parent_alias() {
     let (root, mut editor) = fixture();

@@ -163,23 +163,20 @@ mod tests {
 
     #[test]
     fn remote_uri_roundtrips_native_bytes_without_local_probe() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::ffi::OsStringExt;
-            let path = PathBuf::from(std::ffi::OsString::from_vec(
-                b"/srv/native \xff.rs".to_vec(),
-            ));
-            let workspace = Workspace::Remote {
-                endpoint: endpoint(),
-                root: PathBuf::from("/srv"),
-            };
-            let uri_ = workspace.uri(&path).expect("uri");
-            assert_eq!(uri_.scheme(), "file");
-            assert_eq!(workspace.decode(&uri_).as_deref(), Some(path.as_path()));
-            // Decoding is pure math: it never stats the analogous local
-            // path, which does not exist here.
-            assert!(!path.exists());
-        }
+        use std::os::unix::ffi::OsStringExt;
+        let path = PathBuf::from(std::ffi::OsString::from_vec(
+            b"/srv/native \xff.rs".to_vec(),
+        ));
+        let workspace = Workspace::Remote {
+            endpoint: endpoint(),
+            root: PathBuf::from("/srv"),
+        };
+        let uri_ = workspace.uri(&path).expect("uri");
+        assert_eq!(uri_.scheme(), "file");
+        assert_eq!(workspace.decode(&uri_).as_deref(), Some(path.as_path()));
+        // Decoding is pure math: it never stats the analogous local
+        // path, which does not exist here.
+        assert!(!path.exists());
     }
 
     #[test]

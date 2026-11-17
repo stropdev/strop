@@ -48,9 +48,6 @@ pub enum AddressError {
     NulInPath,
     #[error("path contains a byte that must be percent-encoded (a space is `%20`)")]
     UnencodedPathByte,
-    #[cfg(not(unix))]
-    #[error("the decoded path bytes are not representable as a native filename on this platform")]
-    UnrepresentablePath,
     #[error("username/host may only contain ASCII letters, digits and `-._+`")]
     InvalidAuthorityCharacter,
     #[error(

@@ -1,63 +1,14 @@
 //! Insert-mode keys, including completion.
-use super::super::{Binding, Handler};
+use super::super::{completion, Binding, Handler};
 
 pub(super) const ROWS: &[Binding] = &[
-    Binding {
-        keys: "ctrl-space",
-        desc: "code completion: language service + current source words",
-        sections: &["insert"],
-        live: true,
-        id: "completion-request",
-        handler: Handler::Contextual,
-    },
-    Binding {
-        keys: "ctrl-x ctrl-o",
-        desc: "language-service completion",
-        sections: &["insert"],
-        live: true,
-        id: "completion-language",
-        handler: Handler::Contextual,
-    },
-    Binding {
-        keys: "ctrl-n ctrl-p",
-        desc: "source words; choose next/previous completion",
-        sections: &["insert"],
-        live: true,
-        id: "completion-words",
-        handler: Handler::Contextual,
-    },
-    Binding {
-        keys: "up down",
-        desc: "choose completion when open; otherwise move the caret",
-        sections: &["insert"],
-        live: true,
-        id: "completion-arrows",
-        handler: Handler::Contextual,
-    },
-    Binding {
-        keys: "ctrl-y",
-        desc: "accept choice",
-        sections: &["insert"],
-        live: true,
-        id: "completion-accept",
-        handler: Handler::Contextual,
-    },
-    Binding {
-        keys: "ctrl-e",
-        desc: "dismiss",
-        sections: &["insert"],
-        live: true,
-        id: "completion-dismiss",
-        handler: Handler::Contextual,
-    },
-    Binding {
-        keys: "tab s-tab",
-        desc: "indent/dedent; with the menu open, cycle candidates with a live preview",
-        sections: &["insert"],
-        live: true,
-        id: "insert-tab",
-        handler: Handler::Contextual,
-    },
+    completion::REQUEST,
+    completion::LANGUAGE,
+    completion::WORDS,
+    completion::ARROWS,
+    completion::ACCEPT,
+    completion::DISMISS,
+    completion::CYCLE,
     Binding {
         keys: "esc",
         desc: "dismiss completion and enter Normal mode in one event (one undo unit)",

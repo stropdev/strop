@@ -109,11 +109,6 @@ impl Editor {
         }
     }
 
-    /// The modeline's indent segment: `Spaces:4` / `Tabs:4` (0051 R08).
-    pub fn indent_label(&self) -> String {
-        self.indentation_at(self.current(), self.head()).label()
-    }
-
     /// The compact `:tab-size` selector (0051 R08): common widths, the
     /// style choices, Auto for both, and a pinned custom row that
     /// validates the typed number on accept. The current effective

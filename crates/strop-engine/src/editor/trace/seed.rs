@@ -30,7 +30,6 @@ struct DocSeed {
 
 #[derive(Serialize, Deserialize)]
 pub struct Seed {
-    #[serde(default)]
     semantic_version: u32,
     documents: ArenaSeed<DocSeed>,
     panes: Vec<Pane>,
@@ -264,14 +263,13 @@ mod tests {
     }
 
     #[test]
-    fn legacy_input_capture_is_not_reinterpreted_as_the_new_query_language() {
+    fn a_seed_without_a_semantics_version_is_refused() {
         let editor = Editor::new_in(Buffer::from_text("seed\n"), PathBuf::from("/virtual"));
         let mut serialized = serde_json::to_value(Seed::capture(&editor).unwrap()).unwrap();
         serialized
             .as_object_mut()
             .unwrap()
             .remove("semantic_version");
-        let legacy: Seed = serde_json::from_value(serialized).unwrap();
-        assert!(legacy.input_text().is_err());
+        assert!(serde_json::from_value::<Seed>(serialized).is_err());
     }
 }

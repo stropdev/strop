@@ -63,11 +63,8 @@ fn store_commits_preserving_permissions_and_publishes_a_witness() {
     let root = tempfile::tempdir().unwrap();
     let file = root.path().join("note.txt");
     std::fs::write(&file, "before\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
-    }
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
     with_token(|context, token| {
         let receipt = store_apply(
             context,
@@ -91,15 +88,12 @@ fn store_commits_preserving_permissions_and_publishes_a_witness() {
             Some(witness.identity),
             "the committed observation is the published object"
         );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                std::fs::metadata(&file).unwrap().permissions().mode() & 0o7777,
-                0o640,
-                "permissions survive an atomic save"
-            );
-        }
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o7777,
+            0o640,
+            "permissions survive an atomic save"
+        );
         // The committed receipt re-verifies as committed.
         assert!(matches!(
             local::verify(&receipt, context, &token).unwrap(),
@@ -451,14 +445,11 @@ fn store_creates_an_absent_document_file() {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "created\n");
         // 0108 H3: a created file is 0666 under the umask, like any
         // program's — measured against a file the process creates itself
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let reference = root.path().join("reference");
-            std::fs::File::create(&reference).unwrap();
-            let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
-            assert_eq!(mode(&file), mode(&reference), "new files honour the umask");
-        }
+        use std::os::unix::fs::PermissionsExt;
+        let reference = root.path().join("reference");
+        std::fs::File::create(&reference).unwrap();
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode(&file), mode(&reference), "new files honour the umask");
     });
 }
 
@@ -479,30 +470,27 @@ fn store_refuses_missing_parents_hardlinks_links_and_directories() {
         assert!(plan.steps.is_empty(), "no silent parent synthesis");
         assert_eq!(plan.refused.len(), 1);
 
-        #[cfg(unix)]
-        {
-            let alias = root.path().join("alias.txt");
-            std::os::unix::fs::symlink(&file, &alias).unwrap();
-            let linked = root.path().join("linked.txt");
-            std::fs::hard_link(&file, &linked).unwrap();
-            let directory = root.path().join("dir");
-            std::fs::create_dir(&directory).unwrap();
-            for target in [&alias, &linked, &directory] {
-                let plan = batch::prepare(
-                    context,
-                    &[store_intent(target, None, true, false, b"x\n")],
-                    &environment(root.path()),
-                    &token,
-                )
-                .unwrap();
-                assert!(plan.steps.is_empty(), "{target:?} must refuse");
-                assert_eq!(
-                    plan.refused[0].failure.kind,
-                    FsFailureKind::Unsupported,
-                    "{:?}",
-                    plan.refused[0].failure
-                );
-            }
+        let alias = root.path().join("alias.txt");
+        std::os::unix::fs::symlink(&file, &alias).unwrap();
+        let linked = root.path().join("linked.txt");
+        std::fs::hard_link(&file, &linked).unwrap();
+        let directory = root.path().join("dir");
+        std::fs::create_dir(&directory).unwrap();
+        for target in [&alias, &linked, &directory] {
+            let plan = batch::prepare(
+                context,
+                &[store_intent(target, None, true, false, b"x\n")],
+                &environment(root.path()),
+                &token,
+            )
+            .unwrap();
+            assert!(plan.steps.is_empty(), "{target:?} must refuse");
+            assert_eq!(
+                plan.refused[0].failure.kind,
+                FsFailureKind::Unsupported,
+                "{:?}",
+                plan.refused[0].failure
+            );
         }
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "before\n");
     });

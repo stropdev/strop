@@ -1,4 +1,5 @@
-//! Insert completion bindings and compact card hints share these same rows.
+//! Insert completion bindings: the insert table lists these rows and the
+//! completion card's compact hints read their keys, so both agree.
 use super::{Binding, Handler};
 
 pub const REQUEST: Binding = Binding {
@@ -51,7 +52,7 @@ pub const DISMISS: Binding = Binding {
 };
 pub const CYCLE: Binding = Binding {
     keys: "tab s-tab",
-    desc: "cycle candidates with a live preview",
+    desc: "indent/dedent; with the menu open, cycle candidates with a live preview",
     sections: &["insert"],
     live: true,
     id: "insert-tab",

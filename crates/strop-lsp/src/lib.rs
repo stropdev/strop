@@ -110,7 +110,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn server_location_trace_round_trips_native_path_bytes() {
         use std::os::unix::ffi::OsStringExt;

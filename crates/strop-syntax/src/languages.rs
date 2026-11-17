@@ -471,11 +471,6 @@ pub fn for_name(name: &str) -> Option<LanguageSpec> {
         .map(Entry::spec)
 }
 
-/// A registry walk for compatibility checks, not another detection vocabulary.
-pub fn specifications() -> impl Iterator<Item = LanguageSpec> {
-    LANGUAGES.iter().map(Entry::spec)
-}
-
 pub fn interpreter_of(first_line: &str) -> Option<&str> {
     let mut tokens = first_line.strip_prefix("#!")?.split_whitespace();
     let program = tokens.next()?;

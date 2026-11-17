@@ -12,6 +12,7 @@ impl Editor {
         let frame = self.terminal_frame(document)?;
         Some((frame.cell_at_byte(byte)?.style, &frame.palette))
     }
+    #[cfg(test)]
     pub fn terminal_title(&self, document: DocumentId) -> Option<&str> {
         let session = self.terminal_document(document)?.session;
         self.terminals.entries.get(&session)?.title.as_deref()
