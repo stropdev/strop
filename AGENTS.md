@@ -143,10 +143,11 @@ The release is done when all four checks pass, and not one moment before.
   gate passed; never commit build artifacts.
 - Release: tags `v*`; local BuildKit qualification and manual GitHub publication
   follow `plans/0079` and `.github/scripts/release-local.sh`. Never rebuild while
-  publishing a qualified artifact. A version bump is three moves, all in
-  the tagged commit: workspace `Cargo.toml` + the member crates' inter-dep pins +
-  `cargo check` to sync `Cargo.lock` (the release gate runs `--locked` — a stale
-  lock fails the tag's builds). A release is done only when the **Release gates**
+  publishing a qualified artifact. A version bump is two moves, both in the
+  tagged commit: the workspace `Cargo.toml` version + `cargo check` to sync
+  `Cargo.lock` (the release gate runs `--locked` — a stale lock fails the
+  tag's builds). Member crates inherit the version and are `publish = false`;
+  workspace-internal deps are bare `path` deps with no version pin. A release is done only when the **Release gates**
   section above passes against the live public surfaces.
 - The site must never lie (0004 §4): its frames are captured from the release binary
   (`tools/frames.py` in the site repo); a frame-only code path is a bug.

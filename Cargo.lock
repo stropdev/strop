@@ -1670,7 +1670,6 @@ dependencies = [
  "git2",
  "serde",
  "serde_json",
- "sha2",
  "strop-core",
  "strop-remote",
  "strop-workspace",
@@ -1733,7 +1732,6 @@ dependencies = [
  "strop-syntax",
  "strop-workspace",
  "tempfile",
- "thiserror",
 ]
 
 [[package]]
@@ -1743,7 +1741,6 @@ dependencies = [
  "parking_lot",
  "rustix 1.1.4",
  "serde",
- "serde_json",
  "strop-core",
  "strop-workspace",
  "tempfile",

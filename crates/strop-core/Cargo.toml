@@ -4,10 +4,11 @@ description = "strop editor core: rope buffer, byte-offset positions, edit ops"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
 strop-kernel = { path = "../strop-kernel" }
-strop-trace = { path = "../strop-trace", version = "0.70.0" }
+strop-trace = { path = "../strop-trace" }
 ropey.workspace = true
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
@@ -18,8 +19,6 @@ thiserror = "2"
 parking_lot = "0.12"
 
 tempfile = "3"
-
-[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 # 0108 D3: Loom campaign over the worker envelope (worker.rs). Runs as

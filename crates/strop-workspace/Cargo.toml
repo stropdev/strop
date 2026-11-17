@@ -4,11 +4,12 @@ description = "Shared resource identity: remote address forms, filesystem namesp
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.70.0" }
+strop-core = { path = "../strop-core" }
 serde = { version = "1", features = ["derive", "rc"] }
 thiserror = "2"
 

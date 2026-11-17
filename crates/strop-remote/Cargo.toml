@@ -4,10 +4,11 @@ description = "Remote files and commands over plain multiplexed SSH for strop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [dependencies]
-strop-core = { path = "../strop-core", version = "0.70.0" }
-strop-workspace = { path = "../strop-workspace", version = "0.70.0" }
+strop-core = { path = "../strop-core" }
+strop-workspace = { path = "../strop-workspace" }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 rustix = { version = "1", features = ["process"] }
@@ -16,4 +17,3 @@ tokio = { version = "1", features = ["rt", "process", "io-util", "time"] }
 
 [dev-dependencies]
 tempfile = "3"
-serde_json = "1"
