@@ -24,6 +24,7 @@ impl Editor {
         let origin = self.cmdline_origin();
         self.cmdline
             .open(Line::with_body(Context::Ex(origin), body));
+        self.cmdline_parse();
     }
 
     /// A line opened (`: / ? |`) with the typed entry state that
@@ -46,6 +47,7 @@ impl Editor {
             let origin = self.cmdline_origin();
             self.cmdline
                 .open(Line::with_body(Context::Ex(origin), "'<,'>"));
+            self.cmdline_parse();
             return;
         }
         let origin = self.cmdline_origin();
@@ -242,6 +244,7 @@ impl Editor {
                 }
                 let filtered = matches!(action, Action::OlderPrefix | Action::NewerPrefix);
                 if self.cmdline.recall(older, filtered) {
+                    self.cmdline_parse();
                     self.incsearch_jump();
                 }
                 return;
@@ -301,7 +304,53 @@ impl Editor {
             line.recall = None;
         }
         complete::typed(self);
+        self.cmdline_parse();
         self.incsearch_jump();
+    }
+
+    /// Parse the line once for this revision of its text: the `:s` spec,
+    /// the range's lines, the pattern. Everything after reads the parse.
+    pub(crate) fn cmdline_parse(&mut self) {
+        let Some(line) = self.cmdline.line() else {
+            return;
+        };
+        let revision = Some(line.revision());
+        if self.cmdline.parsed.revision == revision {
+            return;
+        }
+        let head = line.origin().pane.sels.primary().head;
+        let body = line.body();
+        let mut parsed = super::parsed::Parsed {
+            revision,
+            ..Default::default()
+        };
+        if line.search().is_some() {
+            parsed.search =
+                (!body.is_empty()).then(|| grammar::CompiledQuery::compile(body, false));
+        } else if matches!(line.context(), Context::Ex(_)) {
+            // only a `:s` line is one (another command's bad range is
+            // the range's error)
+            let substitute = crate::editor::ex::complete::split::command(body)
+                .is_some_and(|command| matches!(command.name(), "substitute" | "&" | "~"));
+            if substitute {
+                parsed.substitute =
+                    crate::editor::ex::parse_substitute_line(self, body, head).transpose();
+            }
+            let typed = body.trim_start_matches([' ', ':']);
+            if crate::editor::ex::complete::split::range_len(typed) > 0 {
+                parsed.range = match crate::editor::ex::parse_ex_range(self, head, body) {
+                    // a half-typed range may run backwards (`:3,` on line
+                    // 1): the hint names the lines either way
+                    Ok((Some(range), _)) => {
+                        let (first, last) = range.lines();
+                        Some(Ok((first.min(last), first.max(last))))
+                    }
+                    Ok((None, _)) => None,
+                    Err(error) => Some(Err(error)),
+                };
+            }
+        }
+        self.cmdline.parsed = parsed;
     }
 
     fn run_cmdline(&mut self, line: Line) {
@@ -375,6 +424,11 @@ impl Editor {
                 .ok_or_else(|| "no previous search".to_string())?
                 .query
                 .clone()
+        } else if let Some(Some(parsed)) = (self.cmdline.parsed.revision == Some(line.revision()))
+            .then_some(self.cmdline.parsed.search.as_ref())
+        {
+            // the open line's pattern, compiled once for this revision
+            parsed.clone().map_err(|e| e.to_string())?
         } else {
             grammar::CompiledQuery::compile(line.body(), false).map_err(|e| e.to_string())?
         };

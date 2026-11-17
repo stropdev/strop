@@ -131,6 +131,34 @@ fn long_line() {
     });
 }
 
+/// `:s` in place: each changed line reads as it will, the new text in
+/// `diff.add`; the right side counts the changes and those out of view.
+#[test]
+fn substitute() {
+    each("substitute", |editor| {
+        editor.feed_text("gg:%s/Modeline/Statusline/g");
+        editor.wait_resolution();
+    });
+}
+
+#[test]
+fn substitute_invalid() {
+    each("substitute-invalid", |editor| {
+        editor.feed_text(":%s/mode\\(line/x/")
+    });
+}
+
+/// A range from Visual: its lines wear the accent, the right side names them.
+#[test]
+fn range() {
+    each("range", |editor| editor.feed_text("4GVjj:d"));
+}
+
+#[test]
+fn range_error() {
+    each("range-error", |editor| editor.feed_text(":'q,$d"));
+}
+
 /// A failed line: it closes, and the echo row above the modeline says
 /// why in error ink.
 #[test]
@@ -170,6 +198,17 @@ fn the_line_is_the_bottom_row_and_owns_the_caret() {
         .draw(|frame| crate::render::paint(&mut editor, frame))
         .unwrap();
     assert!(row_text(terminal.backend().buffer(), 23).starts_with("  NORMAL"));
+}
+
+/// While a range is half typed it may run backwards (`:3,` from line
+/// 1); the hint names the lines either way.
+#[test]
+fn a_backwards_range_names_its_lines() {
+    let root = workspace();
+    let mut editor = editor(&root, ThemeId::Hone);
+    editor.feed_text("gg:3,");
+    let grid = frame(&mut editor, (80, 24));
+    assert!(row_text(&grid, 23).trim_end().ends_with("1–3 · 3 lines"));
 }
 
 #[test]

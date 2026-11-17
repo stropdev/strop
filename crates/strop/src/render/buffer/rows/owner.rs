@@ -224,7 +224,13 @@ fn numbered(
     line: usize,
     width: usize,
 ) -> Vec<Span<'static>> {
-    let cursor = editor.doc(view.doc).buf.line_of(view.cursor) == line;
+    // the lines a range being typed names wear the accent (0110 §3.2)
+    let named = view.overlays
+        && editor
+            .cmdline_range()
+            .and_then(Result::ok)
+            .is_some_and(|(first, last)| (first..=last).contains(&line));
+    let cursor = named || editor.doc(view.doc).buf.line_of(view.cursor) == line;
     gutter::numbered(
         t,
         sign(editor, t, view, line),

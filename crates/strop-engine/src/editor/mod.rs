@@ -100,7 +100,7 @@ pub use symbols::scope::{cells as scope_cells, ScopePath, SCOPE_CAP, SEGMENT_CAP
 
 pub use ex::complete::paths::{RemoteCompletionKey, RemoteCompletionResult};
 pub use ex::complete::{Completion as CmdlineMenu, MenuKind, Row as MenuRow};
-pub use ex::{SubstitutePreviewState, SubstitutionPreview};
+pub use ex::{PreviewLine, SubstitutePreviewState, SubstitutionPreview};
 pub use lsp::attach::{AttachDecision, AttachRecord};
 pub use lsp::{LspPhase, LspServer, LspStatus};
 pub use permalink::PendingPermalink;

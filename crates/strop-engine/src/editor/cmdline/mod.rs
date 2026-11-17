@@ -16,6 +16,7 @@ use super::{input::ParserState, panes::Pane};
 mod accept;
 pub(crate) mod history;
 pub(crate) mod keys;
+pub(crate) mod parsed;
 #[cfg(test)]
 mod tests;
 
@@ -131,6 +132,11 @@ impl Line {
         self.recall = None;
     }
 
+    /// Changes with every edit of the text.
+    pub(crate) fn revision(&self) -> strop_core::id::BufferRevision {
+        self.edit.revision()
+    }
+
     /// Replace the body, caret at its end.
     pub(crate) fn set_body(&mut self, body: &str) {
         let at = self.edit.text().len();
@@ -160,6 +166,8 @@ pub struct Cmdline {
     pub(crate) history: history::Histories,
     /// The `:` line's menu.
     pub(crate) completion: super::ex::complete::Completion,
+    /// What the line means, parsed once per change.
+    pub(crate) parsed: parsed::Parsed,
 }
 
 impl Cmdline {
@@ -194,12 +202,14 @@ impl Cmdline {
             "cancel the previous line before opening another"
         );
         self.completion.reset();
+        self.parsed = parsed::Parsed::default();
         self.active = Some(line);
     }
 
     /// Close the line, handing it back (once).
     pub(crate) fn close(&mut self) -> Option<Line> {
         self.completion.reset();
+        self.parsed = parsed::Parsed::default();
         self.active.take()
     }
 

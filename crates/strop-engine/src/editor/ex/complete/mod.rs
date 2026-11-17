@@ -264,6 +264,7 @@ fn apply(editor: &mut Editor, selected: Option<usize>) {
     line.replace_body(start, end, text);
     completion.span.1 = start + text.len();
     completion.selected = selected;
+    editor.cmdline_parse();
 }
 
 /// Recompute the menu from the line. `explicit` is `Tab`/`Ctrl-D`:

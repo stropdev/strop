@@ -14,10 +14,9 @@ mod tests;
 use strop_core::{Buffer, Range, Replacement};
 use strop_grammar::{CompiledQuery, SearchMatch};
 
-use crate::editor::changes::review::render;
 use crate::editor::ex::*;
 use crate::editor::resolution::ResolutionPurpose;
-use crate::editor::{Editor, ReviewRow};
+use crate::editor::Editor;
 
 pub(crate) use confirm::*;
 pub(crate) use parse::*;
@@ -82,15 +81,27 @@ pub(crate) struct LastSubstitute {
     pub flags: Flags,
 }
 
-/// Everything apply needs, plus the immutable changed-text presentation. The
-/// source revision is stamped by the surrounding resolution key, not recomputed.
+/// Everything apply needs, plus each changed line as it will read (the
+/// in-place preview, built once with the plan). The source revision is
+/// stamped by the surrounding resolution key, not recomputed.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SubstitutionPlan {
     pub edits: Vec<Replacement>,
-    pub diff: String,
-    pub rows: Vec<ReviewRow>,
+    /// Ascending, one per source line a replacement starts on.
+    pub lines: Vec<PreviewLine>,
     pub changed_lines: Vec<usize>,
     pub scope: (usize, usize),
+}
+
+/// One source line as `Enter` will leave it: its text with the
+/// replacements made (a line break drawn `↵`), and where the new text is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PreviewLine {
+    /// Zero-based source line.
+    pub line: usize,
+    pub text: String,
+    /// Byte ranges of `text` that are replacement text.
+    pub added: Vec<(usize, usize)>,
 }
 
 /// A ready, revision-stamped substitution preview. This borrows the prepared
@@ -105,11 +116,14 @@ impl SubstitutionPreview<'_> {
     pub fn ranges(&self) -> impl Iterator<Item = Range> + '_ {
         self.plan.edits.iter().map(|edit| edit.range)
     }
-    pub fn diff_text(&self) -> &str {
-        &self.plan.diff
-    }
-    pub fn diff_rows(&self) -> &[ReviewRow] {
-        &self.plan.rows
+    /// `line` as it will read, when a replacement starts on it.
+    pub fn line(&self, line: usize) -> Option<&PreviewLine> {
+        let at = self
+            .plan
+            .lines
+            .binary_search_by_key(&line, |preview| preview.line)
+            .ok()?;
+        self.plan.lines.get(at)
     }
     pub fn count(&self) -> usize {
         self.plan.edits.len()
@@ -216,15 +230,46 @@ pub(crate) fn plan(buf: &Buffer, spec: &SubstituteSpec) -> Result<SubstitutionPl
             }
         }
     }
-    let diff = render::file_diff("substitute", buf, buf.revision(), &edits)
-        .map_err(|error| error.to_string())?;
     Ok(SubstitutionPlan {
+        lines: preview_lines(buf, &edits),
         edits,
-        diff: diff.text,
-        rows: diff.rows,
         changed_lines,
         scope: spec.range,
     })
+}
+
+/// Each line a replacement starts on, as it will read. A replacement that
+/// runs past the line's end takes the line break with it (`↵` in the
+/// new text says where one is, in either direction).
+fn preview_lines(buf: &Buffer, edits: &[Replacement]) -> Vec<PreviewLine> {
+    let mut lines: Vec<PreviewLine> = Vec::new();
+    let mut at = 0;
+    while at < edits.len() {
+        let line = buf.line_of(edits[at].range.start.get());
+        let start = buf.line_start(line);
+        let end = buf.line_end(line);
+        let mut text = String::new();
+        let mut added = Vec::new();
+        let mut copied = start;
+        while at < edits.len() && buf.line_of(edits[at].range.start.get()) == line {
+            let edit = &edits[at];
+            let from = edit.range.start.get().max(copied);
+            text.push_str(&buf.text().byte_slice(copied..from.min(end)).to_string());
+            let first = text.len();
+            text.push_str(&edit.text.replace(['\r', '\n'], "↵"));
+            if edit.range.end.get() > end {
+                text.push('↵');
+            }
+            added.push((first, text.len()));
+            copied = edit.range.end.get().max(copied);
+            at += 1;
+        }
+        if copied < end {
+            text.push_str(&buf.text().byte_slice(copied..end).to_string());
+        }
+        lines.push(PreviewLine { line, text, added });
+    }
+    lines
 }
 
 /// Read only the plan stamped for the exact current Ex body, source,
@@ -241,23 +286,23 @@ pub(crate) fn substitute_preview(editor: &Editor) -> Option<SubstitutePreviewSta
             "substitution source, cursor or focus changed".into(),
         ));
     }
-    let spec = match parse_substitute_line(editor, prompt.body(), origin.pane.sels.primary().head) {
-        Ok(Some(spec)) => spec,
-        Ok(None) => return None,
+    // parsed once per change of the line (cmdline/parsed.rs)
+    let spec = match editor.cmdline.parsed.substitute.as_ref()? {
+        Ok(spec) => spec,
         Err(error) if error.is_incomplete() => {
             return Some(SubstitutePreviewState::Incomplete(error.to_string()));
         }
         Err(error) => return Some(SubstitutePreviewState::Invalid(error.to_string())),
     };
     let cursors = origin.pane.sels.heads();
-    if editor.substitution_is_large() && !editor.substitution_ready(&spec, &cursors) {
-        return Some(if editor.substitution_resolving(&spec, &cursors) {
+    if editor.substitution_is_large() && !editor.substitution_ready(spec, &cursors) {
+        return Some(if editor.substitution_resolving(spec, &cursors) {
             SubstitutePreviewState::Resolving
         } else {
             SubstitutePreviewState::Unavailable("substitution resolver is unavailable".into())
         });
     }
-    match editor.prepared_substitution(&spec, &cursors) {
+    match editor.prepared_substitution(spec, &cursors) {
         Some(Ok(plan)) if plan.edits.is_empty() => Some(SubstitutePreviewState::NoTarget),
         Some(Ok(plan)) => {
             let top = origin.pane.view_top;

@@ -71,15 +71,12 @@ impl Editor {
                     self.resolution.cancel_preview();
                     return;
                 }
-                match crate::editor::ex::parse_substitute_line(
-                    self,
-                    prompt.body(),
-                    origin.pane.sels.primary().head,
-                ) {
-                    Ok(Some(spec)) => {
-                        self.prepare_substitute_resolution(spec, origin.pane.sels.heads());
+                let heads = origin.pane.sels.heads();
+                match &self.cmdline.parsed.substitute {
+                    Some(Ok(spec)) => {
+                        self.prepare_substitute_resolution(spec.clone(), heads);
                     }
-                    Ok(None) | Err(_) => self.resolution.cancel_preview(),
+                    Some(Err(_)) | None => self.resolution.cancel_preview(),
                 }
                 return;
             }

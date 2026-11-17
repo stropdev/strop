@@ -10,6 +10,7 @@ mod collection;
 mod commit_message;
 mod overlays;
 mod owner;
+mod substitute;
 use collection::CollectionProjection;
 use owner::{Cells, Pane, Row};
 
@@ -74,6 +75,11 @@ pub(super) fn render_pane(
     let surface = editor.doc(view.doc).surface_payload();
     let directory = editor.doc(view.doc).directory_metadata_ref();
     let mut style = overlays::pane_style(editor, view, syn_spans, search_hits, pair);
+    // a `:s` being typed draws the lines it changes as they will read
+    let substitution = match view.overlays.then(|| editor.substitute_preview()).flatten() {
+        Some(crate::editor::SubstitutePreviewState::Ready(preview)) => Some(preview),
+        _ => None,
+    };
 
     // 0011 left-margin columns: the commit file sidebar (Diff surfaces
     // from the dive chain) and the blame gutter (file buffers) prepend
@@ -201,6 +207,20 @@ pub(super) fn render_pane(
             cells,
         );
         left.extend(painted.gutter);
+        if let Some(line) = substitution
+            .as_ref()
+            .and_then(|preview| preview.line(line_idx))
+        {
+            left.extend(substitute::spans(
+                t,
+                line,
+                view.hscroll.get(),
+                width,
+                margin_tab,
+            ));
+            lines.push(pad_row(Line::from(left), area.width));
+            continue;
+        }
         style.decorations = painted.text;
         style.row_bg = painted.row_bg;
         style.row_fg = painted.row_fg;

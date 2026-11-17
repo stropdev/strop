@@ -123,6 +123,25 @@ fn right_side(editor: &Editor) -> (String, bool) {
             SubstitutePreviewState::Unavailable(error) => (error, true),
         };
     }
+    match editor.cmdline_range() {
+        Some(Err(error)) => return (error.to_owned(), true),
+        Some(Ok((first, last))) => {
+            let count = last + 1 - first;
+            let lines = if first == last {
+                format!("{}", first + 1)
+            } else {
+                format!("{}–{}", first + 1, last + 1)
+            };
+            return (
+                format!(
+                    "{lines} · {count} line{}",
+                    if count == 1 { "" } else { "s" }
+                ),
+                false,
+            );
+        }
+        _ => {}
+    }
     if matches!(editor.cmdline_sigil(), Some('/' | '?')) {
         return match editor.current_search_query() {
             Ok(Some(query)) => match editor.search_summary(&query) {

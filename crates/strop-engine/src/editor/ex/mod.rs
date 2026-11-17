@@ -20,7 +20,7 @@ pub(crate) mod table;
 #[cfg(test)]
 mod tests;
 
-pub use substitute::{SubstitutePreviewState, SubstitutionPreview};
+pub use substitute::{PreviewLine, SubstitutePreviewState, SubstitutionPreview};
 pub(crate) use table::{help_rows, Family};
 
 // The commands are functions over the editor, not methods of it (0087 A4:
@@ -71,6 +71,16 @@ impl Editor {
     /// The live `:s` preview: the plan Enter would apply.
     pub fn substitute_preview(&self) -> Option<SubstitutePreviewState<'_>> {
         substitute_preview(self)
+    }
+
+    /// The zero-based lines the open line's range names, or why it names
+    /// none (`mark not set`); `None` while no range is typed.
+    pub fn cmdline_range(&self) -> Option<Result<(usize, usize), &str>> {
+        self.cmdline
+            .parsed
+            .range
+            .as_ref()
+            .map(|range| range.as_ref().map(|lines| *lines).map_err(String::as_str))
     }
 
     /// How the command on the open line is typed (`:w[!] [file]`).
