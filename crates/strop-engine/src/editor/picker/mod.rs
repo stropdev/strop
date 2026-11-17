@@ -526,6 +526,8 @@ pub(crate) enum Deferred {
 
 pub struct PreviewEntry {
     pub rope: ropey::Rope,
+    /// Detected once at load: the path, else the rope's shebang.
+    pub language: Option<strop_syntax::languages::LanguageId>,
 }
 
 pub enum PreviewSource {

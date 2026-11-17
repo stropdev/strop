@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Inspection hooks for dependents' tests (parse-error probes); never in
+# release artifacts.
+test-support = []
+
 [dependencies]
 strop-core = { path = "../strop-core", version = "0.70.0" }
 serde = { version = "1", features = ["derive"] }

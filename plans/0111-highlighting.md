@@ -29,6 +29,28 @@
     "windowed == full, clipped" over rs/md/html/php/py, and an interleaving
     property on the analysis worker seam, with bounded step budgets.
 
+### Implementation notes (decisions 1–8, 10)
+- **5, narrowed.** A child keeps its tree only when the journal-edited
+  tree already has exactly the new included ranges (typing inside or
+  before a block). Reusing a tree whose included ranges differ from the
+  new ones disagreed with a fresh parse under the seeded property and
+  crashed tree-sitter 0.25 (SIGSEGV), so that case parses from nothing.
+  Most of a keystroke inside a large Markdown fence is the host
+  `tree-sitter-md` block grammar itself, whose incremental reparse of a
+  10k-line fence costs as much as a cold parse (~60 ms on a string); the
+  child's own share (~25 ms) is gone.
+- **6.** `LINE_BUDGET` = 3000 bytes: vim's `synmaxcol` default in vim's
+  unit (its columns are byte indices). Applied in `strop-syntax`, per
+  line, so windowed == full still holds.
+- **7.** The key carries the detected `LanguageId`; the shebang is read
+  at open, write and reload.
+- **10.** "incremental == fresh" holds only for well-formed parses:
+  tree-sitter's error recovery may settle differently after an
+  incremental reparse (reproduced on raw tree-sitter-rust, no injections).
+  The property compares when the fresh layers have no error node. Exotic
+  line breaks (L2) stay out of the alphabets until the line model is
+  decided.
+
 ---
 
 ## §A. Audit

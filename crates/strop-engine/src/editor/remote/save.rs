@@ -199,7 +199,9 @@ impl Editor {
                         DocumentSource::Remote(source) if source.file == key.file => {
                             source.stamp = stamp;
                             doc.external_change = false;
-                            doc.buf.acknowledge_saved_revision(key.revision)
+                            let current = doc.buf.acknowledge_saved_revision(key.revision);
+                            doc.redetect_syntax();
+                            current
                         }
                         _ => false,
                     },

@@ -271,6 +271,7 @@ impl Document {
         Self {
             buf: buffer,
             syntax_hint: None,
+            shebang: None,
             indent: super::Indent::default(),
             indent_override: super::IndentOverride::default(),
             detection: None,

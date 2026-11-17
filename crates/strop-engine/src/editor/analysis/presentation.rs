@@ -11,12 +11,15 @@
 //! - every span lies inside coverage — a byte never analyzed must not
 //!   borrow a class;
 //! - rails are line-indexed, sorted and disjoint;
-//! - `mapped_revision` names the coordinate space of all three.
+//! - `mapped_revision` names the coordinate space of all three;
+//! - spans belong to `language`: a frame of another syntax identity
+//!   replaces them and never borrows them (0111 decision 8).
 
 use std::cell::RefCell;
 use std::sync::Arc;
 
 use strop_core::id::{BufferRevision, DisplayColumn};
+use strop_syntax::languages::LanguageId;
 use strop_syntax::{GuideFrame, Span};
 
 use super::{AnalysisKey, FrameAnalysis};
@@ -42,6 +45,8 @@ pub(crate) struct Presentation {
     /// journal edit has been folded through it (projected, not exact).
     exact_at: Option<BufferRevision>,
     mapped_revision: BufferRevision,
+    /// The syntax identity the retained spans were produced under.
+    language: Option<LanguageId>,
     /// Memoized interim frame. Presentation data is read from the
     /// readonly paint path, so the memo is interior-mutable; it keys on
     /// everything the frame depends on and any mutation clears it.
@@ -50,6 +55,7 @@ pub(crate) struct Presentation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MemoKey {
+    language: Option<LanguageId>,
     revision: u64,
     first: usize,
     last: usize,
@@ -70,6 +76,7 @@ impl Default for Presentation {
             rail_tab: 0,
             exact_at: None,
             mapped_revision: BufferRevision::new(0),
+            language: None,
             interim: RefCell::new(None),
         }
     }
@@ -80,11 +87,19 @@ impl Presentation {
     /// projected spans inside `[first, last)` are replaced, coverage
     /// grows by the window and rails are re-stated for its lines.
     pub(crate) fn accept(&mut self, key: &AnalysisKey, frame: &FrameAnalysis) {
-        if self.spans.len().saturating_add(frame.spans.len()) > MAX_SPANS
+        debug_assert!(
+            self.coverage.is_empty() || self.mapped_revision == key.revision,
+            "retained data at {:?} accepts a frame of {:?}",
+            self.mapped_revision,
+            key.revision
+        );
+        if self.language != key.language
+            || self.spans.len().saturating_add(frame.spans.len()) > MAX_SPANS
             || self.coverage.len() >= MAX_COVERAGE_INTERVALS
         {
             self.spans.clear();
             self.coverage.clear();
+            self.language = key.language;
         }
         if self.rails.len().saturating_add(frame.guides.rows.len()) > MAX_RAIL_LINES {
             self.rails.clear();
@@ -170,6 +185,7 @@ impl Presentation {
         let last = key.last.min(len_bytes);
         let first = key.first.min(last);
         let memo = MemoKey {
+            language: key.language,
             revision: self.mapped_revision.get(),
             first,
             last,
@@ -185,7 +201,9 @@ impl Presentation {
             }
         }
         let mut spans = Vec::new();
-        clip_into(&self.spans, first, last, &mut spans);
+        if key.language == self.language {
+            clip_into(&self.spans, first, last, &mut spans);
+        }
         let guides = if self.rail_clip == (key.left, key.right) && self.rail_tab == key.tab {
             GuideFrame {
                 first_line,
@@ -479,7 +497,7 @@ mod tests {
             guides: false,
             left: 0,
             right: 80,
-            syntax_path: None,
+            language: None,
             search: None,
         }
     }

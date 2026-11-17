@@ -2,16 +2,22 @@
 //! using absolute included ranges; filenames and shebangs are detection data,
 //! never filesystem operations. Unknown languages retain the outer treatment.
 use super::{
-    languages::{self, LanguageId, LanguageSpec},
+    compiled::Compiled,
+    languages::{self, LanguageId},
     spans::LayeredSpan,
     HighlightError, Highlighter, RopeText,
 };
 use ropey::Rope;
 use streaming_iterator::StreamingIterator;
 use strop_core::id::BufferRevision;
-use tree_sitter::{Node, Query, QueryCursor, Range, Tree};
+use tree_sitter::{Node, Query, QueryCursor, QueryMatch, Range, Tree};
 
 mod documentation;
+
+/// Nesting bound for injected layers. Past it the deeper layers keep
+/// their host's treatment — what an unknown language gets — and the rest
+/// of the window keeps its colour (0111 decision 2).
+const MAX_DEPTH: usize = 8;
 
 pub(crate) struct InjectedHighlighter {
     language: LanguageId,
@@ -40,7 +46,7 @@ enum IncludedChildren {
     All,
 }
 struct Injection {
-    spec: LanguageSpec,
+    language: LanguageId,
     ranges: Vec<Range>,
     combined: bool,
     source: LanguageSource,
@@ -51,73 +57,72 @@ impl Highlighter {
         &mut self,
         rope: &Rope,
         revision: BufferRevision,
-        first: usize,
-        last: usize,
+        window: (usize, usize),
+        segments: &[(usize, usize)],
         cancelled: &dyn Fn() -> bool,
     ) -> Result<Vec<LayeredSpan>, HighlightError> {
-        let Some(query) = self.injection_query.as_ref() else {
+        let compiled = self.compiled;
+        if self.injection_depth >= MAX_DEPTH
+            || (compiled.windowed.is_none() && compiled.combined.is_none())
+        {
+            self.children.clear();
             return Ok(Vec::new());
-        };
+        }
         let tree = self.tree.as_ref().ok_or(HighlightError::Parse)?;
         let injections = collect(
             rope,
             tree,
-            query,
+            compiled,
             &self.parser.included_ranges(),
-            first,
-            last,
+            segments,
             cancelled,
         )?;
-        if injections.is_empty() {
-            self.children.clear();
-            return Ok(Vec::new());
-        }
-        const MAX_DEPTH: usize = 8;
-        if self.injection_depth >= MAX_DEPTH {
-            return Err(HighlightError::InjectionDepth);
-        }
         let mut previous = std::mem::take(&mut self.children);
+        // Exact matches first, for every injection, so one shifted block
+        // cannot steal another block's tree; then, in document order, a
+        // same-language child whose block moved or changed size.
+        let mut assigned: Vec<Option<InjectedHighlighter>> = injections
+            .iter()
+            .map(|injection| {
+                previous
+                    .iter()
+                    .position(|child| {
+                        child.language == injection.language && child.ranges == injection.ranges
+                    })
+                    .map(|index| previous.remove(index))
+            })
+            .collect();
+        for (injection, slot) in injections.iter().zip(assigned.iter_mut()) {
+            if slot.is_none() {
+                *slot = previous
+                    .iter()
+                    .position(|child| child.language == injection.language)
+                    .map(|index| previous.remove(index));
+            }
+        }
         let mut output = Vec::new();
-        for injection in injections {
+        for (injection, slot) in injections.into_iter().zip(assigned) {
             if cancelled() {
                 return Err(HighlightError::Cancelled);
             }
-            let index = previous
-                .iter()
-                .position(|child| {
-                    child.language == injection.spec.id && child.ranges == injection.ranges
-                })
-                .or_else(|| {
-                    previous
-                        .iter()
-                        .position(|child| child.language == injection.spec.id)
-                });
-            let mut child = if let Some(index) = index {
-                previous.swap_remove(index)
-            } else {
-                let language = injection.spec.id;
-                let highlighter =
-                    Highlighter::from_spec(injection.spec).ok_or(HighlightError::Parse)?;
-                InjectedHighlighter {
-                    language,
+            let mut child = match slot {
+                Some(child) => child,
+                None => InjectedHighlighter {
+                    language: injection.language,
                     ranges: Vec::new(),
-                    highlighter,
-                }
+                    highlighter: Highlighter::for_language(injection.language)
+                        .ok_or(HighlightError::Parse)?,
+                },
             };
             if child.ranges != injection.ranges {
-                child
-                    .highlighter
-                    .parser
-                    .set_included_ranges(&injection.ranges)
-                    .map_err(|_| HighlightError::Parse)?;
-                child.highlighter.invalidate();
+                child.highlighter.rebind(&injection.ranges)?;
                 child.ranges = injection.ranges;
             }
             child.highlighter.injection_depth = self.injection_depth + 1;
-            for span in child
+            let spans = child
                 .highlighter
-                .highlight_cancellable(rope, revision, first, last, cancelled)?
-            {
+                .spans_in(rope, revision, window, segments, cancelled)?;
+            for span in spans {
                 let first_range = child
                     .ranges
                     .partition_point(|range| range.end_byte <= span.start);
@@ -129,7 +134,11 @@ impl Highlighter {
                     let end = span.end.min(range.end_byte);
                     if start < end {
                         output.push(LayeredSpan {
-                            span: super::Span { start, end, ..span },
+                            span: super::Span {
+                                start,
+                                end,
+                                ..*span
+                            },
                             injected: true,
                         });
                     }
@@ -139,34 +148,122 @@ impl Highlighter {
         }
         Ok(output)
     }
+
+    /// New included ranges for an injected layer (0111 decision 5).
+    ///
+    /// The journal edits a kept tree's included ranges along with its
+    /// nodes, so when a block only moved or grew with the edit — typing
+    /// inside it, or anywhere before it — the edited tree already has
+    /// exactly the new ranges and the reparse is an ordinary incremental
+    /// one. Any other change (a fence closed or opened, a layer rebound
+    /// to a different block) parses from nothing: tree-sitter's own diff
+    /// of differing included ranges disagreed with a fresh parse under
+    /// the seeded property in `tests/properties.rs`.
+    fn rebind(&mut self, ranges: &[Range]) -> Result<(), HighlightError> {
+        self.parser
+            .set_included_ranges(ranges)
+            .map_err(|_| HighlightError::Parse)?;
+        if self
+            .tree
+            .as_ref()
+            .is_some_and(|tree| tree.included_ranges() != ranges)
+        {
+            self.tree = None;
+            self.children.clear();
+        }
+        self.source_hash = None;
+        self.span_window = None;
+        Ok(())
+    }
+
+    /// The first direct injected layer of `language` (test inspection).
+    #[cfg(test)]
+    pub(crate) fn injected_tree(&self, language: LanguageId) -> Option<&Tree> {
+        self.children
+            .iter()
+            .find(|child| child.language == language)
+            .and_then(|child| child.highlighter.tree.as_ref())
+    }
+
+    /// Whether any layer's tree holds an error or missing node (test
+    /// inspection): tree-sitter's error recovery may legitimately settle
+    /// differently after an incremental reparse than from scratch, so
+    /// differential tests compare well-formed parses only.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn has_parse_error(&self) -> bool {
+        self.tree
+            .as_ref()
+            .is_some_and(|tree| tree.root_node().has_error())
+            || self
+                .children
+                .iter()
+                .any(|child| child.highlighter.has_parse_error())
+    }
 }
 
+/// The injections a window needs: windowed patterns matched inside the
+/// segments, combined patterns over the whole tree.
 fn collect(
     rope: &Rope,
     tree: &Tree,
-    query: &Query,
+    compiled: &Compiled,
     parent_ranges: &[Range],
-    first: usize,
-    last: usize,
+    segments: &[(usize, usize)],
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<Injection>, HighlightError> {
+    let mut collector = Collector::default();
     let mut cursor = QueryCursor::new();
-    cursor.set_byte_range(first..last);
     let mut progress = |_: &tree_sitter::QueryCursorState| cancelled();
-    let mut matches = cursor.matches_with_options(
-        query,
-        tree.root_node(),
-        RopeText { rope },
-        tree_sitter::QueryCursorOptions::new().progress_callback(&mut progress),
-    );
-    let names = query.capture_names();
-    let mut found: Vec<Injection> = Vec::new();
-    let mut unknown = Vec::new();
-    let mut documentation_groups = Vec::new();
-    while let Some(matched) = matches.next() {
-        if cancelled() {
-            return Err(HighlightError::Cancelled);
+    let mut scan = |query: &Query,
+                    range: std::ops::Range<usize>,
+                    collector: &mut Collector|
+     -> Result<(), HighlightError> {
+        cursor.set_byte_range(range);
+        let mut matches = cursor.matches_with_options(
+            query,
+            tree.root_node(),
+            RopeText { rope },
+            tree_sitter::QueryCursorOptions::new().progress_callback(&mut progress),
+        );
+        while let Some(matched) = matches.next() {
+            if cancelled() {
+                return Err(HighlightError::Cancelled);
+            }
+            collector.absorb(query, matched, rope, parent_ranges, cancelled)?;
         }
+        Ok(())
+    };
+    if let Some(query) = &compiled.windowed {
+        for &(start, end) in segments {
+            scan(query, start..end, &mut collector)?;
+        }
+    }
+    if let Some(query) = &compiled.combined {
+        scan(query, 0..usize::MAX, &mut collector)?;
+    }
+    if cancelled() {
+        return Err(HighlightError::Cancelled);
+    }
+    Ok(collector.finish())
+}
+
+#[derive(Default)]
+struct Collector {
+    found: Vec<Injection>,
+    unknown: Vec<(Vec<Range>, LanguageSource)>,
+    documentation_groups: Vec<documentation::Group>,
+}
+
+impl Collector {
+    fn absorb(
+        &mut self,
+        query: &Query,
+        matched: &QueryMatch<'_, '_>,
+        rope: &Rope,
+        parent_ranges: &[Range],
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), HighlightError> {
+        let names = query.capture_names();
         let mut language = None;
         let mut filename = None;
         let mut shebang = None;
@@ -199,17 +296,23 @@ fn collect(
                 _ => {}
             }
         }
-        let (spec, source) = if let Some(language) = language {
-            (languages::for_name(&language), LanguageSource::Explicit)
+        let (detected, source) = if let Some(language) = language {
+            (
+                languages::for_name(&language).map(|spec| spec.id),
+                LanguageSource::Explicit,
+            )
         } else if let Some(filename) = filename {
             (
-                languages::detect(std::path::Path::new(&filename), None),
+                languages::detect_id(std::path::Path::new(&filename), None),
                 LanguageSource::Filename,
             )
         } else if let Some(shebang) = shebang {
-            (languages::for_shebang(&shebang), LanguageSource::Shebang)
+            (
+                languages::for_shebang(&shebang).map(|spec| spec.id),
+                LanguageSource::Shebang,
+            )
         } else {
-            continue;
+            return Ok(());
         };
         let mut ranges = Vec::new();
         for node in contents {
@@ -218,7 +321,7 @@ fn collect(
                     rope,
                     node,
                     matched.pattern_index,
-                    &mut documentation_groups,
+                    &mut self.documentation_groups,
                     cancelled,
                 )?);
             } else {
@@ -228,51 +331,53 @@ fn collect(
         canonicalize(&mut ranges);
         ranges = intersect(&ranges, parent_ranges);
         if ranges.is_empty() {
-            continue;
+            return Ok(());
         }
-        let Some(spec) = spec else {
-            unknown.push((ranges, source));
-            continue;
+        let Some(language) = detected else {
+            self.unknown.push((ranges, source));
+            return Ok(());
         };
-        if let Some(index) = found.iter().position(|existing| existing.ranges == ranges) {
-            if found[index].source <= source {
-                found[index] = Injection {
-                    spec,
-                    ranges,
-                    combined,
-                    source,
-                };
+        let injection = Injection {
+            language,
+            ranges,
+            combined,
+            source,
+        };
+        if let Some(index) = self
+            .found
+            .iter()
+            .position(|existing| existing.ranges == injection.ranges)
+        {
+            if self.found[index].source <= source {
+                self.found[index] = injection;
             }
         } else {
-            found.push(Injection {
-                spec,
-                ranges,
-                combined,
-                source,
-            });
+            self.found.push(injection);
         }
+        Ok(())
     }
-    if cancelled() {
-        return Err(HighlightError::Cancelled);
-    }
-    // An explicit unknown fence language must not resurrect a shebang fallback.
-    found.retain(|injection| {
-        !unknown
-            .iter()
-            .any(|(ranges, source)| injection.source < *source && injection.ranges == *ranges)
-    });
-    let mut result: Vec<Injection> = Vec::new();
-    for injection in found {
-        if let Some(existing) = result.iter_mut().find(|existing| {
-            existing.combined && injection.combined && existing.spec.id == injection.spec.id
-        }) {
-            existing.ranges.extend(injection.ranges);
-            canonicalize(&mut existing.ranges);
-        } else {
-            result.push(injection);
+
+    fn finish(mut self) -> Vec<Injection> {
+        let unknown = &self.unknown;
+        // An explicit unknown fence language must not resurrect a shebang fallback.
+        self.found.retain(|injection| {
+            !unknown
+                .iter()
+                .any(|(ranges, source)| injection.source < *source && injection.ranges == *ranges)
+        });
+        let mut result: Vec<Injection> = Vec::new();
+        for injection in self.found {
+            if let Some(existing) = result.iter_mut().find(|existing| {
+                existing.combined && injection.combined && existing.language == injection.language
+            }) {
+                existing.ranges.extend(injection.ranges);
+                canonicalize(&mut existing.ranges);
+            } else {
+                result.push(injection);
+            }
         }
+        result
     }
-    Ok(result)
 }
 
 fn capture_text(rope: &Rope, node: Node<'_>) -> String {

@@ -214,10 +214,13 @@ impl Editor {
                     ));
                 self.preview_cache_order.retain(|cached| cached != &path);
                 self.preview_cache_order.push_back(path.clone());
+                let language = strop_syntax::languages::detect_id(&path.path, None)
+                    .or_else(|| strop_syntax::languages::shebang_in(&prepared.rope));
                 self.previews.insert(
                     path.clone(),
                     PreviewEntry {
                         rope: prepared.rope,
+                        language,
                     },
                 );
                 self.preview_loads.insert(path, Load::Ready(key));

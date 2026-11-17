@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket};
 use strop_grammar::MatchCancelled;
+use strop_syntax::languages::LanguageId;
 use strop_syntax::{HighlightError, Highlighter, IndentGuides};
 
 pub(crate) struct Work {
@@ -24,7 +25,7 @@ pub(crate) struct MatchWork {
 }
 pub struct Slot {
     highlighter: Option<Highlighter>,
-    syntax_path: Option<std::path::PathBuf>,
+    language: Option<LanguageId>,
     guides: Option<(strop_core::id::BufferRevision, usize, IndentGuides)>,
     layouts: super::layouts::LayoutCache,
 }
@@ -37,26 +38,21 @@ enum Message {
 
 /// The target's parser slot, created on first use and rebound when the
 /// syntax identity changes. Guides/layouts survive a rebind: they key
-/// on revision, not on the path.
+/// on revision, not on the language.
 fn slot_for<'a>(
     slots: &'a mut HashMap<AnalysisTarget, Slot>,
     target: &AnalysisTarget,
-    syntax_path: &Option<std::path::PathBuf>,
-    rope: &ropey::Rope,
+    language: Option<LanguageId>,
 ) -> &'a mut Slot {
     let slot = slots.entry(target.clone()).or_insert_with(|| Slot {
-        highlighter: syntax_path
-            .as_ref()
-            .and_then(|path| Highlighter::for_path(path, rope)),
-        syntax_path: syntax_path.clone(),
+        highlighter: language.and_then(Highlighter::for_language),
+        language,
         guides: None,
         layouts: super::layouts::LayoutCache::default(),
     });
-    if slot.syntax_path != *syntax_path {
-        slot.highlighter = syntax_path
-            .as_ref()
-            .and_then(|path| Highlighter::for_path(path, rope));
-        slot.syntax_path = syntax_path.clone();
+    if slot.language != language {
+        slot.highlighter = language.and_then(Highlighter::for_language);
+        slot.language = language;
     }
     slot
 }
@@ -101,12 +97,7 @@ impl Worker {
                                     if cancelled() {
                                         return Err(HighlightError::Cancelled);
                                     }
-                                    let slot = slot_for(
-                                        &mut slots,
-                                        &key.target,
-                                        &key.syntax_path,
-                                        &work.rope,
-                                    );
+                                    let slot = slot_for(&mut slots, &key.target, key.language);
                                     let spans = match slot.highlighter.as_mut() {
                                         Some(highlighter) => highlighter.highlight_while(
                                             &work.rope,
