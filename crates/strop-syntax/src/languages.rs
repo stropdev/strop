@@ -3,7 +3,7 @@
 use std::path::Path;
 use tree_sitter::Language;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LanguageId {
     Rust,
     Python,
@@ -57,6 +57,11 @@ pub enum ColonPolicy {
 }
 
 impl LanguageId {
+    /// The registry entry this identity names.
+    pub fn spec(self) -> LanguageSpec {
+        entry(self).spec()
+    }
+
     pub fn colon_policy(self) -> ColonPolicy {
         match self {
             LanguageId::Python => ColonPolicy::Statement,
@@ -436,16 +441,17 @@ static LANGUAGES: &[Entry] = &[
 ];
 
 pub fn for_extension(extension: &str) -> Option<LanguageSpec> {
+    entry_for_extension(extension).map(Entry::spec)
+}
+
+fn entry_for_extension(extension: &str) -> Option<&'static Entry> {
     let extension = extension.strip_prefix('.').unwrap_or(extension);
-    LANGUAGES
-        .iter()
-        .find(|entry| {
-            entry
-                .extensions
-                .iter()
-                .any(|candidate| candidate.eq_ignore_ascii_case(extension))
-        })
-        .map(Entry::spec)
+    LANGUAGES.iter().find(|entry| {
+        entry
+            .extensions
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(extension))
+    })
 }
 
 pub fn for_name(name: &str) -> Option<LanguageSpec> {
@@ -487,16 +493,25 @@ fn basename(program: &str) -> Option<&str> {
         .filter(|name| !name.is_empty())
 }
 pub fn for_shebang(first_line: &str) -> Option<LanguageSpec> {
+    entry_for_shebang(first_line).map(Entry::spec)
+}
+
+fn entry_for_shebang(first_line: &str) -> Option<&'static Entry> {
     let interpreter = interpreter_of(first_line)?;
     LANGUAGES
         .iter()
         .find(|entry| entry.interpreters.contains(&interpreter))
-        .map(Entry::spec)
 }
 
 /// Exact basename wins over extension, which wins over the bounded shebang.
 /// Non-UTF-8 filename bytes never become a lossy path used for I/O.
 pub fn detect(path: &Path, first_line: Option<&str>) -> Option<LanguageSpec> {
+    detect_id(path, first_line).map(LanguageId::spec)
+}
+
+/// [`detect`] as an identity — what an analysis key carries — without
+/// touching a grammar.
+pub fn detect_id(path: &Path, first_line: Option<&str>) -> Option<LanguageId> {
     if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
         if let Some(entry) = LANGUAGES.iter().find(|entry| {
             entry
@@ -504,13 +519,81 @@ pub fn detect(path: &Path, first_line: Option<&str>) -> Option<LanguageSpec> {
                 .iter()
                 .any(|filename| filename.eq_ignore_ascii_case(name))
         }) {
-            return Some(entry.spec());
+            return Some(entry.id);
         }
     }
     path.extension()
         .and_then(|extension| extension.to_str())
-        .and_then(for_extension)
-        .or_else(|| first_line.and_then(for_shebang))
+        .and_then(entry_for_extension)
+        .or_else(|| first_line.and_then(entry_for_shebang))
+        .map(|entry| entry.id)
+}
+
+/// The language the rope's shebang names, read from its bounded first
+/// line. Detection data only: no filesystem, no full-text copy.
+pub fn shebang_in(rope: &ropey::Rope) -> Option<LanguageId> {
+    entry_for_shebang(&first_line_bounded(rope)).map(|entry| entry.id)
+}
+
+/// The rope's first line, capped at 256 bytes so a minified no-newline
+/// blob can't turn shebang detection into a full-text copy. Assembled
+/// chunk-wise, so a first line spanning rope chunks comes out whole
+/// (up to the cap).
+pub(crate) fn first_line_bounded(rope: &ropey::Rope) -> String {
+    const CAP: usize = 256;
+    // only a shebang can match — skip the copy for the common case
+    if rope.len_bytes() == 0 || rope.byte(0) != b'#' {
+        return String::new();
+    }
+    let limit = rope.len_bytes().min(CAP);
+    let mut line = String::new();
+    let mut byte = 0;
+    while byte < limit {
+        let (chunk, start, ..) = rope.chunk_at_byte(byte);
+        let head = &chunk[byte - start..];
+        let stop = head.find('\n').unwrap_or(head.len());
+        let take = cut_at_boundary(head, stop.min(limit - byte));
+        if take == 0 {
+            break; // the cap cut inside a multibyte char
+        }
+        line.push_str(&head[..take]);
+        if take == stop {
+            break; // consumed through the newline (or the whole chunk had none)
+        }
+        byte += take;
+    }
+    line
+}
+
+/// Largest char-boundary-aligned length of `head` that is at most `want`.
+/// A byte cap can land inside a multibyte character; walking back at most
+/// three bytes keeps the slice valid UTF-8.
+fn cut_at_boundary(head: &str, want: usize) -> usize {
+    let mut take = want.min(head.len());
+    while take > 0 && !head.is_char_boundary(take) {
+        take -= 1;
+    }
+    take
+}
+
+/// Registry size and positions: the shared compiled-query table is
+/// indexed by them.
+pub(crate) fn count() -> usize {
+    LANGUAGES.len()
+}
+
+pub(crate) fn index(id: LanguageId) -> usize {
+    LANGUAGES
+        .iter()
+        .position(|entry| entry.id == id)
+        .unwrap_or(LANGUAGES.len())
+}
+
+fn entry(id: LanguageId) -> &'static Entry {
+    match LANGUAGES.iter().find(|entry| entry.id == id) {
+        Some(entry) => entry,
+        None => unreachable!("every LanguageId has exactly one registry entry"),
+    }
 }
 
 #[cfg(test)]

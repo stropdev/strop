@@ -122,7 +122,7 @@ fn first_line_assembly_walks_rope_chunks() {
         rope.chunks().count() > 1,
         "precondition: multi-chunk first line"
     );
-    let got = first_line_bounded(&rope);
+    let got = languages::first_line_bounded(&rope);
     assert!(got.starts_with("#!/usr/bin/env bash"));
     assert!(line.starts_with(got.as_str()), "bounded prefix of the line");
     assert_eq!(got.len(), 256, "ASCII content fills the cap exactly");
@@ -459,6 +459,8 @@ fn html_embedded_script_and_style_use_the_shared_registry() {
     assert_eq!(capture_at(&spans, source, "\"yes\"").class, Class::String);
 }
 
+mod layers;
+mod properties;
 mod sovel;
 mod splicery;
 mod symbols;
