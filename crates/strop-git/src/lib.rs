@@ -19,6 +19,8 @@ pub mod status;
 pub mod target;
 
 mod diff;
+#[cfg(all(test, unix))]
+mod hostile_tests;
 mod numstat;
 mod repo;
 mod revision;

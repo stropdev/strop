@@ -265,7 +265,7 @@ impl Editor {
                         return Outcome::failed(FailureKind::Unavailable, error.to_string())
                     }
                 };
-                let run = match exec.run_within(&argv, PORCELAIN_DEADLINE, &cancel) {
+                let run = match exec.run_porcelain(&argv, PORCELAIN_DEADLINE, &cancel) {
                     Ok(run) => run,
                     Err(error) => {
                         return Outcome::failed(FailureKind::Unavailable, error.to_string())
