@@ -21,7 +21,7 @@ fn search_here_preserves_ssh_identity_through_preview_open_collection_and_replay
     );
     let trace = fixture.root().join("search.jsonl");
     let output = fixture.run(&[
-        "--headless".into(),
+        "headless".into(),
         steps.into(),
         source.clone().into(),
         "--log-file".into(),
@@ -50,7 +50,7 @@ fn search_here_preserves_ssh_identity_through_preview_open_collection_and_replay
         "#!/bin/sh\necho forbidden >&2\nexit 99\n",
     )
     .unwrap();
-    let replay = fixture.run(&["--replay".into(), trace.into()]);
+    let replay = fixture.run(&["replay".into(), trace.into()]);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&replay).unwrap()["should_quit"],
         true

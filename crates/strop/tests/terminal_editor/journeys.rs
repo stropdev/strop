@@ -294,7 +294,7 @@ fn real_terminal_input_consent_quit_and_execution_free_replay() {
     let before = std::fs::read(directory.path().join("run-count")).unwrap();
     assert_eq!(before, b"x");
     let replay = Command::new(env!("CARGO_BIN_EXE_strop"))
-        .arg("--replay")
+        .arg("replay")
         .arg(&trace)
         .env("HOME", directory.path())
         .env("SHELL", "/unavailable-during-replay")

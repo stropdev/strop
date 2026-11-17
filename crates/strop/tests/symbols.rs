@@ -1,6 +1,6 @@
 //! `Space s` on the real binary (plans/0099 §6): a file no language server
 //! serves lists its declarations, and the list is never one from before an
-//! edit. Runs the shipped `strop --headless` in a tempdir with an empty
+//! edit. Runs the shipped `strop headless` in a tempdir with an empty
 //! `PATH`, so no server can be found whatever the machine has installed.
 use std::path::Path;
 use std::process::Command;
@@ -18,7 +18,7 @@ fn run(root: &Path, script: &str, file: &str) -> String {
         .env("XDG_STATE_HOME", outside.join("state"))
         .env("PATH", &no_programs)
         .env_remove("STROP_LOG")
-        .arg("--headless")
+        .arg("headless")
         .arg(&steps)
         .arg(file)
         .output()

@@ -6,9 +6,8 @@ attach to a bug report.
 ## Running a script
 
 `strop headless SCRIPT [+LINE] [FILE[:LINE]]` runs the real editor with no
-screen, on a 100×30 grid, and feeds it the script. `strop --script SCRIPT`
-is the same command (see [cli.md](cli.md)). A script is one directive per
-line; empty lines and lines starting with `#` are ignored:
+screen, on a 100×30 grid, and feeds it the script (see
+[cli.md](cli.md)). A script is one directive per line; empty lines and lines starting with `#` are ignored:
 
 | Directive | Arguments | Meaning |
 | --- | --- | --- |

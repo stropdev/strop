@@ -3,7 +3,7 @@
 //!
 //! R11: every external input and delivery enters through the tape's
 //! recording wrapper (`recorded_action`), so a `--log-content` capture of
-//! a headless run is a complete forensic recording and `--replay`
+//! a headless run is a complete forensic recording and `strop replay`
 //! reproduces it without the script, the clock or the host.
 
 pub(crate) mod directives;

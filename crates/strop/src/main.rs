@@ -342,10 +342,6 @@ fn print_help() {
     rows(
         &mut out,
         &[
-            (
-                "edit",
-                "open a file, directory, or an empty buffer (the default)",
-            ),
             ("remote", "open an ssh:// file or directory for editing"),
             (
                 "headless",
@@ -376,8 +372,6 @@ fn print_help() {
                 "    --theme NAME",
                 "colour theme for this run; :theme lists and switches",
             ),
-            ("    --remote URL", "shorthand for `strop remote URL`"),
-            ("    --script PATH", "same as `strop headless PATH`"),
             (
                 "    --log[=PATH]",
                 "record this session for a bug report (or STROP_LOG)",

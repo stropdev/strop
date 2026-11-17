@@ -261,7 +261,7 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
     )
     .unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_strop"));
-    command.arg("--headless").arg(&script).arg("fixture.txt");
+    command.arg("headless").arg(&script).arg("fixture.txt");
     hermetic(&mut command, dir);
     let out = command.output().expect("strop runs");
     let stdout = String::from_utf8_lossy(&out.stdout);

@@ -42,7 +42,7 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     let output = successful(run(
         root,
         &[
-            "--headless".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             file.as_os_str(),
             "--log-file".as_ref(),
@@ -72,7 +72,7 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     ));
     let replay = root.join("replay.keys");
     std::fs::write(&replay, text).unwrap();
-    let replayed = successful(run(root, &["--headless".as_ref(), replay.as_os_str()]));
+    let replayed = successful(run(root, &["headless".as_ref(), replay.as_os_str()]));
     assert_eq!(replayed_state(&replayed), replayed_state(&output));
     assert!(output.contains("needle é<界x>"));
 
@@ -82,7 +82,7 @@ fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     successful(run(
         root,
         &[
-            "--headless".as_ref(),
+            "headless".as_ref(),
             quit_script.as_os_str(),
             file.as_os_str(),
             "--log-file".as_ref(),
@@ -112,7 +112,7 @@ fn metadata_does_not_disclose_paste_and_existing_log_is_not_truncated() {
     successful(run(
         root,
         &[
-            "--script".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             "--log-file".as_ref(),
             trace.as_os_str(),
@@ -132,7 +132,7 @@ fn metadata_does_not_disclose_paste_and_existing_log_is_not_truncated() {
     let failed = run(
         root,
         &[
-            "--script".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             "--log-file".as_ref(),
             trace.as_os_str(),
@@ -158,7 +158,7 @@ fn deferred_grammar_keeps_typeahead_repeat_and_macro_order_in_full_replay() {
     let output = successful(run(
         root,
         &[
-            "--headless".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             file.as_os_str(),
             "--log-file".as_ref(),
@@ -178,7 +178,7 @@ fn deferred_grammar_keeps_typeahead_repeat_and_macro_order_in_full_replay() {
     assert!(output.contains("NEW NEW gamma"));
     // Full replay compares every logical observation and actual cell grid;
     // it does not merely feed the extracted keys through another driver.
-    successful(run(root, &["--replay".as_ref(), trace.as_os_str()]));
+    successful(run(root, &["replay".as_ref(), trace.as_os_str()]));
 }
 
 #[test]
@@ -199,7 +199,7 @@ fn completion_payloads_obey_privacy_and_full_replay_needs_no_provider() {
     successful(run(
         root,
         &[
-            "--headless".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             "--log-file".as_ref(),
             metadata.as_os_str(),
@@ -213,7 +213,7 @@ fn completion_payloads_obey_privacy_and_full_replay_needs_no_provider() {
     let output = successful(run(
         root,
         &[
-            "--headless".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             "--log-file".as_ref(),
             trace.as_os_str(),
@@ -231,7 +231,7 @@ fn completion_payloads_obey_privacy_and_full_replay_needs_no_provider() {
             .env("XDG_CONFIG_HOME", root.join("replay-config"))
             .env("XDG_STATE_HOME", root.join("replay-state"))
             .env_remove("STROP_LOG")
-            .arg("--replay")
+            .arg("replay")
             .arg(&trace)
             .output()
             .unwrap(),
@@ -258,7 +258,7 @@ fn asynchronous_completion_macros_keep_vim_order_in_native_free_replay() {
     let output = successful(run(
         root,
         &[
-            "--headless".as_ref(),
+            "headless".as_ref(),
             script.as_os_str(),
             "--log-file".as_ref(),
             trace.as_os_str(),
@@ -274,7 +274,7 @@ fn asynchronous_completion_macros_keep_vim_order_in_native_free_replay() {
             .env("XDG_CONFIG_HOME", root.join("replay-config"))
             .env("XDG_STATE_HOME", root.join("replay-state"))
             .env_remove("STROP_LOG")
-            .arg("--replay")
+            .arg("replay")
             .arg(&trace)
             .output()
             .unwrap(),

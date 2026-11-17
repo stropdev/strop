@@ -48,7 +48,7 @@ fn both_location_forms_position_before_the_first_edit() {
         vec![OsString::from("+3"), file.as_os_str().to_owned()],
         vec![suffix],
     ] {
-        let mut args = vec![OsString::from("--headless"), script.as_os_str().to_owned()];
+        let mut args = vec![OsString::from("headless"), script.as_os_str().to_owned()];
         args.extend(location);
         let output = text(run(root, &args));
         assert_eq!(first_line(&output), 3);
@@ -69,7 +69,7 @@ fn line_beyond_end_clamps_to_the_last_content_line() {
     let output = text(run(
         root,
         &[
-            "--headless".into(),
+            "headless".into(),
             "steps".into(),
             "+99".into(),
             "file.txt".into(),
@@ -88,7 +88,7 @@ fn literal_separator_protects_a_real_colon_filename() {
     let output = text(run(
         root,
         &[
-            "--headless".into(),
+            "headless".into(),
             "steps".into(),
             "--".into(),
             "literal:3".into(),
@@ -108,7 +108,7 @@ fn invalid_explicit_location_is_a_launch_error() {
     let output = run(
         root,
         &[
-            "--headless".into(),
+            "headless".into(),
             "steps".into(),
             "+0".into(),
             "file.txt".into(),
@@ -119,7 +119,6 @@ fn invalid_explicit_location_is_a_launch_error() {
     assert_eq!(std::fs::read(root.join("file.txt")).unwrap(), b"keep\n");
 }
 
-#[cfg(unix)]
 #[test]
 fn native_filename_bytes_survive_the_real_cli() {
     use std::os::unix::ffi::OsStrExt;
@@ -134,7 +133,7 @@ fn native_filename_bytes_survive_the_real_cli() {
     let output = text(run(
         root,
         &[
-            "--headless".into(),
+            "headless".into(),
             "steps".into(),
             OsStr::from_bytes(b"\xff.txt:3").to_owned(),
         ],
@@ -219,7 +218,7 @@ fn startup_file_is_refused_exactly_like_e() {
         let (sender, receiver) = std::sync::mpsc::channel();
         let workdir = root.clone();
         std::thread::spawn(move || {
-            let args = ["--headless".into(), "steps".into(), operand.into()];
+            let args = ["headless".into(), "steps".into(), operand.into()];
             let _ = sender.send(run(&workdir, &args));
         });
         let output = receiver
