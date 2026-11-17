@@ -6,6 +6,7 @@ use crate::editor::Editor;
 use strop_core::Buffer;
 use strop_picker::{Item, Kind, Payload};
 mod convergence;
+mod edges;
 mod flow;
 mod live;
 mod loans;

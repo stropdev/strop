@@ -1,6 +1,8 @@
 //! A mutation lease is the publication boundary, independent of undo grouping.
 mod capability;
 pub use capability::{BufferEdit, DocumentEdit};
+#[cfg(test)]
+mod tests;
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::{Change, EditError, Replacement};
 
@@ -98,7 +100,7 @@ impl super::Editor {
         &mut self,
         id: DocumentId,
         map_active: bool,
-        position: impl Fn(usize, &[(usize, usize, usize)]) -> usize,
+        position_through: impl Fn(usize, &[(usize, usize, usize)]) -> usize,
     ) {
         self.sync_filename_draft(id);
         self.collection_write_pending(id);
@@ -108,7 +110,7 @@ impl super::Editor {
             }
             _ => return,
         };
-        let map = |offset| position(offset, &journal);
+        let map = |offset| position_through(offset, &journal);
         // Return views live in other documents: remap them before
         // borrowing the source mutably.
         self.map_navigation_records(id, map);
@@ -146,33 +148,45 @@ impl super::Editor {
         }
         let active = self.active_pane;
         // Vim: a mark goes with its line. A deletion that starts in
-        // column 1 and covers the mark took the mark's line with it.
-        let line_starts: Vec<bool> = journal
+        // column 1 and covers the mark took the mark's line with it. Each
+        // edit is judged in the coordinates it addressed (its own start
+        // point, the mark followed through the edits before it), so a batch
+        // of several edits decides like the same edits made one by one.
+        let line_starts: Vec<bool> = document
+            .buf
+            .changes()
             .iter()
-            .map(|(start, _, _)| *start == document.buf.line_start(document.buf.line_of(*start)))
+            .map(|change| change.edit.start_point.1 == 0)
+            .collect();
+        let ends_in_break: Vec<bool> = (0..journal.len())
+            .map(|index| {
+                document
+                    .buf
+                    .change_inserted(index)
+                    .is_some_and(|text| text.ends_with('\n'))
+            })
             .collect();
         self.marks.retain(|_, (owner, position)| {
-            *owner != id
-                || !journal.iter().zip(&line_starts).any(
-                    |((start, old_end, new_end), line_start)| {
-                        *line_start
-                            && new_end == start
-                            && *start <= *position
-                            && *position < *old_end
-                    },
-                )
-        });
-        for (owner, position) in self.marks.values_mut() {
-            if *owner == id {
-                *position = map(*position);
+            if *owner != id {
+                return true;
             }
-        }
+            let mut at = *position;
+            for (step, &(start, old_end, new_end)) in journal.iter().enumerate() {
+                if line_starts[step] && new_end == start && start <= at && at < old_end {
+                    return false;
+                }
+                at = position_through(at, &journal[step..=step]);
+            }
+            *position = at;
+            true
+        });
         for (index, pane) in self.panes.iter_mut().enumerate() {
             if pane.doc == id && (map_active || index != active) {
                 pane.sels.map_positions(map);
             }
         }
         for collection in self.collections.values_mut() {
+            let writing = collection.writing;
             for excerpt in &mut collection.excerpts {
                 if excerpt.source != id {
                     continue;
@@ -181,12 +195,24 @@ impl super::Editor {
                     *anchor = map(*anchor);
                 }
                 // Spans and matches are decided per edit, in the
-                // coordinates that edit addressed.
+                // coordinates that edit addressed. An excerpt is whole
+                // source lines, so its end is column 1 of the line below:
+                // an edit there belongs to that line (0108 B4) — unless the
+                // view wrote it through this excerpt (a line opened, typed
+                // or restored by undo at the excerpt's end), or the end is
+                // in mid-line (a last line without a newline goes on).
                 for step in 0..journal.len() {
                     let edit = &journal[step..=step];
-                    map_excerpt_span(excerpt, edit[0]);
-                    let map = |offset| position(offset, edit);
-                    let (s, e, _) = edit[0];
+                    let (s, e, new_end) = edit[0];
+                    (excerpt.start, excerpt.end) = strop_kernel::editmap::map_span(
+                        excerpt.start,
+                        excerpt.end,
+                        s,
+                        e,
+                        new_end,
+                        writing || !line_starts[step],
+                    );
+                    let map = |offset| position_through(offset, edit);
                     excerpt.matches.retain_mut(|(start, length)| {
                         let finish = start.saturating_add(*length);
                         if s < finish && e > *start {
@@ -200,17 +226,11 @@ impl super::Editor {
                 }
             }
         }
-        let ends_in_break = |index: usize| {
-            document
-                .buf
-                .change_inserted(index)
-                .is_some_and(|text| text.ends_with('\n'))
-        };
         let marked: Vec<(usize, usize, usize, bool)> = journal
             .iter()
             .enumerate()
             .map(|(index, &(start, old_end, new_end))| {
-                (start, old_end, new_end, ends_in_break(index))
+                (start, old_end, new_end, ends_in_break[index])
             })
             .collect();
         self.pending.ex.marked.map_edits(id, &marked, &document.buf);
@@ -229,33 +249,4 @@ impl super::Editor {
         self.publish_collection_updates(collection_updates);
         self.collection_settle(id);
     }
-}
-
-/// Collection excerpts are SPANS, not points (0049 §5): an edit replacing
-/// the span's first byte keeps the start — the pointwise collapse rule would
-/// slide the anchor past the new text and drop it from the view.
-fn map_excerpt_span(
-    excerpt: &mut super::collections::Excerpt,
-    (s, e, new_end): (usize, usize, usize),
-) {
-    let new_len = new_end - s;
-    let delta = new_len as isize - (e - s) as isize;
-    let shift = |p: usize| (p as isize + delta) as usize;
-    let insertion = s == e;
-    excerpt.start = if excerpt.start <= s {
-        excerpt.start
-    } else if excerpt.start >= e {
-        shift(excerpt.start)
-    } else {
-        s
-    };
-    excerpt.end = if excerpt.end < s {
-        excerpt.end
-    } else if excerpt.end > e || (excerpt.end == e && !insertion) {
-        shift(excerpt.end)
-    } else {
-        // covered (or a boundary insertion — deleted-then-reinserted text
-        // regrows the span)
-        s + new_len
-    };
 }

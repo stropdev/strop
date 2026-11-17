@@ -144,6 +144,7 @@ impl Editor {
             collection.touched = true;
             collection.recheck |= write.recheck;
         }
+        self.collection_writing(document, true);
         let result = {
             let mut source = self.doc_mut(write.source);
             let range = Range::charwise(write.start, write.end);
@@ -153,8 +154,16 @@ impl Editor {
                 source.buf.edit().replace(range, text)
             }
         };
+        self.collection_writing(document, false);
         if let Err(error) = result {
             self.collection_write_failed(document, &error.to_string());
+        }
+    }
+
+    /// The view is (or stops) writing into its sources (`Collection::writing`).
+    fn collection_writing(&mut self, document: DocumentId, writing: bool) {
+        if let Some(collection) = self.collections.get_mut(&document) {
+            collection.writing = writing;
         }
     }
 
@@ -243,6 +252,7 @@ impl Editor {
         if let Some((undo, sources)) = moved {
             collection.recheck = true;
             for source in sources {
+                self.collection_writing(document, true);
                 let moved = {
                     let mut source = self.doc_mut(source);
                     if undo {
@@ -251,6 +261,7 @@ impl Editor {
                         source.buf.redo()
                     }
                 };
+                self.collection_writing(document, false);
                 if !matches!(moved, Ok(Some(_))) {
                     self.collection_write_failed(document, "a source's history had moved on");
                     return;
@@ -285,7 +296,10 @@ impl Editor {
                 edits,
                 undo_open: false,
             };
-            if let Err(error) = self.apply(source, base, changes) {
+            self.collection_writing(document, true);
+            let applied = self.apply(source, base, changes);
+            self.collection_writing(document, false);
+            if let Err(error) = applied {
                 self.collection_write_failed(document, &error.to_string());
                 return;
             }
