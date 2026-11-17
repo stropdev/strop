@@ -289,6 +289,7 @@ fn a_full_notify_queue_cannot_drop_subscription_settlement() {
         .queue
         .push_record(Record::Settled(Outcome::Success(SubscribedScope {
             subscription: settled,
+            root: directory.path().to_path_buf(),
             owned_trace: None,
         })));
 
@@ -302,4 +303,101 @@ fn a_full_notify_queue_cannot_drop_subscription_settlement() {
         Some(settled),
         "queue overflow cannot strand subscription establishment"
     );
+}
+
+/// An editor whose subscription settled through a synthetic record, so
+/// hints are driven exactly; `root` is the watched root resolved.
+fn settled_editor(cwd: &std::path::Path) -> (Editor, Subscription) {
+    let mut editor = Editor::new_in(Buffer::from_text(""), cwd.to_path_buf());
+    editor.notify.subscribing = true;
+    let subscription = Subscription {
+        id: 1,
+        generation: 1,
+    };
+    editor
+        .notify
+        .queue
+        .push_record(Record::Settled(Outcome::Success(SubscribedScope {
+            subscription,
+            root: std::fs::canonicalize(cwd).unwrap(),
+            owned_trace: None,
+        })));
+    editor.drain_notify();
+    (editor, subscription)
+}
+
+fn modified(path: &str) -> NotifyHint {
+    NotifyHint {
+        path: path.as_bytes().to_vec(),
+        kind: NotifyKind::Modified,
+    }
+}
+
+/// 0108 H7: a hint names a path under the watched root, matched against
+/// the documents' own names and the root's resolved twin — the handler
+/// resolves nothing itself. Through a symlinked root the canonical
+/// identity still matches; a hint about a symlink inside the tree is
+/// about the link, not the file it points at.
+#[test]
+fn hints_match_through_the_resolved_root_without_resolving_each_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::os::unix::fs::symlink(&real, dir.path().join("link")).unwrap();
+    std::fs::write(real.join("note.txt"), "one\n").unwrap();
+    std::os::unix::fs::symlink("note.txt", real.join("alias")).unwrap();
+    let (mut editor, subscription) = settled_editor(&dir.path().join("link"));
+    editor
+        .open_fixture(&std::fs::canonicalize(real.join("note.txt")).unwrap())
+        .unwrap();
+    editor.feed_text("ix\x1b");
+    assert!(editor.buf().is_dirty());
+    editor
+        .notify
+        .queue
+        .push_hints(subscription, vec![modified("alias")]);
+    editor.drain_notify();
+    assert!(
+        !editor.cur().external_change,
+        "the link changed, not the file"
+    );
+    editor
+        .notify
+        .queue
+        .push_hints(subscription, vec![modified("note.txt")]);
+    editor.drain_notify();
+    assert!(editor.cur().external_change);
+}
+
+/// A checkout's worth of hints against many open documents is one index
+/// lookup per hint.
+#[test]
+fn a_flood_of_hints_finds_the_one_open_document_it_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    for index in 0..50 {
+        std::fs::write(root.join(format!("open{index}.txt")), "x\n").unwrap();
+    }
+    let (mut editor, subscription) = settled_editor(&root);
+    for index in 0..50 {
+        editor
+            .open_fixture(&root.join(format!("open{index}.txt")))
+            .unwrap();
+        editor.feed_text("iy\x1b");
+    }
+    for batch in 0..64 {
+        let hints = (0..500)
+            .map(|index| modified(&format!("build/{batch}/{index}.o")))
+            .chain((batch == 63).then(|| modified("open7.txt")))
+            .collect();
+        editor.notify.queue.push_hints(subscription, hints);
+    }
+    editor.drain_notify();
+    let marked: Vec<_> = editor
+        .docs
+        .iter()
+        .filter(|(_, document)| document.external_change)
+        .filter_map(|(_, document)| document.buf.path.clone())
+        .collect();
+    assert_eq!(marked, vec![root.join("open7.txt")]);
 }

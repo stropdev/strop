@@ -37,6 +37,10 @@ pub(crate) enum Record {
 #[derive(Serialize, Deserialize)]
 pub(crate) struct SubscribedScope {
     pub subscription: Subscription,
+    /// The watched root with its symlinks resolved, taken once by the
+    /// watcher thread: hints map to open documents' canonical identities
+    /// without a filesystem call on the event loop (plan 0108 H7).
+    pub root: std::path::PathBuf,
     /// Relative native path of this process's own trace output, if it
     /// lives below this watched root. Never suppress unrelated files.
     pub owned_trace: Option<Vec<u8>>,
