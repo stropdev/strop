@@ -15,6 +15,7 @@ pub mod process;
 mod range;
 pub mod searchguard;
 pub mod selection;
+pub mod symbol_kind;
 pub mod theme;
 pub mod viewguard;
 pub mod worker;

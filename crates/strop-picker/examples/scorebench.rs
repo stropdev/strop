@@ -11,6 +11,7 @@ fn main() {
                 badge: None,
                 text: format!("crates/package_{index:06}/src/main_{index}.rs"),
                 payload: Payload::File(format!("{index}.rs").into()),
+                facts: Default::default(),
             })
             .collect();
         let mut picker = Picker::new(Kind::Files, items, false);

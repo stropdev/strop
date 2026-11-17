@@ -47,17 +47,11 @@ pub(super) fn from_tokens(
                     role: Role::Operator,
                 });
             }
-            TokenKind::Word { text, quoted } => {
-                let role = if qualifier_shaped(text, *quoted) {
-                    Role::Error
-                } else {
-                    Role::Literal
-                };
-                spans.push(HighlightSpan {
-                    range: token.range.clone(),
-                    role,
-                });
-            }
+            // a misspelt key is painted by its diagnostic below
+            TokenKind::Word { .. } => spans.push(HighlightSpan {
+                range: token.range.clone(),
+                role: Role::Literal,
+            }),
             TokenKind::Qualifier {
                 key,
                 key_range,
@@ -155,29 +149,12 @@ pub fn buffer_search(input: &str) -> Vec<HighlightSpan> {
     ]
 }
 
-fn qualifier_shaped(text: &str, quoted: bool) -> bool {
-    if quoted {
-        return false;
-    }
-    let Some((key, value)) = text.split_once(':') else {
-        return false;
-    };
-    // the SAME shape rule as the parser (one parse, one identity):
-    // `ssh://…` and `std::…` are literal text, not qualifier errors
-    if value.starts_with("//") || value.starts_with(':') {
-        return false;
-    }
-    key.len() >= 3
-        && key.chars().all(|c| c.is_ascii_alphabetic())
-        && !lexer::QUALIFIERS.contains(&key)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn roles(input: &str) -> Vec<Role> {
-        super::super::SearchQuery::parse(input)
+        super::super::parse_search(input)
             .highlights
             .into_iter()
             .map(|s| s.role)
@@ -207,7 +184,7 @@ mod tests {
 
     #[test]
     fn buffer_case_directives_match_picker_qualifier_roles() {
-        let picker = super::super::SearchQuery::parse("language:cpp").highlights;
+        let picker = super::super::parse_search("language:cpp").highlights;
         for input in [
             "case:sensitiveNeedle",
             "\\vcase:ignoreNeedle",

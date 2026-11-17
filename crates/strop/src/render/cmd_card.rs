@@ -423,7 +423,11 @@ mod tests {
     #[test]
     fn buffer_case_and_picker_language_share_field_styles() {
         let t = tokens();
-        let picker = strop_picker::query::SearchQuery::parse("language:cpp");
+        let picker = strop_picker::query::SearchQuery::parse(
+            "language:cpp",
+            &strop_picker::query::schema::FILES,
+            Default::default(),
+        );
         let picker = super::super::field::project(
             &t,
             "/",

@@ -97,6 +97,7 @@ fn find_file_and_symbols_share_the_full_frame_workspace_with_a_wider_preview() {
             match_len: 0,
             line_text: "dispatch".into(),
         },
+        facts: Default::default(),
     }]);
     let grid = draw(&mut editor, 100, 30);
     assert_eq!(grid[(2, 0)].symbol(), "╭");
@@ -137,6 +138,7 @@ fn long_file_paths_keep_basename_and_preview_identity_visible() {
         badge: None,
         text: strop_picker::display_path(&path).into_owned(),
         payload: strop_picker::Payload::Buffer(document),
+        facts: Default::default(),
     }]);
 
     let grid = draw(&mut editor, 100, 30);
@@ -213,6 +215,7 @@ fn symbol_fixture(path: &std::path::Path, n: usize) -> strop_picker::Item {
             match_len: 0,
             line_text: format!("fn dispatch_{n}() {{}}").into(),
         },
+        facts: Default::default(),
     }
 }
 
@@ -316,6 +319,7 @@ fn floating_card_picker_uses_the_same_scrollbar_vocabulary() {
                 badge: None,
                 text: format!("buffer_{n}.rs"),
                 payload: strop_picker::Payload::Buffer(scratch),
+                facts: Default::default(),
             })
             .collect(),
     );
@@ -352,6 +356,7 @@ fn jump_preview_marks_the_live_buffer_destination_line() {
         badge: None,
         text: "jump to dispatch".into(),
         payload: strop_picker::Payload::Jump { document, offset },
+        facts: Default::default(),
     }]);
     editor.wait_picker();
     editor.feed_text("<esc>j");
@@ -631,6 +636,7 @@ fn file_finder_folder_column_does_not_move_while_scrolling() {
                 badge: None,
                 payload: strop_picker::Payload::File(path.clone().into()),
                 text: path,
+                facts: Default::default(),
             }
         })
         .collect();

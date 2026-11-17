@@ -18,6 +18,7 @@ fn item(text: &str) -> Item {
         badge: None,
         text: text.into(),
         payload: Payload::File(PathBuf::from(text)),
+        facts: Default::default(),
     }
 }
 

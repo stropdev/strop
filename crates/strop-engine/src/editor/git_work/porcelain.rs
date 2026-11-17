@@ -415,12 +415,14 @@ impl Editor {
                             branch.name
                         },
                         payload: Payload::Branch(BranchChoice::Switch(branch.switch_to)),
+                        facts: Default::default(),
                     })
                     .collect();
                 items.push(Item {
                     badge: None,
                     text: CREATE_ROW.into(),
                     payload: Payload::Branch(BranchChoice::Create),
+                    facts: Default::default(),
                 });
                 let mut picker = Picker::new(Kind::Branches, items, false);
                 picker.pinned_tail = 1;

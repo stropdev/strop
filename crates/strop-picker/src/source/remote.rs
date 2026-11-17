@@ -6,7 +6,7 @@ use super::{
     query::{parse_json_match_with, scoped_path, RECORD_LIMIT},
     PickerMsg, SelectionPolicy, SourceSnapshot,
 };
-use crate::query::{CaseMode, ContentPlan, Evidence, FileSelectionPlan, SearchQuery};
+use crate::query::{CaseMode, ContentPlan, Evidence, FileSelectionPlan, RowFacts, SearchQuery};
 use std::ffi::OsStr;
 use std::time::Duration;
 use std::{ffi::OsString, path::PathBuf, sync::Arc};
@@ -161,14 +161,13 @@ fn search(
         let admits = {
             let content = content.clone();
             move |path: &str, line: Option<usize>, text: &str| {
-                content.admits(
-                    Evidence {
-                        path: Some(path),
-                        line,
-                        ..Evidence::default()
-                    },
+                let row = RowFacts {
+                    path: Some(path),
+                    line,
                     text,
-                )
+                    ..RowFacts::default()
+                };
+                content.admits(&row, &Evidence::default())
             }
         };
         run(&backend, host, root, args, token, tx, |chunk| {
@@ -292,7 +291,7 @@ mod tests {
             ("case:smart NEEDLE", "--smart-case"),
             ("case:smart text:foo OR text:Bar", "--ignore-case"),
         ] {
-            let query = SearchQuery::parse(input);
+            let query = crate::query::parse_search(input);
             let plan = ContentPlan::compile(&query).unwrap().unwrap();
             assert_eq!(case_flag(plan.provider_case()), expected, "{input}");
         }

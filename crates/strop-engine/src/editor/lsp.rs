@@ -276,47 +276,70 @@ impl Editor {
         });
         let mut items: Vec<Item> = Vec::new();
         for (doc, diags) in by_doc {
+            // what path filters judge: one shared path per file (0109)
+            let path: Option<std::sync::Arc<str>> = doc
+                .path
+                .strip_prefix(&self.cwd)
+                .unwrap_or(&doc.path)
+                .to_str()
+                .map(Into::into);
             for d in diags {
                 let line = d.line.get() + 1;
                 let col = d.col.get() + 1;
+                let facts = |text: &str| strop_picker::ItemFacts {
+                    path: path.clone(),
+                    // content filters match the message
+                    subject: Some((text.len() - d.message.len()) as u32..text.len() as u32),
+                    ..Default::default()
+                };
                 match &doc.filesystem {
-                    Filesystem::Local => items.push(Item {
-                        badge: None,
-                        text: format!(
+                    Filesystem::Local => {
+                        let text = format!(
                             "{}:{} {} {}",
                             doc.path.display(),
                             line,
                             d.severity_char(),
                             d.message
-                        ),
-                        payload: Payload::Grep {
-                            location: strop_workspace::ResourceLocation::local(doc.path.clone()),
-                            line,
-                            col,
-                            match_len: 1,
-                            line_text: d.message.clone().into(),
-                        },
-                    }),
+                        );
+                        items.push(Item {
+                            badge: None,
+                            facts: facts(&text),
+                            text,
+                            payload: Payload::Grep {
+                                location: strop_workspace::ResourceLocation::local(
+                                    doc.path.clone(),
+                                ),
+                                line,
+                                col,
+                                match_len: 1,
+                                line_text: d.message.clone().into(),
+                            },
+                        })
+                    }
                     // Remote diagnostics carry their endpoint: the
                     // preview stays local-clean and acceptance opens
                     // the remote target (0036).
-                    Filesystem::Remote(endpoint) => items.push(Item {
-                        badge: None,
-                        text: format!(
+                    Filesystem::Remote(endpoint) => {
+                        let text = format!(
                             "{}{}:{} {} {}",
                             endpoint,
                             doc.path.display(),
                             line,
                             d.severity_char(),
                             d.message
-                        ),
-                        payload: Payload::Remote {
-                            endpoint: endpoint.clone(),
-                            path: doc.path.clone(),
-                            line,
-                            col,
-                        },
-                    }),
+                        );
+                        items.push(Item {
+                            badge: None,
+                            facts: facts(&text),
+                            text,
+                            payload: Payload::Remote {
+                                endpoint: endpoint.clone(),
+                                path: doc.path.clone(),
+                                line,
+                                col,
+                            },
+                        })
+                    }
                 }
             }
         }

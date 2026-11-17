@@ -210,6 +210,7 @@ fn stale_picker_terminal_cannot_end_recorded_new_query() {
                     badge: None,
                     text: "matching row".into(),
                     payload: Payload::File("hit".into()),
+                    facts: Default::default(),
                 }]
                 .into(),
             ),

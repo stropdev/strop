@@ -179,6 +179,7 @@ fn remote_hosts_enter_carries_unmatched_text_into_the_address_box() {
             badge: None,
             text: "Add a host\u{2026}".into(),
             payload: Payload::RemoteConnect,
+            facts: Default::default(),
         }],
         false,
     );
@@ -215,6 +216,7 @@ fn remote_hosts_empty_enter_opens_the_address_box() {
             badge: None,
             text: "Add a host\u{2026}".into(),
             payload: Payload::RemoteConnect,
+            facts: Default::default(),
         }],
         false,
     );

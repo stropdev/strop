@@ -9,6 +9,7 @@ use super::api::note;
 use super::queue::WireEnv;
 use super::wire;
 use async_lsp::lsp_types as lt;
+use strop_core::symbol_kind::SymbolKind;
 
 /// The lines a range covers. An end at column 0 of a later line does
 /// not cover that line: the range stops at the line break before it.
@@ -32,7 +33,7 @@ fn information_row(info: lt::SymbolInformation, env: &WireEnv) -> Option<ProtoSy
     Some(ProtoSymbol {
         name: info.name,
         container: info.container_name.unwrap_or_default(),
-        kind: symbol_kind_label(info.kind).into(),
+        kind: symbol_kind(info.kind),
         location,
         span,
     })
@@ -78,7 +79,7 @@ pub(crate) async fn workspace_symbols(env: WireEnv, generation: u64, query: Stri
                     Some(ProtoSymbol {
                         name: entry.name,
                         container: entry.container_name.unwrap_or_default(),
-                        kind: symbol_kind_label(entry.kind).into(),
+                        kind: symbol_kind(entry.kind),
                         location,
                         span,
                     })
@@ -160,7 +161,7 @@ fn flatten_symbols(
         out.push(ProtoSymbol {
             name: symbol.name.clone(),
             container: ancestors.to_string(),
-            kind: symbol_kind_label(symbol.kind).into(),
+            kind: symbol_kind(symbol.kind),
             location: ServerLocation {
                 doc: doc.clone(),
                 position: ServerPosition {
@@ -181,42 +182,81 @@ fn flatten_symbols(
     }
 }
 
-/// SymbolKind's LSP name for the picker row.
-fn symbol_kind_label(kind: lt::SymbolKind) -> &'static str {
+/// The protocol's kind as strop's one kind table names it (0109): all
+/// 26 protocol kinds have a row; a kind a later protocol adds is Other.
+fn symbol_kind(kind: lt::SymbolKind) -> SymbolKind {
     match kind {
-        lt::SymbolKind::FILE => "File",
-        lt::SymbolKind::MODULE => "Module",
-        lt::SymbolKind::NAMESPACE => "Namespace",
-        lt::SymbolKind::PACKAGE => "Package",
-        lt::SymbolKind::CLASS => "Class",
-        lt::SymbolKind::METHOD => "Method",
-        lt::SymbolKind::PROPERTY => "Property",
-        lt::SymbolKind::FIELD => "Field",
-        lt::SymbolKind::CONSTRUCTOR => "Constructor",
-        lt::SymbolKind::ENUM => "Enum",
-        lt::SymbolKind::INTERFACE => "Interface",
-        lt::SymbolKind::FUNCTION => "Function",
-        lt::SymbolKind::VARIABLE => "Variable",
-        lt::SymbolKind::CONSTANT => "Constant",
-        lt::SymbolKind::STRING => "String",
-        lt::SymbolKind::NUMBER => "Number",
-        lt::SymbolKind::BOOLEAN => "Boolean",
-        lt::SymbolKind::ARRAY => "Array",
-        lt::SymbolKind::OBJECT => "Object",
-        lt::SymbolKind::KEY => "Key",
-        lt::SymbolKind::NULL => "Null",
-        lt::SymbolKind::ENUM_MEMBER => "EnumMember",
-        lt::SymbolKind::STRUCT => "Struct",
-        lt::SymbolKind::EVENT => "Event",
-        lt::SymbolKind::OPERATOR => "Operator",
-        lt::SymbolKind::TYPE_PARAMETER => "TypeParameter",
-        _ => "Symbol",
+        lt::SymbolKind::FILE => SymbolKind::File,
+        lt::SymbolKind::MODULE | lt::SymbolKind::NAMESPACE | lt::SymbolKind::PACKAGE => {
+            SymbolKind::Module
+        }
+        lt::SymbolKind::CLASS => SymbolKind::Class,
+        lt::SymbolKind::METHOD => SymbolKind::Method,
+        lt::SymbolKind::PROPERTY => SymbolKind::Property,
+        lt::SymbolKind::FIELD => SymbolKind::Field,
+        lt::SymbolKind::CONSTRUCTOR => SymbolKind::Constructor,
+        lt::SymbolKind::ENUM => SymbolKind::Enum,
+        lt::SymbolKind::INTERFACE => SymbolKind::Interface,
+        lt::SymbolKind::FUNCTION => SymbolKind::Function,
+        lt::SymbolKind::VARIABLE => SymbolKind::Variable,
+        lt::SymbolKind::CONSTANT => SymbolKind::Constant,
+        lt::SymbolKind::STRING
+        | lt::SymbolKind::NUMBER
+        | lt::SymbolKind::BOOLEAN
+        | lt::SymbolKind::ARRAY
+        | lt::SymbolKind::NULL => SymbolKind::Value,
+        // rust-analyzer reports an impl block as an Object
+        lt::SymbolKind::OBJECT => SymbolKind::Impl,
+        lt::SymbolKind::KEY => SymbolKind::Key,
+        lt::SymbolKind::ENUM_MEMBER => SymbolKind::Variant,
+        lt::SymbolKind::STRUCT => SymbolKind::Struct,
+        lt::SymbolKind::EVENT => SymbolKind::Event,
+        lt::SymbolKind::OPERATOR => SymbolKind::Operator,
+        lt::SymbolKind::TYPE_PARAMETER => SymbolKind::Type,
+        _ => SymbolKind::Other,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every protocol kind lands on the kind whose row lists its name,
+    /// so `kind:` judges every server row (0109 cause B).
+    #[test]
+    fn every_protocol_kind_has_its_own_row() {
+        let names = [
+            (lt::SymbolKind::FILE, "File"),
+            (lt::SymbolKind::MODULE, "Module"),
+            (lt::SymbolKind::NAMESPACE, "Namespace"),
+            (lt::SymbolKind::PACKAGE, "Package"),
+            (lt::SymbolKind::CLASS, "Class"),
+            (lt::SymbolKind::METHOD, "Method"),
+            (lt::SymbolKind::PROPERTY, "Property"),
+            (lt::SymbolKind::FIELD, "Field"),
+            (lt::SymbolKind::CONSTRUCTOR, "Constructor"),
+            (lt::SymbolKind::ENUM, "Enum"),
+            (lt::SymbolKind::INTERFACE, "Interface"),
+            (lt::SymbolKind::FUNCTION, "Function"),
+            (lt::SymbolKind::VARIABLE, "Variable"),
+            (lt::SymbolKind::CONSTANT, "Constant"),
+            (lt::SymbolKind::STRING, "String"),
+            (lt::SymbolKind::NUMBER, "Number"),
+            (lt::SymbolKind::BOOLEAN, "Boolean"),
+            (lt::SymbolKind::ARRAY, "Array"),
+            (lt::SymbolKind::OBJECT, "Object"),
+            (lt::SymbolKind::KEY, "Key"),
+            (lt::SymbolKind::NULL, "Null"),
+            (lt::SymbolKind::ENUM_MEMBER, "EnumMember"),
+            (lt::SymbolKind::STRUCT, "Struct"),
+            (lt::SymbolKind::EVENT, "Event"),
+            (lt::SymbolKind::OPERATOR, "Operator"),
+            (lt::SymbolKind::TYPE_PARAMETER, "TypeParameter"),
+        ];
+        for (kind, name) in names {
+            assert!(symbol_kind(kind).spec().lsp.contains(&name), "{name}");
+        }
+    }
 
     fn range(start: (u32, u32), end: (u32, u32)) -> lt::Range {
         lt::Range {

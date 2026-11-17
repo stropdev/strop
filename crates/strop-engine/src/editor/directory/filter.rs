@@ -6,7 +6,11 @@ pub(crate) fn apply_filter(
     directory: &mut Directory,
     token: &strop_core::worker::CancelToken,
 ) -> Result<(), String> {
-    let query = SearchQuery::parse(&directory.filter);
+    let query = SearchQuery::parse(
+        &directory.filter,
+        &strop_picker::query::schema::FOLDER,
+        Default::default(),
+    );
     let selection = FileSelectionPlan::compile(&query).map_err(|error| error.message)?;
     if selection.ignored == Some(false) {
         return Err("Directory snapshots include ignored entries and do not evaluate ignore rules; use Search or an explicit path/glob filter".into());

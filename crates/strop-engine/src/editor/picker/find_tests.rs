@@ -11,6 +11,7 @@ fn file(path: &str) -> Item {
         badge: None,
         text: path.into(),
         payload: Payload::File(path.into()),
+        facts: Default::default(),
     }
 }
 

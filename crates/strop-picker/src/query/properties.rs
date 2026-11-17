@@ -3,8 +3,11 @@
 //! fixed-seed LCG (no RNG dependency, no wall clock), tempdirs for the
 //! evidence sources, bounded iteration counts.
 
-use super::parser::{BooleanExpr, ContentAtom, MetadataAtom, SearchQuery};
+use super::facts::RowFacts;
+use super::parser::{BooleanExpr, ContentAtom, ContentExpr, MetadataAtom, QueryState};
 use super::plan::{ContentPlan, Evidence};
+use super::schema::{self, Field, SURFACES};
+use super::{SearchModes, SearchQuery};
 
 /// A tiny deterministic generator (Knuth LCG): reproducible corpora in
 /// CI, release builds and replay alike.
@@ -83,17 +86,44 @@ fn arbitrary_input_never_panics_and_settles_into_a_known_state() {
     let mut rand = Lcg(0x0063);
     for _ in 0..4000 {
         let raw = random_query(&mut rand);
-        let query = SearchQuery::parse(&raw);
-        assert!(
-            query.state == super::parser::QueryState::Ready
-                || query.state == super::parser::QueryState::Incomplete
-                || query.state == super::parser::QueryState::Invalid,
-            "a parse must settle: {raw:?}"
-        );
-        // Compiling a Ready query must also hold: regex bounds are the
-        // parser's own diagnostics, never a panic.
-        if query.state == super::parser::QueryState::Ready {
-            let _ = ContentPlan::compile(&query);
+        for schema in SURFACES {
+            let query = SearchQuery::parse(&raw, schema, SearchModes::default());
+            assert!(
+                query.state == QueryState::Ready
+                    || query.state == QueryState::Incomplete
+                    || query.state == QueryState::Invalid,
+                "a parse must settle: {raw:?}"
+            );
+            // A settled non-Ready query always says why, at a place.
+            if query.state != QueryState::Ready {
+                assert!(!query.diagnostics.is_empty(), "{raw:?}");
+            }
+            // Compiling a Ready query must also hold: regex bounds are
+            // the parser's own diagnostics, never a panic.
+            if query.state == QueryState::Ready {
+                let _ = ContentPlan::compile(&query);
+                let _ = super::plan::Admission::compile(&query);
+            }
+        }
+    }
+}
+
+#[test]
+fn every_ready_query_uses_only_declared_fields() {
+    let mut rand = Lcg(0x0109);
+    for _ in 0..3000 {
+        let raw = random_query(&mut rand);
+        for schema in SURFACES {
+            let query = SearchQuery::parse(&raw, schema, SearchModes::default());
+            if query.state != QueryState::Ready {
+                continue;
+            }
+            for token in &query.tokens {
+                if let super::lexer::TokenKind::Qualifier { key, .. } = &token.kind {
+                    let field = Field::from_key(key).expect("a lexed key is a field");
+                    assert!(schema.declares(field), "{raw:?} on {}", schema.noun);
+                }
+            }
         }
     }
 }
@@ -103,18 +133,18 @@ fn canonical_formatting_is_a_fixed_point_for_ready_queries() {
     let mut rand = Lcg(0x0FF1CE);
     for _ in 0..2000 {
         let raw = random_query(&mut rand);
-        let query = SearchQuery::parse(&raw);
-        if query.state != super::parser::QueryState::Ready {
+        let query = crate::query::parse_search(&raw);
+        if query.state != QueryState::Ready {
             continue;
         }
         let Some(expr) = query.boolean.clone() else {
             continue;
         };
         let once = expr.to_query_string();
-        let reparsed = SearchQuery::parse(&once);
+        let reparsed = crate::query::parse_search(&once);
         assert_eq!(
             reparsed.state,
-            super::parser::QueryState::Ready,
+            QueryState::Ready,
             "canonical form must re-parse ready: {raw:?} -> {once:?}"
         );
         let twice = reparsed
@@ -131,41 +161,118 @@ fn operator_free_queries_stay_flat() {
     let mut rand = Lcg(0xC0FFEE);
     for _ in 0..2000 {
         let raw = random_query(&mut rand);
-        // Only the documented exception upgrades a flat query: the
-        // kind:/repo:/type: evidence qualifiers (0063 §2). Inputs with
-        // standalone operators or parens are legitimately Boolean.
-        let evidence_bearing =
-            raw.contains("kind:") || raw.contains("repo:") || raw.contains("type:");
+        // Only operators make a query Boolean; a filter never does
+        // (0109 decision 5). Standalone operators or parens are.
         let operator_bearing = raw.contains(['(', ')'])
             || raw
                 .split_whitespace()
                 .any(|word| matches!(word, "AND" | "OR" | "NOT"));
-        if evidence_bearing || operator_bearing {
+        if operator_bearing {
             continue;
         }
-        let query = SearchQuery::parse(&raw);
+        let query = crate::query::parse_search(&raw);
         assert!(
             query.boolean.is_none(),
-            "no operators, no evidence qualifiers: the query must parse byte-identically to the legacy grammar: {raw:?}"
+            "no operators: the query must parse flat: {raw:?}"
         );
     }
 }
 
-// ---- §6.2: the reference interpreter --------------------------------------
+/// The owner's bug (0109 cause C), as a property: for any needle and
+/// any filter every row passes, the list is exactly the list the needle
+/// alone gives — same rows, same order, same scores.
+#[test]
+fn a_qualifier_never_changes_how_bare_words_match() {
+    use crate::rank::{rank, FilterRequest, MatchMode};
+    use strop_core::symbol_kind::SymbolKind;
+    let names = [
+        "parse_config",
+        "ParseConfig",
+        "wrap",
+        "write_all",
+        "parser",
+        "config_path",
+        "résumé",
+        "PCFG",
+        "apply",
+        "new",
+    ];
+    let items: Vec<crate::Item> = names
+        .iter()
+        .enumerate()
+        .map(|(at, name)| {
+            crate::Item::symbol(crate::SymbolRow {
+                name,
+                container: Some("Config"),
+                detail: format_args!("· :{}", at + 1),
+                kind: SymbolKind::Function,
+                path: Some("src/lib.rs".into()),
+                payload: crate::Payload::Grep {
+                    location: strop_workspace::ResourceLocation::local("/w/src/lib.rs".into()),
+                    line: at + 1,
+                    col: 1,
+                    match_len: 1,
+                    line_text: "".into(),
+                },
+            })
+        })
+        .collect();
+    let catalog = crate::Catalog::from(items);
+    // filters every row passes: a kind it is, a path it has
+    let always = [
+        "kind:function",
+        "kind:fn",
+        "kind:FUNC",
+        "path:src",
+        "language:rust",
+        "-kind:struct",
+        "glob:\"**/*.rs\"",
+    ];
+    let letters = ["p", "c", "f", "g", "w", "a", "r", "n", "C", "e", "_", "é"];
+    let ranked = |input: &str| {
+        let query = std::sync::Arc::new(SearchQuery::parse(
+            input,
+            &schema::SYMBOLS,
+            SearchModes::default(),
+        ));
+        assert_eq!(query.state, QueryState::Ready, "{input}");
+        let needle = match &query.content {
+            Some(ContentExpr::Literal(text)) => text.clone(),
+            _ => String::new(),
+        };
+        let request = FilterRequest {
+            catalog: catalog.clone(),
+            query: needle,
+            upstream_filtered: false,
+            pinned_tail: 0,
+            mode: MatchMode::Fuzzy(query.case_mode()),
+            filter: Some(query),
+            paths: false,
+            priors: Default::default(),
+        };
+        let ranking = rank(&request, || false).unwrap().unwrap();
+        ranking
+            .rows
+            .iter()
+            .map(|row| (row.item, row.score, ranking.columns(row).to_vec()))
+            .collect::<Vec<_>>()
+    };
+    let mut rand = Lcg(0xBA5E);
+    for _ in 0..400 {
+        let needle: String = (0..rand.below(4) + 1)
+            .map(|_| *rand.pick(&letters))
+            .collect();
+        let bare = ranked(&needle);
+        let filter = *rand.pick(&always);
+        for input in [format!("{filter} {needle}"), format!("{needle} {filter}")] {
+            assert_eq!(ranked(&input), bare, "{input:?} against {needle:?}");
+        }
+    }
+    // and the owner's own case: `kind:function pcfg` finds parse_config
+    assert!(!ranked("kind:function pcfg").is_empty());
+}
 
-/// The kind values the query language recognizes (0063 §2) — the
-/// reference's own table, mirroring the documented contract.
-const KIND_VALUES: &[&str] = &[
-    "function",
-    "method",
-    "class",
-    "struct",
-    "enum",
-    "interface",
-    "module",
-    "constant",
-    "impl",
-];
+// ---- §6.2: the reference interpreter --------------------------------------
 
 /// An independent three-valued evaluator (`None` = Unknown), written
 /// from the spec (0063 §4) rather than from `plan.rs`: different
@@ -219,13 +326,7 @@ fn reference(
                 "path" => Some(path.contains(atom.value.as_str())),
                 "fpath" => Some(crate::fuzzy_score(&atom.value, path).is_some()),
                 "glob" => Some(reference_glob(&atom.value, path)),
-                "kind" => {
-                    if KIND_VALUES.contains(&atom.value.as_str()) {
-                        kind(atom.value.as_str(), path, line_number)
-                    } else {
-                        None
-                    }
-                }
+                "kind" => kind(atom.value.as_str(), path, line_number),
                 "repo" => repo(&atom.value, path),
                 _ => None,
             };
@@ -287,7 +388,8 @@ fn random_expr(rand: &mut Lcg, depth: usize) -> BooleanExpr {
             let (key, value) = *rand.pick(&[
                 ("kind", "function"),
                 ("kind", "struct"),
-                ("kind", "banana"),
+                ("kind", "fn"),
+                ("kind", "trait"),
                 ("repo", "a"),
                 ("repo", "b"),
                 ("repo", "zz"),
@@ -357,10 +459,10 @@ fn admission_agrees_with_the_reference_interpreter() {
         .into_owned();
     let kind_truth = |path: &str, value: &str, line: usize| -> Option<bool> {
         match path {
-            // The file declares exactly one function (lines 1-2);
-            // every other recognized kind is definitely absent, and
-            // `function` subsumes methods (0063 §2).
-            "a/src/x.rs" => Some(matches!(value, "function" | "method") && (1..=3).contains(&line)),
+            // The file declares exactly one function (lines 1-3);
+            // every other kind is definitely absent. `fn` is the
+            // function chip (0109).
+            "a/src/x.rs" => Some(matches!(value, "function" | "fn") && (1..=3).contains(&line)),
             _ => None,
         }
     };
@@ -386,10 +488,10 @@ fn admission_agrees_with_the_reference_interpreter() {
         // queries (byte-identical compat, 0063 §3) — while evaluating
         // to exactly the wrapped expression.
         let source = format!("case:sensitive NOT (NOT ({}))", expr.to_query_string());
-        let query = SearchQuery::parse(&source);
+        let query = crate::query::parse_search(&source);
         assert_eq!(
             query.state,
-            super::parser::QueryState::Ready,
+            QueryState::Ready,
             "generated canonical query must parse: {source}"
         );
         let plan = ContentPlan::compile(&query).unwrap().unwrap();
@@ -397,16 +499,17 @@ fn admission_agrees_with_the_reference_interpreter() {
         for path in PATHS {
             for (line_index, line) in LINES.iter().enumerate() {
                 let line_number = line_index + 1;
-                let admitted = plan.admits(
-                    Evidence {
-                        catalog: Some(&catalog),
-                        symbols: Some(&index),
-                        path: Some(path),
-                        line: Some(line_number),
-                        symbol: None,
-                    },
-                    line,
-                );
+                let row = RowFacts {
+                    path: Some(path),
+                    line: Some(line_number),
+                    text: line,
+                    ..RowFacts::default()
+                };
+                let evidence = Evidence {
+                    catalog: Some(&catalog),
+                    symbols: Some(&index),
+                };
+                let admitted = plan.admits(&row, &evidence);
                 let expected = reference(
                     &boolean,
                     line,

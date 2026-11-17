@@ -40,7 +40,7 @@ fn invalid_query_never_launches() {
     assert!(
         p.error
             .as_ref()
-            .is_some_and(|e| e.contains("unknown qualifier")),
+            .is_some_and(|e| e.contains("unknown filter")),
         "the correction shows: {:?}",
         p.error
     );

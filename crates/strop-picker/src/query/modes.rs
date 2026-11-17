@@ -67,11 +67,14 @@ fn reread_atoms(expression: &mut BooleanExpr, modes: SearchModes) {
 }
 
 impl SearchQuery {
-    /// Parse a content-search field with its toggles applied. `case:` in
-    /// the query overrides the case toggle; an explicit `regex:` is
-    /// already a regex, and whole-word wraps whichever form resulted.
-    pub fn parse_with(input: &str, modes: SearchModes) -> Self {
-        let mut query = Self::parse(input);
+    /// Apply the field's toggles to a fresh parse. `case:` in the query
+    /// overrides the case toggle; an explicit `regex:` is already a
+    /// regex, and whole-word wraps whichever form resulted.
+    pub(super) fn apply_modes(&mut self, modes: SearchModes) {
+        if modes == SearchModes::default() {
+            return;
+        }
+        let query = self;
         if modes.match_case && query.case.is_none() {
             query.case = Some(CaseMode::Sensitive);
         }
@@ -90,7 +93,6 @@ impl SearchQuery {
         if let Some(expression) = query.boolean.as_mut() {
             reread_atoms(expression, modes);
         }
-        query
     }
 }
 
@@ -100,7 +102,7 @@ mod tests {
     use super::*;
 
     fn admits(input: &str, modes: SearchModes, line: &str) -> bool {
-        let query = SearchQuery::parse_with(input, modes);
+        let query = SearchQuery::parse(input, &super::super::schema::SEARCH, modes);
         ContentPlan::compile(&query)
             .unwrap()
             .unwrap()
@@ -152,7 +154,7 @@ mod tests {
         assert!(admits("fo+", on, "foooo"));
         assert!(!admits("fo+", SearchModes::default(), "foooo"));
         assert!(admits("fo+ AND ba.", on, "foo bar"));
-        let invalid = SearchQuery::parse_with("fo(", on);
+        let invalid = SearchQuery::parse("fo(", &super::super::schema::SEARCH, on);
         assert!(ContentPlan::compile(&invalid).is_err());
     }
 

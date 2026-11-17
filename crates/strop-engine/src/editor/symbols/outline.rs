@@ -61,7 +61,7 @@ pub(crate) fn extract(
             .map(|declaration| ProtoSymbol {
                 name: declaration.name,
                 container: String::new(),
-                kind: declaration.kind.lsp_name().into(),
+                kind: declaration.kind,
                 location: ServerLocation {
                     doc: work.location.clone(),
                     position: ServerPosition {

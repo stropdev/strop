@@ -73,6 +73,48 @@ fn symbols_without_a_server_follow_every_edit() {
     assert!(row(frames[1], "beta").contains(":3"), "{}", frames[1]);
 }
 
+/// The owner's report (plan 0109): `kind:` in `Space s` filters, the
+/// words beside it stay fuzzy, and an unknown kind says so under the
+/// word instead of keeping everything.
+#[test]
+fn symbols_kind_filters_and_keeps_the_words_fuzzy() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = &directory.path().join("project");
+    std::fs::create_dir(root).unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "struct Config {}\nfn parse_config() {}\nfn wrap() {}\n",
+    )
+    .unwrap();
+    let output = run(
+        root,
+        "settle 20000\n\
+         keys <space>s\n\
+         settle 20000\n\
+         keys kind:function pcfg\n\
+         settle 20000\n\
+         frame\n\
+         keys <c-u>kind:fnc\n\
+         settle 20000\n\
+         frame\n",
+        "lib.rs",
+    );
+    let frames = frames(&output);
+    assert_eq!(frames.len(), 2, "{output}");
+    assert!(
+        row(frames[0], "parse_config").contains(":2"),
+        "{}",
+        frames[0]
+    );
+    assert!(!frames[0].contains(" wrap "), "{}", frames[0]);
+    assert!(!frames[0].contains("struct  Config"), "{}", frames[0]);
+    assert!(
+        frames[1].contains("^^^^^^^^ unknown kind: fnc"),
+        "the error sits under the word: {}",
+        frames[1]
+    );
+}
+
 /// The frame's last row: the modeline.
 fn modeline(frame: &str) -> &str {
     frame

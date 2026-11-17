@@ -125,11 +125,6 @@ pub struct PickerGlue {
     /// Recorded at every warm-up decision point; lives and dies with
     /// the workspace-symbols surface that owns it.
     pub(crate) project_statuses: Vec<(PathBuf, ProjectStatus)>,
-    /// The document-symbols reply, retained whole (0063 §3):
-    /// `textDocument/documentSymbol` carries no query, so Boolean and
-    /// `kind:` narrowing re-filters these candidates locally as the
-    /// picker's query changes.
-    pub(crate) symbols_candidates: std::sync::Arc<Vec<strop_lsp::ProtoSymbol>>,
     /// `Space a`: the typed owners behind the rows.
     pub(crate) actions: Option<super::actions::ActionOwner>,
 }
@@ -172,10 +167,17 @@ impl PickerGlue {
             indent_target: None,
             search: None,
             preview_witness: None,
-            symbols_candidates: Default::default(),
             wsymbols_generation: 0,
             actions: None,
         }
+    }
+
+    /// The field holds a query that is not Ready: its first diagnostic
+    /// is on the card and the list stays as it was (0109 decision 3).
+    pub fn query_diagnosed(&self) -> bool {
+        self.query
+            .as_ref()
+            .is_some_and(|query| query.state != strop_picker::query::QueryState::Ready)
     }
 
     /// Revoke the active request without touching the model: cancel

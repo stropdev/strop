@@ -83,7 +83,7 @@ fn spawn_search(
 ) -> (SourceWorker, CancelHandle) {
     let worker = SourceWorker::new().unwrap();
     let request = worker.search(
-        std::sync::Arc::new(crate::query::SearchQuery::parse(query)),
+        std::sync::Arc::new(crate::query::parse_search(query)),
         SelectionPolicy {
             hidden: true,
             respect_ignore: true,
@@ -285,7 +285,7 @@ fn a_superseded_generation_never_publishes() {
     // Generation A is provably running once its buffer row arrives.
     let (tx_a, rx_a) = channel();
     let handle_a = worker.search(
-        std::sync::Arc::new(crate::query::SearchQuery::parse("gena_hit")),
+        std::sync::Arc::new(crate::query::parse_search("gena_hit")),
         policy(),
         ResourceLocation::local(root.to_path_buf()),
         vec![busy_snapshot(root, "gena_hit in the buffer")],
@@ -301,7 +301,7 @@ fn a_superseded_generation_never_publishes() {
     // Generation B supersedes A on the one source worker.
     let (tx_b, rx_b) = channel();
     let _handle_b = worker.search(
-        std::sync::Arc::new(crate::query::SearchQuery::parse("parser")),
+        std::sync::Arc::new(crate::query::parse_search("parser")),
         policy(),
         ResourceLocation::local(root.to_path_buf()),
         Vec::new(),
@@ -461,7 +461,7 @@ fn workspace_symbol_texts(
     let (tx, rx) = channel();
     let _request = worker.workspace_symbols(
         root.to_path_buf(),
-        std::sync::Arc::new(crate::query::SearchQuery::parse(query)),
+        std::sync::Arc::new(crate::query::parse_search(query)),
         SelectionPolicy {
             hidden: true,
             respect_ignore: true,

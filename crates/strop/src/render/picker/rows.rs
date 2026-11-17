@@ -44,24 +44,18 @@ pub(super) fn render_results(
     let height = usize::from(area.height);
     let search = picker.kind == strop_picker::Kind::Search;
     let mut lines: Vec<Line> = Vec::with_capacity(height);
+    let schema = picker.kind.schema();
     if picker.rows.is_empty() && picker.input.text().is_empty() {
         if matches!(
             picker.kind,
             strop_picker::Kind::Files | strop_picker::Kind::Search
         ) {
-            // 0051 R02: the empty field teaches the vocabulary — never an
-            // obsolete flag hint
+            // 0051 R02: the empty field teaches the vocabulary, read
+            // from the surface's schema (0109 decision 7)
+            lines.push(quiet(t, format!(" {}", schema.examples())));
             lines.push(quiet(
                 t,
-                " language:rust path:src/ glob:\"**/*.rs\" hidden:include case:smart",
-            ));
-            lines.push(quiet(
-                t,
-                if picker.kind == strop_picker::Kind::Files {
-                    " bare words are fuzzy paths · ctrl-space suggests"
-                } else {
-                    " bare words are literal content · ctrl-space suggests"
-                },
+                format!(" {} · ctrl-space suggests", schema.bare.describe()),
             ));
         } else {
             lines.push(quiet(
@@ -167,7 +161,7 @@ pub(super) fn render_results(
     );
 }
 
-fn quiet(t: &Tokens, text: &'static str) -> Line<'static> {
+fn quiet(t: &Tokens, text: impl Into<std::borrow::Cow<'static, str>>) -> Line<'static> {
     Line::from(Span::styled(text, Style::default().fg(t.muted)))
 }
 

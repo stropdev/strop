@@ -86,10 +86,9 @@ fn jumps_picker_filters_dead_documents() {
 
 #[test]
 fn jumps_picker_speaks_the_query_language() {
-    // Consistency (0051 §3 / 0063 §3): the jumplist menu accepts
-    // the same qualifiers as file find and search — flat
-    // (`language:`, `path:`) and Boolean — narrowing the retained
-    // rows locally through the shared admission compiler.
+    // Consistency (0051 §3 / 0109): the jumplist menu takes the path
+    // filters its rows carry — flat (`language:`, `path:`) and Boolean
+    // — and the ranking pass applies them to the kept rows.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("lib.rs"), "fn one() {}\nfn two() {}\n").unwrap();
     std::fs::create_dir(dir.path().join("tests")).unwrap();
@@ -105,13 +104,11 @@ fn jumps_picker_speaks_the_query_language() {
     e.open_picker(Kind::Jumps);
     e.wait_picker();
     fn texts(e: &Editor) -> Vec<&str> {
-        e.picker
-            .as_ref()
-            .unwrap()
-            .picker
-            .items
+        let picker = &e.picker.as_ref().unwrap().picker;
+        picker
+            .rows
             .iter()
-            .map(|item| item.text.as_str())
+            .map(|row| picker.items[row.item].text.as_str())
             .collect()
     }
     let whole = texts(&e);
@@ -158,15 +155,27 @@ fn jumps_picker_speaks_the_query_language() {
         "content atoms match the jumped line's text: {narrowed:?}"
     );
 
-    // Operator-free content never enters admission: the catalog
-    // stays whole and the local ranker narrows (0063 §3).
+    // The kept list is never rebuilt: plain text ranks it.
     e.picker.as_mut().unwrap().picker.input.set_text("");
     e.paste_bracketed("helper");
     e.wait_picker();
-    let whole_again = texts(&e);
+    let picker = &e.picker.as_ref().unwrap().picker;
     assert!(
-        whole_again.iter().any(|row| row.contains("app.py")),
-        "plain text keeps the catalog whole: {whole_again:?}"
+        picker.items.iter().any(|item| item.text.contains("app.py")),
+        "the kept list stays whole"
+    );
+    assert!(texts(&e).iter().all(|row| row.contains("tests/widget.rs")));
+
+    // kind: is not a filter the jumps carry (0109 decision 4).
+    e.picker.as_mut().unwrap().picker.input.set_text("");
+    e.paste_bracketed("kind:fn");
+    e.wait_picker();
+    let error = e.picker.as_ref().unwrap().picker.error.clone();
+    assert!(
+        error
+            .as_deref()
+            .is_some_and(|error| error.starts_with("kind: does not filter jumps")),
+        "{error:?}"
     );
 
     // An incomplete query keeps the rows and explains itself.
@@ -183,13 +192,7 @@ fn jumps_picker_speaks_the_query_language() {
         glue.picker.error
     );
     assert!(
-        e.picker
-            .as_ref()
-            .unwrap()
-            .picker
-            .items
-            .iter()
-            .any(|item| item.text.contains("tests/widget.rs")),
+        texts(&e).iter().any(|row| row.contains("tests/widget.rs")),
         "rows stay while the query is incomplete"
     );
 }
@@ -210,6 +213,7 @@ fn jumps_preview_tracks_selection_and_rejects_a_closed_document() {
                 document,
                 offset: 0,
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -218,6 +222,7 @@ fn jumps_preview_tracks_selection_and_rejects_a_closed_document() {
                 document,
                 offset: beyond_eof,
             },
+            facts: Default::default(),
         },
     ]);
     e.wait_picker();

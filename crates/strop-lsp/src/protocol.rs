@@ -277,8 +277,7 @@ pub struct ServerPosition {
 pub struct ProtoSymbol {
     pub name: String,
     pub container: String,
-    /// SymbolKind's LSP name (`Function`, `Struct`, …).
-    pub kind: String,
+    pub kind: strop_core::symbol_kind::SymbolKind,
     pub location: ServerLocation,
     /// The lines the whole declaration covers (0107 §6.1).
     pub span: LineSpan,

@@ -1,7 +1,7 @@
    1  strop <version> · help · / search · q close                                                                                             ▮
    2                                                                                                                                       ▮
    3  ─ Moving ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────▮
-   4     h j k l                       move (never off the line)                                                                           ▮
+   4     h j k l                       move (never off the line)                                                                            
    5     w b e W B E                   word / WORD motions                                                                                  
    6     zz zt zb                      center/top/bottom the cursor line                                                                    
    7     H M L                         top/middle/bottom visible line                                                                       
@@ -42,7 +42,7 @@
   0: 1:#858c9a/#15171c+b 5:#e8a848/#15171c 12:#e6e1d6/#15171c+b 28:#858c9a/#15171c 93:reset/#15171c 1:#858c9a/#15171c
   1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 133:reset/#15171c 1:#858c9a/#15171c
   2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#4a5160/#15171c 6:#e6e1d6/#15171c+b 125:#4a5160/#15171c 1:#858c9a/#15171c
-  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 27:#e6e1d6/#15171c 75:reset/#15171c 1:#858c9a/#15171c
+  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 27:#e6e1d6/#15171c 75:reset/#15171c 1:reset/reset
   4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 21:#e6e1d6/#15171c 81:reset/#15171c 1:reset/reset
   5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 35:#e6e1d6/#15171c 67:reset/#15171c 1:reset/reset
   6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 32:#e6e1d6/#15171c 70:reset/#15171c 1:reset/reset

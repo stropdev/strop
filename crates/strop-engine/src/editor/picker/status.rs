@@ -171,5 +171,6 @@ fn project_status_row(root: &Path, status: &ProjectStatus, cwd: &Path) -> Item {
         badge: Some(status.kind.badge().into()),
         text: format!("{name}  {shown} · {}", status.reason),
         payload: Payload::ProjectStatus(root.to_path_buf()),
+        facts: Default::default(),
     }
 }

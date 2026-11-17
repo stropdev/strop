@@ -204,6 +204,7 @@ fn buffers_with_no_symbol_list_have_no_path() {
             match_len: 2,
             line_text: "fn alpha() {".into(),
         },
+        facts: Default::default(),
     }]);
     turn(&mut e, Key::CtrlO);
     e.wait_symbols();

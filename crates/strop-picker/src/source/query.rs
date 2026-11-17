@@ -134,6 +134,7 @@ pub fn parse_json_match_with(
                 match_len: end - start,
                 line_text: text.clone(),
             },
+            facts: Default::default(),
         };
         expanded = expanded.saturating_add(super::flow::row_bytes(&item));
         if expanded > super::flow::BACKLOG_BYTES {
@@ -177,21 +178,23 @@ mod tests {
             &[std::path::PathBuf::from("src/lib.rs")],
             &|| false,
         );
-        let plan = crate::query::ContentPlan::compile(&crate::query::SearchQuery::parse(
+        let plan = crate::query::ContentPlan::compile(&crate::query::parse_search(
             "kind:function AND parser",
         ))
         .unwrap()
         .unwrap();
         let admits = move |path: &str, line: Option<usize>, text: &str| {
-            plan.admits(
-                crate::query::Evidence {
-                    symbols: Some(&index),
-                    path: Some(path),
-                    line,
-                    ..crate::query::Evidence::default()
-                },
+            let row = crate::query::RowFacts {
+                path: Some(path),
+                line,
                 text,
-            )
+                ..Default::default()
+            };
+            let evidence = crate::query::Evidence {
+                symbols: Some(&index),
+                ..Default::default()
+            };
+            plan.admits(&row, &evidence)
         };
         let kept = parse_json_match_with(
             &record("src/lib.rs", 2, "    let parser = 1"),

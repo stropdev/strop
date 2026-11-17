@@ -25,6 +25,7 @@ fn many(root: &std::path::Path) -> (Editor, Vec<std::path::PathBuf>) {
                     match_len: 3,
                     line_text: text.into(),
                 },
+                facts: Default::default(),
             });
         }
     }

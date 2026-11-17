@@ -106,6 +106,7 @@ mod tests {
                     badge: None,
                     payload: Payload::File(path.clone().into()),
                     text: path,
+                    facts: Default::default(),
                 }
             })
             .collect();

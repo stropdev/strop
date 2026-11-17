@@ -24,6 +24,7 @@ fn corpus() -> Vec<Item> {
             badge: None,
             text: path.to_owned(),
             payload: Payload::File(path.into()),
+            facts: Default::default(),
         })
         .collect()
 }
