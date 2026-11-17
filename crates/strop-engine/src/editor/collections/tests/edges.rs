@@ -17,6 +17,7 @@ fn one_excerpt() -> (Editor, DocumentId, DocumentId) {
     e.picker_items_fixture(vec![Item {
         badge: None,
         text: "a.txt:2".into(),
+        facts: Default::default(),
         payload: Payload::Grep {
             location: strop_workspace::ResourceLocation::local(path.clone()),
             line: 2,

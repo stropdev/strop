@@ -142,6 +142,7 @@ impl<'a> Run<'a> {
         Item {
             badge: None,
             text,
+            facts: Default::default(),
             payload: Payload::File(PathBuf::from("probe.txt")),
         }
     }
