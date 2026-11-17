@@ -226,6 +226,15 @@ impl Layout {
             }
             Layout::Split { axis, children } => {
                 let tracks: Vec<usize> = children.iter().map(|child| child.tracks(*axis)).collect();
+                // The kernel's premises: a split has children, and every
+                // child holds at least one window. `well_formed` (every
+                // split has two or more children) gives both. That the
+                // minimum fits is NOT a premise here: a terminal can be
+                // smaller than it, and `tile` then shrinks later children.
+                debug_assert!(
+                    !tracks.is_empty() && tracks.iter().all(|&track| track >= 1),
+                    "tile premises: {tracks:?}"
+                );
                 let mut spans = vec![Span { at: 0, len: 0 }; children.len()];
                 let (cells, unit, gap) = match axis {
                     Axis::Row => (frame.width, 1, 1),
