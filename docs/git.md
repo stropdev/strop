@@ -100,6 +100,12 @@ output is shown; an empty message is refused by git. A signing setup that
 needs to ask for a passphrase in the terminal can not do so here — use an
 agent, or commit from a shell (`Space t`).
 
+Everything else strop asks git — blame, log, a commit's files, status —
+is a read, and a repository's own config cannot make it run a program:
+strop turns off its hooks, `core.fsmonitor`, diff `textconv` drivers,
+external diff programs, signature checks and the pager for those runs. A
+commit and a branch switch keep your hooks.
+
 With nothing staged, `Space g c` says so and opens nothing.
 
 ## Branches — `Space g b`

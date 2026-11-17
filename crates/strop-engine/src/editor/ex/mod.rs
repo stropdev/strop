@@ -145,6 +145,8 @@ pub(crate) struct ExState {
     pub compound: usize,
     /// The lines `:g` marked and has yet to visit.
     pub marked: global::MarkedLines,
+    /// `Ctrl-C` the key reader saw while a compound command runs.
+    pub interrupt: crate::editor::interrupt::Interrupt,
     /// Where `:cd -` goes back to.
     pub previous_directory: Option<std::path::PathBuf>,
     /// `:wqa` asked to quit once its writes have landed.

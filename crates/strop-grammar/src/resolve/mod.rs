@@ -322,9 +322,10 @@ fn operated(
         kind = Kind::Linewise;
     }
     let end_line = buf.line_of(end);
-    // One past the last operated byte of a characterwise span.
+    // One past the last operated character of a characterwise span —
+    // with its combining marks (Vim's characters are clusters).
     let past = if kind == Kind::Inclusive && end < buf.line_end(end_line) {
-        buf.ceil_boundary(end + 1)
+        buf.cluster_end(end)
     } else {
         end
     };

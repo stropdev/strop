@@ -51,6 +51,7 @@ fn inject_unconfirmed(
         origin: editor.buf().path.clone(),
         target: path.to_path_buf(),
         write_target: path.to_path_buf(),
+        canonical: path.to_path_buf(),
         close: false,
         force: false,
         focus: editor.focus_epoch,

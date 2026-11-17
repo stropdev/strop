@@ -5,6 +5,7 @@ mod buffers;
 mod commands;
 mod confirm;
 mod directory;
+mod global;
 
 use std::path::Path;
 

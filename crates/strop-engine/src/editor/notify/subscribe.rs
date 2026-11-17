@@ -25,6 +25,8 @@ pub(crate) struct NotifyState {
     pub(crate) queue: Arc<super::NotifyQueue>,
     /// The live subscription identity; events stamped otherwise are dead.
     pub(crate) subscription: Option<Subscription>,
+    /// The live subscription's root with its symlinks resolved.
+    pub(super) root: Option<std::path::PathBuf>,
     pub(super) subscribing: bool,
     /// Set to stop the watcher thread (it owns the inotify instances).
     pub(super) stop: Arc<AtomicBool>,
@@ -40,6 +42,7 @@ impl Default for NotifyState {
         Self {
             queue: Arc::new(super::NotifyQueue::new()),
             subscription: None,
+            root: None,
             subscribing: false,
             stop: Arc::new(AtomicBool::new(false)),
             reloads: HashMap::new(),
@@ -166,17 +169,18 @@ impl Editor {
         let spawned = std::thread::Builder::new()
             .name("fs-notify".into())
             .spawn(move || {
+                let root =
+                    std::fs::canonicalize(&scope.path).unwrap_or_else(|_| scope.path.clone());
                 let owned_trace = strop_trace::active_path().and_then(|path| {
-                    std::fs::canonicalize(&scope.path).ok().and_then(|root| {
-                        path.strip_prefix(root).ok().map(|relative| {
-                            strop_workspace::addr::uri::path_bytes(relative).to_vec()
-                        })
-                    })
+                    path.strip_prefix(&root)
+                        .ok()
+                        .map(|relative| strop_workspace::addr::uri::path_bytes(relative).to_vec())
                 });
                 let mut manager = NotifyManager::new(NotifyConfig::default());
                 let settled = match manager.subscribe(&scope, true) {
                     Ok(subscription) => Outcome::Success(SubscribedScope {
                         subscription,
+                        root,
                         owned_trace,
                     }),
                     Err(error) => Outcome::failed(FailureKind::Unavailable, error.to_string()),

@@ -6,6 +6,7 @@ use strop_core::frontend_input::{Input, KeyCode, KeyEvent, KeyKind};
 
 impl Editor {
     pub(crate) fn handle_frontend_input(&mut self, input: Input) {
+        self.pending.ex.interrupt.take_key(&input);
         if matches!(&input, Input::Key(key) if key.kind != KeyKind::Press) {
             self.terminals.keyboard = strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS;
         }

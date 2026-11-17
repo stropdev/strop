@@ -7,6 +7,7 @@ mod local_tests;
 pub(super) mod native;
 mod navigation;
 pub(crate) mod open;
+pub use open::open_startup_file;
 #[cfg(test)]
 mod remote_tests;
 mod save;
@@ -104,6 +105,11 @@ pub struct StoreAttempt {
     /// canonical spelling; save-as keeps the given name).
     #[serde(with = "strop_core::path_serde")]
     pub write_target: PathBuf,
+    /// `write_target` with its symlinks resolved, taken on the worker so
+    /// a later verification adopts it without a filesystem call on the
+    /// event loop (plan 0108 H7).
+    #[serde(with = "strop_core::path_serde")]
+    pub canonical: PathBuf,
     pub close: bool,
     pub force: bool,
     pub focus: u64,

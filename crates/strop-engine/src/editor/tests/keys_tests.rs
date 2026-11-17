@@ -219,3 +219,51 @@ fn q_records_only_into_a_register() {
     assert!(e.recording.is_none());
     assert!(e.message.contains("not a register"));
 }
+
+/// 0108 H2: an arrow in Insert starts a new insert where the caret lands
+/// (vim's start_arrow), so `Ctrl-W`/`Ctrl-U` stop at the new start —
+/// never at a stale byte inside a character typed since.
+#[test]
+fn insert_ctrl_w_and_ctrl_u_after_an_arrow_stop_at_the_new_insert_start() {
+    for typed in ["é", "日", "🎉", "x"] {
+        for back in ["<c-w>", "<c-u>"] {
+            let mut e = editor_with("one two\nfour\n");
+            e.feed_text(&format!("a<left>{typed}{back}"));
+            assert_eq!(text(&e), "one two\nfour\n", "{typed} {back}");
+            assert_eq!(e.head(), 0, "{typed} {back}");
+            e.feed_text("<esc>u");
+            assert_eq!(text(&e), "one two\nfour\n");
+        }
+    }
+    // ASCII: the stop is the place the caret moved to, not where `A` began
+    let mut e = editor_with("one two\n");
+    e.feed_text("A<left><left>xy<c-w>");
+    assert_eq!(text(&e), "one two\n");
+    e.feed_text("<c-w>");
+    assert_eq!(text(&e), "one wo\n");
+}
+
+/// 0108 D2 (found by the key fuzzer): a recording holds the keys typed,
+/// not what a macro they run expands to, and `@a` inside `qa` replays
+/// what `"a` held before — it never replays the recording growing under
+/// it (that ran without end).
+#[test]
+fn a_recording_holds_typed_keys_and_replays_the_register_it_replaces() {
+    let mut e = editor_with("abcdef\n");
+    e.feed_text("qbxq");
+    e.feed_text("qa@bq");
+    assert_eq!(text(&e), "cdef\n");
+    assert_eq!(e.register(Some('a')).text, "@b");
+    e.feed_text("@a");
+    assert_eq!(text(&e), "def\n");
+    let mut e = editor_with("abcdef\n");
+    e.feed_text("qaxx@aq");
+    assert_eq!(text(&e), "cdef\n", "the empty register replays nothing");
+    assert_eq!(e.register(Some('a')).text, "xx@a");
+    e.feed_text("qax@aq");
+    assert_eq!(
+        text(&e),
+        "\n",
+        "the old `xx@a` runs until the line is empty"
+    );
+}

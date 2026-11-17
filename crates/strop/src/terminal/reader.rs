@@ -1,6 +1,7 @@
-//! The input threads: tty bytes through the [`Decoder`], and SIGWINCH into
-//! a size report. Both block on the OS only — never the UI thread — and park
-//! against backpressure instead of dropping input (0056 AR06).
+//! The input threads: tty bytes through the [`Decoder`], SIGWINCH into
+//! a size report, SIGTERM/SIGHUP into the orderly quit. All block on the
+//! OS only — never the UI thread — and park against backpressure instead
+//! of dropping input (0056 AR06).
 //!
 //! Input comes from `/dev/tty`, not stdin, so `cmd | strop -` keeps a
 //! keyboard while stdin carries the document: a third thread streams
@@ -15,33 +16,48 @@ use strop_trace::{record_with, EventKind};
 /// a read that fills it says more bytes are already waiting.
 const READ_BYTES: usize = 4096;
 
-pub(super) fn spawn(sender: EventSender) -> io::Result<()> {
+pub(super) fn spawn(
+    sender: EventSender,
+    interrupt: crate::editor::interrupt::Interrupt,
+) -> io::Result<()> {
     // Without a controlling terminal, a terminal stdin is the keyboard.
     let tty: Box<dyn Read + Send> = match std::fs::File::open("/dev/tty") {
         Ok(tty) => Box::new(tty),
         Err(_) if std::io::IsTerminal::is_terminal(&io::stdin()) => Box::new(io::stdin()),
         Err(error) => return Err(error),
     };
-    let mut signals = signal_hook::iterator::Signals::new([signal_hook::consts::SIGWINCH])?;
-    let resizes = sender.clone();
+    use signal_hook::consts::{SIGHUP, SIGTERM, SIGWINCH};
+    let mut signals = signal_hook::iterator::Signals::new([SIGWINCH, SIGTERM, SIGHUP])?;
+    let signalled = sender.clone();
     std::thread::spawn(move || {
-        for _ in signals.forever() {
-            let Ok((columns, rows)) = crossterm::terminal::size() else {
-                continue;
+        let mut terminating = false;
+        for signal in signals.forever() {
+            let event = if signal == SIGWINCH {
+                let Ok((columns, rows)) = crossterm::terminal::size() else {
+                    continue;
+                };
+                record_with(
+                    EventKind::Resize,
+                    || serde_json::json!({"columns":columns,"rows":rows}),
+                );
+                AppEvent::Resize { columns, rows }
+            } else if terminating {
+                // a second request while the orderly quit is still
+                // running ends the process the default way
+                let _ = signal_hook::low_level::emulate_default_handler(signal);
+                return;
+            } else {
+                // SIGTERM/SIGHUP: the orderly quit — final checkpoint,
+                // then the terminal is restored as on `:q`
+                terminating = true;
+                AppEvent::QuitIntent
             };
-            record_with(
-                EventKind::Resize,
-                || serde_json::json!({"columns":columns,"rows":rows}),
-            );
-            if resizes
-                .send_blocking(AppEvent::Resize { columns, rows })
-                .is_err()
-            {
+            if signalled.send_blocking(event).is_err() {
                 return;
             }
         }
     });
-    std::thread::spawn(move || read_keys(tty, sender));
+    std::thread::spawn(move || read_keys(tty, sender, interrupt));
     Ok(())
 }
 
@@ -105,7 +121,11 @@ fn take_text(pending: &mut Vec<u8>, end: bool) -> String {
     text
 }
 
-fn read_keys(mut tty: Box<dyn Read + Send>, sender: EventSender) {
+fn read_keys(
+    mut tty: Box<dyn Read + Send>,
+    sender: EventSender,
+    interrupt: crate::editor::interrupt::Interrupt,
+) {
     let mut decoder = Decoder::default();
     let mut bytes = [0u8; READ_BYTES];
     let mut decoded = Vec::new();
@@ -129,6 +149,12 @@ fn read_keys(mut tty: Box<dyn Read + Send>, sender: EventSender) {
                 Decoded::Paste(text) => AppEvent::Input(Input::Paste(text)),
                 Decoded::Focus(focused) => AppEvent::Focus(focused),
             };
+            // A command running on the input thread sees Ctrl-C now;
+            // the key itself follows in order.
+            if matches!(&event, AppEvent::Input(input) if crate::editor::interrupt::is_interrupt(input))
+            {
+                interrupt.raise();
+            }
             // FIFO input ownership is resolved by the engine, never here.
             if sender.send_blocking(event).is_err() {
                 return;

@@ -1,4 +1,5 @@
 use super::*;
+use strop_core::Buffer;
 
 fn save(editor: &Editor) -> Result<bool, SessionError> {
     let Some(request) = capture_save(editor) else {
@@ -125,7 +126,7 @@ fn changed_files_clamp_restored_jump_records() {
     session.restore(&mut restored).unwrap();
     let record = &restored.view().jumps.entries[1];
     assert_eq!(record.offset, restored.buf().len_bytes());
-    assert_eq!(record.anchor, 0);
+    assert_eq!(record.anchor, restored.buf().len_bytes());
     assert_eq!(record.view_top, restored.buf().len_bytes());
 }
 
@@ -412,5 +413,31 @@ fn cd_saves_the_session_under_the_new_root() {
     assert_eq!(
         restarted.buf().path.as_deref(),
         Some(one.join("a.rs").as_path())
+    );
+}
+
+/// 0108 H6: a restored buffer goes through `:e`'s guarded read — a path
+/// that has since become a device is refused, never read without end.
+#[test]
+fn restore_refuses_a_buffer_path_that_became_a_device() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+    let mut e = Editor::new(Buffer::open(root.join("a.rs")).unwrap());
+    e.cwd = root.to_path_buf();
+    e.state_dir = Some(root.join("state"));
+    e.feed_text("x");
+    assert!(save(&e).unwrap());
+    std::fs::remove_file(root.join("a.rs")).unwrap();
+    std::os::unix::fs::symlink("/dev/zero", root.join("a.rs")).unwrap();
+    let mut e2 = Editor::new(Buffer::from_text(""));
+    e2.cwd = root.to_path_buf();
+    e2.state_dir = Some(root.join("state"));
+    let error = restore(&mut e2).expect_err("a device is not restored");
+    assert!(
+        error
+            .to_string()
+            .ends_with("only regular files and directories can be opened"),
+        "{error}"
     );
 }

@@ -75,7 +75,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     if editor.stdin_streaming() {
         reader::spawn_stdin(sender.clone());
     }
-    reader::spawn(input_sender)?;
+    reader::spawn(input_sender, editor.interrupt())?;
     editor.trace_state();
     let mut redraw = true;
     let mut painted_flash = false;

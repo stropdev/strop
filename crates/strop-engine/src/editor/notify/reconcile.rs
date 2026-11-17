@@ -1,6 +1,7 @@
 //! Applying drained records to documents: hint application, reload
 //! admission/guarding, and guarded reload completion.
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use strop_core::id::DocumentId;
 use strop_core::worker::{self, Completion, Outcome};
@@ -100,12 +101,14 @@ impl Editor {
         match outcome {
             Outcome::Success(settled) => {
                 self.notify.subscription = Some(settled.subscription);
+                self.notify.root = Some(settled.root);
                 self.notify
                     .queue
                     .set_owned_trace(settled.owned_trace.map(|path| (settled.subscription, path)));
             }
             Outcome::Failed { failure, .. } => {
                 let watched = self.notify.subscription.take().is_some();
+                self.notify.root = None;
                 self.notify.queue.set_owned_trace(None);
                 self.message = format!(
                     "filesystem notifications unavailable: {}; freshness is on demand",
@@ -126,22 +129,52 @@ impl Editor {
     /// state (never clobbered), clean documents reload through the
     /// guarded job, Directory buffers reobserve, Git signs refresh
     /// lazily and the search baseline invalidates the hinted subtrees.
+    ///
+    /// No filesystem call runs here (plan 0108 H7): a drain can carry
+    /// tens of thousands of hints. Each hint names a path under the
+    /// watched root; the root's resolved form, taken once by the watcher
+    /// thread, gives its canonical twin, and both are looked up in one
+    /// index of the open documents.
     fn apply_notify_hints(&mut self, hints: Vec<NotifyHint>) {
         use std::os::unix::ffi::OsStrExt;
+        if hints.iter().any(|hint| hint.path.is_empty()) {
+            // The scope root itself moved/was replaced (parent/name
+            // guard): the whole baseline is suspect.
+            self.notify_rescan();
+            return;
+        }
+        let current = self.current();
+        // Every name an open local document or directory answers to.
+        let mut files: HashMap<&Path, Vec<DocumentId>> = HashMap::new();
+        let mut directories: HashMap<&Path, DocumentId> = HashMap::new();
+        for (id, document) in self.docs.iter() {
+            match &document.source {
+                DocumentSource::File => {
+                    for name in [document.buf.path.as_deref(), document.buf.file_identity()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        let bound = files.entry(name).or_default();
+                        if !bound.contains(&id) {
+                            bound.push(id);
+                        }
+                    }
+                }
+                DocumentSource::Directory(directory)
+                    if matches!(directory.location.filesystem, Filesystem::Local) =>
+                {
+                    directories.insert(directory.location.path.as_path(), id);
+                }
+                _ => {}
+            }
+        }
         let mut picker_paths: Vec<PathBuf> = Vec::new();
         let mut reload: Vec<DocumentId> = Vec::new();
         let mut dirty: Vec<DocumentId> = Vec::new();
-        let mut directories: Vec<DocumentId> = Vec::new();
+        let mut listings: Vec<DocumentId> = Vec::new();
         let mut git_touched = false;
         for hint in hints {
             let relative = PathBuf::from(std::ffi::OsStr::from_bytes(&hint.path));
-            if relative.as_os_str().is_empty() {
-                // The scope root itself moved/was replaced (parent/name
-                // guard): the whole baseline is suspect.
-                self.notify_rescan();
-                return;
-            }
-            picker_paths.push(relative.clone());
             let absolute = self.cwd.join(&relative);
             if relative
                 .components()
@@ -149,41 +182,41 @@ impl Editor {
             {
                 git_touched = true;
             }
-            let canonical = std::fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
-            for (id, document) in self.docs.iter() {
-                match &document.source {
-                    DocumentSource::File => {
-                        let bound = document.buf.path.as_ref() == Some(&absolute)
-                            || document.buf.file_identity() == Some(absolute.as_path())
-                            || document.buf.file_identity() == Some(canonical.as_path());
-                        if !bound {
-                            continue;
-                        }
-                        if Some(id) == Some(self.current()) {
-                            git_touched = true;
-                        }
-                        if document.buf.is_dirty() {
-                            if !dirty.contains(&id) {
-                                dirty.push(id);
-                            }
-                        } else if !reload.contains(&id) {
-                            reload.push(id);
-                        }
+            let canonical = self.notify.root.as_ref().map(|root| root.join(&relative));
+            let bound = [Some(absolute.as_path()), canonical.as_deref()]
+                .into_iter()
+                .flatten()
+                .filter_map(|name| files.get(name))
+                .flatten();
+            for &id in bound {
+                if id == current {
+                    git_touched = true;
+                }
+                if self
+                    .docs
+                    .get(id)
+                    .is_some_and(|document| document.buf.is_dirty())
+                {
+                    if !dirty.contains(&id) {
+                        dirty.push(id);
                     }
-                    DocumentSource::Directory(directory) => {
-                        if !matches!(directory.location.filesystem, Filesystem::Local) {
-                            continue;
-                        }
-                        let affects_listing = absolute == directory.location.path
-                            || absolute.parent() == Some(directory.location.path.as_path());
-                        if affects_listing && !directories.contains(&id) {
-                            directories.push(id);
-                        }
-                    }
-                    _ => {}
+                } else if !reload.contains(&id) {
+                    reload.push(id);
                 }
             }
+            for name in [Some(absolute.as_path()), absolute.parent()]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(&id) = directories.get(name) {
+                    if !listings.contains(&id) {
+                        listings.push(id);
+                    }
+                }
+            }
+            picker_paths.push(relative);
         }
+        let directories = listings;
         for id in dirty {
             self.notify_mark_external(id);
         }

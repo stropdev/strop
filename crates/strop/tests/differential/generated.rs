@@ -1,7 +1,8 @@
 //! The generated corpus (0095 §3): each operator × each motion or text
 //! object × {no count, count} × {Normal, Visual, dot-repeat}, from fixed
-//! starting positions in two fixtures. A case's name is its own
-//! reproduction: `gen/prose@2:7/normal/d2aw`.
+//! starting positions in two fixtures; `d` over every target also runs on
+//! multibyte, CRLF and unterminated text (plan 0108 D2). A case's name
+//! is its own reproduction: `gen/prose@2:7/normal/d2aw`.
 
 use super::Run;
 
@@ -30,6 +31,30 @@ const CODE: &str = concat!(
     "}\n",
 );
 
+/// Two-, three- and four-byte characters, a combining mark, wide
+/// characters inside brackets and quotes. The text before each starting
+/// column (and the mark's, line 2 column 9) is ASCII: `|` counts screen
+/// columns in Vim and bytes in strop, a divergence of its own.
+const MULTIBYTE: &str = concat!(
+    "plain words café über 日本語 text, déjà vu.\n",
+    "a plain naïve e\u{301}cole (日本) \"引用 é\" end\n",
+    "\n",
+    "  🎉 party 🎉 time\n",
+    "last 日 line\n",
+);
+
+/// Lines that end in CRLF: the `\r` is never text a motion lands on.
+const CRLF: &str = concat!(
+    "first line (with parens) here\r\n",
+    "second line, \"quoted\" words\r\n",
+    "\r\n",
+    "    indented line\r\n",
+    "last line\r\n",
+);
+
+/// A last line with no line break after it.
+const UNTERMINATED: &str = "alpha beta (gamma)\n\n  delta, epsilon\nlast line no break";
+
 /// A fixture and the positions cases start from (1-based line, column).
 struct Fixture {
     name: &'static str,
@@ -47,6 +72,21 @@ const FIXTURES: &[Fixture] = &[
         name: "code",
         text: CODE,
         positions: &[(2, 5), (2, 17), (4, 14), (4, 19), (6, 22), (7, 1)],
+    },
+    Fixture {
+        name: "multibyte",
+        text: MULTIBYTE,
+        positions: &[(1, 7), (2, 3), (4, 3)],
+    },
+    Fixture {
+        name: "crlf",
+        text: CRLF,
+        positions: &[(1, 13), (5, 1)],
+    },
+    Fixture {
+        name: "unterminated",
+        text: UNTERMINATED,
+        positions: &[(3, 4), (4, 6)],
     },
 ];
 

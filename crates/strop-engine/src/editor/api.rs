@@ -70,6 +70,11 @@ impl Editor {
     /// samples ticks, seeds and seals recordings through [`Tape`]'s own
     /// API; a recorder error surfaces through
     /// [`Editor::note_tape_divergence`], never a direct message write.
+    /// The flag a terminal's key reader raises on `Ctrl-C`.
+    pub fn interrupt(&self) -> super::interrupt::Interrupt {
+        self.pending.ex.interrupt.clone()
+    }
+
     pub fn tape(&self) -> &strop_trace::replay::Tape {
         &self.tape
     }

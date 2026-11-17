@@ -33,11 +33,7 @@ impl Editor {
                 | grammar::Motion::FirstLine
                 | grammar::Motion::LastLine
                 | grammar::Motion::Window { .. },
-            ) => Some(
-                self.view()
-                    .desired_column
-                    .unwrap_or_else(|| self.cluster_cells(self.head()).1 - 1),
-            ),
+            ) => Some(self.wanted_cell()),
             grammar::Target::Motion(grammar::Motion::LineEnd) => {
                 Some(strop_core::id::DisplayColumn::new(usize::MAX / 2))
             }

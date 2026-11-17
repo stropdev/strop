@@ -4,7 +4,7 @@
 use crate::editor::{Document, Editor, JumpList, JumpRecord};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use strop_core::{history::History, Buffer};
+use strop_core::history::History;
 
 mod trust;
 pub use trust::{is_trusted, trust};
@@ -39,6 +39,9 @@ pub enum SessionError {
         #[source]
         source: std::io::Error,
     },
+    /// A buffer's file was refused by the guarded read `:e` uses.
+    #[error("{0}")]
+    Open(String),
     #[error("session JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("invalid session: {0}")]
@@ -310,7 +313,8 @@ impl Session {
             } else {
                 editor.cwd.join(&b.path)
             };
-            let mut buf = Buffer::open(&path).map_err(|e| io(&path, e))?;
+            let mut buf =
+                crate::editor::io::open_startup_file(path.clone()).map_err(SessionError::Open)?;
             if let Some(h) = &b.undo {
                 if content_hash(buf.text()) == b.undo_hash {
                     buf.restore_history(h.clone())?;

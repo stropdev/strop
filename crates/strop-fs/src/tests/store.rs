@@ -449,6 +449,16 @@ fn store_creates_an_absent_document_file() {
         );
         assert!(receipt.outcome.is_committed(), "{receipt:?}");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "created\n");
+        // 0108 H3: a created file is 0666 under the umask, like any
+        // program's — measured against a file the process creates itself
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let reference = root.path().join("reference");
+            std::fs::File::create(&reference).unwrap();
+            let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+            assert_eq!(mode(&file), mode(&reference), "new files honour the umask");
+        }
     });
 }
 

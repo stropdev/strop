@@ -65,9 +65,16 @@ impl Register {
         }
     }
 
+    /// Whole lines. The text ends in a line break, as Vim's does: lines
+    /// taken through a last line without one gain it here, and a put
+    /// below such a line drops it again (`put.rs`).
     pub fn linewise(text: impl Into<String>) -> Self {
+        let mut text = text.into();
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
         Self {
-            text: text.into(),
+            text,
             shape: RegisterShape::Linewise,
             file_provenance: None,
         }
