@@ -56,14 +56,10 @@ impl Editor {
                     };
                     (self.buf().len_bytes(), prefix)
                 };
-                // vim: first non-blank of the first pasted row
-                let row = &text[prefix.min(text.len())..];
-                let blank = row
-                    .chars()
-                    .take_while(|c| *c == ' ' || *c == '\t')
-                    .map(char::len_utf8)
-                    .sum::<usize>()
-                    .min(row.len());
+                // vim: first non-blank of the first pasted row — counted
+                // on the register text itself; the grown break is
+                // prepended after, so the landing adds `prefix` once
+                let blank = text.len() - text.trim_start_matches([' ', '\t']).len();
                 Spot {
                     at,
                     land: at + prefix + blank,
