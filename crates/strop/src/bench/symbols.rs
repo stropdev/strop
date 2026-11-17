@@ -27,6 +27,9 @@ const KEY_DURING_BUILD: Duration = Duration::from_millis(5);
 const SCOPE_LOOKUP: Duration = Duration::from_micros(200);
 /// A typed character while the index is carried through the edit.
 const KEY_WHILE_CARRIED: Duration = Duration::from_millis(5);
+/// One character of a `kind:` value on the kept list (0109): the
+/// filter runs in the ranking pass, never on the input thread.
+const FILTER_KEY: Duration = Duration::from_millis(5);
 
 /// 700 × (a struct, an impl with two methods, a free function).
 fn source() -> String {
@@ -88,6 +91,12 @@ fn settled(editor: &Editor) -> bool {
     !editor.async_pending()
 }
 
+fn ranked(editor: &Editor) -> bool {
+    editor
+        .picker()
+        .is_some_and(|glue| glue.rank_pending.is_none())
+}
+
 fn symbols_listed(editor: &Editor) -> bool {
     editor.picker().is_some_and(|glue| {
         glue.picker.kind == Kind::Symbols
@@ -132,6 +141,31 @@ pub(super) fn run() -> io::Result<()> {
         if drive.editor.picker().is_some() {
             return Err(io::Error::other("the symbols picker did not close"));
         }
+    }
+
+    // 0109: a filter typed into the kept list; the key's turn is input
+    // and a frame, the rows follow from the ranking pass
+    let mut filter_key = Op::new("filter_key");
+    for _ in 0..10 {
+        turn(&mut drive, Key::Char(' '))?;
+        turn(&mut drive, Key::Char('s'))?;
+        pump(&mut drive, symbols_listed)?;
+        for c in "kind:".chars() {
+            turn(&mut drive, Key::Char(c))?;
+        }
+        for c in "func".chars() {
+            filter_key.try_time(|| turn(&mut drive, Key::Char(c)))?;
+            pump(&mut drive, ranked)?;
+        }
+        if drive
+            .editor
+            .picker()
+            .is_none_or(|glue| glue.picker.rows.is_empty())
+        {
+            return Err(io::Error::other("kind:func kept no rows"));
+        }
+        turn(&mut drive, Key::Esc)?;
+        turn(&mut drive, Key::Esc)?;
     }
 
     for _ in 0..10 {
@@ -198,6 +232,7 @@ pub(super) fn run() -> io::Result<()> {
     for op in [
         &build,
         &open_kept,
+        &filter_key,
         &key_during,
         &open_after_edit,
         &motion,
@@ -208,6 +243,7 @@ pub(super) fn run() -> io::Result<()> {
         op.report();
     }
     super::find::within(&open_kept, OPEN_KEPT)?;
+    super::find::within(&filter_key, FILTER_KEY)?;
     super::find::within(&key_during, KEY_DURING_BUILD)?;
     super::find::within(&lookup, SCOPE_LOOKUP)?;
     super::find::within(&carried, KEY_WHILE_CARRIED)

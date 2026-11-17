@@ -1,11 +1,12 @@
 //! Lightweight query suggestions (0051 §4): Ctrl-Space in a query
-//! field offers qualifier names, language names/aliases and enumerated
-//! values from static metadata and the current parse position — never
-//! an LSP or a filesystem scan.
+//! field offers the keys its surface declares (0109), language names
+//! and aliases, kind values and enumerated options from static metadata
+//! and the current parse position — never an LSP or a filesystem scan.
 
-use strop_core::languages;
+use strop_core::{languages, symbol_kind};
 
 use super::lexer::{self, TokenKind};
+use super::schema::Schema;
 
 /// One offered completion: the replacement text and the byte range it
 /// replaces. Suggestions replace the exact token/value span — never
@@ -17,8 +18,9 @@ pub struct Suggestion {
     pub detail: String,
 }
 
-/// Suggest completions for the raw query at `caret` (byte offset).
-pub fn suggest(query: &super::SearchQuery, caret: usize) -> Vec<Suggestion> {
+/// Suggest completions for the raw query at `caret` (byte offset), from
+/// what `schema` declares.
+pub fn suggest(query: &super::SearchQuery, caret: usize, schema: &Schema) -> Vec<Suggestion> {
     let input = &query.source;
     let mut caret = caret.min(input.len());
     while !input.is_char_boundary(caret) {
@@ -38,7 +40,7 @@ pub fn suggest(query: &super::SearchQuery, caret: usize) -> Vec<Suggestion> {
     }
     let Some(token) = at_token else {
         // caret in whitespace after the last token: offer qualifiers
-        return qualifier_suggestions("", caret..caret);
+        return qualifier_suggestions(schema, "", caret..caret);
     };
     match &token.kind {
         TokenKind::UnclosedQuote | TokenKind::Operator(_) | TokenKind::Paren { .. } => Vec::new(),
@@ -49,6 +51,7 @@ pub fn suggest(query: &super::SearchQuery, caret: usize) -> Vec<Suggestion> {
             // completing a qualifier key? "lang" → "language:"
             if !text.contains(':') {
                 return qualifier_suggestions(
+                    schema,
                     &input[token.range.start..caret],
                     token.range.clone(),
                 );
@@ -59,6 +62,7 @@ pub fn suggest(query: &super::SearchQuery, caret: usize) -> Vec<Suggestion> {
             let value_start = key_range.end + 1;
             if caret <= key_range.end {
                 return qualifier_suggestions(
+                    schema,
                     &input[key_range.start..caret],
                     key_range.start..value_start,
                 );
@@ -69,15 +73,20 @@ pub fn suggest(query: &super::SearchQuery, caret: usize) -> Vec<Suggestion> {
     }
 }
 
-/// All qualifiers matching a partial key.
-fn qualifier_suggestions(prefix: &str, range: std::ops::Range<usize>) -> Vec<Suggestion> {
-    lexer::QUALIFIERS
+/// The surface's keys matching a partial key.
+fn qualifier_suggestions(
+    schema: &Schema,
+    prefix: &str,
+    range: std::ops::Range<usize>,
+) -> Vec<Suggestion> {
+    schema
+        .fields
         .iter()
-        .filter(|q| prefix.is_empty() || q.starts_with(prefix))
-        .map(|q| Suggestion {
-            insert: format!("{q}:"),
+        .filter(|field| field.key().starts_with(prefix))
+        .map(|field| Suggestion {
+            insert: format!("{}:", field.key()),
             range: range.clone(),
-            detail: "qualifier".into(),
+            detail: field.help().into(),
         })
         .collect()
 }
@@ -104,18 +113,18 @@ fn value_suggestions(key: &str, prefix: &str, range: std::ops::Range<usize>) -> 
             }
         }
         "kind" => {
-            for value in [
-                "function",
-                "method",
-                "class",
-                "struct",
-                "enum",
-                "interface",
-                "module",
-                "constant",
-                "impl",
-            ] {
-                push(value.to_string(), "symbol kind");
+            // a value is offered when any word naming it fits the prefix
+            for spec in symbol_kind::KINDS {
+                if spec
+                    .words()
+                    .any(|word| word.starts_with(&prefix.to_ascii_lowercase()))
+                {
+                    out.push(Suggestion {
+                        insert: spec.value.into(),
+                        range: range.clone(),
+                        detail: format!("symbol kind · {}", spec.chip),
+                    });
+                }
             }
         }
         "hidden" | "ignored" => {
@@ -135,25 +144,32 @@ fn value_suggestions(key: &str, prefix: &str, range: std::ops::Range<usize>) -> 
 
 #[cfg(test)]
 mod tests {
+    use super::super::schema::{self, Field};
     use super::*;
 
+    fn at(input: &str, caret: usize) -> Vec<Suggestion> {
+        suggest(&crate::query::parse_search(input), caret, &schema::SEARCH)
+    }
+
     #[test]
-    fn empty_field_offers_all_qualifiers() {
-        let suggestions = suggest(&super::super::SearchQuery::parse(""), 0);
-        assert_eq!(suggestions.len(), lexer::QUALIFIERS.len());
+    fn empty_field_offers_every_declared_key() {
+        let suggestions = at("", 0);
+        assert_eq!(suggestions.len(), Field::ALL.len());
         assert!(suggestions.iter().any(|s| s.insert == "language:"));
+        let files = suggest(&crate::query::parse_search(""), 0, &schema::FILES);
+        assert!(!files.iter().any(|s| s.insert == "kind:"));
     }
 
     #[test]
     fn partial_key_filters() {
-        let suggestions = suggest(&super::super::SearchQuery::parse("lang"), 4);
+        let suggestions = at("lang", 4);
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].insert, "language:");
     }
 
     #[test]
     fn language_values_and_aliases() {
-        let suggestions = suggest(&super::super::SearchQuery::parse("language:"), 9);
+        let suggestions = at("language:", 9);
         assert!(suggestions.iter().any(|s| s.insert == "rust"));
         assert!(suggestions.iter().any(|s| s.insert == "rs"));
         assert!(suggestions.iter().any(|s| s.detail == "alias"));
@@ -161,14 +177,14 @@ mod tests {
 
     #[test]
     fn case_values() {
-        let suggestions = suggest(&super::super::SearchQuery::parse("case:sm"), 7);
+        let suggestions = at("case:sm", 7);
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].insert, "smart");
         assert_eq!(suggestions[0].range, 5..7);
-        let suggestions = suggest(&super::super::SearchQuery::parse("case:ins"), 8);
+        let suggestions = at("case:ins", 8);
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].insert, "insensitive");
-        let all = suggest(&super::super::SearchQuery::parse("case:"), 5);
+        let all = at("case:", 5);
         assert!(all.iter().any(|s| s.insert == "ignore"));
         assert!(all.iter().any(|s| s.insert == "insensitive"));
         assert!(all.iter().any(|s| s.insert == "sensitive"));
@@ -176,26 +192,23 @@ mod tests {
 
     #[test]
     fn quoted_spans_offer_nothing() {
-        assert!(suggest(&super::super::SearchQuery::parse("\"lang"), 3).is_empty());
+        assert!(at("\"lang", 3).is_empty());
     }
 
     #[test]
-    fn kind_values_offer_the_symbol_kinds() {
-        let suggestions = suggest(&super::super::SearchQuery::parse("kind:fun"), 8);
+    fn kind_values_come_from_the_kind_table() {
+        let suggestions = at("kind:fun", 8);
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].insert, "function");
-        assert_eq!(suggestions[0].detail, "symbol kind");
-        let all = suggest(&super::super::SearchQuery::parse("kind:"), 5);
-        assert!(all.iter().map(|s| s.insert.as_str()).eq([
-            "function",
-            "method",
-            "class",
-            "struct",
-            "enum",
-            "interface",
-            "module",
-            "constant",
-            "impl",
-        ]));
+        assert_eq!(suggestions[0].detail, "symbol kind · fn");
+        // any word naming a kind offers its value: a chip, a habit
+        let traits = at("kind:tra", 8);
+        assert_eq!(traits.len(), 1);
+        assert_eq!(traits[0].insert, "interface");
+        let all = at("kind:", 5);
+        assert!(all
+            .iter()
+            .map(|s| s.insert.as_str())
+            .eq(strop_core::symbol_kind::KINDS.iter().map(|spec| spec.value)));
     }
 }

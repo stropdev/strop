@@ -28,6 +28,7 @@ mod tests {
             badge: None,
             text: text.into(),
             payload: Payload::File(PathBuf::from(text)),
+            facts: Default::default(),
         }
     }
 
@@ -194,7 +195,7 @@ mod tests {
         let symbol = |name: &str| ProtoSymbol {
             name: name.into(),
             container: String::new(),
-            kind: "Function".into(),
+            kind: strop_core::symbol_kind::SymbolKind::Function,
             location: ServerLocation {
                 doc: strop_workspace::ResourceLocation::local(dir.path().join("lib.rs")),
                 position: ServerPosition {

@@ -402,6 +402,7 @@ fn grep_respawns_reach_the_production_event_source() {
                     badge: None,
                     text: "STALE".into(),
                     payload: strop_picker::Payload::Buffer(*e.mru.first().unwrap()),
+                    facts: Default::default(),
                 }]
                 .into(),
             ),

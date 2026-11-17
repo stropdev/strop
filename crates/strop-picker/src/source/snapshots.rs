@@ -1,6 +1,6 @@
 //! Dirty-source matching shared by local and SSH providers in the captured scope.
 use super::{flow::StreamSender, query::RECORD_LIMIT};
-use crate::query::{ContentPlan, Evidence};
+use crate::query::{ContentPlan, Evidence, RowFacts};
 use std::{path::PathBuf, sync::Arc};
 use strop_core::worker::CancelToken;
 use strop_workspace::ResourceLocation;
@@ -63,14 +63,17 @@ pub(super) fn emit_snapshots(
             let short: String = text.trim().chars().take(80).collect();
             let mut items = Vec::new();
             let mut expanded = text.len();
+            let row = RowFacts {
+                path: Some(&relative),
+                line: Some(line + 1),
+                text: &text,
+                ..RowFacts::default()
+            };
             let evidence = Evidence {
                 catalog,
                 symbols: symbols.as_deref(),
-                path: Some(&relative),
-                line: Some(line + 1),
-                symbol: None,
             };
-            if !content.admits(evidence, &text) {
+            if !content.admits(&row, &evidence) {
                 continue;
             }
             for hit in content.regex.find_iter(&text).take(4097) {
@@ -84,6 +87,7 @@ pub(super) fn emit_snapshots(
                         match_len: hit.len(),
                         line_text: text.clone(),
                     },
+                    facts: Default::default(),
                 };
                 expanded = expanded.saturating_add(super::flow::row_bytes(&item));
                 if expanded > super::flow::BACKLOG_BYTES || items.len() >= 4096 {

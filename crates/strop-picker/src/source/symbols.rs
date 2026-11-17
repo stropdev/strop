@@ -20,8 +20,9 @@
 //! disk-pure baseline.
 use std::collections::HashMap;
 use std::path::Path;
+use strop_core::symbol_kind::SymbolKind;
 use strop_syntax::languages;
-use strop_syntax::symbols::{DeclExtractor, Declaration, SymbolKind};
+use strop_syntax::symbols::{DeclExtractor, Declaration};
 
 /// Files whose extraction is attempted per search. Files beyond the
 /// bound stay absent — Unknown, sound overfetch.
@@ -240,24 +241,6 @@ impl SymbolIndex {
             .filter(|(_, entry)| entry.complete)
             .map(|(path, entry)| (path.as_ref(), entry.declarations.as_slice()))
     }
-
-    /// `kind:` values the query language accepts (0063 §2/§3).
-    /// `function` subsumes methods.
-    pub fn kinds_for_value(value: &str) -> Option<&'static [SymbolKind]> {
-        use SymbolKind::*;
-        match value {
-            "function" => Some(&[Function, Method]),
-            "method" => Some(&[Method]),
-            "class" => Some(&[Class]),
-            "struct" => Some(&[Struct]),
-            "enum" => Some(&[Enum]),
-            "interface" => Some(&[Interface]),
-            "module" => Some(&[Module]),
-            "constant" => Some(&[Constant]),
-            "impl" => Some(&[Impl]),
-            _ => None,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -317,7 +300,7 @@ mod tests {
         );
         let paths = vec![std::path::PathBuf::from("src/lib.rs")];
         let index = SymbolIndex::build(dir.path(), &paths, &|| false);
-        let kinds = SymbolIndex::kinds_for_value("impl").unwrap();
+        let kinds = &[SymbolKind::Impl];
         assert_eq!(index.kind_decides("src/lib.rs", Some(3), kinds), Some(true));
         assert_eq!(
             index.kind_decides("src/lib.rs", Some(5), kinds),
@@ -368,17 +351,5 @@ mod tests {
             index.kind_decides("src/lib.rs", Some(1), &[SymbolKind::Function]),
             None
         );
-    }
-
-    #[test]
-    fn kinds_cover_methods_under_function() {
-        assert!(SymbolIndex::kinds_for_value("function")
-            .unwrap()
-            .contains(&SymbolKind::Method));
-        assert_eq!(
-            SymbolIndex::kinds_for_value("method").unwrap(),
-            &[SymbolKind::Method]
-        );
-        assert!(SymbolIndex::kinds_for_value("banana").is_none());
     }
 }

@@ -331,6 +331,7 @@ fn files_picker_columns() {
                     badge: None,
                     text: (*path).into(),
                     payload: strop_picker::Payload::File((*path).into()),
+                    facts: Default::default(),
                 })
                 .collect(),
         );
@@ -384,6 +385,33 @@ fn locations_picker() {
             })
             .collect();
         editor.locations_fixture(&places, sources);
+        settle_picker()
+    });
+}
+
+/// 0109 decision 7: the symbols list names the filters it takes, read
+/// from its schema, under an empty field; the footer says where the
+/// rest are.
+#[test]
+fn symbols_picker_filters() {
+    each("symbols-filters", |editor| {
+        editor.feed_text(" s");
+        editor.wait_symbols();
+        editor.wait_picker();
+        settle_picker()
+    });
+}
+
+/// 0109 decision 3: an unknown kind is a located error under the word,
+/// with its correction; the list stays as it was.
+#[test]
+fn symbols_picker_unknown_kind() {
+    each("symbols-unknown-kind", |editor| {
+        editor.feed_text(" s");
+        editor.wait_symbols();
+        editor.wait_picker();
+        editor.paste_bracketed("kind:fnc gather");
+        editor.wait_picker();
         settle_picker()
     });
 }

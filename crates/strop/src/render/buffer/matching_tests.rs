@@ -165,6 +165,7 @@ fn collection_pairing_paints_the_same_sources_excerpts_only() {
             match_len: 2,
             line_text: text.into(),
         },
+        facts: Default::default(),
     };
     e.picker_items_fixture(vec![
         item(&a, 1, "fn main() {"),

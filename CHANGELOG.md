@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`kind:` filters `Space s` and `Space S`** (plans/0109). It used to keep every row: only nine exact words were values and anything else was ignored without a word, a language server's fields, variants and type parameters passed every `kind:` filter, and a `kind:` turned the words beside it into an exact phrase. Now `kind:` takes the full word, the chip the list shows (`fn`, `meth`, `iface`, `const`, …) and common language words (`trait`, `func`, `def`, …), in any case, or the start of one; all 26 kinds a language server reports have one; and `kind:fn pcfg` finds `parse_config`.
+- **Files obeys `AND`/`OR`/`NOT`**: `NOT path:src` and `path:a OR path:b` used to list every file.
+- **Search with only filters asks for text** instead of listing every line, several times.
+- **`-repo:` excludes the project**; it used to keep only that project.
+- **`glob:` matches the same paths everywhere**; the symbol lists and Search's line filter used their own glob matching.
+
+### Changed
+
+- **A filter a list cannot apply is an error, not silence.** A misspelt filter, an unknown value or one the list does not take (`kind:` in Files) marks the word with `^^^`, says what is wrong on the row under the field with the nearest correct spelling, and leaves the list as it was until it is fixed.
+- **`type:` is gone**; write `kind:`. `type:function` now says `did you mean kind:?`.
+- **Buffers, diagnostics and locations take the path filters** (`path:`, `language:`, `glob:`, `fpath:`, `case:`, `text:`, `regex:`), and so does the jump list as before. `docs/search.md` has a table of exactly what each list takes, and `Space ?` lists every filter with the lists that take it.
+- **Every list that takes filters says so**: the row under an empty field shows its everyday filters, the footer shows `ctrl-space filters`, and Ctrl-Space offers only the filters that list takes. Actions, themes, branches and SSH destinations take none: there a colon is just a colon.
+- **`repo:` is Search's alone**; Files and workspace symbols never applied it.
+- **Filtering a kept list happens off the input thread**, in the pass that ranks it, over facts each row carries from when the list was built: a keystroke allocates nothing per row.
+- **Recorded traces store a symbol's kind by name in strop's kind table** (`Variant`, not the protocol's `EnumMember`).
+
 ## 0.70.0 — 2026-11-16
 
 ### Added

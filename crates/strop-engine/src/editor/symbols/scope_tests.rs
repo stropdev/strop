@@ -44,7 +44,7 @@ fn symbol(name: String, line: usize) -> ProtoSymbol {
     ProtoSymbol {
         name,
         container: String::new(),
-        kind: "Function".into(),
+        kind: strop_core::symbol_kind::SymbolKind::Function,
         location: ServerLocation {
             doc: strop_workspace::ResourceLocation::local("/w/a.rs".into()),
             position: ServerPosition {

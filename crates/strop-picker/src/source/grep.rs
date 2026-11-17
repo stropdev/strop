@@ -201,7 +201,7 @@ mod tests {
         cwd: &std::path::Path,
         tx: Sender<PickerMsg>,
     ) -> (super::super::SourceWorker, strop_core::worker::CancelHandle) {
-        let query = crate::query::SearchQuery::parse(text);
+        let query = crate::query::parse_search(text);
         let worker = super::super::SourceWorker::new().unwrap();
         let request = worker.search(
             std::sync::Arc::new(query),
@@ -233,7 +233,7 @@ mod tests {
         let (tx, rx) = channel();
         let worker = super::super::SourceWorker::new().unwrap();
         let _request = worker.search(
-            std::sync::Arc::new(crate::query::SearchQuery::parse("needle")),
+            std::sync::Arc::new(crate::query::parse_search("needle")),
             super::super::selection::SelectionPolicy {
                 hidden: true,
                 respect_ignore: false,
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn an_invalid_regex_is_a_diagnostic_at_plan_time() {
-        let query = crate::query::SearchQuery::parse("regex:\"x [\"");
+        let query = crate::query::parse_search("regex:\"x [\"");
         let error = crate::query::ContentPlan::compile(&query).unwrap_err();
         assert!(error.message.contains("invalid regex"), "{}", error.message);
     }

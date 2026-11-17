@@ -1,7 +1,8 @@
 //! The syntax outline (0063 §2, 0107 §9 step 5): what each linked
 //! grammar's symbols query extracts, with the lines each declaration spans.
 use crate::languages;
-use crate::symbols::{DeclExtractor, SymbolKind};
+use crate::symbols::DeclExtractor;
+use strop_core::symbol_kind::SymbolKind;
 
 fn extract(language: languages::LanguageId, src: &str) -> Vec<(SymbolKind, String, usize, usize)> {
     let mut extractor = DeclExtractor::for_language(language).expect("extractor");
@@ -153,7 +154,7 @@ impl<T: Clone> std::fmt::Display
         ]
     );
     assert_eq!(SymbolKind::Impl.chip(), "impl");
-    assert_eq!(SymbolKind::Impl.lsp_name(), "Object");
+    assert!(SymbolKind::Impl.spec().lsp.contains(&"Object"));
 }
 
 #[test]

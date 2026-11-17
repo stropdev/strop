@@ -84,6 +84,9 @@ pub struct FilterRequest {
     /// Pinned rows score 0: real matches always rank above them.
     pub pinned_tail: usize,
     pub mode: MatchMode,
+    /// Filters judged per row before scoring (0109 §3.2d): compiled once
+    /// per pass, here, never on the input thread.
+    pub filter: Option<Arc<crate::query::SearchQuery>>,
     /// The catalog's texts are paths: terms match the file name first and
     /// ties go to the shorter path (0093 §3.2).
     pub paths: bool,
@@ -111,6 +114,11 @@ pub fn rank(
         MatchMode::Fuzzy(crate::query::CaseMode::Smart) => CaseMatching::Smart,
         MatchMode::Exact(_, _) => CaseMatching::Ignore,
     };
+    let admission = match &request.filter {
+        Some(query) => crate::query::Admission::compile(query)?,
+        None => None,
+    };
+    let evidence = crate::query::Evidence::default();
     let mut fuzzy = None;
     let mut matched = Vec::new();
     // Path lengths of the admitted rows, for the shorter-path tie-break.
@@ -126,9 +134,17 @@ pub fn rank(
         if index % 128 == 0 && cancelled() {
             return Ok(None);
         }
+        let pinned = index >= pinned_from;
+        if !pinned
+            && admission
+                .as_ref()
+                .is_some_and(|admission| !admission.admits(&item.facts(), &evidence))
+        {
+            continue;
+        }
         let start = ranking.columns.len();
         matched.clear();
-        let score = if index >= pinned_from || request.upstream_filtered {
+        let score = if pinned || request.upstream_filtered {
             Some(0)
         } else if request.query.is_empty() {
             Some(if reached {

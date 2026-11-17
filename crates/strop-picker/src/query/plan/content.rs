@@ -1,8 +1,9 @@
+use super::super::facts::RowFacts;
 use super::super::parser::{
     BooleanExpr, CaseMode, ContentExpr, QueryDiagnostic, QueryState, SearchQuery,
 };
 use super::{
-    boolean::{BooleanPlan, Evidence},
+    admission::{Admission, Evidence},
     build_regex,
 };
 
@@ -15,7 +16,12 @@ pub struct ContentPlan {
     /// `matches_line`/`admits` — the prefilter only overfetches (0063 §4).
     pub regex: regex::Regex,
     pub case: CaseMode,
-    boolean: Option<BooleanPlan>,
+    /// True when the query carries operators: `admission` then holds
+    /// the whole decision, content atoms included.
+    boolean: bool,
+    /// The row decision beyond the expression: the Boolean AST, or the
+    /// flat `kind:`/`repo:` filters the file selection cannot apply.
+    admission: Option<Admission>,
     /// The pattern a line provider (rg) runs: the exact expression for
     /// simple queries, the positive-atom union prefilter for Boolean
     /// ones (0063 §4).
@@ -29,14 +35,14 @@ impl ContentPlan {
     }
 
     pub fn is_literal(&self) -> bool {
-        self.boolean.is_none() && matches!(self.expr, ContentExpr::Literal(_))
+        !self.boolean && matches!(self.expr, ContentExpr::Literal(_))
     }
 
     /// Smart-case exact admission is per atom. A Boolean provider union must
     /// not become case-sensitive merely because one sibling has uppercase:
     /// folding the prefilter is sound because exact admission remains per atom.
     pub fn provider_case(&self) -> CaseMode {
-        if self.boolean.is_some() && self.case == CaseMode::Smart {
+        if self.boolean && self.case == CaseMode::Smart {
             CaseMode::Ignore
         } else {
             self.case
@@ -47,9 +53,9 @@ impl ContentPlan {
     /// content expression; Boolean queries target the unique positive
     /// content atom (parity of `NOT` respected — `NOT NOT x` is x).
     pub fn replacement_target(&self) -> ReplacementTarget {
-        match &self.boolean {
-            None => ReplacementTarget::Single(self.regex.clone()),
-            Some(exact) => exact.replacement_target(),
+        match (&self.admission, self.boolean) {
+            (Some(exact), true) => exact.replacement_target(),
+            _ => ReplacementTarget::Single(self.regex.clone()),
         }
     }
 
@@ -68,9 +74,9 @@ impl ContentPlan {
                     }
                 }));
             }
-            let exact = BooleanPlan::compile_plan(boolean, case, query.content_range())?;
+            let exact = Admission::compile_expr(boolean, case, query.content_range())?;
             let mut positive = Vec::new();
-            BooleanPlan::prefilter_pattern(boolean, &mut positive);
+            Admission::prefilter_pattern(boolean, &mut positive);
             let pattern = if positive.is_empty() {
                 // Pure-negative or metadata-only: providers must surface
                 // every line; exact admission decides.
@@ -95,7 +101,8 @@ impl ContentPlan {
                 expr: ContentExpr::Regex(boolean.to_query_string()),
                 regex,
                 case,
-                boolean: Some(exact),
+                boolean: true,
+                admission: Some(exact),
                 provider: pattern,
             }));
         }
@@ -109,39 +116,57 @@ impl ContentPlan {
         let provider = match expr {
             ContentExpr::Literal(text) | ContentExpr::Regex(text) => text.clone(),
         };
+        // The file selection already applies the path family; only the
+        // filters it cannot judge make a per-line decision.
+        let admission = if query.kinds.is_empty()
+            && query.exclude_kinds.is_empty()
+            && query.repos.is_empty()
+            && query.exclude_repos.is_empty()
+        {
+            None
+        } else {
+            Admission::compile(query)?
+        };
         Ok(Some(ContentPlan {
             expr: expr.clone(),
             regex,
             case,
-            boolean: None,
+            boolean: false,
+            admission,
             provider,
         }))
     }
 
-    /// Exact per-line admission on a line-less surface (directory
-    /// names): metadata atoms stay Unknown (0063 §4).
+    /// Exact admission of one name on a surface with no other facts
+    /// (a folder's entries): the name is both the text and the path.
     pub fn matches_line(&self, line: &str) -> bool {
-        self.admits(Evidence::default(), line)
+        let row = RowFacts {
+            path: Some(line),
+            text: line,
+            ..RowFacts::default()
+        };
+        self.admits(&row, &Evidence::default())
     }
 
-    /// Exact admission with the file's path for metadata atoms.
-    pub fn admits(&self, evidence: Evidence<'_>, line: &str) -> bool {
-        match &self.boolean {
-            Some(exact) => exact.admits(&evidence, line),
-            None => self.regex.is_match(line),
-        }
+    /// Exact admission of one line with its path and line number.
+    pub fn admits(&self, row: &RowFacts<'_>, evidence: &Evidence<'_>) -> bool {
+        (self.boolean || self.regex.is_match(row.text))
+            && self
+                .admission
+                .as_ref()
+                .is_none_or(|admission| admission.admits(row, evidence))
     }
 
     /// Whether building the syntax-fallback symbol index pays off for
     /// this query — only `kind:` atoms consult it (0063 §2).
     pub fn needs_symbols(&self) -> bool {
-        self.boolean.as_ref().is_some_and(|exact| exact.uses_kind())
+        self.admission.as_ref().is_some_and(Admission::uses_kind)
     }
 
     /// Whether discovering project boundaries pays off for this query —
     /// only `repo:` atoms consult the catalog (0063 §2).
     pub fn needs_catalog(&self) -> bool {
-        self.boolean.as_ref().is_some_and(|exact| exact.uses_repo())
+        self.admission.as_ref().is_some_and(Admission::uses_repo)
     }
 
     pub fn compile_expression(
@@ -171,6 +196,20 @@ pub enum ReplacementTarget {
 }
 
 impl SearchQuery {
+    /// Whether the query names something to look for: free text, a
+    /// `text:`/`regex:`, or a content atom outside any `NOT`. Filters
+    /// alone select files; they are not a search.
+    pub fn has_positive_content(&self) -> bool {
+        match &self.boolean {
+            Some(expr) => {
+                let mut atoms = Vec::new();
+                Admission::prefilter_pattern(expr, &mut atoms);
+                !atoms.is_empty()
+            }
+            None => self.content.is_some(),
+        }
+    }
+
     /// The `workspace/symbol` wire probe (0063 §4): only bare content
     /// text crosses — the positive content atoms' literal text joined
     /// by spaces, or empty when the query has none. Qualifiers,

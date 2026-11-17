@@ -3,7 +3,8 @@
 //! re-reads it. Version 1 is the pre-Boolean flat literal semantics
 //! (0051 §3 — `AND`/`OR`/`NOT` were ordinary words and
 //! `kind:`/`type:`/`repo:` were unknown qualifiers); version 2 is the
-//! Boolean AST grammar. The wire shape follows strop-core's
+//! Boolean AST grammar; version 3 adds `fpath:`; version 4 retires the
+//! `type:` spelling of `kind:` (0109). The wire shape follows strop-core's
 //! `path_serde` precedent: an explicit integer version field, typed
 //! rejection of versions this build cannot read, and a serde-level
 //! wire-shape pin. Queries are not persisted anywhere yet; this is the
@@ -15,13 +16,18 @@ use serde::{Deserialize, Serialize};
 
 use super::lexer::{self, TokenKind};
 use super::parser::{CaseMode, QueryState, SearchQuery};
+use super::schema::Schema;
+use super::SearchModes;
 
 /// Syntax version 1: the pre-Boolean flat literal semantics (0051 §3).
 pub const SYNTAX_VERSION_FLAT: u32 = 1;
-/// Syntax version 3 adds `fpath:` scope. Version 2 remains readable so
-/// an older literal `fpath:` token cannot silently become a filter.
-pub const SYNTAX_VERSION_CURRENT: u32 = 3;
+/// Syntax version 4 retires `type:` (0109): a version 3 `type:` reads
+/// as the `kind:` it meant. Version 3 added `fpath:` scope; version 2
+/// remains readable so an older literal `fpath:` token cannot silently
+/// become a filter.
+pub const SYNTAX_VERSION_CURRENT: u32 = 4;
 const SYNTAX_VERSION_BOOLEAN: u32 = 2;
+const SYNTAX_VERSION_FPATH: u32 = 3;
 
 /// A persisted query string plus the syntax version it was written in.
 /// Deserialization rejects unknown versions; a version 1 source migrates
@@ -74,7 +80,10 @@ impl StoredQuery {
     /// funnels through.
     pub fn checked(syntax_version: u32, source: String) -> Result<Self, StoredQueryError> {
         match syntax_version {
-            SYNTAX_VERSION_FLAT | SYNTAX_VERSION_BOOLEAN | SYNTAX_VERSION_CURRENT => Ok(Self {
+            SYNTAX_VERSION_FLAT
+            | SYNTAX_VERSION_BOOLEAN
+            | SYNTAX_VERSION_FPATH
+            | SYNTAX_VERSION_CURRENT => Ok(Self {
                 syntax_version,
                 source,
             }),
@@ -87,15 +96,22 @@ impl StoredQuery {
     pub fn current_source(&self) -> Result<Cow<'_, str>, StoredQueryError> {
         match self.syntax_version {
             SYNTAX_VERSION_CURRENT => Ok(Cow::Borrowed(&self.source)),
-            SYNTAX_VERSION_FLAT => Ok(Cow::Owned(migrate_v2(&migrate_v1(&self.source)))),
-            SYNTAX_VERSION_BOOLEAN => Ok(Cow::Owned(migrate_v2(&migrate_v1(&self.source)))),
+            SYNTAX_VERSION_FLAT | SYNTAX_VERSION_BOOLEAN => Ok(Cow::Owned(migrate_v3(
+                &migrate_v2(&migrate_v1(&self.source)),
+            ))),
+            SYNTAX_VERSION_FPATH => Ok(Cow::Owned(migrate_v3(&self.source))),
             found => Err(StoredQueryError::UnsupportedVersion { found }),
         }
     }
 
-    /// Parse the stored query with its recorded version's semantics.
-    pub fn parse(&self) -> Result<SearchQuery, StoredQueryError> {
-        Ok(SearchQuery::parse(self.current_source()?.as_ref()))
+    /// Parse the stored query with its recorded version's semantics,
+    /// for the surface it is restored into.
+    pub fn parse(&self, schema: &Schema) -> Result<SearchQuery, StoredQueryError> {
+        Ok(SearchQuery::parse(
+            self.current_source()?.as_ref(),
+            schema,
+            SearchModes::default(),
+        ))
     }
 }
 
@@ -133,6 +149,42 @@ pub fn migrate_v2(source: &str) -> String {
     migrated
 }
 
+/// A version 3 `type:` word was the `kind:` filter: spell it so.
+pub fn migrate_v3(source: &str) -> String {
+    let tokens = lexer::lex(source);
+    let mut migrated = String::with_capacity(source.len());
+    let mut cursor = 0;
+    for token in &tokens {
+        migrated.push_str(&source[cursor..token.range.start]);
+        let slice = &source[token.range.clone()];
+        match type_word(&token.kind) {
+            Some(negated) => {
+                migrated.push_str(if negated { "-kind:" } else { "kind:" });
+                migrated.push_str(&slice[if negated { 6 } else { 5 }..]);
+            }
+            None => migrated.push_str(slice),
+        }
+        cursor = token.range.end;
+    }
+    migrated.push_str(&source[cursor..]);
+    migrated
+}
+
+/// `Some(negated)` for an unquoted `type:…` / `-type:…` word.
+fn type_word(kind: &TokenKind) -> Option<bool> {
+    match kind {
+        TokenKind::Word {
+            text,
+            quoted: false,
+        } if text.starts_with("type:") => Some(false),
+        TokenKind::Word {
+            text,
+            quoted: false,
+        } if text.starts_with("-type:") => Some(true),
+        _ => None,
+    }
+}
+
 pub fn migrate_v1(source: &str) -> String {
     let tokens = lexer::lex(source);
     let mut migrated = String::with_capacity(source.len());
@@ -142,11 +194,10 @@ pub fn migrate_v1(source: &str) -> String {
         let slice = &source[token.range.clone()];
         match &token.kind {
             TokenKind::Operator(_) => quote_literal(&mut migrated, slice),
-            TokenKind::Qualifier { key, .. }
-                if matches!(key.as_str(), "kind" | "type" | "repo") =>
-            {
+            TokenKind::Qualifier { key, .. } if matches!(key.as_str(), "kind" | "repo") => {
                 quote_literal(&mut migrated, slice)
             }
+            kind if type_word(kind).is_some() => quote_literal(&mut migrated, slice),
             _ => migrated.push_str(slice),
         }
         cursor = token.range.end;
@@ -233,7 +284,7 @@ mod tests {
     use crate::query::parser::ContentExpr;
 
     fn parse_ready(source: &str) -> SearchQuery {
-        let query = SearchQuery::parse(source);
+        let query = crate::query::parse_search(source);
         assert_eq!(
             query.state,
             QueryState::Ready,
@@ -281,7 +332,7 @@ mod tests {
             syntax_version: SYNTAX_VERSION_BOOLEAN,
             source: "fpath:src retry".into(),
         };
-        let parsed = old.parse().unwrap();
+        let parsed = old.parse(&crate::query::schema::SEARCH).unwrap();
         assert!(parsed.fuzzy_paths.is_empty());
         assert_eq!(
             parsed.content,
@@ -315,7 +366,10 @@ mod tests {
         // An unclosed quote is typing in progress in both versions.
         let source = "foo \"AND";
         assert_eq!(migrate_v1(source), source);
-        assert_eq!(SearchQuery::parse(source).state, QueryState::Incomplete);
+        assert_eq!(
+            crate::query::parse_search(source).state,
+            QueryState::Incomplete
+        );
     }
 
     /// §6.1: parse → format → parse over migrated output is a fixed
@@ -333,7 +387,7 @@ mod tests {
                 syntax_version: SYNTAX_VERSION_FLAT,
                 source: v1.to_string(),
             }
-            .parse()
+            .parse(&crate::query::schema::SEARCH)
             .unwrap();
             assert_eq!(migrated.state, QueryState::Ready, "{v1}");
             let canonical = canonical_source(&migrated);
@@ -373,7 +427,7 @@ mod tests {
             source: "foo".to_string(),
         };
         assert_eq!(
-            record.parse().unwrap_err(),
+            record.parse(&crate::query::schema::SEARCH).unwrap_err(),
             StoredQueryError::UnsupportedVersion { found: 99 }
         );
         assert_eq!(
@@ -438,7 +492,7 @@ mod tests {
         assert_eq!(canonical_source(&query), "hidden:exclude");
 
         // Nothing to canonicalize while typing or on an error.
-        let incomplete = SearchQuery::parse("foo \"bar");
+        let incomplete = crate::query::parse_search("foo \"bar");
         assert_eq!(canonical_source(&incomplete), "foo \"bar");
     }
 
@@ -463,7 +517,7 @@ mod tests {
             ("case:smart AND foo", "AND without a left operand"),
             ("foo OR case:smart", "OR without a right operand"),
         ] {
-            let query = SearchQuery::parse(input);
+            let query = crate::query::parse_search(input);
             assert_eq!(query.state, QueryState::Invalid, "{input}");
             assert!(
                 query
@@ -484,7 +538,7 @@ mod tests {
             syntax_version: SYNTAX_VERSION_FLAT,
             source: "foo AND bar".to_string(),
         };
-        let flat = v1.parse().unwrap();
+        let flat = v1.parse(&crate::query::schema::SEARCH).unwrap();
         assert_eq!(flat.boolean, None);
         assert_eq!(
             flat.content,
@@ -493,12 +547,36 @@ mod tests {
         assert_eq!(v1.current_source().unwrap().as_ref(), "foo \"AND\" bar");
 
         let v2 = StoredQuery::new("foo AND bar");
-        assert!(v2.parse().unwrap().boolean.is_some());
+        assert!(v2
+            .parse(&crate::query::schema::SEARCH)
+            .unwrap()
+            .boolean
+            .is_some());
         assert_eq!(v2.current_source().unwrap().as_ref(), "foo AND bar");
 
         // The write side stores canonical form in the current version.
         let record = StoredQuery::from_query(&parse_ready("foo AND bar case:smart"));
         assert_eq!(record.syntax_version, SYNTAX_VERSION_CURRENT);
         assert_eq!(record.source, "case:smart (foo AND bar)");
+    }
+
+    /// Version 4 retires `type:`; a version 3 record meant `kind:`.
+    #[test]
+    fn a_version_3_type_filter_reads_as_kind() {
+        let v3 = StoredQuery {
+            syntax_version: SYNTAX_VERSION_FPATH,
+            source: "type:function -type:struct parse".into(),
+        };
+        assert_eq!(
+            v3.current_source().unwrap().as_ref(),
+            "kind:function -kind:struct parse"
+        );
+        let query = v3.parse(&crate::query::schema::SYMBOLS).unwrap();
+        assert_eq!(query.state, QueryState::Ready, "{:?}", query.diagnostics);
+        assert_eq!(query.kinds.len(), 1);
+        assert_eq!(query.exclude_kinds.len(), 1);
+        assert_eq!(query.content, Some(ContentExpr::Literal("parse".into())));
+        // in version 1 the word was literal text, and stays so
+        assert_eq!(migrate_v1("type:x"), "\"type:x\"");
     }
 }

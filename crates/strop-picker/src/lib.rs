@@ -5,6 +5,7 @@
 mod catalog;
 pub use catalog::Catalog;
 pub mod query;
+pub use query::{ItemFacts, SymbolRow};
 pub mod rank;
 pub use rank::{FilterRequest, Ranking, RankingEvent, RankingWorker, Row};
 mod line_edit;
@@ -109,8 +110,13 @@ pub struct Item {
     pub payload: Payload,
     /// A short visual chip rendered before the text (symbol kind, e.g.
     /// `fn`/`struct`) — plain text, colored by the renderer; None for
-    /// ordinary rows.
-    pub badge: Option<String>,
+    /// ordinary rows. A symbol's chip is the kind table's own text, so a
+    /// symbol row allocates none.
+    pub badge: Option<std::borrow::Cow<'static, str>>,
+    /// What filters judge besides the text (0109): a row's path, kind
+    /// and the parts of its text that name it.
+    #[serde(default)]
+    pub facts: query::ItemFacts,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,6 +223,9 @@ pub struct Picker {
     /// qualifiers never fuzzy-match paths — only the free text ranks).
     pub rank_query: Option<String>,
     pub rank_mode: rank::MatchMode,
+    /// The query whose filters the ranking pass applies to each row
+    /// (0109 §3.2d); None when the source already applied them.
+    pub filter: Option<std::sync::Arc<query::SearchQuery>>,
     /// What the user reached for lately, best first (0093 §3.4): open
     /// buffers, then frecent files. It orders the empty query and nudges
     /// equal matches; it never admits a row the query rejects.
@@ -246,6 +255,7 @@ impl Picker {
             pinned: Vec::new(),
             rank_query: None,
             rank_mode: rank::MatchMode::default(),
+            filter: None,
             priors: rank::Priors::default(),
         };
         p.append(items);
@@ -383,7 +393,8 @@ impl Picker {
             upstream_filtered: self.kind == Kind::Search,
             pinned_tail: self.pinned_tail,
             mode: self.rank_mode.clone(),
-            paths: matches!(self.kind, Kind::Files | Kind::Buffers),
+            filter: self.filter.clone(),
+            paths: self.kind.schema().bare == query::Bare::FuzzyPath,
             priors: self.priors.clone(),
         }
     }

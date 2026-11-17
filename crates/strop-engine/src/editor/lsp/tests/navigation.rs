@@ -148,7 +148,7 @@ fn doc_symbol(
     strop_lsp::protocol::ProtoSymbol {
         name: name.into(),
         container: container.into(),
-        kind: kind.into(),
+        kind: crate::editor::symbols::lsp_kind(kind),
         location: strop_lsp::ServerLocation {
             doc: strop_workspace::ResourceLocation::local(PathBuf::from("/workspace/origin.txt")),
             position: ServerPosition {
@@ -188,22 +188,22 @@ fn mixed_symbols() -> Vec<strop_lsp::protocol::ProtoSymbol> {
     ]
 }
 
+/// The rows the list shows, in order: the ranking pass applies the
+/// query's filters to the kept rows (0109 §3.2d).
 fn picker_texts(e: &Editor) -> Vec<String> {
-    e.picker
-        .as_ref()
-        .unwrap()
-        .picker
-        .items
+    let picker = &e.picker.as_ref().unwrap().picker;
+    picker
+        .rows
         .iter()
-        .map(|item| item.text.clone())
+        .map(|row| picker.items[row.item].text.clone())
         .collect()
 }
 
 #[test]
 fn document_symbols_kind_narrows_the_retained_tree() {
-    // 0063 §3: `kind:` filters the retained `documentSymbol` tree
-    // locally, from each candidate's own classification — `function`
-    // subsumes methods in the canonical vocabulary.
+    // 0063 §3, 0109: `kind:` filters the kept `documentSymbol` rows in
+    // the ranking pass, from each row's own kind — `function` subsumes
+    // methods; the kept list itself is never rebuilt.
     let mut e = editor(
         "struct Foo;\nimpl Foo { fn bar() {} }\nfn parse_config() {}\nfn wrap() {}\nconst LIMIT: u32 = 1;\n",
     );
@@ -218,21 +218,13 @@ fn document_symbols_kind_narrows_the_retained_tree() {
         vec!["bar  Foo · :2", "parse_config  · :3", "wrap  · :4"],
         "struct and constant drop; the method is a function: {texts:?}"
     );
-    // Ranking stays ordering-only over the surviving rows (an empty
-    // needle keeps catalog order).
-    let visible: Vec<&str> = picker
-        .rows
-        .iter()
-        .map(|row| picker.items.get(row.item).unwrap().text.as_str())
-        .collect();
-    assert_eq!(visible, texts, "{visible:?}");
+    assert_eq!(picker.items.len(), 5, "the kept list is untouched");
 }
 
 #[test]
 fn document_symbols_boolean_content_and_kind_narrow() {
-    // 0063 §3: the conjunction decides content atoms against the name
-    // or its qualified container form, and `kind:` against the
-    // candidate's own classification.
+    // 0109: `kind:` keeps the methods and the word beside it stays a
+    // fuzzy needle over the row, its container included.
     let mut e = editor(
         "struct Foo;\nimpl Foo { fn bar() {} }\nstruct Other;\nimpl Other { fn baz() {} }\n",
     );
@@ -253,20 +245,19 @@ fn document_symbols_boolean_content_and_kind_narrow() {
     assert_eq!(
         texts,
         vec!["bar  Foo · :2"],
-        "only the method whose qualified form `Foo::bar` matches: {texts:?}"
+        "only the method in Foo: {texts:?}"
     );
 }
 
 #[test]
 fn document_symbols_flat_qualifiers_narrow_like_file_find() {
-    // 0063 §3 consistency: a lone flat qualifier — no operators, no
-    // content — narrows the retained tree through whole-query
-    // admission, exactly the narrowing file find gives.
+    // 0063 §3 consistency: a lone flat filter — no operators, no
+    // content — narrows the kept rows exactly as file find narrows.
     let mut e = editor("struct Foo;\n");
     let at = |path: &str, name: &str, kind: &str, line: usize| strop_lsp::protocol::ProtoSymbol {
         name: name.into(),
         container: String::new(),
-        kind: kind.into(),
+        kind: crate::editor::symbols::lsp_kind(kind),
         location: strop_lsp::ServerLocation {
             doc: strop_workspace::ResourceLocation::local(PathBuf::from(path)),
             position: ServerPosition {
@@ -297,9 +288,8 @@ fn document_symbols_flat_qualifiers_narrow_like_file_find() {
 
 #[test]
 fn document_symbols_operator_free_keeps_static_list_fuzzy_narrowing() {
-    // 0063 §3 literal compatibility: no AST, no rebuild — the static
-    // list stays whole and the local fuzzy ranking narrows, exactly as
-    // before the grammar existed.
+    // Plain words never rebuild the kept list: the fuzzy ranking
+    // narrows it.
     let mut e = editor(
         "struct Foo;\nimpl Foo { fn bar() {} }\nfn parse_config() {}\nfn wrap() {}\nconst LIMIT: u32 = 1;\n",
     );
@@ -318,47 +308,45 @@ fn document_symbols_operator_free_keeps_static_list_fuzzy_narrowing() {
 }
 
 #[test]
-fn document_symbols_broken_query_keeps_rows_and_shows_the_diagnostic() {
-    // 0063 §3/§4: unrecognized evidence admits (three-valued); a broken
-    // query keeps the rows and surfaces the diagnostic through the
-    // shared parse path; recovery re-filters the retained tree.
+fn document_symbols_unknown_kind_is_an_error_and_the_list_stays() {
+    // 0109 decision 3: an unknown value is a located error with a
+    // correction, never a filter that silently keeps everything; the
+    // list stays as it was until the query is fixed.
     let mut e = editor(
         "struct Foo;\nimpl Foo { fn bar() {} }\nfn parse_config() {}\nfn wrap() {}\nconst LIMIT: u32 = 1;\n",
     );
     symbols_picker(&mut e, mixed_symbols());
-    e.paste_bracketed("kind:bogus");
-    e.wait_picker();
-    {
-        let picker = &e.picker.as_ref().unwrap().picker;
-        assert_eq!(picker.items.len(), 5, "unknown evidence admits");
-        assert!(picker.error.is_none(), "{:?}", picker.error);
-    }
-    e.paste_bracketed(" NOT");
-    e.wait_picker();
-    {
-        let picker = &e.picker.as_ref().unwrap().picker;
-        assert!(picker.error.is_some(), "the diagnostic is on the card");
-        assert_eq!(picker.items.len(), 5, "rows stay while typing");
-    }
-    // Backspacing the operator away recovers through the same path…
-    for _ in 0.." NOT".len() {
-        e.feed(Key::Backspace);
-    }
-    e.wait_picker();
-    {
-        let picker = &e.picker.as_ref().unwrap().picker;
-        assert!(picker.error.is_none(), "{:?}", picker.error);
-        assert_eq!(picker.items.len(), 5, "the full tree is restored");
-    }
-    // …and a valid Boolean query re-filters the retained candidates.
-    for _ in 0.."kind:bogus".len() {
-        e.feed(Key::Backspace);
-    }
     e.paste_bracketed("kind:struct");
     e.wait_picker();
-    let picker = &e.picker.as_ref().unwrap().picker;
-    assert!(picker.error.is_none(), "{:?}", picker.error);
     assert_eq!(picker_texts(&e), vec!["Foo  · :1"]);
+    for _ in 0.."struct".len() {
+        e.feed(Key::Backspace);
+    }
+    e.paste_bracketed("bogus");
+    e.wait_picker();
+    {
+        let glue = e.picker.as_ref().unwrap();
+        let error = glue.picker.error.as_deref().unwrap_or_default();
+        assert!(error.starts_with("unknown kind: bogus"), "{error}");
+        assert!(glue.query_diagnosed());
+        assert_eq!(picker_texts(&e), vec!["Foo  · :1"], "the list stays");
+    }
+    // a misspelt value is corrected to a word the table takes
+    for _ in 0.."bogus".len() {
+        e.feed(Key::Backspace);
+    }
+    e.paste_bracketed("fnc");
+    e.wait_picker();
+    let error = e.picker.as_ref().unwrap().picker.error.clone().unwrap();
+    assert!(error.contains("did you mean kind:fn?"), "{error}");
+    // and fixing it filters
+    e.feed(Key::Backspace);
+    e.wait_picker();
+    assert!(e.picker.as_ref().unwrap().picker.error.is_none());
+    assert_eq!(
+        picker_texts(&e),
+        vec!["bar  Foo · :2", "parse_config  · :3", "wrap  · :4"]
+    );
 }
 
 #[test]
@@ -385,9 +373,8 @@ fn document_symbols_path_atoms_decide_from_the_document_path() {
     }
     e.paste_bracketed("kind:struct path:nope");
     e.wait_picker();
-    let picker = &e.picker.as_ref().unwrap().picker;
     assert!(
-        picker.items.is_empty(),
+        picker_texts(&e).is_empty(),
         "path:nope decides No for origin.txt: {:?}",
         picker_texts(&e)
     );

@@ -4,6 +4,7 @@
 //! how tokens become a tree and how a tree becomes text again.
 
 use super::super::lexer::{self, TokenKind};
+use super::super::schema::{Field, Schema};
 use super::{BooleanExpr, ContentAtom, MetadataAtom, SearchQuery};
 
 /// Recursive descent over the token stream (0063 §3): precedence
@@ -14,8 +15,13 @@ use super::{BooleanExpr, ContentAtom, MetadataAtom, SearchQuery};
 pub(super) fn parse_boolean(
     tokens: &[lexer::Token],
     query: &mut SearchQuery,
+    schema: &Schema,
 ) -> Option<BooleanExpr> {
-    let mut parser = BooleanParser { tokens, at: 0 };
+    let mut parser = BooleanParser {
+        tokens,
+        at: 0,
+        schema,
+    };
     let expr = parser.or_level(query);
     while parser.at < tokens.len() {
         let token = &tokens[parser.at];
@@ -40,6 +46,7 @@ pub(super) fn parse_boolean(
 struct BooleanParser<'a> {
     tokens: &'a [lexer::Token],
     at: usize,
+    schema: &'a Schema,
 }
 
 impl<'a> BooleanParser<'a> {
@@ -184,8 +191,7 @@ impl<'a> BooleanParser<'a> {
                 if value.is_empty() {
                     return None;
                 }
-                // `type:` is the documented input alias of `kind:` (0063 §3).
-                let key = if key == "type" { "kind" } else { key };
+                let key = key.as_str();
                 // Keep the flat path's safe policy: shorthand negation is
                 // unsupported for content qualifiers; Boolean NOT is explicit.
                 if *negated && matches!(key, "text" | "regex") {
@@ -206,9 +212,17 @@ impl<'a> BooleanParser<'a> {
                         text: value.clone(),
                     }))
                 } else {
+                    // A kind atom carries its canonical value; an
+                    // undeclared key was reported by the flat pass.
+                    let value = match Field::from_key(key) {
+                        Some(Field::Kind) if self.schema.declares(Field::Kind) => query
+                            .kind_value(value, &token.range)
+                            .map_or_else(|| value.clone(), |spec| spec.value.to_string()),
+                        _ => value.clone(),
+                    };
                     Some(BooleanExpr::Metadata(MetadataAtom {
                         key: key.to_string(),
-                        value: value.clone(),
+                        value,
                         negated: *negated,
                     }))
                 }

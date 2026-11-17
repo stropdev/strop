@@ -285,6 +285,7 @@ fn collection_fixture() -> (Editor, tempfile::TempDir) {
             match_len: 2,
             line_text: text.into(),
         },
+        facts: Default::default(),
     };
     let items = vec![
         item(&a, 1, "fn main() {"), // source line 0

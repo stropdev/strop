@@ -9,7 +9,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::symbols::SymbolIndex;
-    use strop_syntax::symbols::SymbolKind;
+    use strop_core::symbol_kind::SymbolKind;
 
     /// Trace: extract rows against the disk revision, bump the source
     /// revision (a dirty buffer overlays the path), then re-check

@@ -506,18 +506,17 @@ fn show(editor: &mut Editor, producer: Producer, symbols: Arc<Vec<ProtoSymbol>>)
         return;
     }
     // The picker has no query yet: the first rows are the whole list.
-    // `documentSymbol` carries no query, so the list is kept and
-    // narrowed locally as the field changes (0063 §3).
+    // `documentSymbol` carries no query: the rows are built once and the
+    // ranking pass filters them as the field changes (0109 §3.2d).
     let root = editor
         .lsp_state
         .bindings
         .get(&editor.current())
         .map(|binding| binding.root.clone())
         .unwrap_or_else(|| editor.cwd.clone());
-    let items = super::lsp::document_symbol_items(&symbols, None, &root);
+    let items = super::lsp::document_symbol_items(&symbols, &root);
     editor.open_picker(strop_picker::Kind::Symbols);
     if let Some(glue) = editor.picker.as_mut() {
-        glue.symbols_candidates = symbols;
         glue.picker.append(items);
     }
     // Items landed after the first (empty) ranking: rank again.
@@ -525,6 +524,15 @@ fn show(editor: &mut Editor, producer: Producer, symbols: Arc<Vec<ProtoSymbol>>)
     if producer == Producer::Outline {
         editor.message = "symbols from the syntax tree: no language server serves this file".into();
     }
+}
+
+/// A fixture's kind by its LSP name, through the one kind table.
+#[cfg(test)]
+pub(crate) fn lsp_kind(name: &str) -> strop_core::symbol_kind::SymbolKind {
+    strop_core::symbol_kind::KINDS
+        .iter()
+        .find(|spec| spec.lsp.contains(&name))
+        .map_or(strop_core::symbol_kind::SymbolKind::Other, |spec| spec.kind)
 }
 
 #[cfg(test)]

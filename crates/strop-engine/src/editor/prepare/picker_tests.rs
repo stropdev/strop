@@ -17,6 +17,7 @@ fn append(editor: &mut Editor, labels: impl IntoIterator<Item = String>) {
                 text,
                 payload: Payload::Buffer(document),
                 badge: None,
+                facts: Default::default(),
             })
             .collect(),
     );
@@ -130,6 +131,7 @@ fn symbol_status_rows_share_the_bounded_allocation() {
             text: "workspace-with-a-long-name  path/to/project · indexing declarations".into(),
             payload: Payload::ProjectStatus(std::path::PathBuf::from("/project")),
             badge: None,
+            facts: Default::default(),
         }]);
     editor.picker_items_fixture(Vec::new());
     let after = split(&mut editor, 100, 30).0;

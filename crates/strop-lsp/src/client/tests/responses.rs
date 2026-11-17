@@ -206,12 +206,12 @@ fn document_symbols_flatten_both_reply_shapes() {
         };
         assert_eq!(symbols.len(), 2);
         assert_eq!(symbols[0].name, "Foo");
-        assert_eq!(symbols[0].kind, "Struct");
+        assert_eq!(symbols[0].kind, strop_core::symbol_kind::SymbolKind::Struct);
         assert_eq!(symbols[0].container, "");
         assert_eq!(symbols[0].location.position.column.get(), 7);
         assert_eq!(symbols[1].name, "bar");
         assert_eq!(symbols[1].container, "Foo");
-        assert_eq!(symbols[1].kind, "Method");
+        assert_eq!(symbols[1].kind, strop_core::symbol_kind::SymbolKind::Method);
         // The span is the whole range's lines, not the name's; an end
         // at column 0 does not cover its line.
         assert_eq!(
@@ -242,7 +242,10 @@ fn document_symbols_flatten_both_reply_shapes() {
         };
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "main");
-        assert_eq!(symbols[0].kind, "Function");
+        assert_eq!(
+            symbols[0].kind,
+            strop_core::symbol_kind::SymbolKind::Function
+        );
         assert_eq!(symbols[0].container, "crate");
         assert_eq!(symbols[0].location.position.line.get(), 3);
         assert_eq!(
@@ -367,7 +370,10 @@ fn workspace_symbols_are_document_free_and_map_both_shapes() {
         assert_eq!(generation, 7);
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "dispatch");
-        assert_eq!(symbols[0].kind, "Function");
+        assert_eq!(
+            symbols[0].kind,
+            strop_core::symbol_kind::SymbolKind::Function
+        );
         assert_eq!(symbols[0].container, "render");
         assert_eq!(symbols[0].location.position.line.get(), 41);
         // Nested replies drop uri-only locations: the resolve-support

@@ -104,7 +104,7 @@ mod tests {
             elsewhere: None,
             config: &crate::config::Config::default(),
             modes,
-            query: &SearchQuery::parse(query),
+            query: &SearchQuery::parse(query, kind.schema(), Default::default()),
         })
     }
 

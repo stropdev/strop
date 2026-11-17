@@ -83,6 +83,20 @@ fn count_note(picker: &strop_picker::Picker, streaming: bool) -> String {
     }
 }
 
+/// `   ^^^^ unknown kind: fnc — did you mean kind:fn?`: carets under the
+/// diagnosed cells, the message after them.
+fn diagnostic_line(t: &Tokens, column: u16, width: u16, message: &str) -> Line<'static> {
+    let message = strop_core::layout::printable_text(message);
+    Line::from(vec![
+        Span::raw(" ".repeat(usize::from(column))),
+        Span::styled(
+            "^".repeat(usize::from(width.max(1))),
+            Style::default().fg(t.error),
+        ),
+        Span::styled(format!(" {message}"), Style::default().fg(t.error)),
+    ])
+}
+
 pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     let Some(glue) = editor.picker() else {
         return;
@@ -163,17 +177,11 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         (super::from_cells(fields), super::from_cells(content))
     };
     let glyph = if p.input_normal() { "▮" } else { "❯" };
-    // Every surface that speaks the query language (0051 §3) renders
-    // its qualifier highlighting; the summary line describes source
+    // Every surface that takes filters (0109: its schema declares keys)
+    // renders their highlighting; the summary line describes source
     // visibility policy, which only the streaming surfaces have.
-    let query_roles = matches!(
-        kind,
-        strop_picker::Kind::Files
-            | strop_picker::Kind::Search
-            | strop_picker::Kind::Symbols
-            | strop_picker::Kind::WorkspaceSymbols
-            | strop_picker::Kind::Jumps
-    );
+    let schema = kind.schema();
+    let query_roles = !schema.is_plain();
     let summary_roles = matches!(kind, strop_picker::Kind::Files | strop_picker::Kind::Search);
     let search_active = !replace_mode || p.field == strop_picker::Field::Search;
     let search_label = if search_mode {
@@ -195,6 +203,7 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         },
     );
     let mut field_caret = search.cursor.map(|column| (column, 0u16));
+    let marked = search.marked;
     let mut fields = vec![search.line];
     if replace_mode {
         let replacement = super::field::project(
@@ -216,15 +225,34 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     // default — a toggle, an explicit qualifier, or a root other than the
     // working directory. The engine words it; an empty row is no row.
     let status_y = field_area.y + input_h - 1;
-    if status_y < content_area.y && summary_roles && !glue.status_row.is_empty() {
+    let status_area = Rect {
+        y: status_y,
+        height: 1,
+        ..field_area
+    };
+    let diagnosed = glue.query_diagnosed();
+    if status_y >= content_area.y {
+        // no room under the field
+    } else if let (true, Some((column, width)), Some(message)) =
+        (query_roles && diagnosed, marked, p.error.as_ref())
+    {
+        // A located error (0109 decision 3): carets under the token and
+        // the one-line message after them; the list above stays as it was.
+        frame.render_widget(
+            Paragraph::new(diagnostic_line(t, column, width, message)),
+            status_area,
+        );
+    } else if summary_roles && !glue.status_row.is_empty() {
         let status = strop_core::layout::printable_text(&glue.status_row);
         frame.render_widget(
             Paragraph::new(status.into_owned()).style(Style::default().fg(t.muted)),
-            Rect {
-                y: status_y,
-                height: 1,
-                ..field_area
-            },
+            status_area,
+        );
+    } else if query_roles && p.input.text().is_empty() && !p.rows.is_empty() {
+        // The filters this list takes, from its schema (0109 decision 7).
+        frame.render_widget(
+            Paragraph::new(schema.hint()).style(Style::default().fg(t.muted)),
+            status_area,
         );
     }
 

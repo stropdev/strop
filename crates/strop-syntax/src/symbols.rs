@@ -11,60 +11,8 @@
 
 use crate::languages::LanguageId;
 use streaming_iterator::StreamingIterator;
+use strop_core::symbol_kind::SymbolKind;
 use tree_sitter::{Parser, Query, QueryCursor};
-
-/// Canonical symbol classification shared by query `kind:` values and
-/// the future workspace-symbols surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SymbolKind {
-    Function,
-    /// A function nested in a member context (impl/trait, class body,
-    /// Lua method syntax).
-    Method,
-    Class,
-    Struct,
-    Enum,
-    Interface,
-    Module,
-    Constant,
-    /// A Rust `impl` block (0107): the parent of its methods.
-    Impl,
-}
-
-impl SymbolKind {
-    /// Compact chip text (picker badge column), matching the LSP
-    /// tier's `short_kind` vocabulary.
-    pub fn chip(self) -> &'static str {
-        match self {
-            SymbolKind::Function => "fn",
-            SymbolKind::Method => "meth",
-            SymbolKind::Class => "class",
-            SymbolKind::Struct => "struct",
-            SymbolKind::Enum => "enum",
-            SymbolKind::Interface => "iface",
-            SymbolKind::Module => "mod",
-            SymbolKind::Constant => "const",
-            SymbolKind::Impl => "impl",
-        }
-    }
-
-    /// This kind's LSP `SymbolKind` name: the vocabulary a symbol list
-    /// is labelled in, whichever source produced it (0099 §4.1).
-    pub fn lsp_name(self) -> &'static str {
-        match self {
-            SymbolKind::Function => "Function",
-            SymbolKind::Method => "Method",
-            SymbolKind::Class => "Class",
-            SymbolKind::Struct => "Struct",
-            SymbolKind::Enum => "Enum",
-            SymbolKind::Interface => "Interface",
-            SymbolKind::Module => "Module",
-            SymbolKind::Constant => "Constant",
-            // rust-analyzer reports an impl block as an `Object`
-            SymbolKind::Impl => "Object",
-        }
-    }
-}
 
 /// One extracted declaration: kind, name and inclusive line span.
 #[derive(Debug, Clone, PartialEq, Eq)]

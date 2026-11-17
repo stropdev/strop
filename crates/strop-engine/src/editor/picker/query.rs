@@ -24,16 +24,26 @@ impl Editor {
     fn query_policy(&self) -> strop_picker::SelectionPolicy {
         modes::policy(&self.config, self.picker_ranking.modes)
     }
+    /// Parse the field for its surface (0109): one parse per revision,
+    /// against what the surface declares. A Ready query sets the ranked
+    /// needle and the filters the ranking pass applies; any other state
+    /// puts its located diagnostic on the card and leaves the list as it
+    /// was (`None`).
     pub(super) fn picker_query_eval(&mut self, kind: Kind) -> Option<Arc<SearchQuery>> {
         let session = self.picker_ranking.modes;
         let glue = self.picker.as_mut()?;
-        // The toggles re-read a content expression; the finder's fuzzy
-        // needle has no expression to re-read.
-        let query = Arc::new(if kind == Kind::Search {
-            SearchQuery::parse_with(glue.picker.input.text(), session)
+        // The toggles re-read a content expression; the other surfaces'
+        // fuzzy needles have no expression to re-read.
+        let modes = if kind == Kind::Search {
+            session
         } else {
-            SearchQuery::parse(glue.picker.input.text())
-        });
+            Default::default()
+        };
+        let query = Arc::new(SearchQuery::parse(
+            glue.picker.input.text(),
+            kind.schema(),
+            modes,
+        ));
         glue.query = Some(query.clone());
         glue.replace_target = (kind == Kind::Search)
             .then(|| {
@@ -68,12 +78,9 @@ impl Editor {
                 let diagnostic = query.diagnostics.first();
                 glue.picker.warning = None;
                 glue.picker.error = diagnostic
-                    .map(|d| {
-                        let mut text = d.message.clone();
-                        if let Some(suggestion) = &d.suggestion {
-                            text.push_str(&format!(" — {suggestion}"));
-                        }
-                        text
+                    .map(|d| match &d.suggestion {
+                        Some(suggestion) => format!("{} — {suggestion}", d.message),
+                        None => d.message.clone(),
                     })
                     .or_else(|| Some("incomplete query".into()));
                 return None;
@@ -81,7 +88,7 @@ impl Editor {
         }
         glue.picker.error = None;
         glue.picker.warning = None;
-        // the rank needle is the free text only — qualifiers never rank
+        // the rank needle is the free text only — filters never rank
         let needle = match &query.content {
             Some(strop_picker::query::ContentExpr::Literal(text)) => text.clone(),
             Some(strop_picker::query::ContentExpr::Regex(pattern)) => pattern.clone(),
@@ -89,14 +96,23 @@ impl Editor {
         };
         glue.picker.rank_query = Some(needle);
         let case = query.case_mode();
-        glue.picker.rank_mode = match (
-            &query.content,
-            kind == Kind::Files && query.exact_file_expression,
-        ) {
+        // Search's hits are already exact; elsewhere quoted, text: and
+        // regex: input matches exactly instead of fuzzily.
+        let exact = query.exact_expression && kind != Kind::Search;
+        glue.picker.rank_mode = match (&query.content, exact) {
             (Some(expression), true) => {
                 strop_picker::rank::MatchMode::Exact(Arc::new(expression.clone()), case)
             }
             _ => strop_picker::rank::MatchMode::Fuzzy(case),
+        };
+        // Where the row filters run (0109 §3.2d): Search's workers apply
+        // them per hit; the Files walk applies the flat ones, so the
+        // ranking pass judges only an operator query's rows there; every
+        // other list's rows are judged in the ranking pass.
+        glue.picker.filter = match kind {
+            Kind::Search => None,
+            Kind::Files => query.boolean.is_some().then(|| query.clone()),
+            _ => Some(query.clone()),
         };
         Some(query)
     }
@@ -182,9 +198,9 @@ impl Editor {
         }
     }
 
-    /// `space S` (0063 §2): one bounded source run per admission
-    /// surface — the walk, the symbol index and AST admission all
-    /// consume the one parsed query. Replay registers like files.
+    /// `space S` (0063 §2): one bounded source run per walk scope —
+    /// the walk and the symbol index consume the parsed query; the row
+    /// filters apply in the ranking pass. Replay registers like files.
     pub(super) fn launch_workspace_symbols_request(&mut self, parsed: Arc<SearchQuery>) {
         let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
             return;
@@ -260,127 +276,88 @@ impl Editor {
                 return;
             }
         }
-        if kind == Kind::Files {
-            let Some(plans) = self.picker_query_eval(kind) else {
+        match kind {
+            Kind::Files => self.files_query_changed(),
+            Kind::Search => self.restart_search_query(),
+            Kind::WorkspaceSymbols => self.workspace_symbols_query_changed(),
+            Kind::RemoteAddress => {
                 if let Some(glue) = self.picker.as_mut() {
-                    glue.revoke(CancelReason::Superseded);
-                    glue.picker.streaming = false;
-                    glue.rank_pending = None;
-                    glue.file_scope = None;
+                    glue.picker.error = None;
                 }
-                return;
-            };
-            let same_scope = self
-                .picker
-                .as_ref()
-                .and_then(|glue| glue.file_scope.as_ref())
-                .is_some_and(|scope| scope.same_scope(&plans));
-            if same_scope {
-                self.request_picker_ranking();
-            } else {
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.revoke(CancelReason::Superseded);
-                    glue.picker.clear_items();
-                    glue.file_scope = Some(plans.clone());
-                    glue.rank_pending = None;
-                    glue.ranked_query = None;
+            }
+            // A plain list: the field is literal text, ranked as typed.
+            _ if kind.schema().is_plain() => self.request_picker_ranking(),
+            // A kept list (symbols, jumps, buffers, diagnostics,
+            // locations): the ranking pass filters its rows. A query
+            // that is not Ready leaves the list as it was, its
+            // diagnostic on the card.
+            _ => {
+                if self.picker_query_eval(kind).is_some() {
+                    self.request_picker_ranking();
                 }
-                self.launch_files_request(plans);
+            }
+        }
+    }
+
+    fn files_query_changed(&mut self) {
+        let Some(plans) = self.picker_query_eval(Kind::Files) else {
+            if let Some(glue) = self.picker.as_mut() {
+                glue.revoke(CancelReason::Superseded);
+                glue.picker.streaming = false;
+                glue.rank_pending = None;
+                glue.file_scope = None;
             }
             return;
-        }
-        if kind == Kind::Search {
-            self.restart_search_query();
-            return;
-        }
-        if kind == Kind::WorkspaceSymbols {
-            let previous = self
-                .picker
-                .as_ref()
-                .and_then(|glue| glue.query.as_ref().cloned());
-            let Some(parsed) = self.picker_query_eval(kind) else {
-                // The diagnostic is on the card (the shared parse
-                // path); retire in-flight LSP replies — they answered
-                // a query the input has left behind (0063 §4: no
-                // retired-query publication).
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.wsymbols_generation += 1;
-                }
-                return;
-            };
-            // The syntax tier re-runs only when the query's admission
-            // surface moved (scope qualifiers or the Boolean AST).
-            // Operator-free typing keeps the static list and narrows
-            // through local fuzzy ranking, exactly as before the
-            // grammar existed (0063 §3 literal compatibility).
-            let relaunch = previous.is_none_or(|previous| {
-                !previous.same_scope(&parsed) || previous.boolean != parsed.boolean
-            });
-            if relaunch {
-                if let Some(glue) = self.picker.as_mut() {
-                    glue.revoke(CancelReason::Superseded);
-                    glue.picker.clear_items();
-                    glue.rank_pending = None;
-                    glue.ranked_query = None;
-                }
-                self.launch_workspace_symbols_request(parsed);
-            }
-            // Warm servers re-ask per query change under a new
-            // generation; only bare content text crosses the wire.
-            self.query_workspace_symbols();
+        };
+        let same_scope = self
+            .picker
+            .as_ref()
+            .and_then(|glue| glue.file_scope.as_ref())
+            .is_some_and(|scope| scope.same_scope(&plans));
+        if same_scope {
             self.request_picker_ranking();
-            return;
-        }
-        if kind == Kind::Symbols {
-            let previous = self
-                .picker
-                .as_ref()
-                .and_then(|glue| glue.query.as_ref().cloned());
-            let Some(parsed) = self.picker_query_eval(kind) else {
-                // Rows stay; the diagnostic is on the card (the shared
-                // parse path), exactly like workspace symbols (0063 §4).
-                return;
-            };
-            // `documentSymbol` carries no query (0063 §3): the retained
-            // tree is re-filtered locally when the admission surface
-            // moved — the Boolean AST or a flat qualifier, the same
-            // narrowing file find gives. Operator-free content typing
-            // keeps the static list and narrows through local fuzzy
-            // ranking, exactly as before the grammar existed (0063 §3
-            // literal compatibility).
-            let rebuild = match &previous {
-                Some(previous) => {
-                    previous.boolean != parsed.boolean || !previous.same_scope(&parsed)
-                }
-                None => parsed.boolean.is_some() || !parsed.same_scope(&Default::default()),
-            };
-            if rebuild {
-                self.rebuild_document_symbols();
+        } else {
+            if let Some(glue) = self.picker.as_mut() {
+                glue.revoke(CancelReason::Superseded);
+                glue.picker.clear_items();
+                glue.file_scope = Some(plans.clone());
+                glue.rank_pending = None;
+                glue.ranked_query = None;
             }
-            self.request_picker_ranking();
-            return;
+            self.launch_files_request(plans);
         }
-        if kind == Kind::Jumps {
-            let Some(_parsed) = self.picker_query_eval(kind) else {
-                // Rows stay; the diagnostic is on the card (the shared
-                // parse path), exactly like document symbols (0063 §4).
-                return;
-            };
-            // The jumplist is retained on the editor: every Ready
-            // query re-derives its rows locally through the shared
-            // admission compiler (0063 §3) — the list is bounded, so
-            // this stays cheap per keystroke. Operator-free content
-            // never enters admission; the local ranker narrows it.
-            self.rebuild_jump_rows();
-            self.request_picker_ranking();
-            return;
-        }
-        if let Some(glue) = self.picker.as_mut() {
-            if kind == Kind::RemoteAddress {
-                glue.picker.error = None;
-                return;
+    }
+
+    fn workspace_symbols_query_changed(&mut self) {
+        let previous = self
+            .picker
+            .as_ref()
+            .and_then(|glue| glue.query.as_ref().cloned());
+        let Some(parsed) = self.picker_query_eval(Kind::WorkspaceSymbols) else {
+            // The diagnostic is on the card (the shared parse path);
+            // retire in-flight LSP replies — they answered a query the
+            // input has left behind (0063 §4: no retired-query
+            // publication).
+            if let Some(glue) = self.picker.as_mut() {
+                glue.wsymbols_generation += 1;
             }
+            return;
+        };
+        // The syntax tier re-walks only when the walk's scope moved;
+        // every other filter, and the needle, apply in the ranking pass.
+        let relaunch = previous.is_none_or(|previous| !previous.same_scope(&parsed));
+        if relaunch {
+            if let Some(glue) = self.picker.as_mut() {
+                glue.revoke(CancelReason::Superseded);
+                glue.picker.clear_items();
+                glue.rank_pending = None;
+                glue.ranked_query = None;
+            }
+            self.launch_workspace_symbols_request(parsed);
         }
+        // Warm servers re-ask per query change under a new
+        // generation; only bare content text crosses the wire.
+        self.query_workspace_symbols();
         self.request_picker_ranking();
     }
 
@@ -452,9 +429,10 @@ impl Editor {
         };
         self.invalidate_search_review(session);
         let Some(plans) = plans else { return };
-        // Boolean queries carry their content in the AST (0063 §3):
-        // either form is a searchable expression.
-        if plans.content.is_none() && plans.boolean.is_none() {
+        // A search needs something to look for: filters alone
+        // (`kind:fn`, `path:src NOT x`) explain themselves instead of
+        // listing every line (0109 inconsistency 7).
+        if !plans.has_positive_content() {
             if let Some(glue) = self.picker.as_mut() {
                 if !query.is_empty() {
                     glue.picker.error =
@@ -566,26 +544,27 @@ impl Editor {
 
 impl Editor {
     /// ctrl-space in a query field: manual suggestions from the query's
-    /// own parse position (0051 R02). Search-role fields only — the
-    /// replacement value and remote address keep literal semantics.
+    /// own parse position (0051 R02), offering what the surface declares
+    /// (0109). Plain lists, the replacement value and the remote address
+    /// keep literal semantics.
     pub(crate) fn open_suggestions(&mut self) {
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
-        let query_role = glue.picker.kind == Kind::Files
-            || (glue.picker.kind == Kind::Search
-                && glue.picker.field == strop_picker::Field::Search)
-            || matches!(
-                glue.picker.kind,
-                Kind::Symbols | Kind::WorkspaceSymbols | Kind::Jumps
-            );
+        let schema = glue.picker.kind.schema();
+        let query_role = !schema.is_plain() && glue.picker.field == strop_picker::Field::Search;
         if !query_role || glue.picker.input_normal() {
             return;
         }
-        let query = glue
-            .query
-            .get_or_insert_with(|| Arc::new(SearchQuery::parse(glue.picker.input.text())));
-        let items = strop_picker::query::suggest::suggest(query, glue.picker.input.cursor());
+        let query = glue.query.get_or_insert_with(|| {
+            Arc::new(SearchQuery::parse(
+                glue.picker.input.text(),
+                schema,
+                Default::default(),
+            ))
+        });
+        let items =
+            strop_picker::query::suggest::suggest(query, glue.picker.input.cursor(), schema);
         if !items.is_empty() {
             glue.suggestions = Some(SuggestionList { items, selected: 0 });
         }

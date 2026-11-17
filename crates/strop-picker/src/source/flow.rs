@@ -123,7 +123,10 @@ pub(super) fn row_bytes(item: &Item) -> usize {
     };
     std::mem::size_of::<Item>()
         .saturating_add(item.text.capacity())
-        .saturating_add(item.badge.as_ref().map_or(0, String::capacity))
+        .saturating_add(match &item.badge {
+            Some(std::borrow::Cow::Owned(badge)) => badge.capacity(),
+            _ => 0,
+        })
         .saturating_add(path)
 }
 
@@ -305,6 +308,7 @@ mod tests {
             badge: None,
             text: name.clone(),
             payload: Payload::File(std::path::PathBuf::from(name)),
+            facts: Default::default(),
         }
     }
 

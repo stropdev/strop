@@ -8,7 +8,7 @@ fn t() -> Tokens {
 
 fn sym(name: &str, container: &str, line: usize, kind: &str) -> Item {
     Item {
-        badge: Some(kind.into()),
+        badge: Some(kind.to_owned().into()),
         text: format!("{name}  {container} · :{line}"),
         payload: Payload::Grep {
             location: strop_workspace::ResourceLocation::local(PathBuf::from("/p/net.cpp")),
@@ -17,6 +17,7 @@ fn sym(name: &str, container: &str, line: usize, kind: &str) -> Item {
             match_len: 1,
             line_text: "".into(),
         },
+        facts: Default::default(),
     }
 }
 
@@ -56,6 +57,7 @@ fn grep_item(path: &str, line: usize, col: usize, len: usize, text: &str) -> Ite
             match_len: len,
             line_text: text.into(),
         },
+        facts: Default::default(),
     }
 }
 
@@ -180,6 +182,7 @@ fn buffer_rows_split_the_directory_from_the_name_and_keep_terminals_whole() {
         badge: None,
         text: "crates/strop/src/render/card.rs".into(),
         payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+        facts: Default::default(),
     };
     let line = buffer_row(&t, &file, &[], 60, false);
     assert_eq!(
@@ -197,6 +200,7 @@ fn buffer_rows_split_the_directory_from_the_name_and_keep_terminals_whole() {
         badge: Some("!".into()),
         text: "term:///w//1:sh · running".into(),
         payload: Payload::Buffer(arena.try_insert(()).unwrap()),
+        facts: Default::default(),
     };
     let line = buffer_row(&t, &terminal, &[], 60, false);
     assert_eq!(line.spans[2].content, "term:///w//1:sh");
@@ -408,6 +412,7 @@ fn diagnostic_rows_show_severity_message_and_location() {
             match_len: 1,
             line_text: "cannot find function `xyz` in this scope".into(),
         },
+        facts: Default::default(),
     };
     let line = diagnostic_row(&t, &item, std::path::Path::new("/w"), 80, true);
     let text = line_text(&line);

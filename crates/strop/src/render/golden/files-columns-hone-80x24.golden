@@ -1,6 +1,6 @@
 ╭ files ──────────────────────────────────────────────────────────────────── 9 ╮
 │ ❯ ▏                                                                          │
-│                                                                              │
+│ language:rust path:src/ glob:"**/*.rs" case:sensitive · ctrl-space lists all │
 │   statusline.rs       src/render/         │ src/main.rs                      │
 │   Makefile                                │preview: No such file or director │
 │ ▌ main.rs             src/                │                                  │
@@ -25,7 +25,7 @@
 
   0: 1:#858c9a/#1c1f25 7:#e6e1d6/#1c1f25+b 72:#858c9a/#1c1f25
   1: 1:#858c9a/#1c1f25 1:reset/#1c1f25 3:#e8a848/#1c1f25 74:reset/#1c1f25 1:#858c9a/#1c1f25
-  2: 1:#858c9a/#1c1f25 78:reset/#1c1f25 1:#858c9a/#1c1f25
+  2: 1:#858c9a/#1c1f25 1:reset/#1c1f25 76:#858c9a/#1c1f25 1:reset/#1c1f25 1:#858c9a/#1c1f25
   3: 1:#858c9a/#1c1f25 3:reset/#1c1f25 13:#e6e1d6/#1c1f25 7:reset/#1c1f25 11:#a8adb8/#1c1f25 9:reset/#1c1f25 1:#4a5160/#1c1f25 1:reset/#1c1f25 4:#a8adb8/#1c1f25 7:#e6e1d6/#1c1f25+b 1:#a8adb8/#1c1f25 21:reset/#1c1f25 1:#858c9a/#1c1f25
   4: 1:#858c9a/#1c1f25 3:reset/#1c1f25 8:#e6e1d6/#1c1f25 32:reset/#1c1f25 1:#4a5160/#1c1f25 34:reset/#1c1f25 1:#858c9a/#1c1f25
   5: 1:#858c9a/#1c1f25 1:reset/#1c1f25 1:#e8a848/#23272f 1:reset/#23272f 7:#e6e1d6/#23272f 13:reset/#23272f 4:#a8adb8/#23272f 15:reset/#23272f 1:reset/#1c1f25 1:#4a5160/#1c1f25 34:reset/#1c1f25 1:#858c9a/#1c1f25

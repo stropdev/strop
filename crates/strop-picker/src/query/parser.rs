@@ -4,13 +4,16 @@
 //! no second parser.
 
 use strop_core::languages;
+use strop_core::symbol_kind::{self, KindSpec};
 
 use super::lexer::{self, TokenKind};
+use super::schema::{Field, Schema};
+use super::SearchModes;
 
 mod boolean;
 mod diagnostics;
 
-use diagnostics::{closest_language, qualifier_shaped_error};
+use diagnostics::{closest_kind, closest_language, qualifier_shaped_error};
 
 /// Case behavior for the search expression, resolved once. Smart is the
 /// default everywhere a query is typed (0093 §3.7): an all-lowercase
@@ -94,6 +97,12 @@ pub struct SearchQuery {
     pub exclude_languages: Vec<&'static str>,
     pub exclude_paths: Vec<String>,
     pub exclude_globs: Vec<String>,
+    /// `kind:` values: a row of any of them is kept.
+    pub kinds: Vec<&'static KindSpec>,
+    /// `-kind:` values: a row of any of them is dropped.
+    pub exclude_kinds: Vec<&'static KindSpec>,
+    pub repos: Vec<String>,
+    pub exclude_repos: Vec<String>,
     /// None = session default; Some = this query's explicit override.
     pub hidden: Option<bool>,
     pub ignored: Option<bool>,
@@ -101,15 +110,17 @@ pub struct SearchQuery {
     pub case: Option<CaseMode>,
     /// Some when the query carries a Boolean operator (0063 §3); then
     /// the flat `content` stays None and execution compiles from the AST.
+    /// A filter never switches this on: bare words beside `kind:` stay
+    /// the ranked needle (0109 decision 5).
     pub boolean: Option<BooleanExpr>,
     pub content: Option<ContentExpr>,
     pub diagnostics: Vec<QueryDiagnostic>,
     pub state: QueryState,
     pub highlights: Vec<super::HighlightSpan>,
     pub(super) tokens: Vec<lexer::Token>,
-    /// Explicit text/regex and wholly quoted input are exact file expressions;
-    /// ordinary bare file input remains fuzzy without operator metacharacters.
-    pub exact_file_expression: bool,
+    /// Explicit text/regex and wholly quoted input match exactly; bare
+    /// words stay fuzzy on the surfaces that rank fuzzily.
+    pub exact_expression: bool,
 }
 
 impl SearchQuery {
@@ -174,41 +185,34 @@ impl SearchQuery {
             .unwrap_or(0..0)
     }
 
-    /// Parse one input string (one parse per revision; the lexer and
-    /// this pass are one logical step).
-    pub fn parse(input: &str) -> Self {
+    /// Parse one input string for one surface (one parse per revision;
+    /// the lexer and this pass are one logical step). A key the surface
+    /// does not declare is a located error; the toggles re-read the
+    /// content expression and a `case:` in the query wins over them.
+    pub fn parse(input: &str, schema: &Schema, modes: SearchModes) -> Self {
         let tokens = lexer::lex(input);
         let mut query = SearchQuery {
             source: input.to_owned(),
             state: QueryState::Ready,
             ..Default::default()
         };
-        let boolean = tokens.iter().any(|token| match &token.kind {
-            TokenKind::Operator(_) | TokenKind::Paren { .. } => true,
-            // `kind:`/`repo:` narrow through the AST's evidence
-            // (symbol index, project catalog — 0063 §2); a flat
-            // spelling is an implicit AND, not a failure.
-            TokenKind::Qualifier { key, value, .. } => {
-                !value.is_empty() && matches!(key.as_str(), "kind" | "type" | "repo")
-            }
-            _ => false,
-        });
+        let boolean = tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::Operator(_) | TokenKind::Paren { .. }));
         let mut free_text: Vec<(String, bool, std::ops::Range<usize>)> = Vec::new();
         for token in &tokens {
             match &token.kind {
                 TokenKind::UnclosedQuote => {
-                    if query.state != QueryState::Invalid {
-                        query.state = QueryState::Incomplete;
-                    }
-                    query.diagnostics.push(QueryDiagnostic {
-                        range: token.range.clone(),
-                        message: "unclosed quote".into(),
-                        suggestion: Some("close the quote to finish the value".into()),
-                    });
+                    query.incomplete(
+                        &token.range,
+                        "unclosed quote".into(),
+                        Some("close the quote to finish the value".into()),
+                    );
                 }
                 TokenKind::Operator(_) | TokenKind::Paren { .. } => {}
                 TokenKind::Word { text, quoted } => {
-                    if let Some(diag) = qualifier_shaped_error(text, *quoted, &token.range) {
+                    if let Some(diag) = qualifier_shaped_error(text, *quoted, &token.range, schema)
+                    {
                         query.state = QueryState::Invalid;
                         query.diagnostics.push(diag);
                     } else if !boolean {
@@ -221,33 +225,95 @@ impl SearchQuery {
                     negated,
                     ..
                 } => {
+                    let Some(field) = Field::from_key(key).filter(|f| schema.declares(*f)) else {
+                        query.undeclared(key, &token.range, schema);
+                        continue;
+                    };
                     if value.is_empty() {
-                        if query.state != QueryState::Invalid {
-                            query.state = QueryState::Incomplete;
-                        }
-                        query.diagnostics.push(QueryDiagnostic {
-                            range: token.range.clone(),
-                            message: format!("{key}: expects a value"),
-                            suggestion: Some(format!("finish {key}:… or delete it")),
-                        });
-                    } else if !boolean || matches!(key.as_str(), "hidden" | "ignored" | "case") {
+                        query.incomplete(
+                            &token.range,
+                            format!("{key}: expects a value"),
+                            Some(format!("finish {key}:… or delete it")),
+                        );
+                    } else if !boolean
+                        || matches!(field, Field::Hidden | Field::Ignored | Field::Case)
+                    {
                         // Query-wide options stay outside Boolean branches
                         // and keep their flat meaning (0063 §3); selection
                         // qualifiers live in the AST only.
-                        let key = if key == "type" { "kind" } else { key };
-                        query.apply_qualifier(key, value, *negated, &token.range);
+                        query.apply_qualifier(field, value, *negated, &token.range);
                     }
                 }
             }
         }
         if boolean {
-            query.boolean = boolean::parse_boolean(&tokens, &mut query);
+            query.boolean = boolean::parse_boolean(&tokens, &mut query, schema);
         } else {
             query.resolve_content(free_text);
         }
         query.highlights = super::highlight::from_tokens(&tokens, &query.diagnostics, query.state);
         query.tokens = tokens;
+        query.apply_modes(modes);
         query
+    }
+
+    /// A key this surface does not take: name the surfaces that do.
+    fn undeclared(&mut self, key: &str, range: &std::ops::Range<usize>, schema: &Schema) {
+        let elsewhere: Vec<&str> = Field::from_key(key)
+            .map(|field| super::schema::surfaces_of(field).collect())
+            .unwrap_or_default();
+        self.fail(
+            range,
+            format!("{key}: does not filter {}", schema.noun),
+            (!elsewhere.is_empty()).then(|| format!("{key}: works in {}", elsewhere.join(", "))),
+        );
+    }
+
+    /// Typing in progress: never permission to broaden the list, and
+    /// never louder than an error already found.
+    fn incomplete(
+        &mut self,
+        range: &std::ops::Range<usize>,
+        message: String,
+        suggestion: Option<String>,
+    ) {
+        if self.state != QueryState::Invalid {
+            self.state = QueryState::Incomplete;
+        }
+        self.diagnostics.push(QueryDiagnostic {
+            range: range.clone(),
+            message,
+            suggestion,
+        });
+    }
+
+    /// Read a `kind:` value through the one kind table; an unknown value
+    /// is an error with a correction, a prefix of several kinds is
+    /// typing in progress.
+    pub(super) fn kind_value(
+        &mut self,
+        value: &str,
+        range: &std::ops::Range<usize>,
+    ) -> Option<&'static KindSpec> {
+        match symbol_kind::resolve(value) {
+            symbol_kind::Resolved::Kind(spec) => Some(spec),
+            symbol_kind::Resolved::Ambiguous(values) => {
+                self.incomplete(
+                    range,
+                    format!("kind:{value} could be {}", values.join(", ")),
+                    Some("type more of it".into()),
+                );
+                None
+            }
+            symbol_kind::Resolved::Unknown => {
+                self.fail(
+                    range,
+                    format!("unknown kind: {value}"),
+                    closest_kind(value).map(|word| format!("did you mean kind:{word}?")),
+                );
+                None
+            }
+        }
     }
 
     fn fail(
@@ -266,12 +332,13 @@ impl SearchQuery {
 
     fn apply_qualifier(
         &mut self,
-        key: &str,
+        field: Field,
         value: &str,
         negated: bool,
         range: &std::ops::Range<usize>,
     ) {
-        if negated && !matches!(key, "language" | "path" | "fpath" | "glob") {
+        let key = field.key();
+        if negated && !field.negatable() {
             self.fail(
                 range,
                 format!("{key}: cannot be negated"),
@@ -279,8 +346,8 @@ impl SearchQuery {
             );
             return;
         }
-        match key {
-            "language" => match languages::extensions_for_language(value) {
+        match field {
+            Field::Language => match languages::extensions_for_language(value) {
                 Some(_) => {
                     let name = languages::language_names()
                         .find(|name| *name == value)
@@ -308,28 +375,44 @@ impl SearchQuery {
                     closest_language(value).map(|lang| format!("did you mean language:{lang}?")),
                 ),
             },
-            "path" => {
+            Field::Path => {
                 if negated {
                     self.exclude_paths.push(value.to_string());
                 } else {
                     self.paths.push(value.to_string());
                 }
             }
-            "fpath" => {
+            Field::FuzzyPath => {
                 if negated {
                     self.exclude_fuzzy_paths.push(value.to_string());
                 } else {
                     self.fuzzy_paths.push(value.to_string());
                 }
             }
-            "glob" => {
+            Field::Glob => {
                 if negated {
                     self.exclude_globs.push(value.to_string());
                 } else {
                     self.globs.push(value.to_string());
                 }
             }
-            "hidden" | "ignored" => {
+            Field::Kind => {
+                if let Some(spec) = self.kind_value(value, range) {
+                    if negated {
+                        self.exclude_kinds.push(spec);
+                    } else {
+                        self.kinds.push(spec);
+                    }
+                }
+            }
+            Field::Repo => {
+                if negated {
+                    self.exclude_repos.push(value.to_string());
+                } else {
+                    self.repos.push(value.to_string());
+                }
+            }
+            Field::Hidden | Field::Ignored => {
                 let parsed = match value {
                     "include" => Some(true),
                     "exclude" => Some(false),
@@ -342,7 +425,7 @@ impl SearchQuery {
                         Some(format!("{key}:include or {key}:exclude")),
                     );
                 };
-                let slot = if key == "hidden" {
+                let slot = if field == Field::Hidden {
                     &mut self.hidden
                 } else {
                     &mut self.ignored
@@ -359,7 +442,7 @@ impl SearchQuery {
                     *slot = Some(parsed);
                 }
             }
-            "case" => {
+            Field::Case => {
                 let mode = match value {
                     "smart" => CaseMode::Smart,
                     "sensitive" => CaseMode::Sensitive,
@@ -384,8 +467,8 @@ impl SearchQuery {
                     self.case = Some(mode);
                 }
             }
-            "text" | "regex" => {
-                self.exact_file_expression = true;
+            Field::Text | Field::Regex => {
+                self.exact_expression = true;
                 if self.content.is_some() {
                     return self.fail(
                         range,
@@ -393,13 +476,12 @@ impl SearchQuery {
                         Some("remove one of them".into()),
                     );
                 }
-                self.content = Some(if key == "text" {
+                self.content = Some(if field == Field::Text {
                     ContentExpr::Literal(value.to_string())
                 } else {
                     ContentExpr::Regex(value.to_string())
                 });
             }
-            _ => unreachable!("the lexer only emits known qualifiers"),
         }
     }
 
@@ -420,7 +502,7 @@ impl SearchQuery {
             });
             return;
         }
-        self.exact_file_expression = free_text.iter().all(|(_, quoted, _)| *quoted);
+        self.exact_expression = free_text.iter().all(|(_, quoted, _)| *quoted);
         let phrase = free_text
             .iter()
             .map(|(text, _, _)| text.as_str())

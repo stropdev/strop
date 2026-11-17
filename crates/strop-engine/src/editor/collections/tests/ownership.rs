@@ -12,6 +12,7 @@ fn hit(path: &std::path::Path, text: &str) -> Item {
             match_len: 3,
             line_text: text.into(),
         },
+        facts: Default::default(),
     }
 }
 

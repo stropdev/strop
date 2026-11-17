@@ -55,7 +55,7 @@ fn list(document: DocumentId, revision: u64, producer: Producer) -> Vec<ProtoSym
     vec![ProtoSymbol {
         name: format!("{}@{revision} by {producer:?}", document.generation()),
         container: String::new(),
-        kind: "Function".into(),
+        kind: strop_core::symbol_kind::SymbolKind::Function,
         location: ServerLocation {
             doc: strop_workspace::ResourceLocation::local("/w/a.rs".into()),
             position: ServerPosition {

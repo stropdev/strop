@@ -217,6 +217,7 @@ fn two_collections_of_one_source_stay_in_step() {
             match_len: 5,
             line_text: "alpha two".into(),
         },
+        facts: Default::default(),
     }]);
     e.feed(Key::CtrlO);
     let second = e.current();
@@ -246,6 +247,7 @@ fn a_source_without_a_final_newline_edits_like_any_other() {
             match_len: 4,
             line_text: "last".into(),
         },
+        facts: Default::default(),
     }]);
     e.feed(Key::CtrlO);
     let view = e.current();

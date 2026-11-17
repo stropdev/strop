@@ -17,6 +17,13 @@ const COLLECT: Hint<'static> = Hint {
     key: "ctrl-o",
     desc: "collect",
 };
+/// Every list whose schema declares keys says where they are (0109).
+/// It trails `esc close`: a narrow card drops it first, and the row
+/// under an empty field says the same.
+const FILTERS: Hint<'static> = Hint {
+    key: "ctrl-space",
+    desc: "filters",
+};
 
 pub(super) fn for_picker(
     editor: &Editor,
@@ -87,10 +94,7 @@ pub(super) fn for_picker(
                 });
                 hints.push(COLLECT);
                 if !replacing && !read_only {
-                    hints.push(Hint {
-                        key: "ctrl-space",
-                        desc: "suggest",
-                    });
+                    hints.push(FILTERS);
                 }
             }
             hints.push(ESC_CLOSE);
@@ -114,7 +118,7 @@ pub(super) fn for_picker(
             },
             ESC_CLOSE,
         ],
-        Kind::Locations | Kind::Diagnostics => vec![ENTER_OPEN, COLLECT, ESC_CLOSE],
+        Kind::Locations | Kind::Diagnostics => vec![ENTER_OPEN, COLLECT, ESC_CLOSE, FILTERS],
         Kind::Theme => vec![
             Hint {
                 key: "enter",
@@ -133,19 +137,25 @@ pub(super) fn for_picker(
             },
             ESC_CLOSE,
         ],
-        _ => vec![
-            ENTER_OPEN,
-            Hint {
-                key: "↑↓",
-                desc: "move",
-            },
-            // the advertised paste is vim's: the unnamed register
-            // (0092 §1) — the terminal's own paste stays the clipboard
-            Hint {
-                key: "ctrl-r \"",
-                desc: "paste yank",
-            },
-            ESC_CLOSE,
-        ],
+        _ => {
+            let mut hints = vec![
+                ENTER_OPEN,
+                Hint {
+                    key: "↑↓",
+                    desc: "move",
+                },
+                // the advertised paste is vim's: the unnamed register
+                // (0092 §1) — the terminal's own paste stays the clipboard
+                Hint {
+                    key: "ctrl-r \"",
+                    desc: "paste yank",
+                },
+                ESC_CLOSE,
+            ];
+            if !kind.schema().is_plain() {
+                hints.push(FILTERS);
+            }
+            hints
+        }
     }
 }

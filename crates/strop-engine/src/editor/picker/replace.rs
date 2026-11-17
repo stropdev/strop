@@ -456,6 +456,7 @@ mod tests {
                         match_len: 1,
                         line_text: "x".into(),
                     },
+                    facts: Default::default(),
                 },
                 Item {
                     badge: None,
@@ -467,6 +468,7 @@ mod tests {
                         match_len: 1,
                         line_text: "y".into(),
                     },
+                    facts: Default::default(),
                 },
             ],
             false,

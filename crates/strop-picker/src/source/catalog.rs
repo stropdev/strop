@@ -244,13 +244,10 @@ impl ProjectCatalog {
         })
     }
 
-    /// Whether `repo:NAME` holds for `path`. Unknown paths admit —
-    /// overfetch, never a silent drop.
-    pub fn repo_matches(&self, path: &str, name: &str, negated: bool) -> bool {
-        let matched = self
-            .project_for(path)
-            .is_some_and(|project| project.name == name);
-        matched != negated
+    /// Whether `path` lies in the project named `name`.
+    pub fn repo_matches(&self, path: &str, name: &str) -> bool {
+        self.project_for(path)
+            .is_some_and(|project| project.name == name)
     }
 }
 
@@ -371,8 +368,9 @@ mod tests {
             catalog.project_for("notes/a.md").map(|p| &p.name),
             Some(&scope.file_name().unwrap().to_string_lossy().into_owned())
         );
-        assert!(!catalog.repo_matches("engine/src/main.rs", "tools", false));
-        assert!(catalog.repo_matches("notes/a.md", "engine", true));
+        assert!(!catalog.repo_matches("engine/src/main.rs", "tools"));
+        assert!(!catalog.repo_matches("notes/a.md", "engine"));
+        assert!(catalog.repo_matches("engine/src/main.rs", "engine"));
     }
 
     #[test]

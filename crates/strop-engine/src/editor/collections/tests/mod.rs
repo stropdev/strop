@@ -39,6 +39,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
                 match_len: 5,
                 line_text: "alpha one".into(),
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -50,6 +51,7 @@ fn fixture_in(root: &std::path::Path) -> (Editor, std::path::PathBuf, std::path:
                 match_len: 4,
                 line_text: "beta two".into(),
             },
+            facts: Default::default(),
         },
     ];
     e.picker_items_fixture(items);
@@ -207,6 +209,7 @@ fn unopened_sources_load_in_the_background_and_assemble() {
             match_len: 3,
             line_text: "late one".into(),
         },
+        facts: Default::default(),
     }]);
     e.feed(strop_core::frontend_input::Key::CtrlO);
     assert!(e.message.contains("loading"), "{}", e.message);
@@ -249,6 +252,7 @@ fn remote_sources_join_collections() {
                 match_len: 3,
                 line_text: "alpha one".into(),
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -259,6 +263,7 @@ fn remote_sources_join_collections() {
                 line: 1,
                 col: 1,
             },
+            facts: Default::default(),
         },
     ]);
     e.feed(strop_core::frontend_input::Key::CtrlO);
@@ -299,6 +304,7 @@ fn relative_startup_path_collects_all_hits() {
                 match_len: 6,
                 line_text: "alpha needle one".into(),
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -310,6 +316,7 @@ fn relative_startup_path_collects_all_hits() {
                 match_len: 6,
                 line_text: "beta needle two".into(),
             },
+            facts: Default::default(),
         },
     ];
     e.picker_items_fixture(items);
@@ -399,6 +406,7 @@ fn collection_loads_unopened_sources_in_the_background() {
                 match_len: 3,
                 line_text: "alpha zzq one".into(),
             },
+            facts: Default::default(),
         },
         Item {
             badge: None,
@@ -410,6 +418,7 @@ fn collection_loads_unopened_sources_in_the_background() {
                 match_len: 3,
                 line_text: "beta zzq two".into(),
             },
+            facts: Default::default(),
         },
     ]);
     e.feed(strop_core::frontend_input::Key::CtrlO);
@@ -452,6 +461,7 @@ fn one_card_per_file_with_gap_rows() {
                 match_len: 5,
                 line_text: "alpha three".into(),
             },
+            facts: Default::default(),
         },
         Item {
             text: "a.txt:10".into(),
@@ -463,6 +473,7 @@ fn one_card_per_file_with_gap_rows() {
                 match_len: 5,
                 line_text: "alpha ten".into(),
             },
+            facts: Default::default(),
         },
     ]);
     e.feed(strop_core::frontend_input::Key::CtrlO);

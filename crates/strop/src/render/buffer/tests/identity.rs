@@ -36,6 +36,7 @@ fn open_through(route: OpenRoute, root: &std::path::Path, path: &std::path::Path
                 badge: None,
                 text: "src/sample.rs".into(),
                 payload: strop_picker::Payload::File(path.to_path_buf()),
+                facts: Default::default(),
             }]);
             editor.feed(strop_core::frontend_input::Key::Enter);
             editor.wait_io().unwrap();

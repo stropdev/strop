@@ -294,7 +294,7 @@ fn symbol(name: &str, container: &str, kind: &str, line: usize, column: usize) -
     ProtoSymbol {
         name: name.into(),
         container: container.into(),
-        kind: kind.into(),
+        kind: crate::editor::symbols::lsp_kind(kind),
         location: ServerLocation {
             doc: strop_workspace::ResourceLocation::local(PathBuf::from("/workspace/lib.rs")),
             position: ServerPosition {
