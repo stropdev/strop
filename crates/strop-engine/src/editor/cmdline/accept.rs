@@ -6,6 +6,7 @@ use strop_core::Range;
 use strop_grammar::{self as grammar, Command};
 
 use super::{keys::Action, Context, Line, Origin};
+use crate::editor::ex::complete::{self, Step};
 use crate::editor::{input::ParserState, Editor, Mode};
 
 impl Editor {
@@ -202,27 +203,50 @@ impl Editor {
             Action::Left => return line.left(),
             Action::Right => return line.right(),
             Action::Home => return line.home(),
-            Action::End => return line.end(),
+            Action::End => {
+                if !complete::step(self, Step::Dismiss) {
+                    if let Some(line) = self.cmdline.line_mut() {
+                        line.end();
+                    }
+                }
+                return;
+            }
             Action::Register => return line.await_register(),
             Action::Repaint => {
                 self.needs_repaint = true;
                 return;
             }
-            Action::Complete => {
-                if self.cmdline.sigil() == Some(':') {
-                    crate::editor::ex::ex_tab_complete(self);
-                }
+            Action::Complete | Action::CompleteBack | Action::List | Action::Accept => {
+                complete::step(
+                    self,
+                    match action {
+                        Action::Complete => Step::Next,
+                        Action::CompleteBack => Step::Previous,
+                        Action::List => Step::List,
+                        _ => Step::Accept,
+                    },
+                );
                 return;
             }
             Action::Older | Action::Newer | Action::OlderPrefix | Action::NewerPrefix => {
+                // the menu takes Ctrl-N/Ctrl-P while it shows, and Up/Down
+                // once a row is selected; otherwise they walk history
+                let menu = match action {
+                    Action::Older | Action::Newer => self.cmdline_menu().is_some(),
+                    _ => complete::selected(self),
+                };
                 let older = matches!(action, Action::Older | Action::OlderPrefix);
+                if menu {
+                    complete::step(self, if older { Step::Previous } else { Step::Next });
+                    return;
+                }
                 let filtered = matches!(action, Action::OlderPrefix | Action::NewerPrefix);
                 if self.cmdline.recall(older, filtered) {
                     self.incsearch_jump();
                 }
                 return;
             }
-            Action::CompleteBack | Action::Accept | Action::List | Action::Window => return,
+            Action::Window => return,
         }
         self.cmdline_edited();
     }
@@ -270,12 +294,13 @@ impl Editor {
         self.cmdline_paste(&word);
     }
 
-    /// The text changed: a history walk ends, incsearch follows the
-    /// pattern.
+    /// The text changed: a history walk ends, the menu follows a `:`
+    /// line, incsearch a pattern.
     fn cmdline_edited(&mut self) {
         if let Some(line) = self.cmdline.line_mut() {
             line.recall = None;
         }
+        complete::typed(self);
         self.incsearch_jump();
     }
 

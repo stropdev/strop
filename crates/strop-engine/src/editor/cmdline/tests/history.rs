@@ -43,12 +43,12 @@ fn up_recalls_lines_that_start_with_what_was_typed_and_down_restores_it() {
 #[test]
 fn ctrl_p_and_ctrl_n_walk_every_line() {
     let mut e = editor("one\ntwo\nthree\n");
-    e.feed_text(":1y<cr>:2y<cr>:x<c-p>");
+    e.feed_text(":1y<cr>:2y<cr>:3<c-p>");
     assert_eq!(e.cmdline.text(), ":2y");
     e.feed_text("<c-p>");
     assert_eq!(e.cmdline.text(), ":1y");
     e.feed_text("<c-n><c-n>");
-    assert_eq!(e.cmdline.text(), ":x");
+    assert_eq!(e.cmdline.text(), ":3");
 }
 
 #[test]

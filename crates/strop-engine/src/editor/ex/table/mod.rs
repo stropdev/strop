@@ -104,6 +104,21 @@ pub(crate) struct ExCommand {
     pub run: Run,
 }
 
+impl std::fmt::Debug for ExCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, ":{}", self.name())
+    }
+}
+
+/// A command is its primary name.
+impl PartialEq for ExCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl Eq for ExCommand {}
+
 /// A row; the family files set the family and the builders the rest.
 pub(crate) const fn command(
     names: &'static [Name],

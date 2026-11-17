@@ -1,10 +1,13 @@
-//! One owned path-completion session for local and SSH paths.
-//! Local listings run on workers. SSH paths use only existing live
-//! connections or bounded cached observations; Tab never authenticates.
+//! Path completion for file and directory arguments, local and SSH.
+//! Listings run on workers, fetched only on `Tab`/`Ctrl-D`; typing then
+//! refilters the landed listing with no new job. SSH paths use only
+//! existing live connections or bounded cached observations; `Tab`
+//! never authenticates.
 //!
-//! Every reply captures the exact prompt, focus, document revision and cursor.
-//! Cycling rewrites the open command line. Candidates use
-//! lossless resource URIs so native filename bytes cannot become display aliases.
+//! Every reply captures the exact line, focus, document revision and
+//! cursor; a late reply for an older moment is dropped. Candidates are
+//! lossless resource URIs so native filename bytes cannot become display
+//! aliases.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -15,9 +18,11 @@ use strop_core::worker::{self, CancelReason, Completion, FailureKind, Outcome, T
 use strop_remote::{HostCandidate, HostSources, RemoteClient, RemoteEntryKind};
 use strop_workspace::RemoteFile;
 
-use super::cmdline::Context;
-use super::document::DocumentSource;
-use super::Editor;
+use super::super::table::ExCommand;
+use super::{rank, MenuKind, Row, Text};
+use crate::editor::cmdline::Context;
+use crate::editor::document::DocumentSource;
+use crate::editor::Editor;
 
 mod directory;
 mod run;
@@ -29,13 +34,14 @@ mod tests;
 /// later offline Tab still completes from the last observed truth.
 const CACHE_DIRS: usize = 32;
 
-/// Commands whose one argument is a remote URI. `w`/`wq` are absent and
-/// answered with an honest message instead.
-fn takes_remote_operand(command: &str) -> bool {
-    matches!(
-        command,
-        "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit"
-    )
+/// Commands that open what they name, the only ones an `ssh://`
+/// argument completes for; the `:w` family refuses instead.
+fn opens_remote(command: &ExCommand) -> Option<bool> {
+    match command.name() {
+        "edit" | "view" | "split" | "vsplit" => Some(true),
+        "write" | "wq" | "xit" | "update" => Some(false),
+        _ => None,
+    }
 }
 
 /// Which local question a completion asked. Pure serde data — the
@@ -128,17 +134,79 @@ pub enum RemoteCompletionResult {
 /// One worker delivery, ticket-stamped like every other service.
 pub type RemoteCompletionEvent = Completion<RemoteCompletionKey, RemoteCompletionResult>;
 
-/// Landed candidates plus the moment they were applied to — the cycle
-/// state between Tabs.
+/// A landed listing, refiltered as the user types in the same directory.
 #[derive(Debug, Clone)]
-struct ReadyCompletion {
-    /// Prompt body before the `ssh://` token (e.g. `e ` or `tail 64k `).
-    prefix_body: String,
-    /// Full prompt text after our last apply; a mismatch means the
-    /// user typed since, and Tab starts a fresh request instead.
-    applied: String,
-    candidates: Vec<RemoteCandidate>,
-    index: usize,
+pub(crate) struct Listing {
+    /// Body offset of the completed token.
+    start: usize,
+    /// The token up to the segment the listing filters (`src/`,
+    /// `ssh://build/var/`, `ssh://`).
+    base: String,
+    /// The segment the worker filtered by; typing past it refilters.
+    segment: String,
+    items: Vec<RemoteCandidate>,
+    /// The worker's answer is in.
+    landed: bool,
+    /// `:cd` lists directories only.
+    directories: bool,
+}
+
+impl Listing {
+    /// The rows for `token` at `start`, or false when this listing does
+    /// not cover it (another directory, a shorter segment).
+    pub(crate) fn rows(&self, start: usize, token: &str, rows: &mut Vec<Row>) -> bool {
+        let Some(segment) = token.strip_prefix(self.base.as_str()) else {
+            return false;
+        };
+        if !self.landed
+            || start != self.start
+            || segment.contains('/')
+            || !segment.starts_with(&self.segment)
+        {
+            return false;
+        }
+        // the worker filtered by the queried segment (natively); typing
+        // past it narrows by the shown name
+        let narrowed = segment != self.segment;
+        rows.clear();
+        let matched = rank::prefix_mask(segment.chars().count());
+        for item in &self.items {
+            if self.directories && !item.directory {
+                continue;
+            }
+            let label = label(&item.uri);
+            if !narrowed || label.starts_with(segment) {
+                rows.push(Row {
+                    text: Text::Owned(item.uri.as_str().into()),
+                    label: Some(Text::Owned(label.into())),
+                    abbrev: Text::Static(""),
+                    doc: Text::Static(""),
+                    key: None,
+                    matched,
+                    mark: false,
+                });
+            }
+        }
+        true
+    }
+
+    /// The menu's title: the directory listed.
+    fn title(&self) -> Text {
+        match self.base.as_str() {
+            "" => Text::Static("files"),
+            "ssh://" => Text::Static("hosts"),
+            base => Text::Owned(base.into()),
+        }
+    }
+}
+
+/// `token` cut where the listing's filter begins.
+fn base_of(token: &str) -> (&str, &str) {
+    let split = match token.strip_prefix("ssh://") {
+        Some(rest) if !rest.contains('/') => "ssh://".len(),
+        _ => token.rfind('/').map_or(0, |at| at + 1),
+    };
+    token.split_at(split)
 }
 
 /// The editor's remote-completion slot: one in-flight request, one
@@ -150,7 +218,6 @@ pub(crate) struct RemoteCompletionState {
     pub tx: Sender<RemoteCompletionEvent>,
     pub rx: Option<Receiver<RemoteCompletionEvent>>,
     pub(crate) pending: Option<Ticket<RemoteCompletionKey>>,
-    ready: Option<ReadyCompletion>,
     cache: VecDeque<(String, Vec<RemoteCandidate>)>,
 }
 
@@ -161,7 +228,6 @@ impl Default for RemoteCompletionState {
             tx,
             rx: Some(rx),
             pending: None,
-            ready: None,
             cache: VecDeque::new(),
         }
     }
@@ -200,7 +266,7 @@ impl Editor {
                 handle.cancel(CancelReason::Superseded);
             }
         }
-        self.remote_completion.ready = None;
+        self.cmdline.completion.listing = None;
     }
 
     pub(crate) fn invalidate_filesystem_completions(&mut self) {
@@ -208,87 +274,80 @@ impl Editor {
         self.remote_completion.cache.clear();
     }
 
-    /// Tab on the ex line's remote operand: cycle landed candidates or
-    /// start a request. Returns true when the line was a remote
-    /// completion (even when the answer is a refusal message), so the
-    /// caller's command-name cycling never touches a remote line.
-    pub(crate) fn remote_completion_tab(&mut self) -> bool {
-        let Some((text, cursor)) = self
-            .cmdline
-            .line()
-            .map(|prompt| (prompt.text().to_owned(), prompt.cursor()))
-        else {
-            return false;
-        };
-        let Some(body) = text.strip_prefix(':') else {
-            return false;
-        };
-        let Some((cmd, rest)) = body.split_once(' ') else {
-            return false;
-        };
-        let tokens = rest.split(' ').filter(|token| !token.is_empty());
-        let remote = rest.starts_with("ssh://");
-        let (query, prefix_body) = if remote {
-            let Some(operand) = tokens
-                .clone()
-                .next_back()
-                .filter(|operand| operand.starts_with("ssh://"))
-            else {
+    /// Complete the path argument at `[start, end)` of the body: from the
+    /// landed listing when it covers what is typed, else (on `Tab`/
+    /// `Ctrl-D`) from a new listing job.
+    pub(in crate::editor::ex::complete) fn path_complete(
+        &mut self,
+        command: &'static ExCommand,
+        directories: bool,
+        start: usize,
+        end: usize,
+        explicit: bool,
+    ) {
+        let (line, completion) = self.cmdline.parts_mut();
+        let Some(line) = line else { return };
+        let body = line.body();
+        let token = &body[start..end];
+        if let Some(listing) = completion.listing.take() {
+            let covered = listing.rows(start, token, &mut completion.rows);
+            let title = listing.title();
+            completion.listing = Some(listing);
+            if covered {
+                completion.show(MenuKind::Paths, title, body, start, end);
+                return;
+            }
+        }
+        completion.close();
+        if !explicit {
+            return;
+        }
+        let prefix_body = body[..start].to_owned();
+        let token = body[start..end].to_owned();
+        let token = token.as_str();
+        let query = if let Some(remote) = token.strip_prefix("ssh://") {
+            if token.contains(char::is_whitespace) {
                 self.message = "remote URI cannot contain a raw space (type %20)".into();
-                return true;
-            };
-            if matches!(cmd, "w" | "w!" | "wq" | "wq!") {
-                self.message = "remote save-as completion is unsupported".into();
-                return true;
+                return;
             }
-            if !takes_remote_operand(cmd) {
-                return false;
-            }
-            if tokens.count() > 1 {
-                self.message = format!(":{cmd} takes no argument before the URI");
-                return true;
-            }
-            let prefix = body[..body.len() - operand.len()].to_owned();
-            (
-                classify_remote_operand(operand.strip_prefix("ssh://").unwrap_or_default()),
-                prefix,
-            )
-        } else {
-            if !matches!(cmd, "e" | "e!" | "view" | "sp" | "split" | "vs" | "vsplit") {
-                return false;
-            }
-            let context = self.open_context();
-            (
-                directory::classify(rest, context),
-                body[..body.len() - rest.len()].to_owned(),
-            )
-        };
-        if cursor != text.len() {
-            self.message = "completion needs the cursor at the end of the line".into();
-            return true;
-        }
-        if let Some(ready) = self.remote_completion.ready.as_ref() {
-            if self.cmdline.text() == ready.applied && ready.candidates.len() > 1 {
-                let next = (ready.index + 1) % ready.candidates.len();
-                let uri = ready.candidates[next].uri.clone();
-                let prefix = ready.prefix_body.clone();
-                self.apply_completion(&prefix, &uri);
-                if let Some(ready) = self.remote_completion.ready.as_mut() {
-                    ready.index = next;
-                    ready.applied = self.cmdline.text().to_owned();
+            match opens_remote(command) {
+                Some(true) => classify_remote_operand(remote),
+                Some(false) => {
+                    self.message = "remote save-as completion is unsupported".into();
+                    return;
                 }
-                return true;
+                None => return,
             }
-        }
+        } else if token.contains(" ssh://") {
+            self.message = format!(":{} takes no argument before the URI", command.name());
+            return;
+        } else {
+            directory::classify(token, self.open_context())
+        };
         match query {
-            Ok(query) => self.start_remote_completion(query, prefix_body),
+            Ok(query) => {
+                let (base, segment) = base_of(token);
+                let listing = Listing {
+                    start,
+                    base: base.to_owned(),
+                    segment: segment.to_owned(),
+                    items: Vec::new(),
+                    landed: false,
+                    directories,
+                };
+                self.start_remote_completion(query, prefix_body, listing);
+            }
             Err(error) => self.message = error,
         }
-        true
     }
 
     /// Classify the typed operand and launch the owned worker request.
-    fn start_remote_completion(&mut self, query: RemoteCompletionQuery, prefix_body: String) {
+    fn start_remote_completion(
+        &mut self,
+        query: RemoteCompletionQuery,
+        prefix_body: String,
+        listing: Listing,
+    ) {
         let Some((text, cursor, document, revision)) =
             self.cmdline
                 .line()
@@ -350,6 +409,7 @@ impl Editor {
             key: key.clone(),
         };
         self.remote_completion.pending = Some(ticket.clone());
+        self.cmdline.completion.listing = Some(listing);
         self.message = "completing…".into();
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
@@ -426,24 +486,38 @@ impl Editor {
                         .store_cache(directory.clone(), items.clone());
                 }
                 if items.is_empty() {
+                    self.cmdline.completion.listing = None;
                     self.message = match notes.first() {
                         Some(note) => format!("no path matches: {note}"),
                         None => "no path matches".into(),
                     };
                     return;
                 }
-                let prefix_body = ticket.key.prefix_body.clone();
-                self.apply_completion(&prefix_body, &items[0].uri);
-                self.message = candidates_message(&items, source);
-                self.remote_completion.ready = Some(ReadyCompletion {
-                    prefix_body,
-                    applied: self.cmdline.text().to_owned(),
-                    candidates: items,
-                    index: 0,
-                });
-                if let Some(note) = notes.first() {
-                    self.message.push_str(" — ");
-                    self.message.push_str(note);
+                self.message.clear();
+                let completion = &mut self.cmdline.completion;
+                let Some(listing) = completion.listing.as_mut() else {
+                    return;
+                };
+                listing.items = items;
+                listing.landed = true;
+                let mut note = match source {
+                    CandidateSource::Cache => Some("cached".to_owned()),
+                    CandidateSource::Connection => Some("live".to_owned()),
+                    CandidateSource::Config | CandidateSource::Directory => None,
+                };
+                if let Some(first) = notes.first() {
+                    note = Some(match note {
+                        Some(source) => format!("{source} · {first}"),
+                        None => first.clone(),
+                    });
+                }
+                completion.note = note.map(String::into_boxed_str);
+                let start = ticket.key.prefix_body.len();
+                let end = ticket.key.cursor - 1;
+                let select = std::mem::take(&mut completion.select_on_arrival);
+                self.path_rows(start, end);
+                if select && self.cmdline.completion.is_open() {
+                    super::step(self, super::Step::Next);
                 }
             }
             Outcome::Success(RemoteCompletionResult::ConnectRequired { endpoint }) => {
@@ -457,8 +531,8 @@ impl Editor {
         }
     }
 
-    /// The request's prompt moment still describes the editor: same
-    /// ex prompt, focus, document, revision, input text and cursor.
+    /// The request's moment still describes the editor: same `:` line,
+    /// focus, document, revision, text and cursor.
     fn completion_prompt_fresh(&self, key: &RemoteCompletionKey) -> bool {
         let Some(prompt) = self.cmdline.line() else {
             return false;
@@ -472,13 +546,18 @@ impl Editor {
             && prompt.cursor() == key.cursor
     }
 
-    /// Write one candidate into the line.
-    fn apply_completion(&mut self, prefix_body: &str, uri: &str) {
-        if let Some(line) = self.cmdline.line_mut() {
-            if line.sigil() == ':' {
-                line.set_body(&format!("{prefix_body}{uri}"));
-            }
+    /// Show the landed listing's rows for `[start, end)` of the body.
+    fn path_rows(&mut self, start: usize, end: usize) {
+        let (line, completion) = self.cmdline.parts_mut();
+        let Some(line) = line else { return };
+        let body = line.body();
+        let Some(listing) = completion.listing.take() else {
+            return;
+        };
+        if listing.rows(start, &body[start..end], &mut completion.rows) {
+            completion.show(MenuKind::Paths, listing.title(), body, start, end);
         }
+        completion.listing = Some(listing);
     }
 
     /// Host candidates from endpoints this editor already opened.
@@ -501,44 +580,16 @@ impl Editor {
     }
 }
 
-/// Sort, show and label the candidate list for the message line.
-fn candidates_message(items: &[RemoteCandidate], source: CandidateSource) -> String {
-    let mut text = items
-        .iter()
-        .take(6)
-        .map(display_segment)
-        .collect::<Vec<_>>()
-        .join("  ");
-    if items.len() > 6 {
-        text.push_str(&format!("  (+{})", items.len() - 6));
-    }
-    match source {
-        CandidateSource::Cache => text.push_str("  (cached)"),
-        CandidateSource::Connection => text.push_str("  (live)"),
-        CandidateSource::Config => {}
-        CandidateSource::Directory => {}
-    }
-    if text.len() > 160 {
-        let mut boundary = 160;
-        while !text.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        text.truncate(boundary);
-    }
-    text
-}
-
-/// Safe display of one candidate: the final URI segment (directories
-/// keep their trailing `/`). Escaped form — never a lossy decode of
-/// native bytes.
-fn display_segment(candidate: &RemoteCandidate) -> &str {
-    let uri = &candidate.uri;
-    let cut = match uri.rfind('/') {
-        Some(at) if at + 1 == uri.len() => uri[..at].rfind('/').map_or(at, |prev| prev + 1),
-        Some(at) => at + 1,
-        None => return uri.strip_prefix("ssh://").unwrap_or(uri),
+/// What the menu shows for a candidate: its last segment (a directory
+/// keeps its `/`), or a host without `ssh://`. Escaped form — never a
+/// lossy decode of native bytes.
+fn label(uri: &str) -> &str {
+    let trimmed = uri.strip_suffix('/').unwrap_or(uri);
+    let start = match trimmed.strip_prefix("ssh://") {
+        Some(host) if !host.contains('/') => "ssh://".len(),
+        _ => trimmed.rfind('/').map_or(0, |at| at + 1),
     };
-    &uri[cut..]
+    &uri[start..]
 }
 
 /// Split the typed operand into a query, or an honest refusal. `~`

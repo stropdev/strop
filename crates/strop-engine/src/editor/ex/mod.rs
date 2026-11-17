@@ -4,15 +4,15 @@
 //! dispatch both read), `lines` (`:d :y :m :t :j :> :pu`), `sort`,
 //! `global` (`:g :v :normal`), `substitute`, `buffers`, `listing`
 //! (`:ls :reg :marks`), `files` (`:w :q :e` families), `directory`
-//! (`:cd`), `prompt` (completion and the field's modal state).
+//! (`:cd`), `complete` (the menu: what completes where).
 
 mod buffers;
+pub(crate) mod complete;
 mod directory;
 mod files;
 mod global;
 mod lines;
 mod listing;
-mod prompt;
 pub(crate) mod range;
 mod sort;
 pub(crate) mod substitute;
@@ -31,7 +31,6 @@ pub(crate) use files::*;
 pub(crate) use global::*;
 pub(crate) use lines::*;
 pub(crate) use listing::*;
-pub(crate) use prompt::*;
 pub(crate) use range::*;
 pub(crate) use sort::*;
 pub(crate) use substitute::*;
@@ -67,14 +66,15 @@ impl Editor {
         repeat_command_line(self, count);
     }
 
-    /// Ex-completion candidates for the pending prefix (name, doc).
-    pub fn ex_candidates(&self) -> Vec<(&'static str, &'static str)> {
-        ex_candidates(self)
-    }
-
     /// The live `:s` preview: the plan Enter would apply.
     pub fn substitute_preview(&self) -> Option<SubstitutePreviewState<'_>> {
         substitute_preview(self)
+    }
+
+    /// The command line's menu, when it shows.
+    pub fn cmdline_menu(&self) -> Option<&complete::Completion> {
+        let completion = &self.cmdline.completion;
+        completion.is_open().then_some(completion)
     }
 
     /// The match a `:s///c` question is about (painted while it waits).

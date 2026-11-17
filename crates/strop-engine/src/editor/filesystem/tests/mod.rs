@@ -254,7 +254,7 @@ fn pending_format_then_save_cannot_be_retargeted_by_a_file_move() {
 
 #[test]
 fn committed_rename_retires_completion_candidates_for_the_old_name() {
-    use crate::editor::remote_completion::{
+    use crate::editor::ex::complete::paths::{
         CandidateSource, RemoteCandidate, RemoteCompletionKey, RemoteCompletionQuery,
         RemoteCompletionResult,
     };

@@ -1618,6 +1618,7 @@ version = "0.70.0"
 dependencies = [
  "imbl",
  "loom",
+ "nucleo-matcher",
  "parking_lot",
  "ratatui",
  "regex",

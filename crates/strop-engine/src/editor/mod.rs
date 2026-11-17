@@ -63,7 +63,6 @@ mod privacy;
 pub mod recovery;
 mod registers;
 pub mod remote;
-mod remote_completion;
 mod shell;
 mod snippet;
 mod structural_indent;
@@ -99,6 +98,8 @@ pub use registers::{ClipboardKey, ClipboardResult, Register, RegisterError};
 pub use shell::{ShellIntent, ShellKey, ShellResult};
 pub use symbols::scope::{cells as scope_cells, ScopePath, SCOPE_CAP, SEGMENT_CAP};
 
+pub use ex::complete::paths::{RemoteCompletionKey, RemoteCompletionResult};
+pub use ex::complete::{Completion as CmdlineMenu, MenuKind, Row as MenuRow};
 pub use ex::{SubstitutePreviewState, SubstitutionPreview};
 pub use lsp::attach::{AttachDecision, AttachRecord};
 pub use lsp::{LspPhase, LspServer, LspStatus};
@@ -106,7 +107,6 @@ pub use permalink::PendingPermalink;
 pub use picker::ranking::Event as RankingEvent;
 pub use picker::RecentFiles;
 pub use remote::RemoteEvent;
-pub use remote_completion::{RemoteCompletionKey, RemoteCompletionResult};
 pub use resolution::{ResolutionEvent, ResolutionState};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -162,7 +162,7 @@ pub struct Editor {
     /// bounded landing queue and the guarded-reload state.
     pub(crate) notify: notify::NotifyState,
     pub(crate) io: io::IoState,
-    pub(crate) remote_completion: remote_completion::RemoteCompletionState,
+    pub(crate) remote_completion: ex::complete::paths::RemoteCompletionState,
     pub(crate) completion: completion::CompletionState,
     /// 0069 D05: the live snippet tabstop session (after a snippet
     /// acceptance; `None` otherwise).
@@ -431,7 +431,7 @@ impl Editor {
             remote: remote::RemoteState::default(),
             directories: directory::DirectoryState::default(),
             filesystem: filesystem::FsState::default(),
-            remote_completion: remote_completion::RemoteCompletionState::default(),
+            remote_completion: ex::complete::paths::RemoteCompletionState::default(),
             completion: completion::CompletionState::default(),
             snippet: None,
             notify: notify::NotifyState::default(),

@@ -62,7 +62,15 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     let area = frame.area();
     // ex completion rides along: candidates under the input (0003 §1)
     let candidates = if kind == ':' {
-        editor.ex_candidates()
+        editor
+            .cmdline_menu()
+            .map(|menu| {
+                menu.rows()
+                    .iter()
+                    .map(|row| (row.label(), row.doc()))
+                    .collect()
+            })
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -191,7 +199,7 @@ pub fn render_cmd_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         } else {
             (t.text, t.muted)
         };
-        let marker = if name == &body_str { "▌" } else { " " };
+        let marker = if *name == body_str { "▌" } else { " " };
         let doc_budget =
             usize::from(text_area.width.saturating_sub(GUTTER)).saturating_sub(name_w + 2);
         frame.render_widget(

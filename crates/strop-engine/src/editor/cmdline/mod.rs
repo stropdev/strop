@@ -123,6 +123,14 @@ impl Line {
         }
     }
 
+    /// Replace `[start, end)` of the body with `text`, caret after it.
+    pub(crate) fn replace_body(&mut self, start: usize, end: usize, text: &str) {
+        self.edit.delete_range(start + 1, end + 1);
+        self.edit.set_cursor(start + 1);
+        self.edit.insert_str(text);
+        self.recall = None;
+    }
+
     /// Replace the body, caret at its end.
     pub(crate) fn set_body(&mut self, body: &str) {
         let at = self.edit.text().len();
@@ -150,6 +158,8 @@ pub struct Cmdline {
     /// What the `:` line remembers between commands.
     pub(crate) ex: super::ex::ExState,
     pub(crate) history: history::Histories,
+    /// The `:` line's menu.
+    pub(crate) completion: super::ex::complete::Completion,
 }
 
 impl Cmdline {
@@ -183,12 +193,21 @@ impl Cmdline {
             self.active.is_none(),
             "cancel the previous line before opening another"
         );
+        self.completion.reset();
         self.active = Some(line);
     }
 
     /// Close the line, handing it back (once).
     pub(crate) fn close(&mut self) -> Option<Line> {
+        self.completion.reset();
         self.active.take()
+    }
+
+    /// The open line and the menu, borrowed together.
+    pub(crate) fn parts_mut(
+        &mut self,
+    ) -> (Option<&mut Line>, &mut super::ex::complete::Completion) {
+        (self.active.as_mut(), &mut self.completion)
     }
 
     pub(crate) fn line_mut(&mut self) -> Option<&mut Line> {
