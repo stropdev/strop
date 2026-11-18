@@ -70,7 +70,9 @@ impl Document {
             DocumentSource::Surface(surface) => surface.content.return_point(),
             DocumentSource::Remote(source) => source.return_to.as_ref(),
             DocumentSource::Directory(source) => source.return_to.as_ref(),
-            DocumentSource::Output { return_to } => return_to.as_ref(),
+            DocumentSource::Output { return_to } | DocumentSource::Help { return_to, .. } => {
+                return_to.as_ref()
+            }
             _ => None,
         }
     }
@@ -79,7 +81,9 @@ impl Document {
             DocumentSource::Surface(surface) => surface.content.return_slot().as_mut(),
             DocumentSource::Remote(source) => source.return_to.as_mut(),
             DocumentSource::Directory(source) => source.return_to.as_mut(),
-            DocumentSource::Output { return_to } => return_to.as_mut(),
+            DocumentSource::Output { return_to } | DocumentSource::Help { return_to, .. } => {
+                return_to.as_mut()
+            }
             _ => None,
         }
     }
@@ -88,7 +92,9 @@ impl Document {
             DocumentSource::Surface(surface) => surface.content.set_return_point(point),
             DocumentSource::Remote(source) => source.return_to = Some(point),
             DocumentSource::Directory(source) => source.return_to = Some(point),
-            DocumentSource::Output { return_to } => *return_to = Some(point),
+            DocumentSource::Output { return_to } | DocumentSource::Help { return_to, .. } => {
+                *return_to = Some(point)
+            }
             _ => {}
         }
     }

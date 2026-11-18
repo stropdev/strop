@@ -3,6 +3,7 @@
 
 use std::sync::LazyLock;
 
+use super::notation::is_single_key;
 use super::{Binding, BINDINGS, SECTIONS};
 
 /// Expand a row's notation into sequences of table tokens.
@@ -37,7 +38,8 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
                 i = end;
                 continue;
             }
-            "ctrl-w" | "ctrl-x" | "ctrl-\\" | "ctrl-4" => {
+            // `g tab`: a prefix and one named key, one sequence
+            "ctrl-w" | "ctrl-x" | "ctrl-\\" | "ctrl-4" | "g" => {
                 if let Some(k) = toks.get(i + 1) {
                     seqs.push(vec![toks[i], k]);
                     i += 2;
@@ -57,7 +59,7 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
 fn per_key(seq: &[&str]) -> Vec<String> {
     let mut out = Vec::new();
     for &t in seq {
-        if t.len() > 1 && !t.starts_with('<') && !t.starts_with(':') && !NAMED.contains(&t) {
+        if t.len() > 1 && !t.starts_with('<') && !t.starts_with(':') && !is_single_key(t) {
             if let Some(i) = t.find('<') {
                 out.extend(t[..i].chars().map(|c| c.to_string()));
                 out.push(t[i..].to_string());
@@ -70,41 +72,6 @@ fn per_key(seq: &[&str]) -> Vec<String> {
     }
     out
 }
-
-pub(crate) const NAMED: &[&str] = &[
-    "space",
-    "ctrl-w",
-    "ctrl-o",
-    "ctrl-i",
-    "up",
-    "down",
-    "left",
-    "right",
-    "tab",
-    "s-tab",
-    "esc",
-    "enter",
-    "backspace",
-    "ctrl-r",
-    "ctrl-t",
-    "ctrl-x",
-    "ctrl-a",
-    "ctrl-c",
-    "ctrl-d",
-    "ctrl-u",
-    "ctrl-f",
-    "ctrl-b",
-    "ctrl-^",
-    "ctrl-v",
-    "ctrl-l",
-    "ctrl-space",
-    "ctrl-\\",
-    "ctrl-n",
-    "ctrl-p",
-    "ctrl-y",
-    "ctrl-e",
-    "ctrl-4",
-];
 
 /// The single-key operator `<` is literal, not a placeholder.
 fn is_placeholder(k: &str) -> bool {

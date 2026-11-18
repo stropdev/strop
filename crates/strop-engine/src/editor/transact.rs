@@ -185,6 +185,12 @@ impl super::Editor {
                 pane.sels.map_positions(map);
             }
         }
+        // a parked pane is an inactive one
+        for pane in self.tabs.panes_mut() {
+            if pane.doc == id {
+                pane.sels.map_positions(map);
+            }
+        }
         for collection in self.collections.values_mut() {
             let writing = collection.writing;
             for excerpt in &mut collection.excerpts {

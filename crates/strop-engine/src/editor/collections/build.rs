@@ -379,8 +379,11 @@ impl Editor {
             collection.mapped = revision;
         }
         // A refreshed collection's old carets address text that is gone.
-        for (index, pane) in self.panes.iter_mut().enumerate() {
-            if pane.doc == id && index != self.active_pane {
+        let active = self.active_pane;
+        let panes = self.panes.iter_mut().chain(self.tabs.panes_mut());
+        for (index, pane) in panes.enumerate() {
+            // parked panes come after the visible ones: never `active`
+            if pane.doc == id && index != active {
                 pane.sels = Default::default();
                 pane.view_top = 0;
             }

@@ -38,7 +38,7 @@ pub(crate) mod field;
 mod git;
 pub mod git_memory;
 pub mod git_work;
-mod help;
+pub mod help;
 mod indent;
 mod input;
 pub(crate) mod insert;
@@ -68,6 +68,7 @@ mod shell;
 mod snippet;
 mod structural_indent;
 pub(crate) mod symbols;
+pub mod tabs;
 pub(crate) mod terminal;
 pub use terminal::TerminalDocument;
 mod presentation;
@@ -320,13 +321,15 @@ pub struct Editor {
     pub(crate) shell_rx: Option<std::sync::mpsc::Receiver<ShellResult>>,
     pub(crate) shell_focus: Option<strop_core::worker::WorkerId>,
     pub(crate) shell_requests: HashMap<strop_core::worker::WorkerId, ShellIntent>,
-    /// Splits: flat row/column of panes (v1; tree layout later).
+    /// Splits: the current tab page's panes, in reading order.
     /// Frontends read through [`Editor::panes`]/[`Editor::active_pane`]/
     /// [`Editor::layout`] and act through admitted actions (0056 AR02).
     pub(crate) panes: Vec<Pane>,
     pub(crate) active_pane: usize,
-    /// The window tree: leaf `k` is `panes[k]` (plans/0104).
-    pub(crate) layout: Layout,
+    /// The window trees (plans/0104, 0113): `tabs.layout` is the current
+    /// tab page's, leaf `k` is `panes[k]`; the other tab pages are parked
+    /// there.
+    pub(crate) tabs: tabs::Tabs,
     /// User config (0005-lite: TOML, embedded defaults, never bricks).
     /// Frontends read [`Editor::config`] and replace it through
     /// [`Editor::set_config`].
@@ -547,7 +550,7 @@ impl Editor {
                 jumps,
             }],
             active_pane: 0,
-            layout: Layout::Leaf,
+            tabs: tabs::Tabs::default(),
             config: crate::config::Config::default(),
             state_dir: None,
             session_policy: crate::session::SessionPolicy::Automatic,
@@ -717,7 +720,9 @@ pub fn state_json(editor: &Editor) -> String {
         "extra_cursors": editor.extra_selections().iter().map(|s| s.head).collect::<Vec<_>>(),
         "panes": editor.panes.len(),
         "active_pane": editor.active_pane,
-        "layout": editor.layout.outline(),
+        "layout": editor.layout().outline(),
+        "tabs": editor.tabs.layouts().map(Layout::outline).collect::<Vec<_>>(),
+        "active_tab": tabs::current(editor),
         "picker": editor.picker_open(),
         "picker_input": editor.picker.as_ref().map(|g| g.picker.input.text().to_string()),
         "picker_items": editor.picker.as_ref().map(|g| g.picker.items.len()),

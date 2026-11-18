@@ -97,6 +97,7 @@ fn a_listed_key_does_what_its_command_does() {
             e.head(),
             e.panes().len(),
             e.active_pane,
+            crate::editor::tabs::current(e),
             e.picker_open(),
             e.sels().heads(),
         )
@@ -107,7 +108,9 @@ fn a_listed_key_does_what_its_command_does() {
             crate::keymap::BINDINGS
                 .iter()
                 .filter(|row| row.live)
-                .any(|row| row.keys.contains(key)),
+                .any(|row| crate::keymap::lookup::expand(row.keys)
+                    .iter()
+                    .any(|sequence| sequence.join(" ") == key)),
             "{}: {key} is not a live binding",
             command.name()
         );
@@ -116,6 +119,7 @@ fn a_listed_key_does_what_its_command_does() {
             "undo" => "x",
             "redo" => "xu",
             "close" | "only" => "<c-w>v",
+            "tabnext" | "tabprevious" => "<c-w>v<c-w>T<c-w>v<c-w>T",
             _ => "",
         };
         let fresh = || {

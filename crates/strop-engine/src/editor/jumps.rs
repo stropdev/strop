@@ -54,6 +54,7 @@ impl Editor {
         for record in self
             .panes
             .iter_mut()
+            .chain(self.tabs.panes_mut())
             .flat_map(|pane| pane.jumps.entries.iter_mut())
             .chain(
                 self.docs

@@ -25,7 +25,9 @@ pub(crate) fn buffer_listed(editor: &Editor, id: DocumentId) -> bool {
     editor.docs.get(id).is_some_and(|document| {
         !matches!(
             document.source,
-            DocumentSource::Output { .. } | DocumentSource::Surface(_)
+            DocumentSource::Output { .. }
+                | DocumentSource::Help { .. }
+                | DocumentSource::Surface(_)
         )
     })
 }

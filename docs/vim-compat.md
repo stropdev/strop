@@ -16,11 +16,12 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ - +` — line up / down, on the first non-blank
 - `✓ ( )` — sentence back / forward
 - `✓ [( [{ ]) ]}` — the unmatched bracket before / after
+- `✓ ]] [[` — help: next / previous section
 - `✓ g_ g0 g^ g$ gj gk` — last non-blank; line start, first non-blank, end; line down / up
 - `✓ gn gN` — select the next / previous search match (cgn then . changes each)
 - `✓ 0 $ G %` — line/file/pair jumps
 - `✓ gg` — top of file
-- `✓ enter` — line down, first non-blank (collection: open the file here; blame: the line's commit)
+- `✓ enter` — line down, first non-blank (collection: open the file here; blame: the line's commit; help: the section under the cursor)
 - `✓ tab` — jump list forward (ctrl-i)
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-e ctrl-y` — scroll the window one line down / up
@@ -181,13 +182,16 @@ does not is listed at the end, under Missing and Reassigned.
 
 - `✓ :vs :sp` — split vertical / horizontal
 - `✓ space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` — pane move / cycle / focus 1-9
-- `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
+- `✓ ctrl-o / ctrl-i` — jump back / forward (jumplist; tab is ctrl-i)
 - `✓ space w v / -` — pane split (vertical / horizontal)
 - `✓ space w q` — close pane (last → buffer)
-- `✓ ctrl-w h ctrl-w j ctrl-w k ctrl-w l ctrl-w w ctrl-w W ctrl-w p` — window: left / down / up / right / next / previous / last used (ctrl-w ctrl-{key} is the same)
-- `✓ ctrl-w s ctrl-w v ctrl-w n` — window: split below / split right / new empty buffer below
-- `✓ ctrl-w c ctrl-w q ctrl-w o` — window: close / quit (:q) / keep only this one
+- `✓ ctrl-w h / j / k / l / w / W / p` — window: left / down / up / right / next / previous / last used (ctrl-w ctrl-{key} is the same)
+- `✓ ctrl-w s / v / n` — window: split below / split right / new empty buffer below
+- `✓ ctrl-w c / q / o` — window: close / quit (:q) / keep only this one
 - `✓ ctrl-w =` — window: equal sizes (panes always are)
+- `✓ gt gT` — next / previous tab page; 3gt goes to tab page 3, 3gT three back
+- `✓ g tab` — the tab page used before this one
+- `✓ ctrl-w T` — window: move this pane to a new tab page
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs
 
 ## Git
@@ -321,7 +325,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :wqa[ll][!]` — write every modified buffer and quit (also :xall)
 - `✓ :x[it][!] [file]` — write if modified, then quit (also :exit)
 - `✓ :up[date][!] [file]` — write if modified
-- `✓ :q[uit][!]` — close the window, or the buffer in the last one
+- `✓ :q[uit][!]` — close the window; the tab page when it is the last window in it; the buffer when it is the last window
 - `✓ :qa[ll][!]` — quit all (fails on unsaved; ! discards) (also :quitall)
 - `✓ :clo[se]` — close the window (never the last one)
 - `✓ :on[ly]` — close every other window
@@ -338,6 +342,18 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :h[elp] [topic]` — the help buffer (this text; / searches it)
 - `✓ :mes[sages]` — the last 50 echo-row messages
 - `✓ :ju[mps]` — the jumplist picker
+
+## Command line: tab pages
+
+- `✓ :tabn[ext] [N]` — go to the next tab page, or to tab page N
+- `✓ :tabp[revious] [N]` — go to the previous tab page, or N back (also :tabNext)
+- `✓ :tabfir[st]` — go to the first tab page (also :tabrewind)
+- `✓ :tabl[ast]` — go to the last tab page
+- `✓ :tabnew [file]` — open a new tab page after this one (also :tabedit)
+- `✓ :tab {split|new}` — open the split in a new tab page; :tab split shows this buffer alone
+- `✓ :tabc[lose][!] [N]` — close this tab page, or tab page N; its buffers stay open
+- `✓ :tabo[nly][!]` — close every other tab page
+- `✓ :tabm[ove] [N]` — move this tab page after tab page N (0 first, $ or nothing last, +N -N relative)
 
 ## Command line: strop
 
@@ -372,7 +388,6 @@ Neovim binds these; in strop the key does nothing. An operator on this list
 commands.
 
 - Normal: `zfj` `zo` `zc` `za` `zR` `zM` `zj` `zk` `zd` — folds
-- Normal: `gt` `gT` — tab pages
 - Normal: `U` — undo every change on the line
 - Normal: `==` `=j` `=ip` — the reindent operator
 - Normal: `gqq` `gqip` `gwip` — reflow text to the text width
@@ -381,15 +396,16 @@ commands.
 - Normal: `gx` `gf` `gF` — open the URL or file name under the cursor
 - Normal: `gR` — virtual replace mode
 - Normal: `K` — look the word under the cursor up (hover is `space k`)
-- Normal: `]]` `[[` `][` `[]` `]m` `[m` — section and method motions
+- Normal: `][` `[]` `]m` `[m` — section-end and method motions
 - Normal: `z=` `zg` `]s` `[s` — spelling
 - Normal: `gm` `gM` `go` — middle of the line, byte offset
 - Normal: `zh` `zl` `zH` `zL` `ze` `zs` — horizontal scrolling
 - Normal: `do` `dp` — diff mode
-- Normal: `ctrl-w x` `ctrl-w r` `ctrl-w T` `ctrl-w H` `ctrl-w J` `ctrl-w K` `ctrl-w L` `ctrl-w +` `ctrl-w -` `ctrl-w _` `ctrl-w |` — move, rotate and resize windows (panes are always equal)
+- Normal: `ctrl-w x` `ctrl-w r` `ctrl-w H` `ctrl-w J` `ctrl-w K` `ctrl-w L` `ctrl-w +` `ctrl-w -` `ctrl-w _` `ctrl-w |` — move, rotate and resize windows (panes are always equal)
 - Visual: `=` `gq` `gw` `zf` — reindent, reflow and fold the selection
 - Insert: `ctrl-v` `ctrl-k` `ctrl-a` — insert a literal key, a digraph, the last inserted text
-- Ex: `:tabnew` `:tabnext` `:tabclose` `:fold` `:mksession` `:digraphs` — tab pages, folds, session files, digraphs
+- Ex: `:fold` `:mksession` `:digraphs` — folds, session files, digraphs
+- Ex: `:tabs` `:tabdo` `:tabfind` `:tcd` — list tab pages, run a command in each, find into one, a directory per tab page
 
 ## Reassigned
 

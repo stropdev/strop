@@ -123,7 +123,7 @@ Implementation: `git2`/libgit2 for gutter + hunks (no process spawn per keystrok
 - Daily no-plugin verbs: `gc` comment toggle, `gq` format operator (internal hard-wrap until LSP format arrives at M5).
 - Clipboard: `+`/`*` registers over OSC52 — the ssh-into-a-server test has no clipboard daemon.
 - Sessions (per-project, on by default): buffers, cursor positions, jump list, undo history serialize per project directory, restored on next open; undo history depth-capped (full trees per project bloat fast). Named sessions (`strop --session NAME`) are a thin layer on top — deferred until the per-project loop proves itself.
-- **Splits are core** (`:vs`/`:sp`, `C-w` navigation — vim grammar, M4). **Tabs are deferred**: vim tabs are layout containers, not buffer groups; Helix skips them; terminal multiplexers (herdr/tmux) cover the use honestly. Revisit only if daily driving begs for them.
+- **Splits are core** (`:vs`/`:sp`, `C-w` navigation — vim grammar, M4). Tab pages are Vim's: a second layout over the same buffers (plan 0113).
 - Jump list + change list with a subtle breadcrumb trail in the statusline — invisible state made felt.
 - Command palette + which-key hybrid: `:` ex-line with real completion; `Space` opens a key-hint overlay that expands as you type (Helix's one undeniably better idea).
 

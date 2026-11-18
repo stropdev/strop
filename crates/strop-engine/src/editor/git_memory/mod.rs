@@ -217,6 +217,9 @@ impl Editor {
             }
             return;
         }
+        if self.help_key(key) {
+            return;
+        }
         if !self.walker.is_ground() {
             return self.feed_command(key);
         }

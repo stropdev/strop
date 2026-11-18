@@ -399,7 +399,12 @@ impl Editor {
             self.set_head(land);
             self.clamp_cursor();
             self.flash(strop_core::Range::charwise(self.head(), self.head()));
-        } else if let Some(pane) = self.panes.iter_mut().find(|p| p.doc == idx) {
+        } else if let Some(pane) = self
+            .panes
+            .iter_mut()
+            .chain(self.tabs.panes_mut())
+            .find(|p| p.doc == idx)
+        {
             pane.sels.collapse_primary(land);
         }
         true

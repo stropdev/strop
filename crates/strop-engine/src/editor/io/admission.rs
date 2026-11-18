@@ -201,6 +201,7 @@ impl Editor {
                 self.finish_lsp_jump(document, position, context)
             }
             OpenIntent::Split { vertical } => self.split_document(vertical, document),
+            OpenIntent::Tab => super::super::tabs::open_document(self, document),
             // Background opens never move focus; a pending collection
             // build counts down and assembles when its sources land.
             OpenIntent::CollectionSource { owner } => self.collection_source_ready(owner),
@@ -365,7 +366,7 @@ impl Editor {
                 self.message.clear();
                 let user_open = matches!(
                     key.intent,
-                    OpenIntent::Switch { .. } | OpenIntent::Split { .. }
+                    OpenIntent::Switch { .. } | OpenIntent::Split { .. } | OpenIntent::Tab
                 );
                 self.finish_open(id, key.intent);
                 if self.current() == id

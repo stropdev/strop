@@ -114,7 +114,14 @@ fn all_themes_reach_source_picker_diff_help_and_statusline() {
         assert_eq!(editor.buf().name.as_deref(), Some("help"));
         let grid = draw(&mut editor);
         assert!(contains_fg(&grid, t.faint), "{} help rules", id.name());
-        assert!(contains_bg(&grid, t.raised), "{} help keycaps", id.name());
+        // help's keys are inked per token on the base plane (0112 §4)
+        assert!(!contains_bg(&grid, t.raised), "{} help slab", id.name());
+        assert!(contains_fg(&grid, t.accent), "{} help keys", id.name());
+        assert!(
+            contains_fg(&grid, t.syn.link),
+            "{} help named keys",
+            id.name()
+        );
     }
 }
 

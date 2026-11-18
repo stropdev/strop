@@ -61,12 +61,15 @@ Q                            multicursor      Space c              cursor below
 
 Space  f files · o remote · b buffers · / Search · R replace · ? help
 Space w  - horizontal · v vertical · 1-9 focus · h/j/k/l/w move · q close
-Ctrl-W   h j k l w W p move · s v n split · c q o close · = equal
+Ctrl-W   h j k l w W p move · s v n split · c q o close · = equal · T tab page
+gt gT    next / previous tab page · :tab split zooms a pane, :q returns
 Space g  g status · c commit · b branches · l log · h history · B blame · s/u/X/p hunk
 ```
 
-`Space ?` lists every key in the editor, and `:help TOPIC` jumps to a
-section of that list.
+`Space ?` lists every key in the editor. Its top line names the
+sections (Move, Edit, Visual, Leader, Windows, Git, Lists, Commands,
+More); `]]` and `[[` move between them, `Enter` on a name opens it, and
+`:help TOPIC` jumps to a section, a part or a command.
 
 ## The docs
 

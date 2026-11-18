@@ -48,7 +48,6 @@ pub const MISSING: &[Missing] = &[
         &["zfj", "zo", "zc", "za", "zR", "zM", "zj", "zk", "zd"],
         "folds",
     ),
-    missing(Where::Normal, &["gt", "gT"], "tab pages"),
     missing(Where::Normal, &["U"], "undo every change on the line"),
     missing(Where::Normal, &["==", "=j", "=ip"], "the reindent operator"),
     missing(
@@ -75,8 +74,8 @@ pub const MISSING: &[Missing] = &[
     ),
     missing(
         Where::Normal,
-        &["]]", "[[", "][", "[]", "]m", "[m"],
-        "section and method motions",
+        &["][", "[]", "]m", "[m"],
+        "section-end and method motions",
     ),
     missing(Where::Normal, &["z=", "zg", "]s", "[s"], "spelling"),
     missing(
@@ -93,8 +92,8 @@ pub const MISSING: &[Missing] = &[
     missing(
         Where::Normal,
         &[
-            "ctrl-w x", "ctrl-w r", "ctrl-w T", "ctrl-w H", "ctrl-w J", "ctrl-w K", "ctrl-w L",
-            "ctrl-w +", "ctrl-w -", "ctrl-w _", "ctrl-w |",
+            "ctrl-w x", "ctrl-w r", "ctrl-w H", "ctrl-w J", "ctrl-w K", "ctrl-w L", "ctrl-w +",
+            "ctrl-w -", "ctrl-w _", "ctrl-w |",
         ],
         "move, rotate and resize windows (panes are always equal)",
     ),
@@ -110,15 +109,13 @@ pub const MISSING: &[Missing] = &[
     ),
     missing(
         Where::Ex,
-        &[
-            ":tabnew",
-            ":tabnext",
-            ":tabclose",
-            ":fold",
-            ":mksession",
-            ":digraphs",
-        ],
-        "tab pages, folds, session files, digraphs",
+        &[":fold", ":mksession", ":digraphs"],
+        "folds, session files, digraphs",
+    ),
+    missing(
+        Where::Ex,
+        &[":tabs", ":tabdo", ":tabfind", ":tcd"],
+        "list tab pages, run a command in each, find into one, a directory per tab page",
     ),
 ];
 

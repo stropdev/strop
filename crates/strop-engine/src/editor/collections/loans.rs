@@ -70,7 +70,13 @@ fn loan_holders(editor: &Editor) -> HashSet<DocumentId> {
 /// when some of those are unsaved.
 pub(crate) fn release_unheld(editor: &mut Editor) {
     let held = loan_holders(editor);
-    let shown: HashSet<DocumentId> = editor.panes.iter().map(|pane| pane.doc).collect();
+    // a parked tab page still shows its documents
+    let shown: HashSet<DocumentId> = editor
+        .panes
+        .iter()
+        .chain(editor.tabs.panes())
+        .map(|pane| pane.doc)
+        .collect();
     let mut release = Vec::new();
     let mut kept = Vec::new();
     let mut kept_dirty = 0;

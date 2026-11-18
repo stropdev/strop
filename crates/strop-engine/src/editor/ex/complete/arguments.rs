@@ -28,13 +28,16 @@ pub(super) fn rows(editor: &mut Editor, arg: Arg, start: usize, end: usize) {
             (MenuKind::Themes, "themes")
         }
         Arg::HelpTopic => {
+            // the page's sections first (0112 §6), then the keymap's
+            // groups, then commands
+            let tabs = crate::editor::help::section_titles().map(|title| (title, "help section"));
             let sections = crate::keymap::SECTIONS
                 .iter()
                 .map(|section| (section.id, section.title));
             let commands = COMMANDS.iter().map(|command| (command.name(), command.doc));
             rank::fixed(
                 word,
-                sections.chain(commands),
+                tabs.chain(sections).chain(commands),
                 &mut completion.rows,
                 &mut completion.scratch,
             );

@@ -356,7 +356,7 @@ fn the_editor_s_own_lock_files_are_not_changes() {
 fn every_new_key_renders_in_help() {
     let (_dir, mut e) = work_fixture();
     e.feed_text(" ?");
-    let help = text(&e);
+    let help = crate::editor::help::unwrapped(&text(&e));
     for row in [
         "status: changed files",
         "commit (:wq commits, :q! aborts)",

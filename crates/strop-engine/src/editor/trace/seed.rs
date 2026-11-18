@@ -12,13 +12,15 @@ use strop_core::worker::{Load, WorkerId, WorkerIds};
 use strop_core::{Buffer, BufferSeed};
 
 use crate::editor::document::DocumentSource;
-use crate::editor::{Document, Editor, Layout, Pane};
+use crate::editor::tabs::Tabs;
+use crate::editor::{Document, Editor, Pane};
 
 // Version 5 adds source-owned completion/control-key semantics. Older input
 // must never execute under a different command or acceptance contract.
 // Version 6 adds indexed per-pane jump histories.
 // Version 7: the window tree; panes are in layout order (plans/0104).
-const SEMANTIC_VERSION: u32 = 7;
+// Version 8: tab pages (plans/0113).
+const SEMANTIC_VERSION: u32 = 8;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
@@ -35,7 +37,7 @@ pub struct Seed {
     panes: Vec<Pane>,
     mru: Vec<DocumentId>,
     active: usize,
-    layout: Layout,
+    tabs: Tabs,
     #[serde(with = "strop_core::path_serde")]
     cwd: PathBuf,
     #[serde(with = "strop_core::path_serde::option")]
@@ -101,7 +103,7 @@ impl Seed {
             panes: editor.panes.clone(),
             mru: editor.mru.clone(),
             active: editor.active_pane,
-            layout: editor.layout.clone(),
+            tabs: editor.tabs.clone(),
             cwd: editor.cwd.clone(),
             state_dir: editor.state_dir.clone(),
             session_policy: editor.session_policy,
@@ -164,14 +166,19 @@ impl Seed {
         .map_err(io::Error::other)?;
         if docs.is_empty()
             || self.active >= self.panes.len()
-            || !self.layout.well_formed()
-            || self.layout.leaves() != self.panes.len()
-            || self.panes.iter().any(|pane| docs.get(pane.doc).is_none())
+            || !self.tabs.layout.well_formed()
+            || self.tabs.layout.leaves() != self.panes.len()
+            || !self.tabs.well_formed()
+            || self
+                .panes
+                .iter()
+                .chain(self.tabs.panes())
+                .any(|pane| docs.get(pane.doc).is_none())
             || self.mru.iter().any(|id| docs.get(*id).is_none())
         {
             return Err(io::Error::other("invalid initial document references"));
         }
-        for pane in &self.panes {
+        for pane in self.panes.iter().chain(self.tabs.panes()) {
             let buffer = &docs
                 .get(pane.doc)
                 .ok_or_else(|| io::Error::other("invalid initial document reference"))?
@@ -218,7 +225,7 @@ impl Seed {
         editor.panes = self.panes;
         editor.mru = self.mru;
         editor.active_pane = self.active;
-        editor.layout = self.layout;
+        editor.tabs = self.tabs;
         editor.state_dir = self.state_dir;
         editor.session_policy = self.session_policy;
         editor.set_terminal_capture(self.terminal_capture);

@@ -41,6 +41,10 @@ and draws chrome through one primitive module (`render/card.rs`). Nothing in
    `✓`, `▸`, `▶` elsewhere.
 6. **Keycaps are the only chip:** help, which-key, welcome, picker hints and
    completion footers share one keycap renderer.
+   *Amended 2026-11-18 by [0112](0112-help-page.md): help's key column is
+   highlighted text, not one keycap — each token of a key cell takes its
+   own ink (`accent`, `syn.link`, `syn.type`, `syn.string`, `muted`) on the
+   base plane. Which-key, welcome and hints keep the keycap.*
 7. **Typography:** bold = headings and keycaps; italic = comments and unavailable
    rows; dim never; underline = links and the active search match.
 8. **Four greys:** `fg.text`, `fg.secondary`, `fg.muted`, `fg.faint`. Comments are
@@ -204,6 +208,9 @@ Departures, with reasons:
   it shows `shown of total`.
 - **Help stays one column**: two columns would truncate descriptions inside a
   searchable buffer.
+  *Amended 2026-11-18 by [0112](0112-help-page.md): still one column, now with
+  a fixed measure — a 24-cell key column, descriptions wrapped at 76 cells,
+  nine sections in one buffer.*
 - **`Editor` ratchet**: moving the palette onto the editor added a field; the
   palette, yank flash and cursor fade now live in `editor::Presentation`, so the
   ratchet went down (115 → 113) instead of up.

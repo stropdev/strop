@@ -83,6 +83,14 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Motion,
     },
     Binding {
+        keys: "]] [[",
+        desc: "help: next / previous section",
+        sections: &["moving"],
+        live: true,
+        id: "help-sections",
+        handler: Handler::Contextual,
+    },
+    Binding {
         keys: "g_ g0 g^ g$ gj gk",
         desc: "last non-blank; line start, first non-blank, end; line down / up",
         sections: &["moving"],
@@ -117,7 +125,7 @@ pub(super) const ROWS: &[Binding] = &[
     Binding {
         keys: "enter",
         desc:
-            "line down, first non-blank (collection: open the file here; blame: the line's commit)",
+            "line down, first non-blank (collection: open the file here; blame: the line's commit; help: the section under the cursor)",
         sections: &["moving"],
         live: true,
         id: "enter",

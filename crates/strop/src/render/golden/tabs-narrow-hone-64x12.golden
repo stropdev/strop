@@ -1,0 +1,25 @@
+ 1 +2  2 ●  3 golden_modeline_tests.rs +1  4  5  6              
+─ 1 golden_modeline_tests.rs ──┬─ 2 golden_modeline_tests.rs ───
+   1  x                        │   1  x                         
+~                              │~                               
+~                              │~                               
+~                              │~                               
+~                              │~                               
+~                              │~                               
+~                              │~                               
+~                              │~                               
+~                              │~                               
+  NORMAL    golden_modeline_tests.rs            1/1  100%  1:1  
+
+  0: 8:#858c9a/#1c1f25 2:#d9a85a/#1c1f25 1:#858c9a/#1c1f25 3:#e6e1d6/#15171c 24:#e6e1d6/#15171c+b 4:#e6e1d6/#15171c 9:#858c9a/#1c1f25 13:reset/#1c1f25
+  1: 2:#4a5160/#15171c 2:#858c9a/#15171c 24:#858c9a/#15171c+b 4:#4a5160/#15171c 2:#858c9a/#15171c 2:#e6e1d6/#15171c 24:#e6e1d6/#15171c+b 4:#858c9a/#15171c
+  2: 1:#858c9a/#15171c+b 5:#e8a848/#15171c 1:#e6e1d6/#4a5160 23:reset/#15171c 1:reset/reset 1:#4a5160/#15171c 1:#858c9a/#1b1e24+b 5:#e8a848/#1b1e24 1:#e6e1d6/#6e4c1a 24:#1b1e24/#1b1e24 1:reset/reset
+  3: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+  4: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+  5: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+  6: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+  7: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+  8: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+  9: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+ 10: 1:#4a5160/#15171c 29:reset/#15171c 1:reset/reset 2:#4a5160/#15171c 30:reset/#15171c 1:reset/reset
+ 11: 10:#15171c/#e8a848+b 2:reset/#1c1f25 24:#e6e1d6/#1c1f25 12:reset/#1c1f25 3:#858c9a/#1c1f25 2:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 5:#a8adb8/#1c1f25

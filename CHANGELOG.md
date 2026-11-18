@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.72.0 — 2026-11-18
+
+### Added
+
+- **Tab pages, as in Vim** (plans/0113): a second layout of panes over the same buffers. `:tab split` shows the pane you are in on its own and `:q` brings the split back; `Ctrl-W T` moves a pane to a new tab page; `:tabnew [file]` opens one. `gt`, `gT`, `3gt`, `3gT` and `g Tab` move between them; `:tabnext`, `:tabprevious`, `:tabfirst`, `:tablast`, `:tabclose [N]`, `:tabonly` and `:tabmove [N|+N|-N|$]` do the rest. Buffers, registers and marks are shared; each tab page keeps its panes, each pane its cursor and jump list.
+- **The tab line**: with two or more tab pages the top row lists them — the number, the file name of its current pane, `+2` for more panes, `●` for unsaved changes — with the current one on the text background. With one tab page nothing on screen changes.
+
+### Changed
+
+- **The help page is rebuilt** (plans/0112): keys are coloured by what they are (plain keys, `space` and other named keys, `ctrl-` chords, placeholders), a top line lists nine sections and `]]` / `[[` or `Enter` on a name jumps to one, descriptions wrap instead of running off an 80-column screen. The status line names the section the cursor is in, `:help` completion lists the sections first, and help has no line numbers.
+- **`:q`, `:close` and `Ctrl-W c` on a tab page's only pane close the tab page**, not the buffer; with one tab page they work as before.
+- **Recorded traces from 0.71 are refused** (the editor's semantics version is 8: the seed carries tab pages).
+
+### Fixed
+
+- The Windows rows of the help whose descriptions were off screen at 80 columns.
+
 ## 0.71.0 — 2026-11-17
 
 ### Added

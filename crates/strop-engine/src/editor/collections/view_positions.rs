@@ -91,7 +91,7 @@ impl Editor {
                 *position = map(*position);
             }
         }
-        for pane in &mut self.panes {
+        for pane in self.panes.iter_mut().chain(self.tabs.panes_mut()) {
             if pane.doc == document {
                 pane.sels.map_positions(map);
             }

@@ -151,6 +151,24 @@ impl Document {
         }
     }
 
+    /// The help page (0112): readonly output carrying its typed lines.
+    pub(crate) fn help(buf: Buffer, page: super::help::HelpPage) -> Self {
+        let mut document = Self::output(buf);
+        document.source = DocumentSource::Help {
+            page: Box::new(page),
+            return_to: None,
+        };
+        document
+    }
+
+    /// The help page's model, when this document is help.
+    pub fn help_page(&self) -> Option<&super::help::HelpPage> {
+        match &self.source {
+            DocumentSource::Help { page, .. } => Some(page),
+            _ => None,
+        }
+    }
+
     /// The language analysis colours this document with: its syntax
     /// path's basename or extension, else the shebang recorded when the
     /// text last met the disk.
@@ -182,6 +200,7 @@ impl Document {
             DocumentSource::File | DocumentSource::Scratch => self.buf.path.as_deref(),
             DocumentSource::Directory(_)
             | DocumentSource::Output { .. }
+            | DocumentSource::Help { .. }
             | DocumentSource::Terminal(_) => None,
         }
     }
@@ -394,7 +413,15 @@ impl Editor {
         &mut self,
         buf: strop_core::Buffer,
     ) -> Option<strop_core::id::DocumentId> {
-        let mut document = Document::output(buf);
+        self.open_temporary(Document::output(buf))
+    }
+
+    /// [`Self::open_temporary_output`] for a document already built
+    /// (help carries its page).
+    pub(crate) fn open_temporary(
+        &mut self,
+        mut document: Document,
+    ) -> Option<strop_core::id::DocumentId> {
         document.set_return_point(self.jump_record());
         let Ok(id) = self.docs.try_insert(document) else {
             self.message = "document identity space exhausted".into();

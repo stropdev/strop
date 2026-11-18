@@ -373,7 +373,7 @@ impl Session {
         }
         let current = ids[self.current];
         let jumps = restore_jumps(&self.jumps, &self.buffers, &ids, &editor.docs);
-        for pane in &mut editor.panes {
+        for pane in editor.panes.iter_mut().chain(editor.tabs.panes_mut()) {
             pane.doc = current;
             pane.view_top = 0;
             pane.sels = Default::default();

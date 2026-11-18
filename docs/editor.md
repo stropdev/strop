@@ -142,6 +142,24 @@ follow the theme. Open terminals switch to the new theme's default colours;
 colours a program inside the terminal chose for itself are left alone. The
 themes are built into the binary: nothing to download or install.
 
+## Help
+
+`Space ?` (or `:help`) opens every key, command and filter as one
+readonly buffer you can search with `/`, walk with motions and yank from;
+`q` closes it. The top line names its nine sections: Move, Edit, Visual,
+Leader, Windows, Git, Lists, Commands and More. `]]` goes to the next
+section and `[[` to the start of this one, then the previous one (a count
+repeats); `Enter` on a name in the top line opens that section, and
+`Ctrl-O` comes back. `:help TOPIC` lands on a section, a part such as
+`:help query language`, or a command by any of its names (`:help :w`).
+The status line names the section the cursor is in.
+
+Keys are coloured by what they are: plain keys in the accent, `space` and
+the other named keys in one colour, `ctrl-` and `alt-` chords in another,
+placeholders such as `<c>` and `{reg}` in a third, and the `/` between
+alternatives muted. Descriptions wrap at 76 columns, so nothing is cut
+off on an 80-column terminal.
+
 ## Pane titles and previews
 
 With two or more panes, each pane starts at a title line: the pane's
@@ -256,7 +274,7 @@ binds that strop does not (**Missing**) or uses differently (**Reassigned**).
 - **Insert**: `Ctrl-W` (delete the word before the cursor), `Ctrl-U`
   (delete what was typed on the line), `Ctrl-T` / `Ctrl-D` (indent, dedent),
   `Ctrl-O` (one Normal command), `Ctrl-R {register}`, `Ctrl-H`.
-- **Not yet**: folds, tab pages, the `=`, `gq` and `gw` operators, `U`,
+- **Not yet**: folds, the `=`, `gq` and `gw` operators, `U`,
   search offsets (`/pat/e`). `=`, `gq`, `gw` and `zf` still take their
   motion, so typing `gqip` never runs `ip` as commands; they then say they
   are not supported.
@@ -279,7 +297,7 @@ the start and end, `Ctrl-R {register}` inserts a register and
   put back what you typed; `Ctrl-Y` keeps a row, `Ctrl-E` puts back what you
   typed. After a name, `Tab` or `Ctrl-D` lists what the command takes:
   files (`:e`, `:w`, `:sp`, `:vs`, `:view`), directories (`:cd`), buffers
-  (`:b`, `:bd`), themes, help topics, or the command's own words (`:set`,
+  (`:b`, `:bd`), themes, help sections and topics, or the command's own words (`:set`,
   `:remote`, `:recover`, `:tab-size`, `:indent-style`, `:sort`).
 - The right end of the line says what the command takes (`:w[!] [file]`),
   how many matches a search has, the lines a range names, or what a `:s`
@@ -365,6 +383,29 @@ on that side, at the cursor's line or column, and stop at the edge. Sizes
 are always shared equally by the number of panes across, so `=` has
 nothing to do. Where the dividing lines meet the title lines they join
 (`┬ ├ ┤ ┼ ┴`).
+
+## Tab pages
+
+A tab page is a second layout of panes over the same buffers, as in Vim.
+It is not a list of open files: for those there is `Space b`, `:b` and
+`:ls`. Buffers, registers, marks and the project are shared; each tab page
+keeps its own panes, and each pane its cursor and jump list.
+
+- `:tab split` (or `Ctrl-W T`, which moves the pane) shows one pane on its
+  own. `:q` there closes the tab page and the split is back as it was.
+- `:tabnew [file]` opens a new tab page after this one; `:tab new` is the
+  same.
+- `gt` and `gT` go to the next and previous tab page, `3gt` to tab page 3,
+  `3gT` three back; `g Tab` returns to the one used before.
+- `:tabclose [N]` closes a tab page (its buffers stay open), `:tabonly`
+  every other one, `:tabmove [N]` moves this one after tab page N (`0`
+  first, `+1` `-1` relative).
+
+`:q`, `:close` and `Ctrl-W c` on a tab page's only pane close the tab page;
+with one tab page they work as before. While there are two or more, the
+top row is the tab line: each tab page's number, the name of the file its
+current pane shows, `+2` for two more panes, and `●` if one of them shows
+unsaved changes. Tab pages are not kept in the session.
 
 ## Code completion
 

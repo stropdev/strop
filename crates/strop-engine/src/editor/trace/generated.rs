@@ -122,7 +122,12 @@ fn run(recipe: &[Step]) -> Result<(), String> {
         }
         model.step(Event::Observe {
             documents: vec![after],
-            panes: editor.panes.iter().map(|pane| pane.doc).collect(),
+            panes: editor
+                .panes
+                .iter()
+                .chain(editor.tabs.panes())
+                .map(|pane| pane.doc)
+                .collect(),
         })?;
     }
     Ok(())

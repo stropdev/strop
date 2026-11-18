@@ -85,6 +85,23 @@ fn inks_clear_their_floors_on_base_and_surface() {
     }
 }
 
+/// Help inks a plain key, a named key, a chord and a placeholder apart
+/// (0112 §4.1): none of the three syntax inks it borrows may be the
+/// accent. (`syn.link` and `syn.type` may share a colour.)
+#[test]
+fn help_key_inks_differ_from_the_accent() {
+    for id in ThemeId::ALL {
+        let palette = id.palette();
+        for (role, ink) in [
+            ("syn.link", palette.syn.link),
+            ("syn.type", palette.syn.r#type),
+            ("syn.string", palette.syn.string),
+        ] {
+            assert_ne!(ink, palette.accent, "{} {role} is the accent", id.name());
+        }
+    }
+}
+
 /// Three planes, one ladder: each step 1.07–1.30:1, the raised plane
 /// ≥ 1.18:1 above the base, the cursor line a visible hair above it.
 #[test]

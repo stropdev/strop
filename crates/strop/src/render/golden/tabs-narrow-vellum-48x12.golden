@@ -1,0 +1,25 @@
+ 1 +2  2 ●  3 golden_modeline_test… +1  4  5  6 
+─ 1 n_modeline_tests.rs┬─ 2 en_modeline_tests.rs
+   1  x                │   1  x                 
+~                      │~                       
+~                      │~                       
+~                      │~                       
+~                      │~                       
+~                      │~                       
+~                      │~                       
+~                      │~                       
+~                      │~                       
+  NORMAL    golden_modeline_tests.rs  1/1  1:1  
+
+  0: 8:#656d7b/#fdfbf6 2:#8a5d13/#fdfbf6 1:#656d7b/#fdfbf6 3:#262a30/#f6f2e9 21:#262a30/#f6f2e9+b 4:#262a30/#f6f2e9 9:#656d7b/#fdfbf6
+  1: 2:#aeb3ba/#f6f2e9 2:#656d7b/#f6f2e9 19:#656d7b/#f6f2e9+b 1:#aeb3ba/#f6f2e9 2:#656d7b/#f6f2e9 2:#262a30/#f6f2e9 20:#262a30/#f6f2e9+b
+  2: 1:#656d7b/#f6f2e9+b 5:#8a510f/#f6f2e9 1:#262a30/#aeb3ba 15:reset/#f6f2e9 1:reset/reset 1:#aeb3ba/#f6f2e9 1:#656d7b/#efeadf+b 5:#8a510f/#efeadf 1:#262a30/#e9c98a 16:#efeadf/#efeadf 1:reset/reset
+  3: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+  4: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+  5: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+  6: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+  7: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+  8: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+  9: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+ 10: 1:#aeb3ba/#f6f2e9 21:reset/#f6f2e9 1:reset/reset 2:#aeb3ba/#f6f2e9 22:reset/#f6f2e9 1:reset/reset
+ 11: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 24:#262a30/#fdfbf6 2:reset/#fdfbf6 3:#656d7b/#fdfbf6 2:reset/#fdfbf6 5:#4b525c/#fdfbf6

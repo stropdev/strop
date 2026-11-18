@@ -36,7 +36,7 @@ const SOURCE: &[&str] = &[
     "}",
 ];
 
-fn workspace() -> tempfile::TempDir {
+pub(super) fn workspace() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(root.path().join("src/render")).unwrap();
     std::fs::create_dir_all(root.path().join("docs")).unwrap();
@@ -61,7 +61,7 @@ fn workspace() -> tempfile::TempDir {
     root
 }
 
-fn editor(root: &tempfile::TempDir, theme: ThemeId) -> Editor {
+pub(super) fn editor(root: &tempfile::TempDir, theme: ThemeId) -> Editor {
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
     editor.set_theme(theme);
     editor
@@ -420,6 +420,26 @@ fn symbols_picker_unknown_kind() {
 fn help() {
     each("help", |editor| {
         editor.feed_text(" ?");
+        settle_analysis()
+    });
+}
+
+/// 0112: overflow rows, chords, separators and the modeline's section.
+#[test]
+fn help_windows() {
+    each("help-windows", |editor| {
+        editor.feed_text(" ?");
+        editor.feed_text(":help windows\r");
+        settle_analysis()
+    });
+}
+
+/// 0112: usage tails, placeholders, the command-line keys.
+#[test]
+fn help_commands() {
+    each("help-commands", |editor| {
+        editor.feed_text(" ?");
+        editor.feed_text(":help commands\r");
         settle_analysis()
     });
 }

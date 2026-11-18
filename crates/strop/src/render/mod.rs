@@ -42,6 +42,8 @@ mod golden_git_tests;
 #[cfg(test)]
 mod golden_modeline_tests;
 #[cfg(test)]
+mod golden_tabs_tests;
+#[cfg(test)]
 mod golden_tests;
 mod help;
 mod hover_card;
@@ -51,6 +53,9 @@ mod picker;
 mod recovery_card;
 mod statusline;
 pub(crate) mod style;
+mod tabline;
+#[cfg(test)]
+mod tabline_tests;
 mod terminal;
 #[cfg(test)]
 mod terminal_tests;
@@ -118,6 +123,7 @@ pub fn render(editor: &Editor, frame: &mut Frame) {
     // horizontal origin) is decided per pane inside render_panes —
     // the full-area numbers were wrong in splits (0031 R6)
     let pane_area = buffer::render_panes(editor, &t, frame, area);
+    tabline::render(editor, &t, frame, area);
     // The welcome card is part of the pane layer: every card, the echo
     // row and the statusline paint over it, never the reverse.
     render_welcome(editor, &t, frame);

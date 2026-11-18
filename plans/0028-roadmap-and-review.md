@@ -8,6 +8,17 @@
   sequence). All of it landed or was retired (see `STATUS.md`); the text is
   in git history before plan 0108.
 
+## Deferred from 0.72 (plan 0113)
+
+- **Tab pages and the window layout in the session**, together (0113
+  decision 5, 0104 §12 item 8).
+- **`:tabs`** (a listing buffer) and **`:tabdo`**.
+- **`:tab` before other commands** (`:tab help`, `:tab terminal`); today it
+  takes `split` and `new`.
+- **`:{N}tabnew`**, `:tabnext +N` / `-N` / `#`, `:tabclose +N` / `-N` /
+  `$` / `#`, `:tabonly N`, `ctrl-w gt` / `ctrl-w gT` / `ctrl-w gf`.
+- **`strop -p`** (one tab page per file).
+
 ## Deferred from 0.71 (plans 0108–0111)
 
 Correctness and data:
@@ -37,6 +48,17 @@ Filters and the command line (0109, 0110):
 - **`severity:`** filter for diagnostics lists.
 - **Command-line window height** (0110).
 - **Multi-line `:s` preview** (0110).
+
+The help page (0112 §13):
+
+- **Which-key, the welcome card and footer hints take the help's key
+  inks**; they use `card::keycap`, one ink. Do it once the help has been
+  lived in.
+- **`gO`** (Neovim's outline) for help.
+- **`Ctrl-]`** to follow the word under the cursor; strop does not decode
+  the key.
+- **The `ranges` row of the Command line part** (`:N :N,M :. :$ …`) inks
+  every range as a command name; a ranges lexer is not worth its lines yet.
 
 Clutter left by the 0.71 sweep (0108 §C):
 

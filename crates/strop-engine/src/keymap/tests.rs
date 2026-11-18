@@ -1,4 +1,5 @@
-use super::lookup::{expand, NAMED};
+use super::lookup::expand;
+use super::notation::is_single_key;
 use super::*;
 use crate::editor::{Editor, Mode};
 use strop_core::Buffer;
@@ -112,8 +113,8 @@ fn which_key_children() {
     assert_eq!(children_of("m", Mode::Normal)[0].key, "<a>");
     // + gb gB, the case operators (gU gu g~ g?), the g motions
     // (g_ g0 g^ g$ gj gk gn gN), gp gP, gJ, g* g#, g&, gc, and
-    // Neovim's grr grn gra gri where gr was
-    assert_eq!(children_of("g", Mode::Normal).len(), 37);
+    // Neovim's grr grn gra gri where gr was, gt gT g<tab>
+    assert_eq!(children_of("g", Mode::Normal).len(), 40);
     // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
     assert_eq!(v.len(), 1);
@@ -251,7 +252,7 @@ fn every_dispatched_sequence_has_a_row() {
         let concretized = entry.replace("<a>", "a").replace("<c>", "x");
         let mut toks: Vec<String> = Vec::new();
         for tok in concretized.split(' ') {
-            if NAMED.contains(&tok) {
+            if is_single_key(tok) {
                 toks.push(tok.to_string());
             } else if let Some(pos) = tok.find('<') {
                 // f<c> style: leading chars, then the placeholder
@@ -419,7 +420,7 @@ fn reassigned_rows_are_bound() {
     use super::missing::{Where, REASSIGNED};
     for row in REASSIGNED.iter().filter(|row| row.place != Where::Insert) {
         for keys in row.keys.split(' ') {
-            let path: Vec<String> = if NAMED.contains(&keys) {
+            let path: Vec<String> = if is_single_key(keys) {
                 vec![keys.to_owned()]
             } else {
                 keys.chars().map(|c| c.to_string()).collect()
