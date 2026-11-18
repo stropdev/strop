@@ -1,0 +1,49 @@
+  ━ Commands ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+                                                                                
+  ─ Command line ────────────────────────────────────────────────────────────── 
+    :                          the command line (from Visual it opens with      
+                               '<,'>)                                           
+    :N :N,M :. :$ :% :'a :'<,'> :/pat/ :?pat? :.+N :N;+M                        
+                               ranges: lines, marks, searches and offsets; :N   
+                               alone goes to the line                           
+    enter ctrl-j ctrl-m        run the line (a failed line says so in error     
+                               ink)                                             
+    esc ctrl-[ ctrl-c          cancel; the view returns to where it was         
+    backspace ctrl-h           delete before the cursor; on an empty line,      
+                               cancel                                           
+    delete                     delete under the cursor (at the end: before it)  
+    ctrl-w                     delete the word before the cursor               ▮
+    ctrl-u                     delete everything before the cursor              
+    left                       one character left                               
+    right                      one character right                              
+    ctrl-b home                start of the line                                
+    ctrl-e end                 end of the line; with a completion selected:     
+                               put back what was typed                          
+    ctrl-r                     insert a register (" a-z 0 : / +); ctrl-r        
+                               ctrl-w / ctrl-a: the word / WORD under the       
+  NORMAL    help [RO]  Commands                                     65%  431:1  
+
+  0: 2:reset/#15171c 2:#4a5160/#15171c 8:#e8a848/#15171c+b 67:#4a5160/#15171c 1:reset/reset
+  1: 79:reset/#15171c 1:reset/reset
+  2: 2:reset/#15171c 2:#4a5160/#15171c 12:#e6e1d6/#15171c+b 63:#4a5160/#15171c 1:reset/reset
+  3: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 69:#e6e1d6/#15171c 5:reset/#15171c 1:reset/reset
+  4: 2:reset/#15171c 35:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
+  5: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 4:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 3:#e8a848/#15171c+b 1:#e6e1d6/#15171c 6:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#858c9a/#15171c 3:#aec37f/#15171c 1:#858c9a/#15171c 1:#e6e1d6/#15171c 6:#e8a848/#15171c+b 1:#e6e1d6/#15171c 4:#e8a848/#15171c+b 1:#e6e1d6/#15171c 5:#e8a848/#15171c+b 23:reset/#15171c 1:reset/reset
+  6: 2:reset/#15171c 75:#e6e1d6/#15171c 2:reset/#15171c 1:reset/reset
+  7: 2:reset/#15171c 51:#e6e1d6/#15171c 26:reset/#15171c 1:reset/reset
+  8: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 52:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
+  9: 2:reset/#15171c 33:#e6e1d6/#15171c 44:reset/#15171c 1:reset/reset
+ 10: 2:reset/#15171c 2:#e6e1d6/#15171c 3:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 50:#e6e1d6/#15171c 8:reset/#15171c 1:reset/reset
+ 11: 2:reset/#15171c 2:#e6e1d6/#15171c 9:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 54:#e6e1d6/#15171c 5:reset/#15171c 1:reset/reset
+ 12: 2:reset/#15171c 35:#e6e1d6/#15171c 42:reset/#15171c 1:reset/reset
+ 13: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#7fb2d4/#15171c+b 68:#e6e1d6/#15171c 1:reset/#15171c 1:reset/reset
+ 14: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 54:#e6e1d6/#15171c 15:reset/#15171c 1:#858c9a/#15171c
+ 15: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 56:#e6e1d6/#15171c 13:reset/#15171c 1:reset/reset
+ 16: 2:reset/#15171c 2:#e6e1d6/#15171c 4:#7fb2d4/#15171c+b 41:#e6e1d6/#15171c 30:reset/#15171c 1:reset/reset
+ 17: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 41:#e6e1d6/#15171c 29:reset/#15171c 1:reset/reset
+ 18: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 4:#7fb2d4/#15171c+b 33:#e6e1d6/#15171c 31:reset/#15171c 1:reset/reset
+ 19: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 3:#7fb2d4/#15171c+b 61:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
+ 20: 2:reset/#15171c 52:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
+ 21: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 62:#e6e1d6/#15171c 7:reset/#15171c 1:reset/reset
+ 22: 2:reset/#15171c 71:#e6e1d6/#15171c 6:reset/#15171c 1:reset/reset
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 2:reset/#1c1f25 8:#a8adb8/#1c1f25 36:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25

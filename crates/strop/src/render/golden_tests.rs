@@ -424,6 +424,26 @@ fn help() {
     });
 }
 
+/// 0112: overflow rows, chords, separators and the modeline's section.
+#[test]
+fn help_windows() {
+    each("help-windows", |editor| {
+        editor.feed_text(" ?");
+        editor.feed_text(":help windows\r");
+        settle_analysis()
+    });
+}
+
+/// 0112: usage tails, placeholders, the command-line keys.
+#[test]
+fn help_commands() {
+    each("help-commands", |editor| {
+        editor.feed_text(" ?");
+        editor.feed_text(":help commands\r");
+        settle_analysis()
+    });
+}
+
 #[test]
 fn which_key() {
     each("which-key", |editor| {
