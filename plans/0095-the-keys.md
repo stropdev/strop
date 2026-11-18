@@ -300,7 +300,7 @@ Each is on the Missing list or stated here, so none is a silent gap.
 - **`=`** needs the structural indenter to answer "what indent does this
   line want" for an arbitrary line; today it answers for the line being
   opened or closed. **`gq` / `gw`** need Vim's comment-leader rules to be
-  worth having. **`U`**, folds, tabs.
+  worth having. **`U`**, folds. (Tab pages landed in plan 0113.)
 - **Search offsets** (`/pat/e`, `/pat/+1`): `Motion::Search` carries a
   query and no offset.
 - **Sentence objects** `is` / `as`: the motion `(` `)` is ported

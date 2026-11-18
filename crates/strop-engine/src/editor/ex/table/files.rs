@@ -64,7 +64,7 @@ pub(super) const ROWS: &[ExCommand] = &[
     c(
         &[name("quit", 1)],
         ":q[uit][!]",
-        "close the window, or the buffer in the last one",
+        "close the window; the tab page when it is the last window in it; the buffer when it is the last window",
         |e, c| {
             e.close_pane_or_buffer(c.bang);
             Ok(())

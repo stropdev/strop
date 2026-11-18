@@ -823,7 +823,8 @@ tests into `panes/tests/geometry.rs` in the same commit.
 2. `ctrl-w x`, `ctrl-w r` / `R` (exchange, rotate within a split).
 3. Resizing: `ctrl-w + - < > _ |`, `:resize`. Needs a stored size per child;
    `tile` would take them as weights. Then `ctrl-w =` does something.
-4. `ctrl-w H J K L` (move a window to an edge), `ctrl-w T`.
+4. `ctrl-w H J K L` (move a window to an edge). (`ctrl-w T` landed with
+   tab pages, plan 0113.)
 5. `E36 Not enough room`: refuse a split the canvas cannot hold
    (`minimum(tracks + 1) > cells`).
 6. Counts (`3 ctrl-w w`), `:botright` / `:topleft`.

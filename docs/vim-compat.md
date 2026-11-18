@@ -325,7 +325,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :wqa[ll][!]` — write every modified buffer and quit (also :xall)
 - `✓ :x[it][!] [file]` — write if modified, then quit (also :exit)
 - `✓ :up[date][!] [file]` — write if modified
-- `✓ :q[uit][!]` — close the window, or the buffer in the last one
+- `✓ :q[uit][!]` — close the window; the tab page when it is the last window in it; the buffer when it is the last window
 - `✓ :qa[ll][!]` — quit all (fails on unsaved; ! discards) (also :quitall)
 - `✓ :clo[se]` — close the window (never the last one)
 - `✓ :on[ly]` — close every other window

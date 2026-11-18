@@ -274,7 +274,7 @@ binds that strop does not (**Missing**) or uses differently (**Reassigned**).
 - **Insert**: `Ctrl-W` (delete the word before the cursor), `Ctrl-U`
   (delete what was typed on the line), `Ctrl-T` / `Ctrl-D` (indent, dedent),
   `Ctrl-O` (one Normal command), `Ctrl-R {register}`, `Ctrl-H`.
-- **Not yet**: folds, tab pages, the `=`, `gq` and `gw` operators, `U`,
+- **Not yet**: folds, the `=`, `gq` and `gw` operators, `U`,
   search offsets (`/pat/e`). `=`, `gq`, `gw` and `zf` still take their
   motion, so typing `gqip` never runs `ip` as commands; they then say they
   are not supported.
@@ -383,6 +383,29 @@ on that side, at the cursor's line or column, and stop at the edge. Sizes
 are always shared equally by the number of panes across, so `=` has
 nothing to do. Where the dividing lines meet the title lines they join
 (`┬ ├ ┤ ┼ ┴`).
+
+## Tab pages
+
+A tab page is a second layout of panes over the same buffers, as in Vim.
+It is not a list of open files: for those there is `Space b`, `:b` and
+`:ls`. Buffers, registers, marks and the project are shared; each tab page
+keeps its own panes, and each pane its cursor and jump list.
+
+- `:tab split` (or `Ctrl-W T`, which moves the pane) shows one pane on its
+  own. `:q` there closes the tab page and the split is back as it was.
+- `:tabnew [file]` opens a new tab page after this one; `:tab new` is the
+  same.
+- `gt` and `gT` go to the next and previous tab page, `3gt` to tab page 3,
+  `3gT` three back; `g Tab` returns to the one used before.
+- `:tabclose [N]` closes a tab page (its buffers stay open), `:tabonly`
+  every other one, `:tabmove [N]` moves this one after tab page N (`0`
+  first, `+1` `-1` relative).
+
+`:q`, `:close` and `Ctrl-W c` on a tab page's only pane close the tab page;
+with one tab page they work as before. While there are two or more, the
+top row is the tab line: each tab page's number, the name of the file its
+current pane shows, `+2` for two more panes, and `●` if one of them shows
+unsaved changes. Tab pages are not kept in the session.
 
 ## Code completion
 

@@ -8,6 +8,17 @@
   sequence). All of it landed or was retired (see `STATUS.md`); the text is
   in git history before plan 0108.
 
+## Deferred from 0.72 (plan 0113)
+
+- **Tab pages and the window layout in the session**, together (0113
+  decision 5, 0104 §12 item 8).
+- **`:tabs`** (a listing buffer) and **`:tabdo`**.
+- **`:tab` before other commands** (`:tab help`, `:tab terminal`); today it
+  takes `split` and `new`.
+- **`:{N}tabnew`**, `:tabnext +N` / `-N` / `#`, `:tabclose +N` / `-N` /
+  `$` / `#`, `:tabonly N`, `ctrl-w gt` / `ctrl-w gT` / `ctrl-w gf`.
+- **`strop -p`** (one tab page per file).
+
 ## Deferred from 0.71 (plans 0108–0111)
 
 Correctness and data:

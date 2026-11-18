@@ -40,6 +40,7 @@ The live roadmap (deferred work, over-ceiling files) is
 | [0110](0110-command-line.md) | 0.71: the command line is vim's bottom row; `Esc`/`Ctrl-C` cancel; Normal-key editing is the command-line window (`Ctrl-F`, `q:`, `q/`); Vim's editing keys, each in `?`. Amends 0003 §1 and §5.8, 0098 §3.4, 0088 |
 | [0111](0111-highlighting.md) | 0.71: highlighting that stays right — failed analyses remembered per key, deep injections uncoloured past the cap, compiled queries shared per language, combined injections collected document-wide |
 | [0112](0112-help-page.md) | the help page: key cells lexed by `keymap::notation` and inked per token on the base plane; nine sections in one buffer (`━ Title ━`), `]]` / `[[` and `Enter` on the top line move between them; a 24-cell key column and a 76-cell measure; `DocumentSource::Help` carries the typed lines; no line numbers. Amends 0088 §2 rule 6 and §6 |
+| [0113](0113-tabs.md) | 0.72: Vim's tab pages — a second window layout over the same buffers; `gt` `gT` `{N}gt` `g<Tab>` `ctrl-w T`, `:tabnew` `:tab split` `:tabn` `:tabp` `:tabc` `:tabo` `:tabm`; `:q` on a tab page's only pane closes the tab page; a tab line on row 0 only from the second tab page; the `tab/` differential corpus. No buffer line. Amends 0001 §3, 0095 §8, 0104 §3 and §12 |
 
 ## Proposed — not implemented
 
