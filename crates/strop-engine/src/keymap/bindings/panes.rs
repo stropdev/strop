@@ -19,8 +19,8 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(crate::editor::Editor::pane_move_pub),
     },
     Binding {
-        keys: "ctrl-o / ctrl-i (tab)",
-        desc: "jump back / forward (jumplist)",
+        keys: "ctrl-o / ctrl-i",
+        desc: "jump back / forward (jumplist; tab is ctrl-i)",
         sections: &["panes"],
         live: true,
         id: "jumplist",
@@ -43,7 +43,7 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(|e, _| crate::editor::Editor::pane_close_pub(e)),
     },
     Binding {
-        keys: "ctrl-w h ctrl-w j ctrl-w k ctrl-w l ctrl-w w ctrl-w W ctrl-w p",
+        keys: "ctrl-w h / j / k / l / w / W / p",
         desc: "window: left / down / up / right / next / previous / last used (ctrl-w ctrl-{key} is the same)",
         sections: &["panes"],
         live: true,
@@ -51,7 +51,7 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(crate::editor::Editor::window_command),
     },
     Binding {
-        keys: "ctrl-w s ctrl-w v ctrl-w n",
+        keys: "ctrl-w s / v / n",
         desc: "window: split below / split right / new empty buffer below",
         sections: &["panes"],
         live: true,
@@ -59,7 +59,7 @@ pub(super) const ROWS: &[Binding] = &[
         handler: Handler::Leaf(crate::editor::Editor::window_command),
     },
     Binding {
-        keys: "ctrl-w c ctrl-w q ctrl-w o",
+        keys: "ctrl-w c / q / o",
         desc: "window: close / quit (:q) / keep only this one",
         sections: &["panes"],
         live: true,

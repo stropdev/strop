@@ -181,12 +181,12 @@ does not is listed at the end, under Missing and Reassigned.
 
 - `✓ :vs :sp` — split vertical / horizontal
 - `✓ space w h / l / j / k / w / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` — pane move / cycle / focus 1-9
-- `✓ ctrl-o / ctrl-i (tab)` — jump back / forward (jumplist)
+- `✓ ctrl-o / ctrl-i` — jump back / forward (jumplist; tab is ctrl-i)
 - `✓ space w v / -` — pane split (vertical / horizontal)
 - `✓ space w q` — close pane (last → buffer)
-- `✓ ctrl-w h ctrl-w j ctrl-w k ctrl-w l ctrl-w w ctrl-w W ctrl-w p` — window: left / down / up / right / next / previous / last used (ctrl-w ctrl-{key} is the same)
-- `✓ ctrl-w s ctrl-w v ctrl-w n` — window: split below / split right / new empty buffer below
-- `✓ ctrl-w c ctrl-w q ctrl-w o` — window: close / quit (:q) / keep only this one
+- `✓ ctrl-w h / j / k / l / w / W / p` — window: left / down / up / right / next / previous / last used (ctrl-w ctrl-{key} is the same)
+- `✓ ctrl-w s / v / n` — window: split below / split right / new empty buffer below
+- `✓ ctrl-w c / q / o` — window: close / quit (:q) / keep only this one
 - `✓ ctrl-w =` — window: equal sizes (panes always are)
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs
 
