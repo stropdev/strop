@@ -8,6 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
 use super::{collection, commit_message, directory, PaneView};
+use crate::editor::help::HelpPage;
 use crate::editor::{CollectionRowInfo, Directory, Editor, ReviewRow, StatusView, Surface};
 use crate::render::block::gutter;
 use crate::render::block::{diff_line, Painted};
@@ -30,8 +31,8 @@ pub(super) enum Owner<'a> {
     File {
         commit_message: bool,
     },
-    /// The help buffer's house-style decoration (render/help.rs).
-    Help,
+    /// The help buffer's typed lines (render/help.rs).
+    Help(&'a HelpPage),
     /// A directory listing's row.
     Directory(&'a Directory),
     /// A row of the review buffer (0094).
@@ -44,7 +45,7 @@ pub(super) struct Pane<'a> {
     pub gutter: Gutter,
     pub surface: Option<&'a Surface>,
     pub directory: Option<&'a Directory>,
-    pub help: bool,
+    pub help: Option<&'a HelpPage>,
     pub commit_message: bool,
 }
 
@@ -57,6 +58,9 @@ impl<'a> Pane<'a> {
         line: usize,
         info: Option<&'a CollectionRowInfo>,
     ) -> Owner<'a> {
+        if let Some(page) = self.help {
+            return Owner::Help(page);
+        }
         let file = Owner::File {
             commit_message: self.commit_message,
         };
@@ -66,10 +70,9 @@ impl<'a> Pane<'a> {
             (Gutter::List, Some(Surface::Status { view, .. })) => Owner::Block(Block::Status(view)),
             (Gutter::List, Some(surface)) => Owner::Block(Block::List(surface)),
             (Gutter::Pair | Gutter::List, None) => file,
-            (Gutter::Lines, _) => match (self.directory, self.help) {
-                (Some(directory), _) => Owner::Directory(directory),
-                (None, true) => Owner::Help,
-                (None, false) => editor.review_row(doc, line).map_or(file, Owner::Review),
+            (Gutter::Lines, _) => match self.directory {
+                Some(directory) => Owner::Directory(directory),
+                None => editor.review_row(doc, line).map_or(file, Owner::Review),
             },
         }
     }
@@ -139,9 +142,15 @@ impl<'a> Owner<'a> {
                 painted.gutter = numbered(editor, t, view, line, cells.gutter);
                 painted
             }
-            Owner::Help => Painted {
+            Owner::Help(page) => Painted {
                 gutter: numbered(editor, t, view, line, cells.gutter),
-                text: crate::render::help::row_spans(t, &row.text.to_string(), cells.text as u16),
+                text: crate::render::help::line_spans(
+                    t,
+                    page,
+                    line,
+                    &row.text.to_string(),
+                    cells.text,
+                ),
                 ..Default::default()
             },
             Owner::Review(review) => {
@@ -176,7 +185,7 @@ impl<'a> Owner<'a> {
     pub(super) fn band_covers_gutter(&self, cursor: bool) -> bool {
         match self {
             Owner::Directory(_) => true,
-            Owner::Help => false,
+            Owner::Help(_) => false,
             _ => cursor,
         }
     }

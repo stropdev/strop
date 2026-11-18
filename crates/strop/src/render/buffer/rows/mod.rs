@@ -120,7 +120,7 @@ pub(super) fn render_pane(
         gutter: gutter_kind,
         surface,
         directory,
-        help: buf.name.as_deref() == Some("help"),
+        help: editor.help_page(view.doc),
         commit_message: editor.is_commit_message(view.doc),
     };
     // 0051 R08: the fixed margins measure with the viewed document's

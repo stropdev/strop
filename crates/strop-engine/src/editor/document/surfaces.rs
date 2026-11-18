@@ -22,10 +22,16 @@ pub enum DocumentSource {
     Directory(Box<super::Directory>),
     /// A git-memory surface: job-owned content, readonly.
     Surface(Box<GitSurface>),
-    /// `:!cmd` output / help: named virtual content, readonly. The
-    /// return point is where `:q` hands the view back (0051 §7 R07) —
-    /// temporary surfaces restore their origin, not the MRU's line 1.
+    /// `:!cmd` output, explain, the undo browser: named virtual
+    /// content, readonly. The return point is where `:q` hands the view
+    /// back (0051 §7 R07) — temporary surfaces restore their origin,
+    /// not the MRU's line 1.
     Output { return_to: Option<JumpRecord> },
+    /// The help page (0112): readonly output whose lines are typed.
+    Help {
+        page: Box<crate::editor::help::HelpPage>,
+        return_to: Option<JumpRecord>,
+    },
     /// A namespace-bound PTY session with a retained immutable inspection projection.
     /// `launch` is the admitted identity, never shell-reported cwd or title metadata.
     Terminal(Box<crate::editor::TerminalDocument>),

@@ -38,7 +38,7 @@ pub(crate) mod field;
 mod git;
 pub mod git_memory;
 pub mod git_work;
-mod help;
+pub mod help;
 mod indent;
 mod input;
 pub(crate) mod insert;

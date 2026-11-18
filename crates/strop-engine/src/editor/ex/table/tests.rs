@@ -107,7 +107,9 @@ fn a_listed_key_does_what_its_command_does() {
             crate::keymap::BINDINGS
                 .iter()
                 .filter(|row| row.live)
-                .any(|row| row.keys.contains(key)),
+                .any(|row| crate::keymap::lookup::expand(row.keys)
+                    .iter()
+                    .any(|sequence| sequence.join(" ") == key)),
             "{}: {key} is not a live binding",
             command.name()
         );
