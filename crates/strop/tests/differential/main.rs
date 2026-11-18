@@ -1,15 +1,16 @@
 //! Tier 1 differential harness (0001 §5.10, 0006, 0095): the same key
 //! sequence drives strop (headless) and nvim (`-u NONE -i NONE -n`) — the
 //! Neovim of the Docker `test` image is the oracle (0095 §3); final text, cursor, mode, the unnamed register, the lifecycle
-//! registers (`"0 "1 "2 "- "a "b`, plan 0092), 'modified' and the window
-//! tree with the current window (plan 0104) must agree.
+//! registers (`"0 "1 "2 "- "a "b`, plan 0092), 'modified', the window
+//! tree with the current window (plan 0104) and the tab pages with the
+//! current one (plan 0113) must agree.
 //!
-//! The corpus is five lists: `hand` (cases somebody once got wrong),
+//! The corpus is these lists: `hand` (cases somebody once got wrong),
 //! `critique` (the everyday sequences of plan 0091 §2), `keys` (what
 //! plan 0095 added), `ex` (the commands), `cmdline` (the line's own keys,
-//! plan 0110) and `generated` (each
-//! operator × each motion or text object × count × Normal, Visual and
-//! dot-repeat).
+//! plan 0110), `generated` (each operator × each motion or text object ×
+//! count × Normal, Visual and dot-repeat), `windows` (plan 0104) and
+//! `tabs` (plan 0113).
 //!
 //! Deviations are bugs by doctrine (0001 pillar 1). Intended ones live
 //! in `divergences::KNOWN` with a reason — the list is capped, and a
@@ -32,6 +33,7 @@ mod ex;
 mod generated;
 mod hand;
 mod keys;
+mod tabs;
 mod windows;
 
 /// A written case: name, initial buffer text, strop-token keys.
@@ -66,6 +68,7 @@ fn corpus() -> Vec<Run> {
     runs.extend(written("cmdline/", cmdline::CASES));
     runs.extend(generated::cases());
     runs.extend(windows::cases());
+    runs.extend(tabs::cases());
     runs
 }
 
@@ -141,13 +144,15 @@ struct State {
     modified: bool,
     /// `[tree, current window]`, vim's `winlayout()` with window numbers.
     windows: String,
+    /// `[[tree of each tab page], current tab page]`.
+    tabs: String,
 }
 
 impl std::fmt::Display for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "text={:?} cursor={}:{} mode={} register={:?} registers={:?} modified={} windows={}",
+            "text={:?} cursor={}:{} mode={} register={:?} registers={:?} modified={} windows={} tabs={}",
             self.text,
             self.line,
             self.col,
@@ -155,7 +160,8 @@ impl std::fmt::Display for State {
             self.register,
             self.registers,
             self.modified,
-            self.windows
+            self.windows,
+            self.tabs
         )
     }
 }
@@ -177,11 +183,12 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
     std::fs::write(&file, text).unwrap();
     std::fs::write(dir.join("keys.bin"), keys_to_bytes(keys)).unwrap();
     let driver = "call feedkeys(join(readfile('keys.bin', 'b'), \"\\n\"), 'xt')";
-    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'MODE:'.mode(), 'POS:'.line('.').':'.col('.'), 'REGS:'.json_encode({'0':getreg('0'),'1':getreg('1'),'2':getreg('2'),'-':getreg('-'),'a':getreg('a'),'b':getreg('b')}), 'REG:'.json_encode(getreg('\"')), 'WIN:'.json_encode([L(winlayout()), winnr()])], 'dump.txt')";
-    // the window tree with window numbers, as strop's `layout` outline
+    let dump = "call writefile(getline(1,'$') + ['MOD:'.&modified, 'MODE:'.mode(), 'POS:'.line('.').':'.col('.'), 'REGS:'.json_encode({'0':getreg('0'),'1':getreg('1'),'2':getreg('2'),'-':getreg('-'),'a':getreg('a'),'b':getreg('b')}), 'REG:'.json_encode(getreg('\"')), 'WIN:'.json_encode([L(winlayout()), winnr()]), 'TAB:'.json_encode([map(range(1, tabpagenr('$')), 'L(winlayout(v:val))'), tabpagenr()])], 'dump.txt')";
+    // the window tree with window numbers (each in its own tab page), as
+    // strop's `layout` outline
     std::fs::write(
         dir.join("win.vim"),
-        "function! L(l)\n  return a:l[0] ==# 'leaf' ? win_id2win(a:l[1]) : [a:l[0], map(copy(a:l[1]), 'L(v:val)')]\nendfunction\n",
+        "function! L(l)\n  return a:l[0] ==# 'leaf' ? win_id2tabwin(a:l[1])[1] : [a:l[0], map(copy(a:l[1]), 'L(v:val)')]\nendfunction\n",
     )
     .unwrap();
     let mut command = Command::new("timeout");
@@ -207,8 +214,13 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
         )
     })?;
     // dump layout: text lines…, then "MOD:0|1", "MODE:m", "POS:L:C", the
-    // JSON-encoded lifecycle registers and the unnamed register.
+    // JSON-encoded lifecycle registers, the unnamed register, the window
+    // tree and the tab pages.
     let mut lines: Vec<&str> = dumped.lines().collect();
+    let tabs = lines.pop().unwrap().strip_prefix("TAB:").unwrap();
+    let tabs = serde_json::from_str::<serde_json::Value>(tabs)
+        .unwrap()
+        .to_string();
     let windows = lines.pop().unwrap().strip_prefix("WIN:").unwrap();
     let windows = serde_json::from_str::<serde_json::Value>(windows)
         .unwrap()
@@ -240,6 +252,7 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
         registers,
         modified,
         windows,
+        tabs,
     })
 }
 
@@ -302,6 +315,7 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
         modified: v["dirty"].as_bool().unwrap(),
         windows: serde_json::json!([v["layout"], v["active_pane"].as_u64().unwrap() + 1])
             .to_string(),
+        tabs: serde_json::json!([v["tabs"], v["active_tab"].as_u64().unwrap() + 1]).to_string(),
     })
 }
 
