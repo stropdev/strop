@@ -15,6 +15,16 @@ mod focus;
 mod layout;
 pub use layout::{Axis, Layout, Placement};
 
+/// What `:q` closes (plans/0113 §4): the owner is computed first, then
+/// acted on — not an ordered chain of tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Closing {
+    CommandLineWindow,
+    Buffer,
+    Pane,
+    TabPage,
+}
+
 /// One pane: the document it shows plus its own view state.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Pane {
@@ -38,6 +48,20 @@ pub struct Pane {
 }
 
 impl Pane {
+    /// A pane on `doc` from its start, keeping the jump list it came from.
+    pub(crate) fn fresh(doc: strop_core::id::DocumentId, jumps: super::jumps::JumpList) -> Self {
+        Pane {
+            terminal_input: false,
+            doc,
+            sels: SelectionSet::default(),
+            view_top: 0,
+            hscroll: DisplayColumn::new(0),
+            desired_column: None,
+            jumps,
+            focused: 0,
+        }
+    }
+
     /// Minimal horizontal scrolling: preserve the origin unless the
     /// caret leaves it. `width` is CONTENT width — every fixed left
     /// margin (sidebar, blame, number gutter) is excluded.
@@ -82,18 +106,18 @@ impl Editor {
     /// The window tree.
     #[inline]
     pub fn layout(&self) -> &Layout {
-        &self.layout
+        &self.tabs.layout
     }
 
-    fn layout_matches_panes(&self) -> bool {
-        self.layout.well_formed()
-            && self.layout.leaves() == self.panes.len().max(1)
+    pub(super) fn layout_matches_panes(&self) -> bool {
+        self.tabs.layout.well_formed()
+            && self.tabs.layout.leaves() == self.panes.len().max(1)
             && (self.panes.is_empty() || self.active_pane < self.panes.len())
     }
 
     /// The new pane opens after the active one along `axis` and takes focus.
     fn insert_pane(&mut self, axis: Axis, pane: Pane) {
-        self.layout.split(self.active_pane, axis);
+        self.tabs.layout.split(self.active_pane, axis);
         self.panes.insert(self.active_pane + 1, pane);
         self.panes[self.active_pane].focused = self.focus_epoch;
         self.active_pane += 1;
@@ -104,7 +128,7 @@ impl Editor {
     /// Close the active pane (two or more); its neighbour takes its cells
     /// and the focus.
     fn remove_active_pane(&mut self) {
-        let focus = self.layout.remove(self.active_pane);
+        let focus = self.tabs.layout.remove(self.active_pane);
         self.panes.remove(self.active_pane);
         self.active_pane = focus;
         self.focus_epoch += 1;
@@ -119,7 +143,7 @@ impl Editor {
         self.cancel_cmdline();
         let only = self.panes.swap_remove(self.active_pane);
         self.panes = vec![only];
-        self.layout = Layout::Leaf;
+        self.tabs.layout = Layout::Leaf;
         self.active_pane = 0;
         self.focus_epoch += 1;
         self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
@@ -146,44 +170,80 @@ impl Editor {
         let pane = if doc == view.doc {
             view
         } else {
-            Pane {
-                terminal_input: false,
-                doc,
-                sels: SelectionSet::default(),
-                view_top: 0,
-                hscroll: DisplayColumn::new(0),
-                desired_column: None,
-                jumps: view.jumps.clone(),
-                focused: 0,
-            }
+            Pane::fresh(doc, view.jumps)
         };
         self.insert_pane(if vertical { Axis::Row } else { Axis::Column }, pane);
         self.discover_git();
         self.lsp_attach_document(self.current());
     }
 
-    /// `:q` closes the pane; the last pane's close is document close.
-    pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
-        // `:q` in the command-line window closes it, buffer and all
+    /// What `:q` on the active pane closes.
+    pub(crate) fn closing(&self) -> Closing {
+        let current = self.current();
         if self
             .cmdline
             .window
-            .is_some_and(|window| window.doc == self.current())
+            .is_some_and(|window| window.doc == current)
         {
-            return super::cmdline::window::close(self);
-        }
-        // closing the commit message is what commits (or aborts): the
-        // buffer goes, not only the pane showing it
-        if self.panes.len() > 1 && !self.is_commit_message(self.current()) {
-            self.cancel_cmdline();
-            self.remove_active_pane();
-            self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
-            // the surviving pane's document may differ from the closed
-            // pane's — git discovery follows the view, no copy-back
-            self.discover_git();
+            Closing::CommandLineWindow
+        } else if self.is_commit_message(current) {
+            // closing the commit message is what commits (or aborts)
+            Closing::Buffer
+        } else if self.panes.len() > 1 {
+            Closing::Pane
+        } else if self.tabs.count() > 1 {
+            Closing::TabPage
         } else {
-            self.close_buffer(force);
+            Closing::Buffer
         }
+    }
+
+    /// `ctrl-w c` and `:close` refuse here (Vim's E444): the last window
+    /// of the last tab page. A commit message in a split still closes as
+    /// a buffer, as it did before tab pages.
+    pub(crate) fn closes_last_window(&self) -> bool {
+        self.panes.len() == 1 && self.closing() == Closing::Buffer
+    }
+
+    /// `:q`: the pane; a tab page's only pane closes the tab page; the
+    /// last pane of the last tab page closes the buffer.
+    pub(crate) fn close_pane_or_buffer(&mut self, force: bool) {
+        match self.closing() {
+            // `:q` in the command-line window closes it, buffer and all
+            Closing::CommandLineWindow => super::cmdline::window::close(self),
+            Closing::Pane => {
+                self.cancel_cmdline();
+                self.remove_active_pane();
+                self.cancel_open(strop_core::worker::CancelReason::OwnerClosed);
+                // the surviving pane's document may differ from the closed
+                // pane's — git discovery follows the view, no copy-back
+                self.discover_git();
+            }
+            // its buffers stay open, as with Neovim's 'hidden'
+            Closing::TabPage => {
+                super::tabs::close_current(self);
+            }
+            Closing::Buffer => {
+                self.close_buffer(force);
+            }
+        }
+    }
+
+    /// `ctrl-w T`: the active pane leaves its tab page (closed there as
+    /// `ctrl-w c` would) and becomes the only pane of a new one after it.
+    fn pane_to_tab(&mut self) {
+        if let Some(refused) = super::tabs::refusal(self) {
+            self.message = refused.into();
+            return;
+        }
+        if self.panes.len() == 1 {
+            self.message = "already only one window".into();
+            return;
+        }
+        let pane = self.view().clone();
+        self.cancel_cmdline();
+        self.remove_active_pane();
+        super::tabs::open(self, pane);
     }
 
     /// `:qa` / `:qall` — quit the editor, closing every buffer through the
@@ -267,11 +327,15 @@ impl Editor {
                     Err(error) => self.message = error.to_string(),
                 }
             }
-            // vim: `c` never closes the last window (E444); `q` is `:q`
-            'c' if panes == 1 => self.message = "cannot close the last window".into(),
+            // vim: `c` never closes the last window (E444), but a tab
+            // page's only one closes the tab page; `q` is `:q`
+            'c' if self.closes_last_window() => {
+                self.message = "cannot close the last window".into()
+            }
             'c' | 'q' => self.close_pane_or_buffer(false),
             'o' if panes == 1 => self.message = "already only one window".into(),
             'o' => self.keep_only_active_pane(),
+            'T' => self.pane_to_tab(),
             _ => {}
         }
     }

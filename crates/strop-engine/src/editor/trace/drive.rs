@@ -147,6 +147,7 @@ impl Editor {
             "panes": self.panes,
             "mru": self.mru,
             "active": self.active_pane,
+            "tabs": self.tabs,
             "mode": self.mode.chip(),
             "quit": self.should_quit,
             "message": self.message,

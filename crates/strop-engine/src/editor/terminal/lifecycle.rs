@@ -265,7 +265,7 @@ impl Editor {
             self.install_terminal_frame(document, frame);
         }
         if !phase.live() {
-            for pane in &mut self.panes {
+            for pane in self.panes.iter_mut().chain(self.tabs.panes_mut()) {
                 if pane.doc == document {
                     pane.terminal_input = false;
                 }
@@ -310,8 +310,10 @@ impl Editor {
         let following = {
             let buf = &self.doc(document).buf;
             let last = buf.last_content_line();
+            // parked panes follow the visible ones in this numbering
             self.panes
                 .iter()
+                .chain(self.tabs.panes())
                 .enumerate()
                 .filter(|(_, pane)| pane.doc == document && !pane.terminal_input)
                 .filter_map(|(index, pane)| {
@@ -344,7 +346,8 @@ impl Editor {
             (buf.line_start(last), buf.line_end(last))
         };
         let active = self.active_pane;
-        for (index, pane) in self.panes.iter_mut().enumerate() {
+        let panes = self.panes.iter_mut().chain(self.tabs.panes_mut());
+        for (index, pane) in panes.enumerate() {
             if pane.doc != document {
                 continue;
             }

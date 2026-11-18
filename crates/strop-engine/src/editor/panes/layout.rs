@@ -22,10 +22,14 @@ pub enum Axis {
 }
 
 /// A node of the window tree.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Layout {
+    #[default]
     Leaf,
-    Split { axis: Axis, children: Vec<Layout> },
+    Split {
+        axis: Axis,
+        children: Vec<Layout>,
+    },
 }
 
 /// Where everything goes for one view area.

@@ -182,7 +182,10 @@ impl Editor {
             // admit new work. Render-safe: pure checks and registration;
             // the diff itself runs on a worker.
             self.refresh_hunks();
-            let placed = self.layout.place(CellRect::from(geometry));
+            let placed = self
+                .tabs
+                .layout
+                .place(super::tabs::pane_area(self, geometry));
             let rects = placed.panes;
             let settled = self.adjust_active_viewport(&rects);
             // Visible-window analysis and pair admission for every pane,
@@ -475,7 +478,8 @@ impl Editor {
         let mut stamp = std::collections::hash_map::DefaultHasher::new();
         (geometry.columns, geometry.rows).hash(&mut stamp);
         self.panes.len().hash(&mut stamp);
-        self.layout.hash(&mut stamp);
+        self.tabs.layout.hash(&mut stamp);
+        (self.tabs.count(), super::tabs::current(self)).hash(&mut stamp);
         self.active_pane.hash(&mut stamp);
         self.focus_epoch.hash(&mut stamp);
         usize::from(matches!(self.mode, Mode::Insert)).hash(&mut stamp);

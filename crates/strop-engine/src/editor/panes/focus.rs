@@ -58,16 +58,16 @@ impl Editor {
     pub(crate) fn pane_towards(&self, key: char) -> Option<usize> {
         // the prepared geometry, widened to the tree's minimum so every
         // window has cells even before the first prepare
-        let geometry = self.prepared.geometry;
-        let (columns, rows) = layout::minimum(&self.layout);
+        let view = crate::editor::tabs::pane_area(self, self.prepared.geometry);
+        let (columns, rows) = layout::minimum(&self.tabs.layout);
         let area = CellRect::new(
             0,
-            0,
-            u16::try_from(columns.max(usize::from(geometry.columns))).unwrap_or(u16::MAX),
-            u16::try_from(rows.max(usize::from(geometry.rows.saturating_sub(1))) + 1)
+            view.y,
+            u16::try_from(columns.max(usize::from(view.width))).unwrap_or(u16::MAX),
+            u16::try_from(rows.max(usize::from(view.height.saturating_sub(1))) + 1)
                 .unwrap_or(u16::MAX),
         );
-        let frames = self.layout.place(area).frames;
+        let frames = self.tabs.layout.place(area).frames;
         let frame = *frames.get(self.active_pane)?;
         let (cx, cy) = self.cursor_cell(frame);
         let (x, y) = match key {

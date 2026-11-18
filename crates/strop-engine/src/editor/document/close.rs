@@ -46,7 +46,7 @@ impl Editor {
         {
             self.cancel_cmdline();
         }
-        for pane in &mut self.panes {
+        for pane in self.panes.iter_mut().chain(self.tabs.panes_mut()) {
             if pane.doc == scratch {
                 pane.doc = replacement;
             }
@@ -156,8 +156,8 @@ impl Editor {
         if self.docs.is_empty() {
             self.collection_build = None;
             self.panes.clear();
-            self.layout = super::super::Layout::Leaf;
             self.active_pane = 0;
+            self.tabs = Default::default();
             self.should_quit = true;
         } else {
             let next = self.mru.first().copied().unwrap_or_else(|| {
@@ -167,7 +167,7 @@ impl Editor {
                     .map(|(id, _)| id)
                     .expect("docs non-empty")
             });
-            for pane in &mut self.panes {
+            for pane in self.panes.iter_mut().chain(self.tabs.panes_mut()) {
                 if pane.doc == closed {
                     pane.doc = next;
                     pane.sels = Default::default();
@@ -203,6 +203,7 @@ impl Editor {
             // rest of what this collection loaded goes (0101 §6.1).
             crate::editor::collections::loans::release_unheld(self);
         }
+        debug_assert!(crate::editor::tabs::well_formed(self));
         true
     }
 }

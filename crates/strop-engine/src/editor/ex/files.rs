@@ -171,9 +171,10 @@ pub(crate) fn ex_new(editor: &mut Editor, split: Option<bool>) -> ExResult {
     Ok(())
 }
 
-/// `:clo[se]`: close this window; the last one stays.
+/// `:clo[se]`: close this window, or the tab page it is the only one
+/// of; the last one stays.
 pub(crate) fn ex_close(editor: &mut Editor) -> ExResult {
-    if editor.panes.len() < 2 {
+    if editor.closes_last_window() {
         return Err("cannot close the last window".into());
     }
     editor.close_pane_or_buffer(false);
