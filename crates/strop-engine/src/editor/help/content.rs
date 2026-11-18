@@ -419,6 +419,7 @@ pub(super) const TABS: &[TabSpec] = &[
             Source::Family(Family::Text),
             Source::Family(Family::Buffers),
             Source::Family(Family::Files),
+            Source::Family(Family::Tabs),
             Source::Family(Family::Own),
         ],
     },

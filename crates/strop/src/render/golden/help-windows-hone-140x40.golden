@@ -14,6 +14,10 @@
                                buffer below                                                                                                ▮
     ctrl-w c / q / o           window: close / quit (:q) / keep only this one                                                               
     ctrl-w =                   window: equal sizes (panes always are)                                                                       
+    gt gT                      next / previous tab page; 3gt goes to tab page                                                               
+                               3, 3gT three back                                                                                            
+    g tab                      the tab page used before this one                                                                            
+    ctrl-w T                   window: move this pane to a new tab page                                                                     
     ctrl-l                     redraw: full repaint when the terminal desyncs                                                               
                                                                                                                                             
   ━ Git ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
@@ -33,11 +37,7 @@
     space g o                  permalink: open                                                                                              
     s u -                      status: stage / unstage / toggle the file, hunk                                                              
                                or section                                                                                                   
-    =                          status: show / hide the file's diff                                                                          
-    X                          status: discard (y confirms)                                                                                 
-    cc ca                      status: commit / amend                                                                                       
-    enter                      status: open the file at the cursor                                                                          
-  NORMAL    help [RO]  Windows                                                                                                  32%  210:1  
+  NORMAL    help [RO]  Windows                                                                                                  31%  210:1  
 
   0: 2:reset/#15171c 2:#4a5160/#15171c 7:#e8a848/#15171c+b 128:#4a5160/#15171c 1:reset/reset
   1: 139:reset/#15171c 1:reset/reset
@@ -55,27 +55,27 @@
  13: 2:reset/#15171c 41:#e6e1d6/#15171c 96:reset/#15171c 1:#858c9a/#15171c
  14: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#858c9a/#15171c 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#858c9a/#15171c 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 57:#e6e1d6/#15171c 62:reset/#15171c 1:reset/reset
  15: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 57:#e6e1d6/#15171c 70:reset/#15171c 1:reset/reset
- 16: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 67:#e6e1d6/#15171c 62:reset/#15171c 1:reset/reset
- 17: 139:reset/#15171c 1:reset/reset
- 18: 2:reset/#15171c 2:#4a5160/#15171c 3:#e8a848/#15171c+b 132:#4a5160/#15171c 1:reset/reset
- 19: 139:reset/#15171c 1:reset/reset
- 20: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 24:#e6e1d6/#15171c 104:reset/#15171c 1:reset/reset
- 21: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 39:#e6e1d6/#15171c 87:reset/#15171c 1:reset/reset
- 22: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 50:#e6e1d6/#15171c 76:reset/#15171c 1:reset/reset
- 23: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 43:#e6e1d6/#15171c 83:reset/#15171c 1:reset/reset
- 24: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 21:#e6e1d6/#15171c 105:reset/#15171c 1:reset/reset
- 25: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 55:#e6e1d6/#15171c 71:reset/#15171c 1:reset/reset
- 26: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 37:#e6e1d6/#15171c 89:reset/#15171c 1:reset/reset
- 27: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 29:#e6e1d6/#15171c 97:reset/#15171c 1:reset/reset
- 28: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
- 29: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
- 30: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
- 31: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 33:#e6e1d6/#15171c 93:reset/#15171c 1:reset/reset
- 32: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 33:#e6e1d6/#15171c 93:reset/#15171c 1:reset/reset
- 33: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 69:#e6e1d6/#15171c 61:reset/#15171c 1:reset/reset
- 34: 2:reset/#15171c 39:#e6e1d6/#15171c 98:reset/#15171c 1:reset/reset
- 35: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 61:#e6e1d6/#15171c 73:reset/#15171c 1:reset/reset
- 36: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 54:#e6e1d6/#15171c 80:reset/#15171c 1:reset/reset
- 37: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 44:#e6e1d6/#15171c 86:reset/#15171c 1:reset/reset
- 38: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 57:#e6e1d6/#15171c 73:reset/#15171c 1:reset/reset
+ 16: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 68:#e6e1d6/#15171c 62:reset/#15171c 1:reset/reset
+ 17: 2:reset/#15171c 46:#e6e1d6/#15171c 91:reset/#15171c 1:reset/reset
+ 18: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 3:#7fb2d4/#15171c+b 55:#e6e1d6/#15171c 75:reset/#15171c 1:reset/reset
+ 19: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 59:#e6e1d6/#15171c 68:reset/#15171c 1:reset/reset
+ 20: 2:reset/#15171c 2:#e6e1d6/#15171c 6:#8ecdb8/#15171c+b 67:#e6e1d6/#15171c 62:reset/#15171c 1:reset/reset
+ 21: 139:reset/#15171c 1:reset/reset
+ 22: 2:reset/#15171c 2:#4a5160/#15171c 3:#e8a848/#15171c+b 132:#4a5160/#15171c 1:reset/reset
+ 23: 139:reset/#15171c 1:reset/reset
+ 24: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 24:#e6e1d6/#15171c 104:reset/#15171c 1:reset/reset
+ 25: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 39:#e6e1d6/#15171c 87:reset/#15171c 1:reset/reset
+ 26: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 50:#e6e1d6/#15171c 76:reset/#15171c 1:reset/reset
+ 27: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 43:#e6e1d6/#15171c 83:reset/#15171c 1:reset/reset
+ 28: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 21:#e6e1d6/#15171c 105:reset/#15171c 1:reset/reset
+ 29: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 55:#e6e1d6/#15171c 71:reset/#15171c 1:reset/reset
+ 30: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 37:#e6e1d6/#15171c 89:reset/#15171c 1:reset/reset
+ 31: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 29:#e6e1d6/#15171c 97:reset/#15171c 1:reset/reset
+ 32: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
+ 33: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
+ 34: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
+ 35: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 33:#e6e1d6/#15171c 93:reset/#15171c 1:reset/reset
+ 36: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 33:#e6e1d6/#15171c 93:reset/#15171c 1:reset/reset
+ 37: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 69:#e6e1d6/#15171c 61:reset/#15171c 1:reset/reset
+ 38: 2:reset/#15171c 39:#e6e1d6/#15171c 98:reset/#15171c 1:reset/reset
  39: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25 97:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25

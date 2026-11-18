@@ -14,14 +14,14 @@
                                buffer below                                     
     ctrl-w c / q / o           window: close / quit (:q) / keep only this one   
     ctrl-w =                   window: equal sizes (panes always are)           
+    gt gT                      next / previous tab page; 3gt goes to tab page   
+                               3, 3gT three back                                
+    g tab                      the tab page used before this one                
+    ctrl-w T                   window: move this pane to a new tab page         
     ctrl-l                     redraw: full repaint when the terminal desyncs   
                                                                                 
   ━ Git ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-                                                                                
-    space g                    git…                                             
-    space g g                  status: changed files                            
-    space g c                  commit (:wq commits, :q! aborts)                 
-  NORMAL    help [RO]  Windows                                      32%  210:1  
+  NORMAL    help [RO]  Windows                                      31%  210:1  
 
   0: 2:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 7:#8a510f/#f6f2e9+b 68:#aeb3ba/#f6f2e9 1:reset/reset
   1: 79:reset/#f6f2e9 1:reset/reset
@@ -39,11 +39,11 @@
  13: 2:reset/#f6f2e9 41:#262a30/#f6f2e9 36:reset/#f6f2e9 1:reset/reset
  14: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#656d7b/#f6f2e9 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 57:#262a30/#f6f2e9 2:reset/#f6f2e9 1:reset/reset
  15: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 57:#262a30/#f6f2e9 10:reset/#f6f2e9 1:reset/reset
- 16: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 67:#262a30/#f6f2e9 2:reset/#f6f2e9 1:reset/reset
- 17: 79:reset/#f6f2e9 1:reset/reset
- 18: 2:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 3:#8a510f/#f6f2e9+b 72:#aeb3ba/#f6f2e9 1:reset/reset
- 19: 79:reset/#f6f2e9 1:reset/reset
- 20: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 5:#2a6a94/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 24:#262a30/#f6f2e9 44:reset/#f6f2e9 1:reset/reset
- 21: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 5:#2a6a94/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 39:#262a30/#f6f2e9 27:reset/#f6f2e9 1:reset/reset
- 22: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 5:#2a6a94/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 50:#262a30/#f6f2e9 16:reset/#f6f2e9 1:reset/reset
+ 16: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 68:#262a30/#f6f2e9 2:reset/#f6f2e9 1:reset/reset
+ 17: 2:reset/#f6f2e9 46:#262a30/#f6f2e9 31:reset/#f6f2e9 1:reset/reset
+ 18: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 3:#2a6a94/#f6f2e9+b 55:#262a30/#f6f2e9 15:reset/#f6f2e9 1:reset/reset
+ 19: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 59:#262a30/#f6f2e9 8:reset/#f6f2e9 1:reset/reset
+ 20: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 67:#262a30/#f6f2e9 2:reset/#f6f2e9 1:reset/reset
+ 21: 79:reset/#f6f2e9 1:reset/reset
+ 22: 2:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 3:#8a510f/#f6f2e9+b 72:#aeb3ba/#f6f2e9 1:reset/reset
  23: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6 37:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6

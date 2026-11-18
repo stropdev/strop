@@ -21,7 +21,7 @@
                                put back what was typed                          
     ctrl-r                     insert a register (" a-z 0 : / +); ctrl-r        
                                ctrl-w / ctrl-a: the word / WORD under the       
-  NORMAL    help [RO]  Commands                                     65%  431:1  
+  NORMAL    help [RO]  Commands                                     64%  435:1  
 
   0: 2:reset/#f6f2e9 2:#aeb3ba/#f6f2e9 8:#8a510f/#f6f2e9+b 67:#aeb3ba/#f6f2e9 1:reset/reset
   1: 79:reset/#f6f2e9 1:reset/reset
