@@ -65,8 +65,10 @@ Ctrl-W   h j k l w W p move · s v n split · c q o close · = equal
 Space g  g status · c commit · b branches · l log · h history · B blame · s/u/X/p hunk
 ```
 
-`Space ?` lists every key in the editor, and `:help TOPIC` jumps to a
-section of that list.
+`Space ?` lists every key in the editor. Its top line names the
+sections (Move, Edit, Visual, Leader, Windows, Git, Lists, Commands,
+More); `]]` and `[[` move between them, `Enter` on a name opens it, and
+`:help TOPIC` jumps to a section, a part or a command.
 
 ## The docs
 

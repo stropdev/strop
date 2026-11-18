@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The help page is rebuilt** (plans/0112): keys are coloured by what they are (plain keys, `space` and other named keys, `ctrl-` chords, placeholders), a top line lists nine sections and `]]` / `[[` or `Enter` on a name jumps to one, descriptions wrap instead of running off an 80-column screen. The status line names the section the cursor is in, `:help` completion lists the sections first, and help has no line numbers.
+
+### Fixed
+
+- The Windows rows of the help whose descriptions were off screen at 80 columns.
+
 ## 0.71.0 — 2026-11-17
 
 ### Added

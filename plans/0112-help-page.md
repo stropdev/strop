@@ -1,7 +1,8 @@
 # 0112 — The help page: key inks, tabs, a readable column
 
-- Status: **accepted 2026-11-18**; every taste question (§12) is taken at
-  its recommendation.
+- Status: **implemented 2026-11-18** (accepted the same day); every taste
+  question (§12) is taken at its recommendation. §14 records where the
+  code moved the plan.
 - Source: the owner — "revamp the help page though please, it is very clean
   atm, but the commands are all orangy, like we need syntax highlighting for
   the commands? like <space> or <leader> is highlighted differently from say
@@ -591,3 +592,28 @@ Each step compiles and passes the gate on its own.
 - The `ranges` row of the Command line section
   (`:N :N,M :. :$ …`) inks every range as a command name; a ranges lexer is
   not worth its lines yet.
+
+## 14. Amendments
+
+Implementation notes, where the plan met the code:
+
+- **2026-11-18 — `keys` rule 1.** A `/` word that is the last word of a
+  cell is a key, not a separator: `space /` is the leader's search key, and
+  `lookup::expand` reads it as part of the `space` sequence. Rule 1 reads
+  "a word `/` that is neither the first nor the last word"; the agreement
+  test (§9) holds for every row with it.
+- **2026-11-18 — the tab row.** Line 1 ends with one space after `More`
+  (65 cells), so the last name's chip has a cell on both sides.
+- **2026-11-18 — the modeline.** The breadcrumb slot follows the name
+  group with the modeline's group gap, so it reads `help [RO]  Git`, not
+  `help › Git`; the slot is sized to the longest section name.
+- **2026-11-18 — steps 3 and 4** landed as one commit: the typed `Cell`
+  has no reader until the document carries it, and the gate refuses a dead
+  field.
+- **2026-11-18 — step 2** also touched `ex::table`'s
+  `a_listed_key_does_what_its_command_does`, which looked a command's key
+  up as text in a row's cell; it now reads the row through `expand`
+  (`ctrl-w o` is in `ctrl-w c / q / o`).
+- **2026-11-18 — §6 completion.** The sections come first, then the keymap
+  groups (ids) as before, then commands; `:help gi⇥` still completes to the
+  `git` id.

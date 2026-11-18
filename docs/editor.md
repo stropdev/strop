@@ -142,6 +142,24 @@ follow the theme. Open terminals switch to the new theme's default colours;
 colours a program inside the terminal chose for itself are left alone. The
 themes are built into the binary: nothing to download or install.
 
+## Help
+
+`Space ?` (or `:help`) opens every key, command and filter as one
+readonly buffer you can search with `/`, walk with motions and yank from;
+`q` closes it. The top line names its nine sections: Move, Edit, Visual,
+Leader, Windows, Git, Lists, Commands and More. `]]` goes to the next
+section and `[[` to the start of this one, then the previous one (a count
+repeats); `Enter` on a name in the top line opens that section, and
+`Ctrl-O` comes back. `:help TOPIC` lands on a section, a part such as
+`:help query language`, or a command by any of its names (`:help :w`).
+The status line names the section the cursor is in.
+
+Keys are coloured by what they are: plain keys in the accent, `space` and
+the other named keys in one colour, `ctrl-` and `alt-` chords in another,
+placeholders such as `<c>` and `{reg}` in a third, and the `/` between
+alternatives muted. Descriptions wrap at 76 columns, so nothing is cut
+off on an 80-column terminal.
+
 ## Pane titles and previews
 
 With two or more panes, each pane starts at a title line: the pane's
@@ -279,7 +297,7 @@ the start and end, `Ctrl-R {register}` inserts a register and
   put back what you typed; `Ctrl-Y` keeps a row, `Ctrl-E` puts back what you
   typed. After a name, `Tab` or `Ctrl-D` lists what the command takes:
   files (`:e`, `:w`, `:sp`, `:vs`, `:view`), directories (`:cd`), buffers
-  (`:b`, `:bd`), themes, help topics, or the command's own words (`:set`,
+  (`:b`, `:bd`), themes, help sections and topics, or the command's own words (`:set`,
   `:remote`, `:recover`, `:tab-size`, `:indent-style`, `:sort`).
 - The right end of the line says what the command takes (`:w[!] [file]`),
   how many matches a search has, the lines a range names, or what a `:s`

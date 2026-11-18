@@ -39,6 +39,7 @@ The live roadmap (deferred work, over-ceiling files) is
 | [0109](0109-one-filter-language.md) | 0.71: one filter language for every list — `kind:` only (`type:` is an unknown key), one kind table in `strop-core` for chips, values and filters. Amends 0063 |
 | [0110](0110-command-line.md) | 0.71: the command line is vim's bottom row; `Esc`/`Ctrl-C` cancel; Normal-key editing is the command-line window (`Ctrl-F`, `q:`, `q/`); Vim's editing keys, each in `?`. Amends 0003 §1 and §5.8, 0098 §3.4, 0088 |
 | [0111](0111-highlighting.md) | 0.71: highlighting that stays right — failed analyses remembered per key, deep injections uncoloured past the cap, compiled queries shared per language, combined injections collected document-wide |
+| [0112](0112-help-page.md) | the help page: key cells lexed by `keymap::notation` and inked per token on the base plane; nine sections in one buffer (`━ Title ━`), `]]` / `[[` and `Enter` on the top line move between them; a 24-cell key column and a 76-cell measure; `DocumentSource::Help` carries the typed lines; no line numbers. Amends 0088 §2 rule 6 and §6 |
 
 ## Proposed — not implemented
 

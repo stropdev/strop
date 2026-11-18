@@ -38,6 +38,17 @@ Filters and the command line (0109, 0110):
 - **Command-line window height** (0110).
 - **Multi-line `:s` preview** (0110).
 
+The help page (0112 §13):
+
+- **Which-key, the welcome card and footer hints take the help's key
+  inks**; they use `card::keycap`, one ink. Do it once the help has been
+  lived in.
+- **`gO`** (Neovim's outline) for help.
+- **`Ctrl-]`** to follow the word under the cursor; strop does not decode
+  the key.
+- **The `ranges` row of the Command line part** (`:N :N,M :. :$ …`) inks
+  every range as a command name; a ranges lexer is not worth its lines yet.
+
 Clutter left by the 0.71 sweep (0108 §C):
 
 - Six `#[allow(clippy::too_many_arguments)]` sites want a params struct each
