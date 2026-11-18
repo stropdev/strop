@@ -303,3 +303,71 @@ fn search_crosses_sections() {
     tabs.dedup();
     assert!(tabs.len() > 2, "n stayed in one section: {tabs:?}");
 }
+
+/// §6: `]]` walks every section heading in order, each the top row,
+/// and stops on the last; a count skips.
+#[test]
+fn section_motions_walk_the_headings() {
+    let mut e = help();
+    let page = page(&e);
+    for tab in &page.tabs {
+        e.feed_text("]]");
+        assert_eq!(e.buf().line_of(e.head()), tab.heading, "{}", tab.title);
+        assert_eq!(
+            e.view().view_top,
+            tab.heading,
+            "{} is the top row",
+            tab.title
+        );
+    }
+    e.feed_text("]]");
+    let last = page.tabs.last().unwrap().heading;
+    assert_eq!(e.buf().line_of(e.head()), last, "]] stops on the last");
+    e.feed_text("gg3]]");
+    assert_eq!(cursor_line(&e), "━ Visual ━");
+}
+
+#[test]
+fn section_motions_go_back_and_jumps_return() {
+    let mut e = help();
+    e.feed_text(":help git\r");
+    e.feed_text("5j");
+    let inside = e.buf().line_of(e.head());
+    e.feed_text("[[");
+    assert_eq!(
+        cursor_line(&e),
+        "━ Git ━",
+        "[[ inside a section: its heading"
+    );
+    e.feed_text("[[");
+    assert_eq!(cursor_line(&e), "━ Windows ━", "then the previous");
+    e.feed_text("2[[");
+    assert_eq!(cursor_line(&e), "━ Visual ━");
+    e.feed_text("9[[");
+    assert_eq!(
+        e.buf().line_of(e.head()),
+        0,
+        "above the first heading: line 1"
+    );
+    // each jump records the place it left
+    e.feed_text("<c-o>");
+    assert_eq!(cursor_line(&e), "━ Visual ━");
+    e.feed_text("<c-o><c-o><c-o>");
+    assert_eq!(e.buf().line_of(e.head()), inside);
+}
+
+#[test]
+fn enter_on_the_first_line_opens_a_section() {
+    let mut e = help();
+    let page = page(&e);
+    let git = page.tabs.iter().find(|tab| tab.title == "Git").unwrap();
+    e.feed_text(&format!("0{}l", git.name.start + 1));
+    e.feed_text("<cr>");
+    assert_eq!(cursor_line(&e), "━ Git ━");
+    assert_eq!(e.view().view_top, git.heading);
+    // on any other line enter is the line-down motion
+    e.feed_text("3j");
+    let line = e.buf().line_of(e.head());
+    e.feed_text("<cr>");
+    assert_eq!(e.buf().line_of(e.head()), line + 1);
+}

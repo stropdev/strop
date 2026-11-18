@@ -75,8 +75,8 @@ pub const MISSING: &[Missing] = &[
     ),
     missing(
         Where::Normal,
-        &["]]", "[[", "][", "[]", "]m", "[m"],
-        "section and method motions",
+        &["][", "[]", "]m", "[m"],
+        "section-end and method motions",
     ),
     missing(Where::Normal, &["z=", "zg", "]s", "[s"], "spelling"),
     missing(

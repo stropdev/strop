@@ -203,9 +203,11 @@ impl Modeline {
             dirty: buf.is_dirty() || editor.collection_unsaved(editor.current()),
             readonly: buf.readonly && !terminal_input && !terminal,
             multicursor: (cursors > 1).then(|| format!("{cursors}×")),
-            scope: editor.scope_path().map(|path| {
-                let names = path.names().map(|name| printable(name.to_owned()));
-                (names.collect(), path.slot)
+            scope: help_section(editor).or_else(|| {
+                editor.scope_path().map(|path| {
+                    let names = path.names().map(|name| printable(name.to_owned()));
+                    (names.collect(), path.slot)
+                })
             }),
             spec: printable(spec::spec(editor)),
             hints,
@@ -436,6 +438,19 @@ impl<'a> Row<'a> {
 
 fn printable(text: String) -> String {
     strop_core::layout::printable_text(text).into_owned()
+}
+
+/// In help the breadcrumb slot names the section the cursor is in
+/// (0112 §5, the 0107 slot), sized to the longest name so the row
+/// holds still while the cursor moves.
+fn help_section(editor: &Editor) -> Option<(Vec<String>, usize)> {
+    let page = editor.help_page(editor.current())?;
+    let buf = editor.buf();
+    let line = buf.line_of(editor.head());
+    let column = editor.head().saturating_sub(buf.line_start(line));
+    let tab = page.tabs.get(page.tab_at(line, column))?;
+    let slot = page.tabs.iter().map(|tab| width(tab.title)).max()?;
+    Some((vec![tab.title.to_owned()], slot))
 }
 
 /// A historical view names its captured commit, not today's worktree branch.

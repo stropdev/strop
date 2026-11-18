@@ -32,6 +32,10 @@ fn themes_and_help_topics() {
     assert_eq!(e.cmdline.text(), ":help write");
     e.feed_text("<esc>:help gi<tab>");
     assert_eq!(e.cmdline.text(), ":help git");
+    // the help page's sections come first (0112 §6)
+    e.feed_text("<esc>:help <c-d>");
+    let titles: Vec<&str> = crate::editor::help::section_titles().collect();
+    assert_eq!(menu(&e)[..titles.len()], titles[..]);
 }
 
 #[test]

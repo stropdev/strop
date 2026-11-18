@@ -12,6 +12,7 @@ mod page;
 
 pub use page::{Cell, HelpPage, LineKind, Tab};
 
+use strop_core::frontend_input::Key;
 use strop_core::Buffer;
 
 use super::document::Document;
@@ -126,6 +127,12 @@ fn topic_line(page: &HelpPage, text: &ropey::Rope, topic: &str) -> Option<usize>
     })
 }
 
+/// The page's section titles, in order: `:help` completion lists them
+/// first.
+pub(crate) fn section_titles() -> impl Iterator<Item = &'static str> + Clone {
+    content::TABS.iter().map(|tab| tab.title)
+}
+
 /// The help text with every wrapped description joined back onto its
 /// row, for tests that read a phrase.
 #[cfg(test)]
@@ -190,6 +197,40 @@ impl Editor {
             Some(line) => self.help_land(line),
             None => self.message = format!("no help topic {topic:?}; :help shows the index"),
         }
+    }
+
+    /// Keys the help owns (§6): `]]` / `[[` move between sections
+    /// (a count repeats), `enter` on the first line opens the section
+    /// under the cursor. Every other key is the buffer's.
+    pub(crate) fn help_key(&mut self, key: Key) -> bool {
+        let Some(page) = self.help_page(self.current()) else {
+            return false;
+        };
+        let line = self.buf().line_of(self.head());
+        let column = self.head() - self.buf().line_start(line);
+        let opened = page.tabs.get(page.tab_at(0, column)).map(|tab| tab.heading);
+        let headings: Vec<usize> = page.tabs.iter().map(|tab| tab.heading).collect();
+        let count = self.walker.state.count().unwrap_or(1);
+        let target = match key {
+            Key::Char(']') if self.walker.at_prefix(&["]"]) => {
+                // the count-th heading below the line, or nothing
+                let below = headings.iter().filter(|&&heading| heading > line);
+                below.take(count).last().copied()
+            }
+            Key::Char('[') if self.walker.at_prefix(&["["]) => {
+                // above the first heading is the top of the page
+                let above = headings.iter().filter(|&&heading| heading < line).count();
+                Some(above.checked_sub(count).map_or(0, |at| headings[at]))
+            }
+            Key::Enter if line == 0 && self.walker.is_ground() => opened,
+            _ => return false,
+        };
+        self.walker.clear();
+        if let Some(target) = target.filter(|&target| target != line) {
+            self.push_jump();
+            self.help_land(target);
+        }
+        true
     }
 
     /// The cursor to `line`'s start, `line` the top row.

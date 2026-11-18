@@ -16,11 +16,12 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ - +` — line up / down, on the first non-blank
 - `✓ ( )` — sentence back / forward
 - `✓ [( [{ ]) ]}` — the unmatched bracket before / after
+- `✓ ]] [[` — help: next / previous section
 - `✓ g_ g0 g^ g$ gj gk` — last non-blank; line start, first non-blank, end; line down / up
 - `✓ gn gN` — select the next / previous search match (cgn then . changes each)
 - `✓ 0 $ G %` — line/file/pair jumps
 - `✓ gg` — top of file
-- `✓ enter` — line down, first non-blank (collection: open the file here; blame: the line's commit)
+- `✓ enter` — line down, first non-blank (collection: open the file here; blame: the line's commit; help: the section under the cursor)
 - `✓ tab` — jump list forward (ctrl-i)
 - `✓ ctrl-d ctrl-u ctrl-f ctrl-b` — half/full page scroll (count = lines)
 - `✓ ctrl-e ctrl-y` — scroll the window one line down / up
@@ -381,7 +382,7 @@ commands.
 - Normal: `gx` `gf` `gF` — open the URL or file name under the cursor
 - Normal: `gR` — virtual replace mode
 - Normal: `K` — look the word under the cursor up (hover is `space k`)
-- Normal: `]]` `[[` `][` `[]` `]m` `[m` — section and method motions
+- Normal: `][` `[]` `]m` `[m` — section-end and method motions
 - Normal: `z=` `zg` `]s` `[s` — spelling
 - Normal: `gm` `gM` `go` — middle of the line, byte offset
 - Normal: `zh` `zl` `zH` `zL` `ze` `zs` — horizontal scrolling

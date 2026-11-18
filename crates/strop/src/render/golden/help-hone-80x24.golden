@@ -14,14 +14,14 @@
     - +                        line up / down, on the first non-blank           
     ( )                        sentence back / forward                          
     [( [{ ]) ]}                the unmatched bracket before / after             
+    ]] [[                      help: next / previous section                    
     g_ g0 g^ g$ gj gk          last non-blank; line start, first non-blank,     
                                end; line down / up                              
     gn gN                      select the next / previous search match (cgn     
                                then . changes each)                             
     0 $ G %                    line/file/pair jumps                             
     gg                         top of file                                      
-    enter                      line down, first non-blank (collection: open     
-  NORMAL    help [RO]                                                0%    1:2  
+  NORMAL    help [RO]  Move                                          0%    1:2  
 
   0: 2:reset/#15171c 6:#15171c/#e8a848+b 59:#858c9a/#15171c 12:reset/#15171c 1:#858c9a/#15171c
   1: 2:reset/#15171c 1:#e6e1d6/#15171c 12:#e6e1d6/#15171c+b 3:#858c9a/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 11:#858c9a/#15171c 5:#7fb2d4/#15171c+b 8:#858c9a/#15171c 1:#e8a848/#15171c+b 10:#858c9a/#15171c 1:#e8a848/#15171c+b 6:#858c9a/#15171c 14:reset/#15171c 1:reset/reset
@@ -39,11 +39,11 @@
  13: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 62:#e6e1d6/#15171c 10:reset/#15171c 1:reset/reset
  14: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 47:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
  15: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 52:#e6e1d6/#15171c 12:reset/#15171c 1:reset/reset
- 16: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 54:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
- 17: 2:reset/#15171c 48:#e6e1d6/#15171c 29:reset/#15171c 1:reset/reset
- 18: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 66:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
- 19: 2:reset/#15171c 49:#e6e1d6/#15171c 28:reset/#15171c 1:reset/reset
- 20: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 40:#e6e1d6/#15171c 28:reset/#15171c 1:reset/reset
- 21: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 36:#e6e1d6/#15171c 37:reset/#15171c 1:reset/reset
- 22: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 66:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
- 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 46:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25
+ 16: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 51:#e6e1d6/#15171c 19:reset/#15171c 1:reset/reset
+ 17: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 54:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
+ 18: 2:reset/#15171c 48:#e6e1d6/#15171c 29:reset/#15171c 1:reset/reset
+ 19: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 1:#e6e1d6/#15171c 2:#e8a848/#15171c+b 66:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
+ 20: 2:reset/#15171c 49:#e6e1d6/#15171c 28:reset/#15171c 1:reset/reset
+ 21: 2:reset/#15171c 2:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 40:#e6e1d6/#15171c 28:reset/#15171c 1:reset/reset
+ 22: 2:reset/#15171c 2:#e6e1d6/#15171c 2:#e8a848/#15171c+b 36:#e6e1d6/#15171c 37:reset/#15171c 1:reset/reset
+ 23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 2:reset/#1c1f25 4:#a8adb8/#1c1f25 40:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25

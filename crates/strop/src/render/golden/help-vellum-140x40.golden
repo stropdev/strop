@@ -14,6 +14,7 @@
     - +                        line up / down, on the first non-blank                                                                       
     ( )                        sentence back / forward                                                                                      
     [( [{ ]) ]}                the unmatched bracket before / after                                                                         
+    ]] [[                      help: next / previous section                                                                                
     g_ g0 g^ g$ gj gk          last non-blank; line start, first non-blank,                                                                 
                                end; line down / up                                                                                          
     gn gN                      select the next / previous search match (cgn                                                                 
@@ -21,7 +22,8 @@
     0 $ G %                    line/file/pair jumps                                                                                         
     gg                         top of file                                                                                                  
     enter                      line down, first non-blank (collection: open                                                                 
-                               the file here; blame: the line's commit)                                                                     
+                               the file here; blame: the line's commit; help:                                                               
+                               the section under the cursor)                                                                                
     tab                        jump list forward (ctrl-i)                                                                                   
     ctrl-d ctrl-u ctrl-f ctrl-b                                                                                                             
                                half/full page scroll (count = lines)                                                                        
@@ -35,9 +37,7 @@
     gri gI                     implementation (LSP)                                                                                         
     gy                         type definition (LSP)                                                                                        
     gD                         declaration (LSP)                                                                                            
-    ]d                         next diagnostic                                                                                              
-    [d                         previous diagnostic                                                                                          
-  NORMAL    help [RO]                                                                                                            0%    1:2  
+  NORMAL    help [RO]  Move                                                                                                      0%    1:2  
 
   0: 2:reset/#f6f2e9 6:#f6f2e9/#8a510f+b 59:#656d7b/#f6f2e9 72:reset/#f6f2e9 1:#656d7b/#f6f2e9
   1: 2:reset/#f6f2e9 1:#262a30/#f6f2e9 12:#262a30/#f6f2e9+b 3:#656d7b/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 11:#656d7b/#f6f2e9 5:#2a6a94/#f6f2e9+b 8:#656d7b/#f6f2e9 1:#8a510f/#f6f2e9+b 10:#656d7b/#f6f2e9 1:#8a510f/#f6f2e9+b 6:#656d7b/#f6f2e9 74:reset/#f6f2e9 1:#656d7b/#f6f2e9
@@ -55,27 +55,27 @@
  13: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 62:#262a30/#f6f2e9 70:reset/#f6f2e9 1:reset/reset
  14: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 47:#262a30/#f6f2e9 85:reset/#f6f2e9 1:reset/reset
  15: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 52:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
- 16: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 54:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
- 17: 2:reset/#f6f2e9 48:#262a30/#f6f2e9 89:reset/#f6f2e9 1:reset/reset
- 18: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 66:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
- 19: 2:reset/#f6f2e9 49:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
- 20: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 40:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
- 21: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 36:#262a30/#f6f2e9 97:reset/#f6f2e9 1:reset/reset
- 22: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 5:#2a6a94/#f6f2e9+b 66:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
- 23: 2:reset/#f6f2e9 69:#262a30/#f6f2e9 68:reset/#f6f2e9 1:reset/reset
- 24: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#2a6a94/#f6f2e9+b 50:#262a30/#f6f2e9 82:reset/#f6f2e9 1:reset/reset
- 25: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 108:reset/#f6f2e9 1:reset/reset
- 26: 2:reset/#f6f2e9 66:#262a30/#f6f2e9 71:reset/#f6f2e9 1:reset/reset
- 27: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 50:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
- 28: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 37:#262a30/#f6f2e9 92:reset/#f6f2e9 1:reset/reset
- 29: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 40:#262a30/#f6f2e9 92:reset/#f6f2e9 1:reset/reset
- 30: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 67:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
- 31: 2:reset/#f6f2e9 43:#262a30/#f6f2e9 94:reset/#f6f2e9 1:reset/reset
- 32: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 63:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
- 33: 2:reset/#f6f2e9 42:#262a30/#f6f2e9 95:reset/#f6f2e9 1:reset/reset
- 34: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 41:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
- 35: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 46:#262a30/#f6f2e9 87:reset/#f6f2e9 1:reset/reset
- 36: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 42:#262a30/#f6f2e9 91:reset/#f6f2e9 1:reset/reset
- 37: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 40:#262a30/#f6f2e9 93:reset/#f6f2e9 1:reset/reset
- 38: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 44:#262a30/#f6f2e9 89:reset/#f6f2e9 1:reset/reset
- 39: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 106:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6
+ 16: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 51:#262a30/#f6f2e9 79:reset/#f6f2e9 1:reset/reset
+ 17: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 54:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 18: 2:reset/#f6f2e9 48:#262a30/#f6f2e9 89:reset/#f6f2e9 1:reset/reset
+ 19: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 66:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 20: 2:reset/#f6f2e9 49:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+ 21: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 1:#8a510f/#f6f2e9+b 40:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+ 22: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 36:#262a30/#f6f2e9 97:reset/#f6f2e9 1:reset/reset
+ 23: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 5:#2a6a94/#f6f2e9+b 66:#262a30/#f6f2e9 64:reset/#f6f2e9 1:reset/reset
+ 24: 2:reset/#f6f2e9 75:#262a30/#f6f2e9 62:reset/#f6f2e9 1:reset/reset
+ 25: 2:reset/#f6f2e9 58:#262a30/#f6f2e9 79:reset/#f6f2e9 1:reset/reset
+ 26: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#2a6a94/#f6f2e9+b 50:#262a30/#f6f2e9 82:reset/#f6f2e9 1:reset/reset
+ 27: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 108:reset/#f6f2e9 1:reset/reset
+ 28: 2:reset/#f6f2e9 66:#262a30/#f6f2e9 71:reset/#f6f2e9 1:reset/reset
+ 29: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 1:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 50:#262a30/#f6f2e9 72:reset/#f6f2e9 1:reset/reset
+ 30: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 6:#1f6e5c/#f6f2e9+b 37:#262a30/#f6f2e9 92:reset/#f6f2e9 1:reset/reset
+ 31: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 40:#262a30/#f6f2e9 92:reset/#f6f2e9 1:reset/reset
+ 32: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 67:#262a30/#f6f2e9 65:reset/#f6f2e9 1:reset/reset
+ 33: 2:reset/#f6f2e9 43:#262a30/#f6f2e9 94:reset/#f6f2e9 1:reset/reset
+ 34: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 63:#262a30/#f6f2e9 69:reset/#f6f2e9 1:reset/reset
+ 35: 2:reset/#f6f2e9 42:#262a30/#f6f2e9 95:reset/#f6f2e9 1:reset/reset
+ 36: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 3:#8a510f/#f6f2e9+b 1:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 41:#262a30/#f6f2e9 88:reset/#f6f2e9 1:reset/reset
+ 37: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 46:#262a30/#f6f2e9 87:reset/#f6f2e9 1:reset/reset
+ 38: 2:reset/#f6f2e9 2:#262a30/#f6f2e9 2:#8a510f/#f6f2e9+b 42:#262a30/#f6f2e9 91:reset/#f6f2e9 1:reset/reset
+ 39: 10:#f6f2e9/#8a510f+b 2:reset/#fdfbf6 4:#262a30/#fdfbf6 5:#8a5d13/#fdfbf6 2:reset/#fdfbf6 4:#4b525c/#fdfbf6 100:reset/#fdfbf6 4:#656d7b/#fdfbf6 2:reset/#fdfbf6 7:#4b525c/#fdfbf6
