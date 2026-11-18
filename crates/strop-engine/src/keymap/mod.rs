@@ -190,6 +190,7 @@ impl Section {
 mod bindings;
 pub use bindings::BINDINGS;
 pub mod missing;
+pub mod notation;
 
 pub(crate) mod lookup;
 

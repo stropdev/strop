@@ -1,4 +1,5 @@
-use super::lookup::{expand, NAMED};
+use super::lookup::expand;
+use super::notation::is_single_key;
 use super::*;
 use crate::editor::{Editor, Mode};
 use strop_core::Buffer;
@@ -251,7 +252,7 @@ fn every_dispatched_sequence_has_a_row() {
         let concretized = entry.replace("<a>", "a").replace("<c>", "x");
         let mut toks: Vec<String> = Vec::new();
         for tok in concretized.split(' ') {
-            if NAMED.contains(&tok) {
+            if is_single_key(tok) {
                 toks.push(tok.to_string());
             } else if let Some(pos) = tok.find('<') {
                 // f<c> style: leading chars, then the placeholder
@@ -419,7 +420,7 @@ fn reassigned_rows_are_bound() {
     use super::missing::{Where, REASSIGNED};
     for row in REASSIGNED.iter().filter(|row| row.place != Where::Insert) {
         for keys in row.keys.split(' ') {
-            let path: Vec<String> = if NAMED.contains(&keys) {
+            let path: Vec<String> = if is_single_key(keys) {
                 vec![keys.to_owned()]
             } else {
                 keys.chars().map(|c| c.to_string()).collect()
