@@ -189,6 +189,9 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ctrl-w s / v / n` — window: split below / split right / new empty buffer below
 - `✓ ctrl-w c / q / o` — window: close / quit (:q) / keep only this one
 - `✓ ctrl-w =` — window: equal sizes (panes always are)
+- `✓ gt gT` — next / previous tab page; 3gt goes to tab page 3, 3gT three back
+- `✓ g tab` — the tab page used before this one
+- `✓ ctrl-w T` — window: move this pane to a new tab page
 - `✓ ctrl-l` — redraw: full repaint when the terminal desyncs
 
 ## Git
@@ -340,6 +343,18 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ :mes[sages]` — the last 50 echo-row messages
 - `✓ :ju[mps]` — the jumplist picker
 
+## Command line: tab pages
+
+- `✓ :tabn[ext] [N]` — go to the next tab page, or to tab page N
+- `✓ :tabp[revious] [N]` — go to the previous tab page, or N back (also :tabNext)
+- `✓ :tabfir[st]` — go to the first tab page (also :tabrewind)
+- `✓ :tabl[ast]` — go to the last tab page
+- `✓ :tabnew [file]` — open a new tab page after this one (also :tabedit)
+- `✓ :tab {split|new}` — open the split in a new tab page; :tab split shows this buffer alone
+- `✓ :tabc[lose][!] [N]` — close this tab page, or tab page N; its buffers stay open
+- `✓ :tabo[nly][!]` — close every other tab page
+- `✓ :tabm[ove] [N]` — move this tab page after tab page N (0 first, $ or nothing last, +N -N relative)
+
 ## Command line: strop
 
 - `✓ :ter[minal] [cmd]` — an interactive shell in the selected namespace
@@ -373,7 +388,6 @@ Neovim binds these; in strop the key does nothing. An operator on this list
 commands.
 
 - Normal: `zfj` `zo` `zc` `za` `zR` `zM` `zj` `zk` `zd` — folds
-- Normal: `gt` `gT` — tab pages
 - Normal: `U` — undo every change on the line
 - Normal: `==` `=j` `=ip` — the reindent operator
 - Normal: `gqq` `gqip` `gwip` — reflow text to the text width
@@ -387,10 +401,11 @@ commands.
 - Normal: `gm` `gM` `go` — middle of the line, byte offset
 - Normal: `zh` `zl` `zH` `zL` `ze` `zs` — horizontal scrolling
 - Normal: `do` `dp` — diff mode
-- Normal: `ctrl-w x` `ctrl-w r` `ctrl-w T` `ctrl-w H` `ctrl-w J` `ctrl-w K` `ctrl-w L` `ctrl-w +` `ctrl-w -` `ctrl-w _` `ctrl-w |` — move, rotate and resize windows (panes are always equal)
+- Normal: `ctrl-w x` `ctrl-w r` `ctrl-w H` `ctrl-w J` `ctrl-w K` `ctrl-w L` `ctrl-w +` `ctrl-w -` `ctrl-w _` `ctrl-w |` — move, rotate and resize windows (panes are always equal)
 - Visual: `=` `gq` `gw` `zf` — reindent, reflow and fold the selection
 - Insert: `ctrl-v` `ctrl-k` `ctrl-a` — insert a literal key, a digraph, the last inserted text
-- Ex: `:tabnew` `:tabnext` `:tabclose` `:fold` `:mksession` `:digraphs` — tab pages, folds, session files, digraphs
+- Ex: `:fold` `:mksession` `:digraphs` — folds, session files, digraphs
+- Ex: `:tabs` `:tabdo` `:tabfind` `:tcd` — list tab pages, run a command in each, find into one, a directory per tab page
 
 ## Reassigned
 

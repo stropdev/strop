@@ -38,7 +38,8 @@ pub fn expand(keys: &str) -> Vec<Vec<&str>> {
                 i = end;
                 continue;
             }
-            "ctrl-w" | "ctrl-x" | "ctrl-\\" | "ctrl-4" => {
+            // `g tab`: a prefix and one named key, one sequence
+            "ctrl-w" | "ctrl-x" | "ctrl-\\" | "ctrl-4" | "g" => {
                 if let Some(k) = toks.get(i + 1) {
                     seqs.push(vec![toks[i], k]);
                     i += 2;

@@ -3,7 +3,7 @@
 //! `?` rows. Aliases fold into their command's row (`ls`, `buffers`,
 //! `files` are one command with three names). Files by family, in Vim's
 //! precedence order where abbreviations overlap (`:s` is substitute, not
-//! `:set`): `text`, `buffers`, `files`, `own`.
+//! `:set`): `text`, `buffers`, `files`, `tabs`, `own`.
 
 use super::ExCall;
 use crate::editor::Editor;
@@ -11,6 +11,7 @@ use crate::editor::Editor;
 mod buffers;
 mod files;
 mod own;
+mod tabs;
 #[cfg(test)]
 mod tests;
 mod text;
@@ -52,11 +53,18 @@ pub(crate) enum Family {
     Text,
     Buffers,
     Files,
+    Tabs,
     Own,
 }
 
 impl Family {
-    pub(crate) const ALL: [Family; 4] = [Self::Text, Self::Buffers, Self::Files, Self::Own];
+    pub(crate) const ALL: [Family; 5] = [
+        Self::Text,
+        Self::Buffers,
+        Self::Files,
+        Self::Tabs,
+        Self::Own,
+    ];
 
     /// The `?` heading: `─ Command line: text ─`.
     pub(crate) const fn title(self) -> &'static str {
@@ -64,6 +72,7 @@ impl Family {
             Self::Text => "Command line: text",
             Self::Buffers => "Command line: buffers",
             Self::Files => "Command line: files and windows",
+            Self::Tabs => "Command line: tab pages",
             Self::Own => "Command line: strop",
         }
     }
@@ -226,13 +235,19 @@ pub(super) fn optional(arg: &str) -> Option<&str> {
     (!arg.is_empty()).then_some(arg)
 }
 
-const TOTAL: usize = text::ROWS.len() + buffers::ROWS.len() + files::ROWS.len() + own::ROWS.len();
+const TOTAL: usize =
+    text::ROWS.len() + buffers::ROWS.len() + files::ROWS.len() + tabs::ROWS.len() + own::ROWS.len();
 
 /// Every command, family by family; the order is the precedence.
-pub(crate) static COMMANDS: [ExCommand; TOTAL] =
-    concat([text::ROWS, buffers::ROWS, files::ROWS, own::ROWS]);
+pub(crate) static COMMANDS: [ExCommand; TOTAL] = concat([
+    text::ROWS,
+    buffers::ROWS,
+    files::ROWS,
+    tabs::ROWS,
+    own::ROWS,
+]);
 
-const fn concat(parts: [&[ExCommand]; 4]) -> [ExCommand; TOTAL] {
+const fn concat(parts: [&[ExCommand]; 5]) -> [ExCommand; TOTAL] {
     let mut out = [PLACEHOLDER; TOTAL];
     let mut at = 0;
     let mut part = 0;

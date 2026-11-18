@@ -136,6 +136,9 @@ impl Editor {
                                 | "window-split"
                                 | "window-close"
                                 | "window-equal"
+                                | "tab-step"
+                                | "tab-previous"
+                                | "window-to-tab"
                                 | "hunk-next"
                                 | "hunk-prev"
                                 | "clip-yank"
@@ -219,6 +222,9 @@ impl Editor {
                         crate::editor::normal::edits::add_to_number(self, -(n as i64))
                     }
                     "scroll-pages" => self.scroll_counted(last, n),
+                    // a count is the tab page to go to, not a repeat
+                    "tab-step" => crate::editor::tabs::step(self, last == 'T', count),
+                    "tab-previous" => crate::editor::tabs::previous(self),
                     "scroll-lines" => self.scroll_lines(n, last == 'e'),
                     // Space y: the clipboard yank is typed operator
                     // state in the Walker — `2 yw` yanks two words to

@@ -74,7 +74,7 @@ fn space_w_splits_focuses_and_numbers() {
 #[test]
 fn every_ctrl_w_key_is_a_window_command_or_reports_unbound() {
     use strop_core::frontend_input::Key;
-    const BOUND: &str = "hjklwWpsvcoqn=";
+    const BOUND: &str = "hjklwWpsvcoqn=T";
     let fresh = || {
         let mut e = Editor::new(Buffer::from_text("alpha\nbeta\ngamma\n"));
         e.feed_text(":vs<cr>");

@@ -6,6 +6,7 @@ mod commands;
 mod confirm;
 mod directory;
 mod global;
+mod tabs;
 
 use std::path::Path;
 

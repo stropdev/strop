@@ -31,6 +31,8 @@ pub enum OpenIntent {
     Split {
         vertical: bool,
     },
+    /// A new tab page after the current one (`:tabnew file`, plan 0113).
+    Tab,
     AtLine {
         line: LineIndex,
     },

@@ -4,7 +4,8 @@
 //! dispatch both read), `lines` (`:d :y :m :t :j :> :pu`), `sort`,
 //! `global` (`:g :v :normal`), `substitute`, `buffers`, `listing`
 //! (`:ls :reg :marks`), `files` (`:w :q :e` families), `directory`
-//! (`:cd`), `complete` (the menu: what completes where).
+//! (`:cd`), `tabs` (tab pages), `complete` (the menu: what completes
+//! where).
 
 mod buffers;
 pub(crate) mod complete;
@@ -17,6 +18,7 @@ pub(crate) mod range;
 mod sort;
 pub(crate) mod substitute;
 pub(crate) mod table;
+mod tabs;
 #[cfg(test)]
 mod tests;
 
@@ -34,6 +36,7 @@ pub(crate) use listing::*;
 pub(crate) use range::*;
 pub(crate) use sort::*;
 pub(crate) use substitute::*;
+pub(crate) use tabs::*;
 
 use table::{Addr, ExCommand};
 

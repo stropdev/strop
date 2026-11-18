@@ -26,9 +26,9 @@ fn tabs(n: usize, at: usize) -> Editor {
 
 /// The text each tab page's current pane shows, in tab order.
 fn order(e: &Editor) -> Vec<String> {
-    (0..count(&e))
+    (0..count(e))
         .map(|index| {
-            let summary = summary(&e, index).unwrap();
+            let summary = summary(e, index).unwrap();
             e.doc(summary.document).buf.text().to_string()
         })
         .collect()
