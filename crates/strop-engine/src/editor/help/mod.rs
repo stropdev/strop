@@ -151,8 +151,7 @@ impl Editor {
         if let Some(i) = existing {
             self.push_jump();
             self.switch_to(i);
-            self.set_head(0);
-            self.view_mut().view_top = 0;
+            self.help_home();
             return;
         }
         let (text, page) = build();
@@ -161,7 +160,19 @@ impl Editor {
         debug_assert_eq!(page.lines.len(), buf.last_content_line() + 1);
         // a temporary surface (0051 §7 R07): ctrl-o AND `:q` restore
         // the exact view the user came from
-        let _ = self.open_temporary(Document::help(buf, page));
+        if self.open_temporary(Document::help(buf, page)).is_some() {
+            self.help_home();
+        }
+    }
+
+    /// The cursor on the first section's name, the page from its top.
+    fn help_home(&mut self) {
+        let first = self
+            .help_page(self.current())
+            .and_then(|page| page.tabs.first())
+            .map_or(0, |tab| tab.name.start);
+        self.set_head(first);
+        self.view_mut().view_top = 0;
     }
 
     pub(crate) fn open_help_topic(&mut self, topic: &str) {

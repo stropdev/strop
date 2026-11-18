@@ -142,17 +142,23 @@ impl<'a> Owner<'a> {
                 painted.gutter = numbered(editor, t, view, line, cells.gutter);
                 painted
             }
-            Owner::Help(page) => Painted {
-                gutter: numbered(editor, t, view, line, cells.gutter),
-                text: crate::render::help::line_spans(
-                    t,
-                    page,
-                    line,
-                    &row.text.to_string(),
-                    cells.text,
-                ),
-                ..Default::default()
-            },
+            Owner::Help(page) => {
+                // the section the pane's cursor is in wears the chip
+                let buf = &editor.doc(view.doc).buf;
+                let column = view.cursor.saturating_sub(buf.line_start(row.cursor_line));
+                Painted {
+                    gutter: gutter::list(t, gutter::Sign::Blank),
+                    text: crate::render::help::line_spans(
+                        t,
+                        page,
+                        line,
+                        &row.text.to_string(),
+                        cells.text,
+                        page.tab_at(row.cursor_line, column),
+                    ),
+                    ..Default::default()
+                }
+            }
             Owner::Review(review) => {
                 let (row_fg, row_bg) = review_inks(t, *review);
                 Painted {

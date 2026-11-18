@@ -167,6 +167,8 @@ impl Builder {
                 heading: 0,
             });
         }
+        // one cell after the last name, so its chip has both sides
+        row.push(' ');
         builder.line(&row, LineKind::Tabs);
         let hints = format!(
             " strop {} · ]] [[ section · enter open · / search · q close",
