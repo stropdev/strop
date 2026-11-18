@@ -36,7 +36,7 @@ const SOURCE: &[&str] = &[
     "}",
 ];
 
-fn workspace() -> tempfile::TempDir {
+pub(super) fn workspace() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(root.path().join("src/render")).unwrap();
     std::fs::create_dir_all(root.path().join("docs")).unwrap();
@@ -61,7 +61,7 @@ fn workspace() -> tempfile::TempDir {
     root
 }
 
-fn editor(root: &tempfile::TempDir, theme: ThemeId) -> Editor {
+pub(super) fn editor(root: &tempfile::TempDir, theme: ThemeId) -> Editor {
     let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
     editor.set_theme(theme);
     editor

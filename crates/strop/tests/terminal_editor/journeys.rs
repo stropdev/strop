@@ -329,6 +329,33 @@ fn two_escapes_in_one_write_close_a_picker() {
     tui.expect_clean_exit("the editor did not exit cleanly");
 }
 
+/// Plan 0113 §8.6, the zoom loop tab pages exist for: `:vs`, `:tab split`
+/// shows one pane under a tab line, `:q` brings the split back and the
+/// tab line goes.
+#[test]
+fn tab_split_zooms_a_pane_and_q_returns_to_the_split() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("notes.txt"), "alpha\nbeta\n").unwrap();
+    let trace = directory.path().join("terminal.jsonl");
+    let mut tui = Tui::start(directory.path(), &trace);
+    tui.until(|screen| screen.contains("NORMAL"));
+    tui.send(b":e notes.txt\r");
+    tui.until(|screen| numbered_line(screen, "alpha"));
+    tui.send(b":vs\r");
+    tui.until(|screen| screen.contains("\u{2500} 2 notes.txt"));
+    tui.send(b":tab split\r");
+    let zoomed = tui.until(|screen| screen.starts_with(" 1 notes.txt +1  2 notes.txt "));
+    assert!(
+        !zoomed.contains("\u{2500} 2 notes.txt"),
+        "one pane: {zoomed}"
+    );
+    tui.send(b":q\r");
+    let split = tui.until(|screen| screen.contains("\u{2500} 2 notes.txt"));
+    assert!(!split.starts_with(" 1 notes.txt"), "no tab line: {split}");
+    tui.send(b":qa\r");
+    tui.expect_clean_exit("the editor did not exit cleanly");
+}
+
 /// Every file under `root`, read as lossy text, concatenated.
 fn tree_text(root: &std::path::Path) -> String {
     let mut text = String::new();
