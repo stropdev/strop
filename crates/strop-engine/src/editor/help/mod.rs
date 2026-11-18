@@ -1,90 +1,136 @@
 //! `:help` (also `Space ?`): the keybinding table as a real readonly
 //! buffer (0001 §4) — `/` searches it, motions walk it, `q` closes it.
-//! Laid out in the keymap's curated section order (0088 U10): a header,
-//! then per section a `─ Title ─` rule and one row per binding with the
-//! keys in a padded column the renderer paints as a keycap. Replaces
-//! the floating keybinds popup: a buffer you can search beats a card you
-//! can only scroll. `page` writes the text, `content` holds what the
-//! binding table and the command registry do not generate.
+//! One buffer in nine sections (0112): the first line names them, each
+//! opens under a `━ Title ━` heading, and nothing is ever hidden, so `/`
+//! still searches all of help. A buffer you can search beats a card you
+//! can only scroll. `page` writes the text and its typed lines,
+//! `content` holds the section table and what the binding table and the
+//! command registry do not generate.
 
 mod content;
 mod page;
 
-pub use page::{Cell, HelpPage, LineKind};
+pub use page::{Cell, HelpPage, LineKind, Tab};
 
 use strop_core::Buffer;
 
 use super::document::Document;
 use super::Editor;
-use content::Row;
+use content::Source;
 use page::{Builder, Entry};
 
-fn rows(rows: &[Row]) -> Vec<Entry<'_>> {
-    rows.iter()
-        .map(|row| Entry {
-            cell: row.cell,
-            keys: row.keys,
-            desc: row.desc,
-            planned: false,
-        })
-        .collect()
+/// A row that is not a planned binding.
+fn plain<'a>(cell: Cell, keys: &'a str, desc: &'a str) -> Entry<'a> {
+    Entry {
+        cell,
+        keys,
+        desc,
+        planned: false,
+    }
 }
 
-fn generated(rows: &[content::Generated]) -> Vec<Entry<'_>> {
-    rows.iter()
-        .map(|row| Entry {
-            cell: row.cell,
-            keys: &row.keys,
-            desc: &row.desc,
-            planned: false,
-        })
-        .collect()
+/// One part's rows.
+fn part_rows(page: &mut Builder, part: &Source) {
+    match part {
+        Source::Section(id) => {
+            for b in crate::keymap::BINDINGS
+                .iter()
+                .filter(|b| b.sections.contains(id))
+            {
+                page.entry(&Entry {
+                    cell: Cell::Keys,
+                    keys: b.keys,
+                    desc: b.desc,
+                    planned: !b.live,
+                });
+            }
+        }
+        // One row per command, written from the registry (0110 §3.1).
+        Source::Family(family) => {
+            for (usage, desc) in super::ex::help_rows(*family) {
+                page.entry(&plain(Cell::Command, usage, &desc));
+            }
+        }
+        Source::Rows(_, rows) => {
+            for row in *rows {
+                page.entry(&plain(row.cell, row.keys, row.desc));
+            }
+        }
+        Source::QueryLanguage | Source::LspServers => {
+            let rows = match part {
+                Source::QueryLanguage => content::query_language(),
+                _ => content::lsp_servers(),
+            };
+            for row in &rows {
+                page.entry(&plain(row.cell, &row.keys, &row.desc));
+            }
+        }
+    }
 }
 
-/// The help text: the keymap sections, the command families, the query
-/// language, the hand-written parts, the LSP servers.
+/// The help text and its model, section by section (§3.1). A section
+/// with one part prints no `─ Title ─` under its heading.
 fn build() -> (String, HelpPage) {
-    let mut page = Builder::new();
-    for section in crate::keymap::SECTIONS {
-        let entries: Vec<Entry<'_>> = crate::keymap::BINDINGS
-            .iter()
-            .filter(|b| b.sections.contains(&section.id))
-            .map(|b| Entry {
-                cell: page::Cell::Keys,
-                keys: b.keys,
-                desc: b.desc,
-                planned: !b.live,
-            })
-            .collect();
-        page.part(section.title, &entries);
+    let titles: Vec<&'static str> = content::TABS.iter().map(|tab| tab.title).collect();
+    let mut page = Builder::new(&titles);
+    for tab in content::TABS {
+        page.tab(tab.title);
+        for part in tab.parts {
+            if tab.parts.len() > 1 {
+                page.heading(part.title());
+            }
+            part_rows(&mut page, part);
+        }
     }
-    // One row per command, written from the registry (0110 §3.1).
-    for family in super::ex::Family::ALL {
-        let commands: Vec<(&str, String)> = super::ex::help_rows(family).collect();
-        let entries: Vec<Entry<'_>> = commands
-            .iter()
-            .map(|(usage, desc)| Entry {
-                cell: page::Cell::Command,
-                keys: usage,
-                desc,
-                planned: false,
-            })
-            .collect();
-        page.part(family.title(), &entries);
-    }
-    page.part("Query language", &generated(&content::query_language()));
-    for (title, part) in [
-        ("Remote", content::REMOTE),
-        ("Search workspace", content::SEARCH_WORKSPACE),
-        ("Collections", content::COLLECTIONS),
-        ("Indentation", content::INDENTATION),
-        ("Review", content::REVIEW),
-        ("Documentation", content::DOCUMENTATION),
-    ] {
-        page.part(title, &rows(part));
-    }
-    page.part("LSP servers", &generated(&content::lsp_servers()));
     page.finish()
+}
+
+/// The line `:help {topic}` lands on (§6): a section's title; a keymap
+/// section by id or title; any part's title; a command by any of its
+/// names (its row, found by its usage).
+fn topic_line(page: &HelpPage, text: &ropey::Rope, topic: &str) -> Option<usize> {
+    if let Some(tab) = page.tab_named(topic) {
+        return Some(page.tabs[tab].heading);
+    }
+    let heading = |title: &str| {
+        (0..page.lines.len()).find(|&line| {
+            page.lines[line] == LineKind::Heading
+                && text
+                    .line(line)
+                    .to_string()
+                    .trim_end()
+                    .strip_prefix("─ ")
+                    .and_then(|rest| rest.strip_suffix(" ─"))
+                    .is_some_and(|found| found.eq_ignore_ascii_case(title))
+        })
+    };
+    if let Some(section) = crate::keymap::Section::find(topic) {
+        let tab = content::TABS.iter().position(|tab| {
+            tab.parts
+                .iter()
+                .any(|part| matches!(part, Source::Section(id) if *id == section.id))
+        })?;
+        return heading(section.title).or(Some(page.tabs[tab].heading));
+    }
+    if let Some(line) = heading(topic) {
+        return Some(line);
+    }
+    let named = super::ex::split_command(topic.trim_start_matches(':'))?;
+    (0..page.lines.len()).find(|&line| match &page.lines[line] {
+        LineKind::Entry {
+            cell: Cell::Command,
+            keys,
+            ..
+        } => text.line(line).to_string().get(keys.clone()) == Some(named.command.usage),
+        _ => false,
+    })
+}
+
+/// The help text with every wrapped description joined back onto its
+/// row, for tests that read a phrase.
+#[cfg(test)]
+pub(crate) fn unwrapped(text: &str) -> String {
+    text.replace(&format!("\n{}", " ".repeat(page::DESC_COLUMN)), " ")
 }
 
 impl Editor {
@@ -120,43 +166,25 @@ impl Editor {
 
     pub(crate) fn open_help_topic(&mut self, topic: &str) {
         self.open_help();
+        let topic = topic.trim();
         // Identity exhaustion leaves us on the origin buffer: never
         // search/scroll the wrong document (0056 AR13).
-        if self.help_page(self.current()).is_none() {
+        let Some(page) = self.help_page(self.current()) else {
             return;
-        }
-        let topic = topic.trim();
+        };
         if topic.is_empty() {
             return;
         }
-        // `:help git` reaches a section by id or title, case-insensitively
-        let title = crate::keymap::Section::find(topic)
-            .map(|section| section.title.to_owned())
-            .unwrap_or_else(|| topic.to_owned());
-        let heading = format!("─ {title} ─");
-        let mut line = self.buf().text().lines().position(|line| {
-            line.chars()
-                .take_while(|&c| c != '\n' && c != '\r')
-                .collect::<String>()
-                .eq_ignore_ascii_case(&heading)
-        });
-        // `:help write`, `:help :w`: the command's own row
-        if line.is_none() {
-            if let Some(named) = super::ex::split_command(topic.trim_start_matches(':')) {
-                let usage = format!("   {} ", named.command.usage);
-                line = self
-                    .buf()
-                    .text()
-                    .lines()
-                    .position(|line| line.to_string().starts_with(&usage));
-            }
+        match topic_line(page, self.buf().text(), topic) {
+            Some(line) => self.help_land(line),
+            None => self.message = format!("no help topic {topic:?}; :help shows the index"),
         }
-        if let Some(line) = line {
-            self.set_head(self.buf().line_start(line));
-            self.view_mut().view_top = line;
-        } else {
-            self.message = format!("no help topic {topic:?}; :help shows the index");
-        }
+    }
+
+    /// The cursor to `line`'s start, `line` the top row.
+    fn help_land(&mut self, line: usize) {
+        self.set_head(self.buf().line_start(line));
+        self.view_mut().view_top = line;
     }
 }
 

@@ -14,9 +14,6 @@ use ratatui::text::Span;
 use super::style::Tokens;
 use crate::editor::help::{HelpPage, LineKind};
 
-/// Section rules read `─ Title ─────`.
-const RULE: &str = "─ ";
-
 pub(crate) fn line_spans(
     t: &Tokens,
     page: &HelpPage,
@@ -36,19 +33,24 @@ pub(crate) fn line_spans(
                 Span::styled(rest.to_string(), Style::default().fg(t.muted)),
             ]
         }
-        Some(LineKind::Heading) => {
-            let rest = text.strip_prefix(RULE).unwrap_or(text);
-            let title_end = rest.find(" ─").unwrap_or(rest.len());
+        Some(kind @ (LineKind::Heading | LineKind::TabHeading)) => {
+            let glyph = if *kind == LineKind::Heading {
+                "─"
+            } else {
+                "━"
+            };
+            let rest = text.get(glyph.len() + 1..).unwrap_or("");
+            let title_end = rest.find(&format!(" {glyph}")).unwrap_or(rest.len());
             let (title, rule) = rest.split_at(title_end);
             let pad = width.saturating_sub(text.chars().count());
             vec![
-                Span::styled(RULE.to_string(), Style::default().fg(t.faint)),
+                Span::styled(format!("{glyph} "), Style::default().fg(t.faint)),
                 Span::styled(
                     title.to_string(),
                     Style::default().fg(t.text).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("{rule}{}", "─".repeat(pad)),
+                    format!("{rule}{}", glyph.repeat(pad)),
                     Style::default().fg(t.faint),
                 ),
             ]
@@ -105,18 +107,18 @@ mod tests {
         let page = editor.help_page(editor.current()).expect("help").clone();
         let buf = editor.buf();
         let line = |at: usize| buf.text().line(at).to_string().trim_end().to_owned();
-        let header = line_spans(&t, &page, 0, &line(0), 80);
-        assert_eq!(joined(&header), line(0));
+        let header = line_spans(&t, &page, 1, &line(1), 80);
+        assert_eq!(joined(&header), line(1));
         assert_eq!(header[0].style.fg, Some(t.text));
 
-        let rule = line_spans(&t, &page, 2, &line(2), 80);
+        let rule = line_spans(&t, &page, 5, &line(5), 80);
         assert!(joined(&rule).starts_with("─ Moving ──"));
         assert_eq!(rule[1].content, "Moving");
         assert_eq!(rule[0].style.fg, Some(t.faint));
         assert_eq!(rule[1].style.fg, Some(t.text));
 
-        let row = line_spans(&t, &page, 3, &line(3), 80);
-        assert_eq!(joined(&row), line(3));
+        let row = line_spans(&t, &page, 6, &line(6), 80);
+        assert_eq!(joined(&row), line(6));
         assert!(row[1].content.contains("h j k l"));
         assert_eq!(row[1].style.fg, Some(t.accent));
         assert_eq!(row[1].style.bg, Some(t.raised));

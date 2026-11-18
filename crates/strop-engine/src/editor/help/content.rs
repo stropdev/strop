@@ -4,6 +4,7 @@
 //! query schema and the LSP registry.
 
 use super::page::Cell;
+use crate::editor::ex::Family;
 
 /// One hand-written row: what its key cell is, the cell, the words.
 pub(super) struct Row {
@@ -339,3 +340,96 @@ pub(super) const DOCUMENTATION: &[Row] = &[keys(
     "enter",
     "On a hover card: open full searchable documentation; Ctrl-O returns",
 )];
+
+/// Where a part's rows come from.
+pub(super) enum Source {
+    /// A keymap section's bindings, by id.
+    Section(&'static str),
+    /// A command family's registry rows.
+    Family(Family),
+    /// Hand-written rows under a title.
+    Rows(&'static str, &'static [Row]),
+    QueryLanguage,
+    LspServers,
+}
+
+impl Source {
+    /// The part's `─ Title ─`.
+    pub fn title(&self) -> &'static str {
+        match self {
+            Source::Section(id) => {
+                crate::keymap::Section::find(id).map_or(id, |section| section.title)
+            }
+            Source::Family(family) => family.title(),
+            Source::Rows(title, _) => title,
+            Source::QueryLanguage => "Query language",
+            Source::LspServers => "LSP servers",
+        }
+    }
+}
+
+/// One section of the page and its parts, in reading order (§3.1).
+pub(super) struct TabSpec {
+    pub title: &'static str,
+    pub parts: &'static [Source],
+}
+
+/// The page's sections. `keymap::SECTIONS` keeps which-key's order;
+/// this is the help's.
+pub(super) const TABS: &[TabSpec] = &[
+    TabSpec {
+        title: "Move",
+        parts: &[Source::Section("moving"), Source::Section("search")],
+    },
+    TabSpec {
+        title: "Edit",
+        parts: &[Source::Section("editing"), Source::Section("insert")],
+    },
+    TabSpec {
+        title: "Visual",
+        parts: &[Source::Section("visual")],
+    },
+    TabSpec {
+        title: "Leader",
+        parts: &[Source::Section("leader")],
+    },
+    TabSpec {
+        title: "Windows",
+        parts: &[Source::Section("panes")],
+    },
+    TabSpec {
+        title: "Git",
+        parts: &[Source::Section("git")],
+    },
+    TabSpec {
+        title: "Lists",
+        parts: &[
+            Source::Section("pickers"),
+            Source::Section("folder"),
+            Source::Rows("Search workspace", SEARCH_WORKSPACE),
+            Source::Rows("Collections", COLLECTIONS),
+            Source::Rows("Review", REVIEW),
+            Source::QueryLanguage,
+        ],
+    },
+    TabSpec {
+        title: "Commands",
+        parts: &[
+            Source::Section("cmdline"),
+            Source::Family(Family::Text),
+            Source::Family(Family::Buffers),
+            Source::Family(Family::Files),
+            Source::Family(Family::Own),
+        ],
+    },
+    TabSpec {
+        title: "More",
+        parts: &[
+            Source::Section("terminal"),
+            Source::Rows("Remote", REMOTE),
+            Source::Rows("Indentation", INDENTATION),
+            Source::Rows("Documentation", DOCUMENTATION),
+            Source::LspServers,
+        ],
+    },
+];

@@ -414,6 +414,10 @@ impl Editor {
     /// the caret past line 999); a diff keeps its two-sided gutter.
     pub fn gutter(&self, doc: DocumentId) -> (Gutter, usize) {
         let buffer = self.doc(doc);
+        // help has no line numbers (0112 decision 9)
+        if buffer.help_page().is_some() {
+            return (Gutter::List, LIST_GUTTER);
+        }
         match buffer.surface_payload() {
             Some(Surface::Diff { hunks, .. }) => (Gutter::Pair, hunks.gutter_width()),
             Some(

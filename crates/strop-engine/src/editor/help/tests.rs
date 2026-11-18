@@ -1,19 +1,52 @@
 use super::*;
 
-#[test]
-fn help_buffer_lists_every_section_and_searches() {
+fn help() -> Editor {
     let mut e = Editor::new(Buffer::from_text("x\n"));
     e.feed_text(":help\r");
+    assert!(e.help_page(e.current()).is_some());
+    e
+}
+
+fn page(e: &Editor) -> HelpPage {
+    e.help_page(e.current()).expect("help").clone()
+}
+
+fn line(e: &Editor, at: usize) -> String {
+    e.buf().text().line(at).to_string().trim_end().to_owned()
+}
+
+fn cursor_line(e: &Editor) -> String {
+    line(e, e.buf().line_of(e.head()))
+}
+
+/// A row's whole description: its first line's and its continuations'.
+fn description(e: &Editor, page: &HelpPage, at: usize) -> String {
+    let mut words = vec![line(e, at)
+        .get(page::DESC_COLUMN..)
+        .unwrap_or("")
+        .to_owned()];
+    let mut next = at + 1;
+    while matches!(page.lines.get(next), Some(LineKind::Continuation { .. })) {
+        words.push(line(e, next).trim_start().to_owned());
+        next += 1;
+    }
+    words.retain(|word| !word.is_empty());
+    words.join(" ")
+}
+
+#[test]
+fn help_buffer_lists_every_section_and_searches() {
+    let mut e = help();
     assert_eq!(e.buf().name.as_deref(), Some("help"));
     assert!(e.buf().readonly);
     let text = e.buf().text().to_string();
     let mut last = 0;
-    for section in crate::keymap::SECTIONS {
-        let heading = format!("─ {} ─", section.title);
+    for tab in content::TABS {
+        let heading = format!("━ {} ━", tab.title);
         let at = text
             .find(&heading)
-            .unwrap_or_else(|| panic!("missing {}", section.title));
-        assert!(at > last, "{} out of curated order", section.title);
+            .unwrap_or_else(|| panic!("missing {}", tab.title));
+        assert!(at > last, "{} out of order", tab.title);
         last = at;
     }
     let missing: Vec<_> = [
@@ -45,11 +78,17 @@ fn help_buffer_lists_every_section_and_searches() {
         "help makes retained LSP failures discoverable"
     );
     // the language list says what it is: the server each family starts
-    let servers = text.find("─ LSP servers ─").expect("LSP servers section");
-    assert!(text[servers..].contains("rust          rust-analyzer · rustup"));
+    let page = page(&e);
+    let rust = (0..page.lines.len())
+        .find(|&at| {
+            matches!(&page.lines[at], LineKind::Entry { cell: Cell::Label, keys, .. }
+                if line(&e, at).get(keys.clone()) == Some("rust"))
+        })
+        .expect("the rust row");
+    assert!(description(&e, &page, rust).starts_with("rust-analyzer · rustup"));
     assert!(!text.contains("─ Languages ─"));
     // Remote opens with how to get there
-    let remote = text.find("─ Remote ─").expect("Remote section");
+    let remote = text.find("─ Remote ─").expect("Remote part");
     let first = text[remote..].lines().nth(1).unwrap();
     assert!(first.contains("How to open"), "{first:?}");
     // it's a real buffer: / searches it
@@ -66,18 +105,30 @@ fn help_buffer_lists_every_section_and_searches() {
 #[test]
 fn help_query_language_rows_come_from_the_schema() {
     use strop_picker::query::schema::{surfaces_of, Field};
-    let mut e = Editor::new(Buffer::from_text("x\n"));
-    e.feed_text(":help\r");
+    let e = help();
     let text = e.buf().text().to_string();
-    let start = text.find("─ Query language ─").expect("the section");
-    let section = &text[start..];
-    let section = match section.find("\n\n─ ") {
-        Some(end) => &section[..end],
-        None => section,
+    let start = text.find("─ Query language ─").expect("the part");
+    let part = &text[start..];
+    let part = match part.find("\n\n") {
+        Some(end) => &part[..end],
+        None => part,
     };
-    let rows: Vec<&str> = section.lines().skip(1).map(str::trim_start).collect();
+    // a row and its wrapped rest read as one
+    let mut rows: Vec<String> = Vec::new();
+    for row in part.lines().skip(1) {
+        match (
+            row.starts_with(&" ".repeat(page::DESC_COLUMN)),
+            rows.last_mut(),
+        ) {
+            (true, Some(last)) => {
+                last.push(' ');
+                last.push_str(row.trim_start());
+            }
+            _ => rows.push(row.trim_start().to_owned()),
+        }
+    }
     for field in Field::ALL {
-        let row: Vec<&&str> = rows
+        let row: Vec<&String> = rows
             .iter()
             .filter(|row| row.starts_with(&format!("{} ", field.example())))
             .collect();
@@ -94,7 +145,7 @@ fn help_query_language_rows_come_from_the_schema() {
         let key = format!("kind:{} ", spec.value);
         assert!(rows.iter().any(|row| row.starts_with(&key)), "{key}");
     }
-    assert!(!section.contains("type:"), "type: is retired");
+    assert!(!part.contains("type:"), "type: is retired");
 }
 
 #[test]
@@ -104,20 +155,16 @@ fn space_question_opens_help_and_topics_reach_sections() {
     assert_eq!(e.buf().name.as_deref(), Some("help"));
     e.feed_text("q");
     e.feed_text(":help git\r");
-    let line = e.buf().line_of(e.head());
-    let text = e.buf().text().line(line).to_string();
-    assert!(text.starts_with("─ Git ─"), "{text:?}");
+    assert_eq!(cursor_line(&e), "━ Git ━");
     // vim's `:h` abbreviation reaches the same topic
     e.feed_text("q");
     e.feed_text(":h git\r");
-    let line = e.buf().line_of(e.head());
-    assert!(e.buf().text().line(line).to_string().starts_with("─ Git ─"));
+    assert_eq!(cursor_line(&e), "━ Git ━");
     // a command by any of its names lands on its row
     for topic in ["write", ":w", "w", ":wri"] {
         e.feed_text("q");
         e.feed_text(&format!(":help {topic}\r"));
-        let line = e.buf().line_of(e.head());
-        let row = e.buf().text().line(line).to_string();
+        let row = cursor_line(&e);
         assert!(
             row.trim_start().starts_with(":w[!] [file]"),
             "{topic}: {row:?}"
@@ -134,4 +181,125 @@ fn closing_help_on_a_fresh_launch_returns_to_the_scratch() {
     assert!(!e.should_quit, "q on help must not quit the editor");
     assert_eq!(e.buf().name, None);
     assert_eq!(e.buf().path, None);
+}
+
+/// §3.2: the model and the buffer agree line for line; every row has
+/// a key cell but the one that lists the languages without a server.
+#[test]
+fn the_model_types_every_line() {
+    let e = help();
+    let page = page(&e);
+    assert_eq!(page.lines.len(), e.buf().last_content_line() + 1);
+    assert_eq!(page.lines[0], LineKind::Tabs);
+    assert!(matches!(page.lines[1], LineKind::Hints { .. }));
+    for (at, kind) in page.lines.iter().enumerate() {
+        if let LineKind::Entry { keys, .. } = kind {
+            assert!(
+                !keys.is_empty() || line(&e, at).contains("no built-in server"),
+                "line {at} has no key cell: {:?}",
+                line(&e, at)
+            );
+        }
+    }
+    let names: Vec<&str> = page.tabs.iter().map(|tab| tab.title).collect();
+    assert_eq!(
+        names,
+        ["Move", "Edit", "Visual", "Leader", "Windows", "Git", "Lists", "Commands", "More"]
+    );
+    for tab in &page.tabs {
+        assert_eq!(&line(&e, 0)[tab.name.clone()], tab.title);
+        assert_eq!(page.lines[tab.heading], LineKind::TabHeading);
+        assert_eq!(line(&e, tab.heading), format!("━ {} ━", tab.title));
+    }
+}
+
+/// §3.1: every keymap section and every command family is in exactly
+/// one section of the page.
+#[test]
+fn every_section_and_family_is_in_exactly_one_tab() {
+    let count = |held: &dyn Fn(&Source) -> bool| {
+        content::TABS
+            .iter()
+            .flat_map(|tab| tab.parts.iter())
+            .filter(|part| held(part))
+            .count()
+    };
+    for section in crate::keymap::SECTIONS {
+        let found = count(&|part| matches!(part, Source::Section(id) if *id == section.id));
+        assert_eq!(found, 1, "{}", section.id);
+    }
+    for family in super::super::ex::Family::ALL {
+        let found = count(&|part| matches!(part, Source::Family(f) if *f == family));
+        assert_eq!(found, 1, "{family:?}");
+    }
+}
+
+/// §3.2, §7: nothing is cut at 80 columns — no line wider than the
+/// measure, and a key cell too wide for the column has its own line.
+#[test]
+fn every_line_fits_the_measure() {
+    let e = help();
+    let page = page(&e);
+    for (at, kind) in page.lines.iter().enumerate() {
+        let text = line(&e, at);
+        assert!(
+            text.chars().count() <= page::MEASURE,
+            "line {at} is wider than the measure: {text:?}"
+        );
+        if let LineKind::Entry { keys, .. } = kind {
+            if text[keys.clone()].chars().count() > page::KEY_COLUMN {
+                assert_eq!(text.len(), keys.end, "line {at} shares its line: {text:?}");
+                assert!(
+                    matches!(page.lines.get(at + 1), Some(LineKind::Continuation { .. })),
+                    "line {at}'s description is not on the next line"
+                );
+            }
+        }
+    }
+    // the Windows rows that ran off an 80-column screen now wrap
+    let text = e.buf().text().to_string();
+    assert!(text.contains("  ctrl-w h / j / k / l / w / W / p\n"));
+}
+
+#[test]
+fn topics_reach_sections_parts_and_commands() {
+    let mut e = help();
+    for (topic, landing) in [
+        ("move", "━ Move ━"),
+        ("Windows", "━ Windows ━"),
+        ("moving", "─ Moving ─"),
+        ("search", "─ Search ─"),
+        ("panes", "━ Windows ━"),
+        ("leader", "━ Leader ━"),
+        ("query language", "─ Query language ─"),
+        ("lsp servers", "─ LSP servers ─"),
+    ] {
+        e.feed_text(&format!(":help {topic}\r"));
+        assert_eq!(cursor_line(&e), landing, "{topic}");
+        let line = e.buf().line_of(e.head());
+        assert_eq!(e.view().view_top, line, "{topic} lands as the top row");
+    }
+    e.feed_text(":help :w\r");
+    assert!(cursor_line(&e).starts_with("  :w[!] [file]"));
+    e.feed_text(":help nothing-here\r");
+    assert!(e.message.contains("no help topic"), "{}", e.message);
+}
+
+/// §7: search is the buffer's and crosses sections.
+#[test]
+fn search_crosses_sections() {
+    let mut e = help();
+    let page = page(&e);
+    e.feed_text("/half\\/full page\r");
+    let first = e.buf().line_of(e.head());
+    assert_eq!(page.tab_at(first, 0), 0, "{}", cursor_line(&e));
+    assert!(cursor_line(&e).contains("half/full page scroll"));
+    e.feed_text("/register\r");
+    let mut tabs = vec![page.tab_at(e.buf().line_of(e.head()), 0)];
+    for _ in 0..40 {
+        e.feed_text("n");
+        tabs.push(page.tab_at(e.buf().line_of(e.head()), 0));
+    }
+    tabs.dedup();
+    assert!(tabs.len() > 2, "n stayed in one section: {tabs:?}");
 }

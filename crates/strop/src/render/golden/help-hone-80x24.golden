@@ -1,49 +1,49 @@
-   1  strop <version> · help · / search · q close                                 ▮
-   2                                                                            
-   3  ─ Moving ──────────────────────────────────────────────────────────────── 
-   4     h j k l                       move (never off the line)                
-   5     w b e W B E                   word / WORD motions                      
-   6     zz zt zb                      center/top/bottom the cursor line        
-   7     H M L                         top/middle/bottom visible line           
-   8     g;                            older change (changelist)                
-   9     g,                            newer change (changelist)                
-  10     ge gE { }                     word-end back / paragraph motions        
-  11     - +                           line up / down, on the first non-blank   
-  12     ( )                           sentence back / forward                  
-  13     [( [{ ]) ]}                   the unmatched bracket before / after     
-  14     g_ g0 g^ g$ gj gk             last non-blank; line start, first non-bl 
-  15     gn gN                         select the next / previous search match  
-  16     0 $ G %                       line/file/pair jumps                     
-  17     gg                            top of file                              
-  18     enter                         line down, first non-blank (collection:  
-  19     tab                           jump list forward (ctrl-i)               
-  20     ctrl-d ctrl-u ctrl-f ctrl-b   half/full page scroll (count = lines)    
-  21     ctrl-e ctrl-y                 scroll the window one line down / up     
-  22     ctrl-^                        alternate buffer                         
-  23     grr                           references (LSP)                         
+ 1   Move  Edit  Visual  Leader  Windows  Git  Lists  Commands  More           ▮
+ 2   strop <version> · ]] [[ section · enter open · / search · q close             
+ 3                                                                              
+ 4  ━ Move ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+ 5                                                                              
+ 6  ─ Moving ────────────────────────────────────────────────────────────────── 
+ 7    h j k l                    move (never off the line)                      
+ 8    w b e W B E                word / WORD motions                            
+ 9    zz zt zb                   center/top/bottom the cursor line              
+ 10    H M L                      top/middle/bottom visible line                
+ 11    g;                         older change (changelist)                     
+ 12    g,                         newer change (changelist)                     
+ 13    ge gE { }                  word-end back / paragraph motions             
+ 14    - +                        line up / down, on the first non-blank        
+ 15    ( )                        sentence back / forward                       
+ 16    [( [{ ]) ]}                the unmatched bracket before / after          
+ 17    g_ g0 g^ g$ gj gk          last non-blank; line start, first non-blank,  
+ 18                               end; line down / up                           
+ 19    gn gN                      select the next / previous search match (cgn  
+ 20                               then . changes each)                          
+ 21    0 $ G %                    line/file/pair jumps                          
+ 22    gg                         top of file                                   
+ 23    enter                      line down, first non-blank (collection: open  
   NORMAL    help [RO]                                                0%    1:1  
 
-  0: 1:#858c9a/#15171c+b 5:#e8a848/#15171c 12:#e6e1d6/#15171c+b 28:#858c9a/#15171c 33:reset/#15171c 1:#858c9a/#15171c
-  1: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 73:reset/#15171c 1:reset/reset
-  2: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#4a5160/#15171c 6:#e6e1d6/#15171c+b 65:#4a5160/#15171c 1:reset/reset
-  3: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 27:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset
-  4: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 21:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
-  5: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 35:#e6e1d6/#15171c 7:reset/#15171c 1:reset/reset
-  6: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 32:#e6e1d6/#15171c 10:reset/#15171c 1:reset/reset
-  7: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 27:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset
-  8: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 27:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset
-  9: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 35:#e6e1d6/#15171c 7:reset/#15171c 1:reset/reset
- 10: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 40:#e6e1d6/#15171c 2:reset/#15171c 1:reset/reset
- 11: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 25:#e6e1d6/#15171c 17:reset/#15171c 1:reset/reset
- 12: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 38:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
- 13: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 42:#e6e1d6/#15171c 1:reset/reset
- 14: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 42:#e6e1d6/#15171c 1:reset/reset
- 15: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 22:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
- 16: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 13:#e6e1d6/#15171c 29:reset/#15171c 1:reset/reset
- 17: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 42:#e6e1d6/#15171c 1:reset/reset
- 18: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 28:#e6e1d6/#15171c 14:reset/#15171c 1:reset/reset
- 19: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 39:#e6e1d6/#15171c 3:reset/#15171c 1:reset/reset
- 20: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 38:#e6e1d6/#15171c 4:reset/#15171c 1:reset/reset
- 21: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 24:reset/#15171c 1:reset/reset
- 22: 1:#858c9a/#15171c+b 5:#858c9a/#15171c 2:#e6e1d6/#15171c 29:#e8a848/#23272f+b 18:#e6e1d6/#15171c 24:reset/#15171c 1:reset/reset
+  0: 1:#858c9a/#15171c+b 3:#e8a848/#15171c 64:#e6e1d6/#15171c 11:reset/#15171c 1:#858c9a/#15171c
+  1: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 13:#e6e1d6/#15171c+b 50:#858c9a/#15171c 12:reset/#15171c 1:reset/reset
+  2: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 75:reset/#15171c 1:reset/reset
+  3: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 2:#4a5160/#15171c 4:#e6e1d6/#15171c+b 69:#4a5160/#15171c 1:reset/reset
+  4: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 75:reset/#15171c 1:reset/reset
+  5: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 2:#4a5160/#15171c 6:#e6e1d6/#15171c+b 67:#4a5160/#15171c 1:reset/reset
+  6: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 27:#e6e1d6/#15171c 21:reset/#15171c 1:reset/reset
+  7: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 21:#e6e1d6/#15171c 27:reset/#15171c 1:reset/reset
+  8: 1:#858c9a/#15171c+b 3:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 35:#e6e1d6/#15171c 13:reset/#15171c 1:reset/reset
+  9: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 32:#e6e1d6/#15171c 15:reset/#15171c 1:reset/reset
+ 10: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 27:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
+ 11: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 27:#e6e1d6/#15171c 20:reset/#15171c 1:reset/reset
+ 12: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 35:#e6e1d6/#15171c 12:reset/#15171c 1:reset/reset
+ 13: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 40:#e6e1d6/#15171c 7:reset/#15171c 1:reset/reset
+ 14: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 25:#e6e1d6/#15171c 22:reset/#15171c 1:reset/reset
+ 15: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 38:#e6e1d6/#15171c 9:reset/#15171c 1:reset/reset
+ 16: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 46:#e6e1d6/#15171c 1:reset/#15171c 1:reset/reset
+ 17: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 48:#e6e1d6/#15171c 26:reset/#15171c 1:reset/reset
+ 18: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 46:#e6e1d6/#15171c 1:reset/#15171c 1:reset/reset
+ 19: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 49:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
+ 20: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 22:#e6e1d6/#15171c 25:reset/#15171c 1:reset/reset
+ 21: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 13:#e6e1d6/#15171c 34:reset/#15171c 1:reset/reset
+ 22: 1:#858c9a/#15171c+b 4:#858c9a/#15171c 1:#e6e1d6/#15171c 26:#e8a848/#23272f+b 46:#e6e1d6/#15171c 1:reset/#15171c 1:reset/reset
  23: 10:#15171c/#e8a848+b 2:reset/#1c1f25 4:#e6e1d6/#1c1f25 5:#d9a85a/#1c1f25 46:reset/#1c1f25 4:#858c9a/#1c1f25 2:reset/#1c1f25 7:#a8adb8/#1c1f25
