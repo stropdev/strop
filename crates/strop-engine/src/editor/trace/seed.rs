@@ -20,7 +20,8 @@ use crate::editor::{Document, Editor, Pane};
 // Version 6 adds indexed per-pane jump histories.
 // Version 7: the window tree; panes are in layout order (plans/0104).
 // Version 8: tab pages (plans/0113).
-const SEMANTIC_VERSION: u32 = 8;
+// Version 9: quit retires the view before queued input and watcher wakes.
+const SEMANTIC_VERSION: u32 = 9;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.

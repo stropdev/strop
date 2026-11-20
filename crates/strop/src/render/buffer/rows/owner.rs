@@ -122,10 +122,16 @@ impl<'a> Owner<'a> {
                 diff::painted(t, surface, line, row.cursor, cells.gutter, cells.text)
                     .unwrap_or_default()
             }
-            Owner::Block(Block::Status(status)) => {
-                diff::status_painted(t, status, line, row.cursor_line, row.cursor, cells.text)
-                    .unwrap_or_else(|| list_blank(t, row.cursor))
-            }
+            Owner::Block(Block::Status(status)) => diff::status_painted(
+                t,
+                status,
+                line,
+                row.text,
+                row.cursor_line,
+                row.cursor,
+                cells.text,
+            )
+            .unwrap_or_else(|| list_blank(t, row.cursor)),
             Owner::Block(Block::List(surface)) => diff::list_painted(
                 t,
                 surface,

@@ -114,7 +114,8 @@ struct BufferState {
 #[derive(Debug)]
 pub struct SaveRequest {
     path: PathBuf,
-    session: Session,
+    /// No restorable documents remain: remove the previous capture.
+    session: Option<Session>,
     /// The project's frecent files travel with every capture (0093 §3.4).
     recent: Option<(PathBuf, crate::editor::RecentFiles)>,
 }
@@ -232,14 +233,16 @@ fn capture_jumps(editor: &Editor, buffers: &[BufferState]) -> JumpListState {
 }
 
 pub fn capture_save(editor: &Editor) -> Option<SaveRequest> {
-    if editor.session_policy == SessionPolicy::Disabled {
+    // Closing the last document captures before teardown. Finish must not
+    // replace that capture with the now-dismantled editor.
+    if editor.session_policy == SessionPolicy::Disabled || editor.docs.is_empty() {
         return None;
     }
     let path = session_path(editor.state_dir.as_deref(), &editor.cwd)?;
     let recent = editor.recent_files();
     Some(SaveRequest {
         path,
-        session: capture(editor)?,
+        session: capture(editor),
         recent: recent::path(editor.state_dir.as_deref(), &editor.cwd)
             .filter(|_| !recent.is_empty())
             .map(|path| (path, recent.clone())),
@@ -248,10 +251,14 @@ pub fn capture_save(editor: &Editor) -> Option<SaveRequest> {
 
 impl SaveRequest {
     /// Blocking I/O; schedule on a worker, not the async executor thread.
-    pub fn persist(mut self) -> Result<(), SessionError> {
-        self.session.finish_capture();
-        self.session.validate()?;
-        persistence::write(&self.path, &self.session)?;
+    pub fn persist(self) -> Result<(), SessionError> {
+        if let Some(mut session) = self.session {
+            session.finish_capture();
+            session.validate()?;
+            persistence::write(&self.path, &session)?;
+        } else {
+            persistence::remove(&self.path)?;
+        }
         match &self.recent {
             Some((path, recent)) => recent::store(path, recent),
             None => Ok(()),

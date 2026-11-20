@@ -16,9 +16,9 @@ pub use query::{
     CompiledQuery, QueryError, SearchMatch,
 };
 pub use resolve::{
-    cursor_after, delimiter_pair, find_character, is_keyword, literal_from, matching_delimiter_at,
-    plan, resolve, resolve_many, resolve_many_cancellable, select_object, word_run, ActionPlan,
-    MatchCancelled, ObjectSelection, PlannedTarget,
+    cursor_after, cursor_after_refusal, delimiter_pair, find_character, is_keyword, literal_from,
+    matching_delimiter_at, plan, resolve, resolve_many, resolve_many_cancellable, select_object,
+    word_run, ActionPlan, MatchCancelled, ObjectSelection, PlannedTarget,
 };
 
 pub use types::*;

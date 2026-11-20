@@ -52,6 +52,9 @@ yank of a hunk is still a patch.
 The keys act on the row under the cursor. On a file row that is the file; on
 a diff row it is that hunk; on a section heading it is every file in the
 section.
+Tabs and newlines in filenames appear as `\t` and `\n`, and a literal
+backslash appears as `\\`. These spellings are for display only: opening
+the file or staging a hunk always uses the original name.
 
 | key | does |
 |---|---|

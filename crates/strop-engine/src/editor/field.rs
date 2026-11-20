@@ -216,10 +216,12 @@ impl FieldMachine {
         }
         let resolved = match grammar::resolve(field.buffer(), field.cursor(), command) {
             Ok(Some(resolved)) => resolved,
-            // A motion that finds nothing fails the vim way: nothing
-            // happens, nothing is said (`dw` at the buffer end, `f`
-            // with no target ahead, `j` on the one line).
-            Ok(None) => return FieldReply::Consumed,
+            Ok(None) => {
+                if let Some(cursor) = grammar::cursor_after_refusal(field.buffer(), command) {
+                    field.set_cursor(cursor);
+                }
+                return FieldReply::Consumed;
+            }
             Err(error) => return FieldReply::Refused(error.to_string()),
         };
         match command.op {

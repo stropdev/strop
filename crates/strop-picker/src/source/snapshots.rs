@@ -60,9 +60,6 @@ pub(super) fn emit_snapshots(
             }
             let text = text.to_string();
             let text: Arc<str> = text.strip_suffix('\n').unwrap_or(&text).into();
-            let short: String = text.trim().chars().take(80).collect();
-            let mut items = Vec::new();
-            let mut expanded = text.len();
             let row = RowFacts {
                 path: Some(&relative),
                 line: Some(line + 1),
@@ -76,25 +73,16 @@ pub(super) fn emit_snapshots(
             if !content.admits(&row, &evidence) {
                 continue;
             }
-            for hit in content.regex.find_iter(&text).take(4097) {
-                let item = crate::Item {
-                    badge: Some("buffer".into()),
-                    text: format!("{label}:{} · {short}", line + 1),
-                    payload: crate::Payload::Grep {
-                        location: location.clone(),
-                        line: line + 1,
-                        col: hit.start() + 1,
-                        match_len: hit.len(),
-                        line_text: text.clone(),
-                    },
-                    facts: Default::default(),
-                };
-                expanded = expanded.saturating_add(super::flow::row_bytes(&item));
-                if expanded > super::flow::BACKLOG_BYTES || items.len() >= 4096 {
-                    return Err("source line exceeds 4096 matches or 4 MiB of result rows".into());
-                }
-                items.push(item);
-            }
+            let mut items = Vec::new();
+            super::query::append_matches(
+                &mut items,
+                content,
+                &location,
+                &label,
+                line + 1,
+                &text,
+                Some("buffer"),
+            )?;
             tx.batch(items, token)
                 .map_err(|error| error.message().to_string())?;
         }

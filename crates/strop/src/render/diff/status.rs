@@ -34,6 +34,7 @@ pub(crate) fn painted<'a>(
     t: &Tokens,
     view: &'a StatusView,
     line: usize,
+    text: ropey::RopeSlice<'_>,
     cursor_line: usize,
     cursor: bool,
     text_cells: usize,
@@ -120,8 +121,10 @@ pub(crate) fn painted<'a>(
                 Style::default().fg(letter),
             )];
             // the row idiom (0088 §2 "File names"): directory secondary, name text
+            let text: std::borrow::Cow<'_, str> = text.into();
+            let (_, path) = text.split_once(' ')?;
             spans.extend(crate::render::file_name::spans(
-                &entry.rel.to_string_lossy(),
+                path,
                 crate::render::file_name::Role::Row,
                 t,
             ));

@@ -82,6 +82,29 @@ fn object_name(obj: Object) -> String {
     }
 }
 
+/// Cursor side effect of a refused operator (no edit or register write).
+/// A fresh `current_word` selection walks forward; its only failure is
+/// exhausting the buffer. Vim leaves that walk at EOF, clamped to the
+/// last character for Normal mode. Do not run the walk a second time.
+pub fn cursor_after_refusal(buf: &Buffer, cmd: &Command) -> Option<usize> {
+    if cmd.force == Some(Force::Blockwise)
+        || !matches!(
+            cmd.target,
+            Target::Object {
+                obj: Object::Word | Object::BigWord,
+                ..
+            }
+        )
+    {
+        return None;
+    }
+    let mut walk = Walk::new(buf, buf.line_end(buf.last_content_line()));
+    if walk.col() > 0 {
+        walk.dec();
+    }
+    Some(walk.pos)
+}
+
 fn resolve_controlled(
     buf: &Buffer,
     cursor: usize,

@@ -146,9 +146,31 @@ impl Editor {
         self.start_notifications();
     }
 
+    /// A quit may remove the last pane before the drivers have drained the
+    /// channel. At EOF a headless script can also finish with a pane intact.
+    /// In either case owned jobs still settle, but the view takes no new work.
+    pub(super) fn view_is_live(&self) -> bool {
+        !self.should_quit && !self.finishing
+    }
+
     /// Route one event to its handler (the per-event halves of the old
     /// drain loops; the drains call these in a try_recv loop).
     pub fn handle_app_event(&mut self, ev: AppEvent) {
+        if !self.view_is_live()
+            && matches!(
+                ev,
+                AppEvent::Input(_)
+                    | AppEvent::EditorKey(_)
+                    | AppEvent::Paste(_)
+                    | AppEvent::ResumeInput
+                    | AppEvent::Focus(_)
+                    | AppEvent::Resize { .. }
+                    | AppEvent::Stdin(_)
+                    | AppEvent::Notify
+            )
+        {
+            return;
+        }
         let completion_handled = matches!(
             &ev,
             AppEvent::Input(_)
@@ -222,10 +244,12 @@ impl Editor {
             AppEvent::Preview(result) => self.handle_preview(result),
             AppEvent::Clipboard(content) => self.handle_clipboard(content),
         }
-        if !completion_handled {
-            self.completion_after_action();
+        if self.view_is_live() {
+            if !completion_handled {
+                self.completion_after_action();
+            }
+            self.schedule_deferred_input();
         }
-        self.schedule_deferred_input();
         // Coalesced draft checkpointing (0056 AR04): cheap staleness check
         // after every event; captures only what actually moved.
         self.recovery_after_event();

@@ -97,6 +97,9 @@ impl Editor {
             }
         };
         if let Some(selected) = selected {
+            // The object places a new head; subsequent operators use its
+            // screen column, not the column requested by an earlier `|` or `$`.
+            self.view_mut().desired_column = None;
             self.sels_mut()
                 .stretch_primary(selected.anchor, selected.head);
             self.mode = if selected.linewise {

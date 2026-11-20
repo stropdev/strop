@@ -115,6 +115,7 @@ impl Editor {
             doc.buf.name = replacement.buf.name;
             doc.buf.readonly = replacement.buf.readonly;
             doc.buf.mark_clean();
+            doc.external_change = false;
             doc.redetect_syntax();
             let revision = doc.buf.revision();
             if let Some(draft) = doc

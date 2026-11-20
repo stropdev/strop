@@ -41,6 +41,15 @@ pub enum Action {
 }
 
 impl Editor {
+    /// Quit and the end of the input stream can race an accepted write.
+    /// Record the start of shutdown once; its completions follow on the tape.
+    pub fn begin_shutdown(&mut self) -> io::Result<()> {
+        if !self.finishing {
+            self.recorded_action(Action::Finish, self.tape.sample_tick())?;
+        }
+        Ok(())
+    }
+
     /// Live drivers: record the action, then run the shared body.
     pub fn recorded_action(&mut self, action: Action, tick: Tick) -> io::Result<()> {
         if self.tape_action_private(&action) {
@@ -78,18 +87,15 @@ impl Editor {
             }
             Action::Event(event) => {
                 self.handle_app_event(event);
-                if !self.docs.is_empty() {
+                if self.view_is_live() {
                     self.lsp_sync_changed();
+                    // Prefetch symbols, follow the breadcrumb, keep a shown
+                    // collection loan, and consider building the commit graph.
+                    crate::editor::symbols::warm(self);
+                    crate::editor::symbols::follow(self);
+                    crate::editor::collections::loans::take_shown(self);
+                    crate::editor::git_memory::graph::consider(self);
                 }
-                // 0099 §4.1: fetch the current document's symbols ahead
-                // of the key. O(1) when nothing changed.
-                crate::editor::symbols::warm(self);
-                // 0107 §6.2: the breadcrumb reads the kept list.
-                crate::editor::symbols::follow(self);
-                // 0101 §6.1: a collection's loaned file on screen is taken.
-                crate::editor::collections::loans::take_shown(self);
-                // 0101 §2.1: a slow history read builds a commit-graph.
-                crate::editor::git_memory::graph::consider(self);
                 // Logical OSC52 consumption is common to both modes; the
                 // actual escape write stays the terminal adapter's
                 // live-only effect, recorded as a request — never an
@@ -119,7 +125,9 @@ impl Editor {
                 self.finish_background_work();
             }
         }
-        self.track_cursor_fade(focus_gained);
+        if self.view_is_live() {
+            self.track_cursor_fade(focus_gained);
+        }
         self.log_echo_message();
         self.tape.healthy()?;
         if !frame && self.tape.observes() {

@@ -425,13 +425,16 @@ impl Editor {
         let lost = glue.picker.finish_workset_refresh();
         let mut lost_selection = false;
         if let Some(restore) = context.restore.take() {
-            if let Some(index) = restore.selected_item {
-                glue.picker.select(index);
+            let row_of = |item| glue.picker.rows.iter().position(|row| row.item == item);
+            let selected = restore.selected_item.and_then(row_of);
+            let top = restore.top_item.and_then(row_of);
+            if let Some(row) = selected {
+                glue.picker.select(row);
             } else {
                 lost_selection = restore.selected.is_some();
             }
-            if let Some(index) = restore.top_item {
-                glue.picker.scroll_top = index;
+            if let Some(row) = top {
+                glue.picker.scroll_top = row;
             }
         }
         if lost > 0 || lost_selection {

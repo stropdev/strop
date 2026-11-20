@@ -57,28 +57,26 @@ fn filter_only_content_surface_needs_an_expression() {
 fn literal_is_escaped_and_smart_case_by_default() {
     // one capital makes case count; an all-lowercase literal folds
     let capital = content_plan("A.b");
-    assert!(capital.regex.is_match("A.b"));
-    assert!(!capital.regex.is_match("a.b"));
+    assert!(capital.matches_line("A.b"));
+    assert!(!capital.matches_line("a.b"));
     for input in ["a.b", "case:ignore A.B", "case:insensitive A.b"] {
         let query = crate::query::parse_search(input);
         let plan = ContentPlan::compile(&query).unwrap().unwrap();
-        let re = plan.regex;
-        assert!(re.is_match("a.b"), "{input}");
-        assert!(re.is_match("A.B"), "{input}");
-        assert!(!re.is_match("aXb"), "{input}");
+        assert!(plan.matches_line("a.b"), "{input}");
+        assert!(plan.matches_line("A.B"), "{input}");
+        assert!(!plan.matches_line("aXb"), "{input}");
     }
     let sensitive = content_plan("case:sensitive A.B");
-    assert!(sensitive.regex.is_match("A.B"));
-    assert!(!sensitive.regex.is_match("a.b"));
+    assert!(sensitive.matches_line("A.B"));
+    assert!(!sensitive.matches_line("a.b"));
 }
 
 #[test]
 fn explicit_regex_and_case() {
     let query = crate::query::parse_search("case:sensitive regex:\"\\brequest_(id|name)\\b\"");
     let plan = ContentPlan::compile(&query).unwrap().unwrap();
-    let re = plan.regex;
-    assert!(re.is_match("request_id"));
-    assert!(!re.is_match("REQUEST_ID"));
+    assert!(plan.matches_line("request_id"));
+    assert!(!plan.matches_line("REQUEST_ID"));
 }
 
 #[test]
@@ -150,6 +148,8 @@ fn provider_prefilter_is_sound_for_every_admitted_line() {
         "foo OR bar AND NOT baz",
     ] {
         let plan = content_plan(input);
+        let provider =
+            super::super::build_regex(plan.provider_pattern(), plan.provider_case()).unwrap();
         let corpus = [
             ("src/a.rs", "let request = retry(request); // test"),
             ("src/a.rs", "let retry = retry(x); let request = y;"),
@@ -163,7 +163,7 @@ fn provider_prefilter_is_sound_for_every_admitted_line() {
         for (path, line) in corpus {
             if admits_line(&plan, path, line) {
                 assert!(
-                    plan.regex.is_match(line),
+                    provider.is_match(line),
                     "{input}: prefilter missed admitted line {line:?}"
                 );
             }

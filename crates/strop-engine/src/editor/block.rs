@@ -16,10 +16,16 @@ pub(crate) struct BlockInsertState {
     /// block's top-left cell.
     home: Option<(usize, DisplayColumn)>,
 }
+/// Geometry only: copy complete clusters from the rope into the final
+/// register, and represent clipped cluster fragments by their cell counts.
 struct RowPart {
-    range: Option<Range>,
-    selected: String,
-    remaining: String,
+    range: Range,
+    whole: Range,
+    leading: usize,
+    trailing: usize,
+    retained: usize,
+    cells: usize,
+    short: bool,
 }
 
 impl Editor {
@@ -35,10 +41,9 @@ impl Editor {
     }
 
     /// The selection was extended with `$`: it reaches each line's end.
-    pub(crate) fn wants_line_end(&self) -> bool {
-        self.view()
-            .desired_column
-            .is_some_and(|column| column.get() >= usize::MAX / 2)
+    fn wants_line_end(&self) -> bool {
+        // An explicit N| wants at most usize::MAX - 1 (zero-based).
+        self.view().desired_column == Some(DisplayColumn::new(usize::MAX))
     }
 
     /// The selected part of each row of the block, top to bottom; rows
@@ -48,25 +53,14 @@ impl Editor {
             return Vec::new();
         };
         (rect.first_line..=rect.last_line)
-            .filter_map(|line| {
-                if self.wants_line_end() {
-                    let start = self
-                        .row_part(line, rect.left_cell, rect.left_cell + 1)
-                        .range?;
-                    return Some(Range::charwise(start.start, self.buf().line_end(line)));
-                }
-                self.row_part(line, rect.left_cell, rect.right_cell + 1)
-                    .range
-            })
+            .map(|line| self.row_part(line, rect).range)
+            .filter(|range| !range.is_empty())
             .collect()
     }
 
-    /// `A` on a selection that reaches each line's end: Insert after
-    /// the end of every line from `first` to `last`.
-    pub(crate) fn block_append_at_ends(&mut self, first: usize, last: usize) {
-        let home = self
-            .block_rect()
-            .map_or(DisplayColumn::new(0), |rect| rect.left_cell);
+    /// `$A`: append at each row's own end, not at one fixed column.
+    fn block_append_at_ends(&mut self, rect: BlockRect) {
+        let (first, last) = (rect.first_line, rect.last_line);
         self.mode = Mode::Insert;
         self.set_head(self.buf().line_end(first));
         self.block_insert_state = Some(BlockInsertState {
@@ -74,7 +68,7 @@ impl Editor {
             column: DisplayColumn::new(0),
             pad: false,
             at_line_ends: true,
-            home: Some((first, home)),
+            home: Some((first, rect.left_cell)),
         });
         self.enter_insert_from("<c-v>I");
     }
@@ -126,7 +120,7 @@ impl Editor {
             first_line: self.buf().line_of(anchor).min(self.buf().line_of(head)),
             last_line: self.buf().line_of(anchor).max(self.buf().line_of(head)),
             left_cell: a.min(h),
-            right_cell: a_end.max(h_end) - 1,
+            right_cell: (!self.wants_line_end()).then(|| a_end.max(h_end) - 1),
         })
     }
 
@@ -155,73 +149,124 @@ impl Editor {
         true
     }
 
-    fn row_part(&self, line: usize, left: DisplayColumn, right: DisplayColumn) -> RowPart {
+    fn row_part(&self, line: usize, rect: BlockRect) -> RowPart {
         let start = self.buf().line_start(line);
-        let slice = self
-            .buf()
-            .text()
-            .byte_slice(start..self.buf().line_end(line));
-        let mut first = None;
-        let mut last = start;
-        let mut selected = String::new();
-        let mut remaining = String::new();
-        for (span, text) in RopeGraphemes::new(slice, self.cur_indent().width) {
-            let end = span.cell + span.width;
-            if end <= left || span.cell >= right || span.width == 0 {
+        let end = self.buf().line_end(line);
+        let empty = Range::charwise(end, end);
+        let mut part = RowPart {
+            range: empty,
+            whole: empty,
+            leading: 0,
+            trailing: 0,
+            retained: 0,
+            cells: 0,
+            short: false,
+        };
+        let left = rect.left_cell;
+        let limit = rect.right_cell.map(|right| right + 1);
+        let mut row_end = DisplayColumn::new(0);
+        let text = self.buf().text().byte_slice(start..end);
+        for (span, cluster) in RopeGraphemes::new(text, self.cur_indent().width) {
+            if limit.is_some_and(|right| span.cell >= right) {
+                break;
+            }
+            row_end = span.cell + span.width;
+            if row_end <= left || span.width == 0 {
                 continue;
             }
-            first.get_or_insert(start + span.byte);
-            last = start + span.byte + text.len();
-            let lo = span.cell.max(left);
-            let hi = end.min(right);
-            if lo == span.cell && hi == end {
-                selected.push_str(&text);
+            let byte = (start + span.byte).into();
+            let next = byte + cluster.len();
+            part.range.start = part.range.start.min(byte);
+            part.range.end = next;
+            let cells = limit.map_or(row_end, |right| row_end.min(right)) - span.cell.max(left);
+            part.cells += cells;
+            if cells == span.width {
+                part.whole.start = part.whole.start.min(byte);
+                part.whole.end = next;
             } else {
-                selected.push_str(&" ".repeat(hi - lo));
-                remaining.push_str(&" ".repeat(lo - span.cell));
-                remaining.push_str(&" ".repeat(end - hi));
+                part.retained += span.width - cells;
+                if part.whole.is_empty() {
+                    part.leading += cells;
+                } else {
+                    part.trailing += cells;
+                }
             }
         }
-        if first.is_none() {
-            selected = " ".repeat(right - left);
+        part.short = row_end < left;
+        part
+    }
+
+    fn block_register(&self, rect: BlockRect, mut visit: impl FnMut(usize, &RowPart)) -> Register {
+        let parts: Vec<_> = (rect.first_line..=rect.last_line)
+            .map(|line| self.row_part(line, rect))
+            .collect();
+        let width = rect.right_cell.map_or_else(
+            || {
+                parts
+                    .iter()
+                    .map(|part| part.cells)
+                    .max()
+                    .unwrap_or(0)
+                    .max(1)
+            },
+            |right| right - rect.left_cell + 1,
+        );
+        // Vim includes the virtual EOL cell when padding rows that never
+        // reached the block. A row ending exactly at its left edge is empty.
+        let short_pad = width + usize::from(rect.right_cell.is_none());
+        let bytes = parts
+            .iter()
+            .map(|p| {
+                if p.short {
+                    short_pad
+                } else {
+                    p.leading + p.whole.len() + p.trailing
+                }
+            })
+            .sum::<usize>()
+            + parts.len()
+            - 1;
+        let mut text = String::with_capacity(bytes);
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                text.push('\n');
+            }
+            if part.short {
+                text.extend(std::iter::repeat_n(' ', short_pad));
+            } else {
+                text.extend(std::iter::repeat_n(' ', part.leading));
+                if !part.whole.is_empty() {
+                    let slice = self
+                        .buf()
+                        .text()
+                        .byte_slice(part.whole.start.get()..part.whole.end.get());
+                    for chunk in slice.chunks() {
+                        text.push_str(chunk);
+                    }
+                }
+                text.extend(std::iter::repeat_n(' ', part.trailing));
+            }
+            visit(rect.first_line + i, part);
         }
-        RowPart {
-            range: first.map(|first| Range::charwise(first, last)),
-            selected,
-            remaining,
-        }
+        Register::blockwise(text, width.into())
     }
 
     pub(crate) fn land_at_cell(&mut self, line: usize, column: DisplayColumn) {
-        let start = self.buf().line_start(line);
-        let end = self.buf().line_end(line);
-        let byte = RopeGraphemes::new(
-            self.buf().text().byte_slice(start..end),
+        let byte = self.buf().byte_at_cell(
+            line,
+            column,
             self.cur_indent().width,
-        )
-        .find_map(|(span, _)| (span.cell + span.width > column).then_some(start + span.byte))
-        .unwrap_or(end);
+            self.mode != Mode::Normal,
+        );
         self.set_head(byte);
-        self.clamp_cursor();
     }
 
     pub(crate) fn block_yank(&mut self, register: Option<char>) {
         let Some(rect) = self.block_rect() else {
             return;
         };
-        let rows: Vec<_> = (rect.first_line..=rect.last_line)
-            .map(|line| {
-                self.row_part(line, rect.left_cell, rect.right_cell + 1)
-                    .selected
-            })
-            .collect();
-        self.yank_register(
-            register,
-            Register::blockwise(
-                rows.join("\n"),
-                DisplayColumn::new(rect.right_cell - rect.left_cell + 1),
-            ),
-        );
+        let value = self.block_register(rect, |_, _| {});
+        self.yank_register(register, value);
         self.mode = Mode::Normal;
         self.apply_pending_diagnostics();
         self.land_at_cell(rect.first_line, rect.left_cell);
@@ -237,18 +282,15 @@ impl Editor {
             return;
         };
         let mut rows = Vec::new();
-        let mut selected = Vec::new();
         let mut edits = Vec::new();
-        for line in rect.first_line..=rect.last_line {
-            let part = self.row_part(line, rect.left_cell, rect.right_cell + 1);
-            selected.push(part.selected);
-            if let Some(range) = part.range {
-                if line != rect.first_line {
-                    rows.push(line);
-                }
-                edits.push(Replacement::new(range, part.remaining));
+        let value = self.block_register(rect, |line, part| {
+            if insert && line != rect.first_line && !part.short {
+                rows.push(line);
             }
-        }
+            if !part.range.is_empty() {
+                edits.push(Replacement::new(part.range, " ".repeat(part.retained)));
+            }
+        });
         if let Err(error) = self.apply(
             self.current(),
             self.buf().revision(),
@@ -260,14 +302,7 @@ impl Editor {
             self.message = error.to_string();
             return;
         }
-        self.delete_register(
-            register,
-            Register::blockwise(
-                selected.join("\n"),
-                DisplayColumn::new(rect.right_cell - rect.left_cell + 1),
-            ),
-            false,
-        );
+        self.delete_register(register, value, false);
         self.mode = if insert { Mode::Insert } else { Mode::Normal };
         self.land_at_cell(rect.first_line, rect.left_cell);
         if insert {
@@ -334,7 +369,10 @@ impl Editor {
             return;
         };
         let column = if right {
-            rect.right_cell + 1
+            let Some(last) = rect.right_cell else {
+                return self.block_append_at_ends(rect);
+            };
+            last + 1
         } else {
             rect.left_cell
         };

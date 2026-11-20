@@ -6,7 +6,7 @@ use super::super::parser::{
     BooleanExpr, CaseMode, MetadataAtom, QueryDiagnostic, QueryState, SearchQuery,
 };
 use super::super::schema::Field;
-use super::{build_regex, content::ReplacementTarget};
+use super::build_regex;
 
 /// The one row decision (0109 §3.2d): the Boolean AST and the flat
 /// filters as one conjunction, with every atom compiled once, judged
@@ -156,33 +156,11 @@ impl Admission {
         self.root.uses(&|test| matches!(test, Test::Repo(_)))
     }
 
-    /// The provider prefilter pattern: alternation of every positive
-    /// content atom. Negative terms contribute nothing (0063 §4); a
-    /// query with no positive content atom matches every line.
-    pub(super) fn prefilter_pattern(expr: &BooleanExpr, out: &mut Vec<String>) {
-        match expr {
-            BooleanExpr::And(operands) | BooleanExpr::Or(operands) => {
-                for inner in operands {
-                    Self::prefilter_pattern(inner, out);
-                }
-            }
-            BooleanExpr::Not(_) | BooleanExpr::Metadata(_) => {}
-            BooleanExpr::Content(atom) => out.push(if atom.regex {
-                format!("(?:{})", atom.text)
-            } else {
-                regex::escape(&atom.text)
-            }),
-        }
-    }
-
-    pub(super) fn replacement_target(&self) -> ReplacementTarget {
-        let mut atoms: Vec<&regex::Regex> = Vec::new();
+    /// Reuse the exact, individually case-resolved matchers for hit spans.
+    pub(super) fn positive_atoms(&self) -> Vec<regex::Regex> {
+        let mut atoms = Vec::new();
         collect_positive_atoms(&self.root, false, &mut atoms);
-        match atoms.len() {
-            0 => ReplacementTarget::Missing,
-            1 => ReplacementTarget::Single(atoms[0].clone()),
-            count => ReplacementTarget::Ambiguous(count),
-        }
+        atoms
     }
 }
 
@@ -332,11 +310,7 @@ impl Test {
 
 /// Positive content atoms by NOT-parity: an atom under an even number
 /// of negations is a candidate target.
-fn collect_positive_atoms<'a>(
-    expr: &'a CompiledExpr,
-    negated: bool,
-    out: &mut Vec<&'a regex::Regex>,
-) {
+fn collect_positive_atoms(expr: &CompiledExpr, negated: bool, out: &mut Vec<regex::Regex>) {
     match expr {
         CompiledExpr::And(operands) | CompiledExpr::Or(operands) => {
             for operand in operands {
@@ -346,7 +320,7 @@ fn collect_positive_atoms<'a>(
         CompiledExpr::Not(inner) => collect_positive_atoms(inner, !negated, out),
         CompiledExpr::Content(regex) => {
             if !negated {
-                out.push(regex);
+                out.push(regex.clone());
             }
         }
         CompiledExpr::Metadata { .. } => {}

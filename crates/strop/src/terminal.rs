@@ -182,10 +182,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             std::thread::park_timeout(Duration::from_millis(16));
         }
     }
-    editor.recorded_action(
-        editor::trace::drive::Action::Finish,
-        editor.tape().sample_tick(),
-    )?;
+    editor.begin_shutdown()?;
     let settle_deadline = std::time::Instant::now() + Duration::from_secs(30);
     while editor.async_pending() {
         let remaining = settle_deadline.saturating_duration_since(std::time::Instant::now());

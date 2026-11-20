@@ -16,6 +16,10 @@ pub(crate) fn bind_command<'a>(
     editor: &Editor,
     command: &'a Command,
 ) -> Result<Cow<'a, Command>, String> {
+    let screen_layout = || strop_grammar::ScreenLayout {
+        tab_width: editor.cur_indent().width,
+        allow_eol: editor.mode() != crate::editor::Mode::Normal && command.op.is_none(),
+    };
     let target = match &command.target {
         Target::Motion(Motion::Mark {
             name,
@@ -45,21 +49,16 @@ pub(crate) fn bind_command<'a>(
                 line: Some(line.min(editor.buf().last_content_line())),
             })
         }
-        Target::Motion(
-            motion @ (Motion::ScreenDown { column: None } | Motion::ScreenUp { column: None }),
-        ) => {
-            let column = editor.view().desired_column.map_or_else(
-                || editor.buf().col_of(editor.head()),
-                strop_core::id::DisplayColumn::get,
-            );
+        Target::Motion(Motion::Column { .. }) => Target::Motion(Motion::Column {
+            layout: screen_layout(),
+        }),
+        Target::Motion(motion @ (Motion::ScreenDown { .. } | Motion::ScreenUp { .. })) => {
+            let column = Some(editor.wanted_cell());
+            let layout = screen_layout();
             Target::Motion(if matches!(motion, Motion::ScreenDown { .. }) {
-                Motion::ScreenDown {
-                    column: Some(column),
-                }
+                Motion::ScreenDown { column, layout }
             } else {
-                Motion::ScreenUp {
-                    column: Some(column),
-                }
+                Motion::ScreenUp { column, layout }
             })
         }
         Target::Motion(Motion::RepeatFind { reverse }) => {

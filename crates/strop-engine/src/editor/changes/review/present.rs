@@ -168,6 +168,7 @@ impl Editor {
         &mut self,
         plan: ChangePlan,
         body: ReviewBuffer,
+        excluded: usize,
         stamp: crate::editor::picker::search::SearchStamp,
         focus: bool,
     ) {
@@ -175,6 +176,11 @@ impl Editor {
             return;
         };
         let mut text = Self::review_head(&plan);
+        let included: usize = plan.documents.iter().map(|doc| doc.edits.len()).sum();
+        text.line(
+            &format!("{included} matches included, {excluded} excluded"),
+            ReviewRow::Context,
+        );
         text.append(body);
         Self::review_refusals(&mut text, &plan);
         self.publish_review(id, plan, text, Some(stamp), focus);

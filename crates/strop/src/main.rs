@@ -116,22 +116,15 @@ fn execute(
         cli::Command::Headless {
             script,
             path,
+            readonly,
             stdin,
         } => {
             let script = std::fs::read_to_string(script)?;
             let Initial {
-                mut buffer,
-                directory,
+                mut editor,
+                open,
                 refusal,
-            } = initial_buffer(&path)?;
-            if stdin {
-                // Headless is deterministic: stdin is read whole, up front.
-                let mut bytes = Vec::new();
-                io::stdin().lock().read_to_end(&mut bytes)?;
-                buffer = Buffer::from_text(&String::from_utf8_lossy(&bytes));
-                buffer.name = Some("stdin".into());
-            }
-            let mut editor = editor::Editor::new(buffer);
+            } = initial_editor(&path, readonly, stdin)?;
             editor.set_terminal_capture(terminal_capture);
             editor.set_terminal_keyboard(strop_terminal::model::SUPPORTED_KEYBOARD_FLAGS)?;
             let (configuration, error) = config::Config::load();
@@ -146,7 +139,6 @@ fn execute(
                 &mut editor,
                 path.as_ref().and_then(|location| location.line),
             );
-            let open = startup_open(&path, false, directory.then_some(editor.cwd()));
             headless::run_script(
                 &mut editor,
                 &script,
@@ -162,14 +154,10 @@ fn execute(
             stdin,
         } => {
             let Initial {
-                mut buffer,
-                directory,
+                mut editor,
+                open,
                 refusal,
-            } = initial_buffer(&path)?;
-            // The CLI --readonly flag lands on the buffer before
-            // admission; the editor never sees a post-hoc mutation.
-            buffer.readonly = readonly;
-            let mut editor = editor::Editor::new(buffer);
+            } = initial_editor(&path, readonly, false)?;
             editor.set_terminal_capture(terminal_capture);
             editor.set_frame_draw(Some(headless::frame_draw));
             let (configuration, error) = config::Config::load();
@@ -199,19 +187,18 @@ fn execute(
                     .seed(&editor::trace::seed::Seed::capture(&editor)?)?;
             }
             let tick = editor.tape().sample_tick();
-            editor.recorded_action(
-                editor::trace::drive::Action::Start {
-                    open: startup_open(&path, readonly, directory.then_some(editor.cwd())),
-                },
-                tick,
-            )?;
+            editor.recorded_action(editor::trace::drive::Action::Start { open }, tick)?;
             terminal::run(editor)?;
         }
     }
     io::stdout().flush()?;
     Ok(())
 }
-fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<Initial, Box<dyn Error>> {
+fn initial_editor(
+    location: &Option<cli::FileLocation>,
+    readonly: bool,
+    read_stdin: bool,
+) -> Result<Initial, Box<dyn Error>> {
     let local = location
         .as_ref()
         .and_then(|location| location.path.local_path());
@@ -229,25 +216,38 @@ fn initial_buffer(location: &Option<cli::FileLocation>) -> Result<Initial, Box<d
     // The file goes through the guarded read `:e` uses (plan 0108 H6):
     // a device, FIFO or undecodable file is refused with `:e`'s message
     // and the editor starts on an empty buffer.
-    let (buffer, refusal) = match local.filter(|_| directory.is_none()) {
+    let (mut buffer, refusal) = match local.filter(|_| directory.is_none()) {
         Some(path) => match editor::io::open_startup_file(std::env::current_dir()?.join(path)) {
             Ok(buffer) => (buffer, None),
             Err(refusal) => (Buffer::from_text(""), Some(refusal)),
         },
+        None if read_stdin => {
+            // Headless consumes stdin before admission; the TUI streams it.
+            let mut bytes = Vec::new();
+            io::stdin().lock().read_to_end(&mut bytes)?;
+            let mut buffer = Buffer::from_text(&String::from_utf8_lossy(&bytes));
+            buffer.name = Some("stdin".into());
+            (buffer, None)
+        }
         None => (Buffer::from_text(""), None),
     };
+    if readonly {
+        buffer.set_readonly(strop_core::ReadonlyReason::Command);
+    }
+    let editor = editor::Editor::new(buffer);
+    let open = startup_open(location, readonly, directory.map(|_| editor.cwd()));
     Ok(Initial {
-        buffer,
-        directory: directory.is_some(),
+        editor,
+        open,
         refusal,
     })
 }
 
 /// What the command line opens before the editor starts.
 struct Initial {
-    buffer: Buffer,
-    /// The operand is a directory (the editor browses it).
-    directory: bool,
+    editor: editor::Editor,
+    /// The deferred open, for a remote operand or a local directory.
+    open: Option<editor::trace::drive::StartupOpen>,
     /// Why the operand's file could not be opened, shown as `:e` shows it.
     refusal: Option<String>,
 }
@@ -268,7 +268,7 @@ fn startup_open(
     let location = location.as_ref()?;
     let intent = match location.path {
         files::FileTarget::Remote(_) => match location.line {
-            Some(line) => editor::io::OpenIntent::AtLine { line },
+            Some(line) => editor::io::OpenIntent::AtLine { line, readonly },
             None => editor::io::OpenIntent::Switch { readonly },
         },
         files::FileTarget::Local(_) => return None,

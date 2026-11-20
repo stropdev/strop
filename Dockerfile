@@ -41,10 +41,11 @@ ARG LOOM_TESTS=7
 RUN apk add --no-cache openssh-client openssh-server openssh-sftp-server python3
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/cache/target,id=strop-test,sharing=locked \
+    --mount=type=tmpfs,target=/tmp/strop-differential \
     find crates docs -type f -exec touch {} + \
     && cargo fmt --check \
     && cargo clippy --locked --workspace --all-targets -- -D warnings \
-    && STROP_REQUIRE_SSH_TESTS=1 STROP_REQUIRE_NVIM=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
+    && STROP_DIFF_TMPDIR=/tmp/strop-differential STROP_REQUIRE_SSH_TESTS=1 STROP_REQUIRE_NVIM=1 STROP_JOBS_BUDGET_MS=300000 cargo test --locked \
     && export CARGO_TARGET_DIR=/cache/target/loom RUSTFLAGS="--cfg strop_loom" \
     && loom_tests=$(cargo test --locked -p strop-core -p strop-engine -p strop-lsp loom -- --list \
         | grep -c ': test$' || true) \

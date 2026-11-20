@@ -35,6 +35,8 @@ pub enum OpenIntent {
     Tab,
     AtLine {
         line: LineIndex,
+        #[serde(default)]
+        readonly: bool,
     },
     Refresh,
     Browse,

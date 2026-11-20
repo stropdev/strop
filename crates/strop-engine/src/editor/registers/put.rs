@@ -286,16 +286,25 @@ struct Spot {
     text: String,
 }
 
-/// One pasted block row's bytes. Mid-row puts right-pad the row to the
-/// rectangle before repeating it `count` times (vim's counted block
-/// put repeats the PADDED row horizontally); puts at a row's end or on
-/// created rows repeat the bare row.
+/// Repetitions are a rectangle too: pad between them even at EOL, but
+/// don't leave trailing padding after the last one unless text follows.
 fn block_row(row: &str, width: DisplayColumn, count: usize, mid_row: bool, tab: usize) -> String {
-    let mut unit = row.to_string();
-    if mid_row {
-        let cells = LineLayout::build(row, tab).width.get();
-        let pad = width.get().saturating_sub(cells);
-        unit.push_str(&" ".repeat(pad));
+    if count == 1 && !mid_row {
+        return row.to_owned();
     }
-    unit.repeat(count)
+    let cells = strop_core::layout::text_width(row, tab);
+    let pad = width.saturating_sub(cells.get()).get();
+    let padded = if mid_row {
+        count
+    } else {
+        count.saturating_sub(1)
+    };
+    let mut text = String::with_capacity(row.len() * count + pad * padded);
+    for i in 0..count {
+        text.push_str(row);
+        if i < padded {
+            text.extend(std::iter::repeat_n(' ', pad));
+        }
+    }
+    text
 }

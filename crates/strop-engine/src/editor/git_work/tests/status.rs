@@ -160,6 +160,38 @@ fn u_on_a_staged_hunk_unstages_only_that_hunk() {
 }
 
 #[test]
+fn status_native_name_hunk_keys_target_the_original_path() {
+    let (dir, mut e) = work_fixture();
+    let root = dir.path();
+    for name in ["a\nb", r"a\nb"] {
+        std::fs::write(root.join(name), "old\n").unwrap();
+    }
+    git(root, &["add", "--", "a\nb", r"a\nb"]);
+    git(root, &["commit", "-qm", "two distinct names"]);
+    std::fs::write(root.join("a\nb"), "newline edit\n").unwrap();
+    std::fs::write(root.join(r"a\nb"), "backslash edit\n").unwrap();
+
+    key(&mut e, " gg");
+    goto(&mut e, r"M a\nb");
+    key(&mut e, "=");
+    goto(&mut e, "+newline edit");
+    key(&mut e, "s");
+    let repo = strop_git::Repo::discover(root).unwrap();
+    assert_eq!(
+        repo.index_bytes(Path::new("a\nb")).unwrap(),
+        b"newline edit\n"
+    );
+    assert_eq!(repo.index_bytes(Path::new(r"a\nb")).unwrap(), b"old\n");
+
+    goto(&mut e, r"M a\nb");
+    key(&mut e, "=");
+    goto(&mut e, "+newline edit");
+    key(&mut e, "u");
+    assert_eq!(repo.index_bytes(Path::new("a\nb")).unwrap(), b"old\n");
+    assert_eq!(repo.index_bytes(Path::new(r"a\nb")).unwrap(), b"old\n");
+}
+
+#[test]
 fn x_discards_only_after_y_confirms() {
     let (dir, mut e) = status_fixture();
     key(&mut e, "X");
@@ -250,6 +282,33 @@ fn enter_opens_the_file_and_a_diff_row_opens_at_its_line() {
     goto(&mut e, "Unstaged");
     e.feed(Key::Enter);
     assert_eq!(e.message, "no file here");
+}
+
+#[test]
+fn status_native_names_open_from_their_display_rows() {
+    let (dir, mut e) = work_fixture();
+    // The literal backslash spelling and the newline must remain distinct.
+    let files = [
+        ("a\nb", r"? a\nb"),
+        (r"a\nb", r"? a\\nb"),
+        ("c\td", r"? c\td"),
+        ("ordinary", "? ordinary"),
+    ];
+    for (name, _) in files {
+        std::fs::write(dir.path().join(name), "contents\n").unwrap();
+    }
+    for (name, label) in files {
+        key(&mut e, " gg");
+        goto(&mut e, label);
+        assert_eq!(cursor_line(&e), label);
+        e.feed(Key::Enter);
+        settle_work(&mut e);
+        assert_eq!(
+            e.buf().path.as_deref(),
+            Some(dir.path().join(name).as_path())
+        );
+        assert_eq!(text(&e), "contents\n");
+    }
 }
 
 #[test]

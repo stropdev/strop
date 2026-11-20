@@ -413,34 +413,12 @@ impl Editor {
                     // The baseline already covers this observation — an
                     // own-save receipt or a duplicate hint. Nothing to do.
                 } else {
-                    let binding = strop_core::Buffer::from_read(
-                        opened
-                            .document
-                            .buf
-                            .path
-                            .clone()
-                            .unwrap_or_else(|| key.path.clone()),
-                        ropey::Rope::new(),
-                        observed_stamp,
-                        opened
-                            .document
-                            .buf
-                            .file_identity()
-                            .map(std::path::Path::to_path_buf)
-                            .unwrap_or_else(|| key.path.clone()),
-                        true,
-                    );
                     let label = self.doc(key.document).label(&self.cwd);
                     let readonly = self.doc(key.document).buf.readonly;
                     let mut replacement = opened.document;
                     replacement.buf.readonly = readonly;
                     match self.publish_source_snapshot(key.document, replacement) {
                         Ok(()) => {
-                            {
-                                let mut doc = self.doc_mut(key.document);
-                                doc.buf.adopt_file_binding(&binding);
-                                doc.external_change = false;
-                            }
                             self.message = format!("{label}: reloaded — changed on disk");
                         }
                         Err(error) => {

@@ -30,12 +30,6 @@ pub const KNOWN: &[(&[&str], &str)] = &[
          the buffer or inserts in column 1.",
     ),
     (
-        &["daw on line-ending blanks is a no-op"],
-        "vim's FAILED current_word still moves the cursor one column (its FAIL path \
-         returns after incl()); strop refuses without moving the cursor. Text agrees; \
-         only the cursor side effect of a refused command differs.",
-    ),
-    (
         &[
             "critique/gn",
             "critique/&",

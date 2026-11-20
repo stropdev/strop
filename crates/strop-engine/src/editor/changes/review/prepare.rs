@@ -65,7 +65,7 @@ struct Target {
 pub struct PreparedReview {
     targets: Vec<Target>,
     refused: Vec<(ResourceLocation, String)>,
-    summary: String,
+    excluded: usize,
 }
 
 impl Editor {
@@ -243,7 +243,6 @@ impl Editor {
             refused: prepared.refused,
         };
         let mut body = ReviewBuffer::default();
-        body.line(&prepared.summary, ReviewRow::Context);
         for target in prepared.targets {
             let document = match target.source {
                 Source::Existing { document, revision } => {
@@ -306,7 +305,7 @@ impl Editor {
             body.line("", ReviewRow::Context);
             body.append(target.diff);
         }
-        self.present_prepared_search_review(plan, body, key.stamp, focus);
+        self.present_prepared_search_review(plan, body, prepared.excluded, key.stamp, focus);
     }
 }
 
@@ -384,10 +383,7 @@ fn prepare(input: Input, cancel: &worker::CancelToken) -> Outcome<PreparedReview
     let mut result = PreparedReview {
         targets: Vec::new(),
         refused: Vec::new(),
-        summary: format!(
-            "{} matches included, {excluded} excluded",
-            input.catalog.len().saturating_sub(excluded)
-        ),
+        excluded,
     };
     for (path, mut hits) in sources {
         if cancel.is_cancelled() {

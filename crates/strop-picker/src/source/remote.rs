@@ -6,7 +6,7 @@ use super::{
     query::{parse_json_match_with, scoped_path, RECORD_LIMIT},
     PickerMsg, SelectionPolicy, SourceSnapshot,
 };
-use crate::query::{CaseMode, ContentPlan, Evidence, FileSelectionPlan, RowFacts, SearchQuery};
+use crate::query::{CaseMode, ContentPlan, Evidence, FileSelectionPlan, SearchQuery};
 use std::ffi::OsStr;
 use std::time::Duration;
 use std::{ffi::OsString, path::PathBuf, sync::Arc};
@@ -158,21 +158,9 @@ fn search(
             }
         }
         let mut records = Records::new(b'\n');
-        let admits = {
-            let content = content.clone();
-            move |path: &str, line: Option<usize>, text: &str| {
-                let row = RowFacts {
-                    path: Some(path),
-                    line,
-                    text,
-                    ..RowFacts::default()
-                };
-                content.admits(&row, &Evidence::default())
-            }
-        };
         run(&backend, host, root, args, token, tx, |chunk| {
             records.feed(chunk, |record| {
-                let items = parse_json_match_with(record, root, Some(&admits))?;
+                let items = parse_json_match_with(record, root, &content, &Evidence::default())?;
                 tx.batch(items, token)
                     .map_err(|error| error.message().to_string())
             })
