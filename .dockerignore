@@ -1,6 +1,6 @@
-# Build context: sources only (plans/0086 §8).
+# Build context: sources only (verified foundation, legacy RFC 0086 §8).
 .git/
 dist/
 target/
-plans/
+docs/rfcs/
 proofs/.lake/

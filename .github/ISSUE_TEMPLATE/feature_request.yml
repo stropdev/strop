@@ -1,0 +1,23 @@
+name: Feature or design proposal
+description: Propose a capability or a change of contract.
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Give a concrete editing workflow and its limitation today.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would success look like?
+      description: Describe the observable result. A finished design is not required.
+    validations:
+      required: true
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Existing decisions or alternatives
+      description: Link relevant issues or RFCs and identify any compatibility or proof question.

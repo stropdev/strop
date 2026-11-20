@@ -65,7 +65,7 @@ fetch_to() {
     fi
 }
 
-# Detect OS/arch — the current release scope (plans/0079-local-linux-release.md).
+# Detect OS/arch — only Linux/WSL x86_64 receives new release artifacts.
 OS=$(uname -s)
 ARCH=$(uname -m)
 case "$OS/$ARCH" in

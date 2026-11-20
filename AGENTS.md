@@ -1,8 +1,8 @@
 # AGENTS.md — working rules for strop
 
-Strop is a modal text editor in Rust (see `plans/0001-vision-and-design.md` — the design
-contract; numbered plans in `plans/` are load-bearing decisions). These rules govern any
-agent or human working in this repo.
+Strop is a modal text editor in Rust. The [vision and design contract](docs/rfcs/2026-08-31-vision-and-design.md)
+and the accepted [RFCs](docs/rfcs/README.md) govern the editor. Numeric citations below are
+legacy IDs in that registry. These rules govern any agent or human working in this repo.
 
 ## Doctrine (never trade these away)
 
@@ -29,7 +29,7 @@ agent or human working in this repo.
    Past the ceiling, split by responsibility — rootle's `settings_popup/{mod,render,
    sections}.rs` shape is the pattern: one component, one directory, files by concern.
    When a change pushes a file toward the ceiling mid-flight, fold the split into
-   the same patch when it is cheap, or record a roadmap item in `plans/0028` in
+   the same patch when it is cheap, or open a scoped GitHub issue and reference it in
    the same commit — never let an over-ceiling file drift uncommented. Test
    modules count toward the ceiling too: a test file past it splits by
    concern into a `tests/` submodule (see `query/plan/tests.rs`). The same
@@ -49,7 +49,7 @@ agent or human working in this repo.
    corpora diffs clean against nvim.
 - Test behavior, boundaries, invariants — not plumbing, not source text, not incidental
    defaults. Deterministic and hermetic: no network, no real `$HOME`, no wall-clock
-   sleeps. The e2e tiers live in `plans/0006-e2e-harness.md`.
+   sleeps. The [e2e harness RFC](docs/rfcs/2026-09-01-e2e-harness.md) defines the tiers.
 - Golden cell-grid snapshots via `TestBackend` for anything visual; state assertions for
    anything grammatical.
 
@@ -66,7 +66,7 @@ agent or human working in this repo.
 - After landing a feature that pushed a file past the ceiling, the
   follow-up split is part of the same change — not someday.
 
-## Verification (plans/0086)
+## Verification ([verified foundation](docs/rfcs/2026-11-09-verified-foundation.md))
 
 strop follows the ring design: a pure, dependency-free kernel
 (`crates/strop-kernel`, `no_std`, no IO) is translated to Lean 4 by
@@ -82,7 +82,7 @@ tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
   model of the code is broken by a *paired* mutant that patches the Rust and
   the model together; a bridge breaking does not calibrate it. The audit
   refuses a public kernel function no claim's statement mentions, and the
-  calibration refuses a claim no mutant breaks (plans/0108 D4).
+  calibration refuses a claim no mutant breaks ([0108 D4](docs/rfcs/2026-11-17-lean-and-correct.md)).
 - **Kernel shape:** plain safe Rust, no dependencies, no closures or iterator
   adaptors in proved code, explicit loops over slices. After changing it run
   `sh proofs/refresh.sh` and commit `proofs/Extracted/` — the gate refuses
@@ -99,8 +99,8 @@ tests, Loom, real sshd/Docker journeys, the Neovim differential harness.
 "Cut a release" means **publicly available**, not "tag pushed" or "draft
 created". The release task stays open until every gate below is verified
 against the exact local artifact and live public surfaces. Partial progress is
-exactly that: partial. The authoritative procedure is `plans/0079` and
-`.github/scripts/release-local.sh`.
+exactly that: partial. The authoritative procedure is the [local Linux release RFC](docs/rfcs/2026-11-03-local-linux-release.md)
+and `.github/scripts/release-local.sh`.
 
 1. **Local qualification**: a clean committed Linux/WSL checkout whose GitHub
    `ci` run is green (test, ssh-pythonfree) passes the
@@ -135,14 +135,16 @@ The release is done when all four checks pass, and not one moment before.
 - Hot paths (input→render, per-keystroke preview): no avoidable allocation, no
   `String` materialization of rope content, no per-keystroke process spawn (0001 §3:
   libgit2 for git hot paths, not shell-outs).
-- Plans before code for anything architectural: add/amend a numbered doc in `plans/`.
+- For architectural work, follow [governance](GOVERNANCE.md): tracking issue first,
+  then a dated [RFC](docs/rfcs/README.md) or amendment, accepted before implementation.
+  Track outstanding work and release picks in GitHub issues and milestones, not RFC checklists.
 - **Docker compose is the default build/test path.** `docker compose run --build --rm test`
   is how changes get validated — layer caching keeps it fast, and the source tree is
   never clobbered with build assets (no host `target/`, no stray tool installs). Host
   `cargo` is acceptable for rapid iteration mid-change, but "done" means the compose
   gate passed; never commit build artifacts.
 - Release: tags `v*`; local BuildKit qualification and manual GitHub publication
-  follow `plans/0079` and `.github/scripts/release-local.sh`. Never rebuild while
+  follow the [release RFC](docs/rfcs/2026-11-03-local-linux-release.md) and `.github/scripts/release-local.sh`. Never rebuild while
   publishing a qualified artifact. A version bump is two moves, both in the
   tagged commit: the workspace `Cargo.toml` version + `cargo check` to sync
   `Cargo.lock` (the release gate runs `--locked` — a stale lock fails the
