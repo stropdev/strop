@@ -339,8 +339,8 @@ fn have_nvim() -> bool {
 }
 
 /// `Some(report)` when the two editors disagree on this case.
-fn divergence(run: &Run) -> Option<String> {
-    let dir = tempfile::tempdir().unwrap();
+fn divergence(run: &Run, scratch: &std::path::Path) -> Option<String> {
+    let dir = tempfile::tempdir_in(scratch).unwrap();
     let strop_dir = dir.path().join("strop");
     let nvim_dir = dir.path().join("nvim");
     std::fs::create_dir_all(&strop_dir).unwrap();
@@ -406,6 +406,11 @@ fn differential_vs_nvim() {
         );
     }
 
+    // The final :w observes buffer text, not disk durability. Compose puts
+    // this corpus on tmpfs so thousands of fsyncs do not stall unrelated
+    // cases on the same backing disk. Store and SSH tests use their usual FS.
+    let scratch = std::env::var_os("STROP_DIFF_TMPDIR")
+        .map_or_else(std::env::temp_dir, std::path::PathBuf::from);
     // Each case starts real, multithreaded editors and waits for disk I/O.
     // Bound concurrent process pairs, not coverage or the hang deadlines.
     let next = AtomicUsize::new(0);
@@ -420,7 +425,7 @@ fn differential_vs_nvim() {
                 let Some(run) = runs.get(index) else {
                     return;
                 };
-                if let Some(report) = divergence(run) {
+                if let Some(report) = divergence(run, &scratch) {
                     reports.lock().unwrap().push((index, report));
                 }
             });
