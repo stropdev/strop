@@ -113,7 +113,9 @@ More); `]]` and `[[` move between them, `Enter` on a name opens it, and
 - **Vim's keys, checked.** Where strop differs from Neovim it is a bug,
   and a test suite that runs both side by side finds it.
 
-The design notes are in [plans/](plans/).
+The [RFC registry](docs/rfcs/README.md) distinguishes design decisions from what landed.
+See [open issues](https://github.com/stropdev/strop/issues) for what is missing and
+[release milestones](https://github.com/stropdev/strop/milestones) for what to pick up next.
 
 ## Reporting a bug
 
@@ -137,7 +139,7 @@ marks and selections through an edit is a small separate crate
 (`crates/strop-kernel`) that is translated to Lean 4 and proved correct
 there. The rest is covered by tests that drive the real binary, including
 over a real SSH server. The details are in
-[plans/0086](plans/0086-verified-foundation.md), and
+the [verified foundation RFC](docs/rfcs/2026-11-09-verified-foundation.md), and
 `docker compose run --build --rm proofs` prints the list of what is proved.
 
 ## Security
@@ -149,6 +151,6 @@ Report vulnerabilities privately; the policy and privacy statement live in
 
 - [strop.dev](https://strop.dev) — install, first ten minutes, coming from Neovim
 - [docs/](docs/) — the documentation
-- [plans/](plans/) — design notes
+- [Contributing](CONTRIBUTING.md) · [governance](GOVERNANCE.md) · [RFCs](docs/rfcs/README.md)
 
 MIT license · © 2026 [Tarek Nawara](https://github.com/tknawara)

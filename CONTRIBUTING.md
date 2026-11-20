@@ -1,0 +1,8 @@
+# Contributing to Strop
+
+1. Start with the next candidate in [open release milestones](https://github.com/stropdev/strop/milestones) and its pickup order, or search [all issues](https://github.com/stropdev/strop/issues) before opening one. A `needs-triage` ticket needs a concrete witness or an owner decision, not a speculative patch. For suspected vulnerabilities use [private reporting](SECURITY.md).
+2. For a regression, give a small buffer, the literal keys or CLI command, and the expected and actual result. For Vim behaviour use the Neovim oracle; for a visible change use a real editor journey or cell-grid snapshot. Never attach an unreviewed trace: logs can contain file paths, keys, commands and document text.
+3. An ordinary fix restores an existing contract. For a change of contract, follow the [RFC process](docs/rfcs/README.md) and the [maintainer’s triage rules](GOVERNANCE.md) before implementing. Read the [engineering rules](AGENTS.md); an RFC cannot waive the preview, async, buffer or proof invariants.
+4. Keep a PR tied to its outcome: `Refs #N` while work remains, `Closes #N` for the final delivery. Name the deterministic witness and the checks actually run. Update the RFC’s as-built state and the relevant user docs and changelog. Do not mark design acceptance as delivery or declare a release from a passing test.
+
+The standard code gate is `docker compose run --build --rm test`. The Python-free SSH lane exercises a real host; a changed kernel also needs refreshed extraction and the `proofs` gate. The [release procedure](AGENTS.md#release-gates) is separate from merging a PR.

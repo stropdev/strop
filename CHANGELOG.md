@@ -1,5 +1,7 @@
 # Changelog
 
+Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
+
 ## 0.72.0 — 2026-11-18
 
 ### Added

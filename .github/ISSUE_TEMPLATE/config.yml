@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/stropdev/strop/blob/main/SECURITY.md
+    about: Follow the security policy; do not disclose vulnerabilities in public issues.
+  - name: RFC process and registry
+    url: https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md
+    about: Look up existing decisions and when a proposal needs an RFC.

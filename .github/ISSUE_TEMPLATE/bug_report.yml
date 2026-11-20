@@ -1,0 +1,28 @@
+name: Bug report
+description: Report broken editor behaviour or a documentation mismatch.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Suspected vulnerability? Use [private reporting](https://github.com/stropdev/strop/blob/main/SECURITY.md). Redact paths, keys and document contents before sharing a trace."
+  - type: input
+    id: version
+    attributes:
+      label: Strop version and environment
+      description: Output of strop --version; Linux or WSL, and terminal if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: witness
+    attributes:
+      label: Minimal example
+      description: Starting buffer or project, literal keys or command, and cursor position if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Actual and expected result
+      description: For Vim behaviour, include the Neovim result and version if available.
+    validations:
+      required: true
