@@ -271,6 +271,53 @@ fn file_delta_reads_each_edge() {
     );
 }
 
+#[test]
+fn hunk_stage_and_unstage_preserve_native_index_paths() {
+    use std::ffi::OsStr;
+
+    let (dir, repo) = fixture();
+    let root = dir.path();
+    let names = [b"a\\b.rs".as_slice(), b"invalid-\xff.rs", b"nested/file.rs"];
+    std::fs::create_dir(root.join("nested")).unwrap();
+    for name in names {
+        std::fs::write(root.join(OsStr::from_bytes(name)), "old\n").unwrap();
+    }
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "native names"]);
+    let index_paths = || {
+        let output = Command::new("git")
+            .args(["ls-files", "-z"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        output.stdout
+    };
+    let baseline = index_paths();
+    for name in names {
+        let rel = Path::new(OsStr::from_bytes(name));
+        let path = root.join(rel);
+        std::fs::write(&path, "new\n").unwrap();
+        let unstaged = repo.unstaged_hunks(&path, "new\n").unwrap();
+        repo.stage_hunk(rel, &unstaged[0]).unwrap();
+        assert_eq!(
+            index_paths(),
+            baseline,
+            "stage added a second spelling of {rel:?}"
+        );
+        assert_eq!(repo.index_bytes(rel).unwrap(), b"new\n");
+
+        let staged = repo.staged_hunks(&path).unwrap();
+        repo.unstage_hunk(rel, &staged[0]).unwrap();
+        assert_eq!(
+            index_paths(),
+            baseline,
+            "unstage added a second spelling of {rel:?}"
+        );
+        assert_eq!(repo.index_bytes(rel).unwrap(), b"old\n");
+    }
+}
+
 /// Two separated edits: discarding the first hunk leaves the second,
 /// byte for byte, including a missing final newline.
 #[test]

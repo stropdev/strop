@@ -28,15 +28,25 @@ impl Editor {
             grammar::Target::Motion(
                 grammar::Motion::Down
                 | grammar::Motion::Up
-                | grammar::Motion::ScreenDown { .. }
-                | grammar::Motion::ScreenUp { .. }
                 | grammar::Motion::FirstLine
                 | grammar::Motion::LastLine
                 | grammar::Motion::Window { .. },
             ) => Some(self.wanted_cell()),
             grammar::Target::Motion(grammar::Motion::LineEnd) => {
-                Some(strop_core::id::DisplayColumn::new(usize::MAX / 2))
+                Some(strop_core::id::DisplayColumn::new(usize::MAX))
             }
+            _ => None,
+        };
+        // These motions already resolved their display column in the grammar.
+        // Keep the requested cell, not the cell a tab or short line landed on.
+        let resolved_column = match &command.target {
+            grammar::Target::Motion(grammar::Motion::Column { .. }) => {
+                Some(command.count.unwrap_or(1).saturating_sub(1).into())
+            }
+            grammar::Target::Motion(
+                grammar::Motion::ScreenDown { column, .. }
+                | grammar::Motion::ScreenUp { column, .. },
+            ) => *column,
             _ => None,
         };
         let cursors = self.all_cursors();
@@ -83,7 +93,11 @@ impl Editor {
                     });
                     strop_core::selection::Selection {
                         anchor: old.anchor,
-                        head: self.clamp_pos(head),
+                        head: if resolved_column.is_some() {
+                            head
+                        } else {
+                            self.clamp_pos(head)
+                        },
                     }
                 })
                 .collect()
@@ -93,13 +107,17 @@ impl Editor {
             self.set_head(head);
         }
         self.sels_mut().set_extra_selections(extras);
-        self.clamp_cursor();
+        if resolved_column.is_none() {
+            self.clamp_cursor();
+        }
         self.normalize_cursors();
         if let Some(column) = wanted {
             if head.is_some() {
                 let line = self.buf().line_of(self.head());
                 self.land_at_cell(line, column);
             }
+            self.view_mut().desired_column = Some(column);
+        } else if let Some(column) = resolved_column {
             self.view_mut().desired_column = Some(column);
         }
         if is_search && primary.is_none() {

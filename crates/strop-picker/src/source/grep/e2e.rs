@@ -230,6 +230,55 @@ fn dirty_source_text_is_authoritative_for_content_and_kind_evidence() {
     );
 }
 
+#[test]
+fn boolean_spans_preserve_per_atom_case_and_overlaps_on_disk_and_overlays() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let text = "Needle needle NEEDLE\n";
+    std::fs::write(root.join("disk.txt"), text).unwrap();
+    std::fs::write(root.join("dirty.txt"), "stale\n").unwrap();
+    for (query, expected) in [
+        ("Needle NOT nomatch", &[(1, 6)][..]),
+        // A folded alternation would skip eed even where Needle is the wrong case.
+        ("Needle AND eed", &[(1, 6), (2, 3), (9, 3), (16, 3)]),
+        // Distinct atoms can also find exactly the same bytes: one hit, not two.
+        ("Needle OR needle", &[(1, 6), (8, 6), (15, 6)]),
+        ("NOT (NOT Needle)", &[(1, 6)]),
+    ] {
+        let hits = run_items(
+            root,
+            query,
+            vec![SourceSnapshot {
+                path: root.join("dirty.txt"),
+                text: ropey::Rope::from_str(text),
+            }],
+        );
+        let mut disk = Vec::new();
+        let mut dirty = Vec::new();
+        for item in hits {
+            let crate::Payload::Grep {
+                location,
+                col,
+                match_len,
+                ..
+            } = item.payload
+            else {
+                panic!("expected grep hit")
+            };
+            if location.path == root.join("disk.txt") {
+                disk.push((col, match_len));
+            } else {
+                assert_eq!(location.path, root.join("dirty.txt"));
+                dirty.push((col, match_len));
+            }
+        }
+        disk.sort_unstable();
+        dirty.sort_unstable();
+        assert_eq!(disk, expected, "disk: {query}");
+        assert_eq!(dirty, expected, "dirty: {query}");
+    }
+}
+
 /// §6.8 cancellation: a search cancelled mid-flight settles with
 /// exactly one terminal Finished(Cancelled) and publishes no row after
 /// the cancel; logical cancellation then becomes physical completion
@@ -406,23 +455,21 @@ fn remote_hits_carry_the_remote_namespace_and_never_escape_the_scope() {
         }))
         .unwrap()
     };
-    // A legitimate remote hit presents the scope-relative path to
-    let seen = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
-    let recorded = seen.clone();
-    let admit = move |path: &str, line: Option<usize>, _text: &str| {
-        recorded.lock().push((path.to_string(), line));
-        true
-    };
-    let items = super::super::query::parse_json_match_with(
-        &record(serde_json::json!({ "text": "src/lib.rs" })),
-        &root,
-        Some(&admit),
-    )
+    // Only a scope-relative path can match this plan.
+    let plan = crate::query::ContentPlan::compile(&crate::query::parse_search(
+        "glob:src/lib.rs AND needle",
+    ))
+    .unwrap()
     .unwrap();
-    assert_eq!(
-        seen.lock().as_slice(),
-        &[("src/lib.rs".to_string(), Some(7))]
-    );
+    let parse = |record: &[u8]| {
+        super::super::query::parse_json_match_with(
+            record,
+            &root,
+            &plan,
+            &crate::query::Evidence::default(),
+        )
+    };
+    let items = parse(&record(serde_json::json!({ "text": "src/lib.rs" }))).unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].text, "src/lib.rs:7 · needle on the remote");
     let crate::Payload::Grep { location, line, .. } = &items[0].payload else {
@@ -439,7 +486,7 @@ fn remote_hits_carry_the_remote_namespace_and_never_escape_the_scope() {
         record(serde_json::json!({ "text": "../outside.rs" })),
         record(serde_json::json!({ "text": "/etc/passwd" })),
     ] {
-        let Err(error) = super::super::query::parse_json_match_with(&forged, &root, None) else {
+        let Err(error) = parse(&forged) else {
             panic!("an escaping remote path must be rejected")
         };
         assert!(error.contains("escaped"), "{error}");
@@ -448,7 +495,7 @@ fn remote_hits_carry_the_remote_namespace_and_never_escape_the_scope() {
     let nul = record(serde_json::json!({
         "bytes": base64::prelude::BASE64_STANDARD.encode(b"lo\0se.rs")
     }));
-    assert!(super::super::query::parse_json_match_with(&nul, &root, None).is_err());
+    assert!(parse(&nul).is_err());
 }
 
 /// Run workspace symbols to completion on a RETAINED worker, returning

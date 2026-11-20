@@ -96,6 +96,44 @@ fn find_enter_opens_sources_in_both_presentations_and_resume_keeps_scope() {
 }
 
 #[test]
+fn reopening_search_restores_both_row_witnesses_in_tree_order() {
+    let (root, mut editor) = fixture();
+    // The dirty b.txt overlay is delivered before disk hits but ranked last.
+    editor.open_fixture(&root.path().join("b.txt")).unwrap();
+    editor.feed_text("Iunsaved <esc>");
+    editor.open_search(false);
+    editor.paste_bracketed("needle");
+    editor.wait_picker();
+    editor.feed(Key::Down);
+    editor.feed(Key::Down);
+    let picker = &mut editor.picker.as_mut().unwrap().picker;
+    picker.scroll_top = 1;
+    let witnesses = |picker: &Picker| {
+        [picker.selected, picker.scroll_top].map(|row| {
+            let item = picker.items.get(picker.rows[row].item).unwrap();
+            let Payload::Grep {
+                location,
+                line,
+                col,
+                ..
+            } = &item.payload
+            else {
+                panic!("expected search hit")
+            };
+            (location.clone(), *line, *col)
+        })
+    };
+    let saved = witnesses(picker);
+    assert_ne!(saved[0], saved[1]);
+    editor.close_picker();
+    // Neither saved row number is valid on reopen, either.
+    std::fs::write(root.path().join("0.txt"), "needle\n").unwrap();
+    editor.open_search(false);
+    editor.wait_picker();
+    assert_eq!(witnesses(&editor.picker.as_ref().unwrap().picker), saved);
+}
+
+#[test]
 fn included_same_line_matches_drive_both_collect_and_review() {
     let (root, mut editor) = fixture();
     editor.open_search(false);
@@ -133,6 +171,40 @@ fn included_same_line_matches_drive_both_collect_and_review() {
         std::fs::read_to_string(root.path().join("a.txt")).unwrap(),
         "needle needle\nsecond needle\n"
     );
+}
+
+#[test]
+fn replacement_review_counts_only_the_spans_in_its_diff() {
+    let (root, mut editor) = fixture();
+    let path = root.path().join("case.txt");
+    std::fs::write(&path, "Needle needle here\n").unwrap();
+    editor.open_search(true);
+    editor.paste_bracketed("Needle NOT nomatch");
+    editor.wait_picker();
+    // Review must count the accepted edit even if a provider delivers a
+    // foreign span. Do not let exact Search producers mask a review bug.
+    editor.picker_items_fixture(vec![Item {
+        badge: None,
+        text: "case.txt:1 · Needle needle here".into(),
+        payload: Payload::Grep {
+            location: strop_workspace::ResourceLocation::local(path),
+            line: 1,
+            col: 8,
+            match_len: 6,
+            line_text: "Needle needle here".into(),
+        },
+        facts: Default::default(),
+    }]);
+    editor.feed(Key::Tab);
+    editor.paste_bracketed("X");
+    editor.feed(Key::Enter);
+    editor.wait_io().unwrap();
+    let review = editor.buf().text().to_string();
+    assert_eq!(
+        review.lines().nth(2),
+        Some("1 matches included, 0 excluded")
+    );
+    assert!(review.lines().any(|line| line == "+X needle here"));
 }
 
 #[test]

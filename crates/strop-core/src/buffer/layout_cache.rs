@@ -125,6 +125,43 @@ impl Buffer {
             .then_some(LayoutCheckpoint::default())
     }
 
+    /// The grapheme covering a screen cell, or the last grapheme of a short
+    /// line. Visual and Insert can instead land on the byte just past its text.
+    pub fn byte_at_cell(
+        &self,
+        line: usize,
+        cell: DisplayColumn,
+        tab: usize,
+        allow_eol: bool,
+    ) -> usize {
+        let start = self.line_start(line);
+        let end = self.line_end(line);
+        let checkpoint = |cell| {
+            self.layout_checkpoint(line.into(), cell, tab)
+                .unwrap_or_default()
+        };
+        let mut point = checkpoint(cell);
+        if start + point.byte.get() == end {
+            if allow_eol || start == end {
+                return end;
+            }
+            point = checkpoint(point.cell.saturating_sub(1));
+        }
+        let mut last = start;
+        let text = self.text().byte_slice(start..end);
+        for (span, _) in RopeGraphemes::from_checkpoint(text, tab, point) {
+            last = start + span.byte;
+            if span.cell + span.width > cell {
+                return last;
+            }
+        }
+        if allow_eol {
+            end
+        } else {
+            last
+        }
+    }
+
     pub fn try_cell_col_with_tab(&self, offset: usize, tab: usize) -> Option<DisplayColumn> {
         self.column_from_layout(offset, tab, true)
     }

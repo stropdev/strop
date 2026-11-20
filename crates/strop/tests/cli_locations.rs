@@ -192,6 +192,36 @@ fn message(output: &str) -> String {
         .to_owned()
 }
 
+#[test]
+fn headless_readonly_refuses_edits_and_writes_to_the_named_file() {
+    for flag in [Some("-R"), Some("--readonly"), None] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let file = root.join("sample.txt");
+        std::fs::write(&file, b"safe\n").unwrap();
+        std::fs::write(
+            root.join("write.keys"),
+            "settle\nkeys A!<esc>\nframe\nkeys :w<cr>\nsettle\nstate\n",
+        )
+        .unwrap();
+        let args: Vec<_> = flag
+            .into_iter()
+            .chain(["headless", "write.keys", "sample.txt"])
+            .map(OsString::from)
+            .collect();
+        let output = text(run(root, &args));
+        if flag.is_some() {
+            assert!(!output.contains("safe!"), "{flag:?}: {output}");
+            assert!(message(&output).contains("readonly"), "{flag:?}: {output}");
+            assert_eq!(std::fs::read(&file).unwrap(), b"safe\n");
+        } else {
+            assert!(output.contains("safe!"), "{output}");
+            assert_eq!(message(&output), "written");
+            assert_eq!(std::fs::read(&file).unwrap(), b"safe!\n");
+        }
+    }
+}
+
 /// 0108 H6: the file on the command line goes through `:e`'s guarded
 /// read. A FIFO, a device and a file that is not UTF-8 reach the editor
 /// with `:e`'s refusal on an empty buffer — never a hang, an unbounded

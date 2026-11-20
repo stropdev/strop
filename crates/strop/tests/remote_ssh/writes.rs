@@ -43,6 +43,38 @@ fn remote_edit_and_save_keep_the_native_path_and_mode() {
 }
 
 #[test]
+fn readonly_remote_location_lands_on_the_line_without_permitting_writes() {
+    if !ssh_required("readonly_remote_location_lands_on_the_line_without_permitting_writes") {
+        return;
+    }
+    let fixture = Fixture::new();
+    let path = fixture.root().join("sample.txt");
+    let original = b"first\nsafe\nlast\n";
+    std::fs::write(&path, original).unwrap();
+    let steps = fixture.script(
+        "write.steps",
+        "settle\nstate\nkeys A!<esc>\nstate\nkeys :w<cr>\nsettle\nstate\n",
+    );
+    let output = fixture.run(&[
+        "-R".into(),
+        "headless".into(),
+        steps.into(),
+        format!("{}:2", uri("fixture", &path)).into(),
+    ]);
+    let observed = states(&output);
+    assert_eq!(observed[0]["line"], 2, "{output}");
+    assert_eq!(observed[1]["dirty"], false, "{output}");
+    assert!(
+        observed[2]["message"]
+            .as_str()
+            .unwrap()
+            .contains("readonly"),
+        "{output}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+}
+
+#[test]
 fn a_file_changed_on_the_host_is_refused_until_forced_and_save_as_never_clobbers() {
     if !ssh_required(
         "a_file_changed_on_the_host_is_refused_until_forced_and_save_as_never_clobbers",

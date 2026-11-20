@@ -84,6 +84,36 @@ fn status_buffer() {
     });
 }
 
+#[test]
+fn status_native_names_draw_one_row_with_aligned_diffstats() {
+    let (dir, mut editor) = work_fixture();
+    let files = [
+        ("a\nb", r"? a\nb"),
+        (r"a\nb", r"? a\\nb"),
+        ("c\td", r"? c\td"),
+        ("ordinary", "? ordinary"),
+    ];
+    for (i, (name, _)) in files.iter().enumerate() {
+        std::fs::write(dir.path().join(name), "line\n".repeat(i + 1)).unwrap();
+    }
+    keys(&mut editor, " gg");
+    let grid = frame(&mut editor, &mut settle_analysis(), (80, 24));
+    let row = |y: u16, start: u16, end: u16| -> String {
+        (start..end).map(|x| grid[(x, y)].symbol()).collect()
+    };
+    let heading = (0..24)
+        .find(|&y| row(y, 0, 80).contains("Untracked"))
+        .unwrap();
+    let count_x = (0..80)
+        .find(|&x| grid[(x, heading)].symbol() == "4")
+        .unwrap();
+    for (i, (_, label)) in files.iter().enumerate() {
+        let y = heading + 1 + i as u16;
+        assert_eq!(row(y, 2, count_x - 4).trim_end(), *label);
+        assert_eq!(row(y, count_x - 4, count_x + 1), format!("+{} -0", i + 1));
+    }
+}
+
 /// `cc` from the status buffer: the message file with its summary and a
 /// subject too long for `git log`.
 #[test]

@@ -34,7 +34,7 @@ Scripts, recordings and replay are described in
 
 | Option | Meaning |
 | --- | --- |
-| `-R`, `--readonly` | open read-only |
+| `-R`, `--readonly` | open the initial file read-only, including in `headless` and at remote locations |
 | `+LINE` | initial line for FILE (or use `FILE:LINE`) |
 | `--theme NAME` | colour theme for this run (see [Themes](editor.md#themes)) |
 | `--log[=PATH]` | record this session to a file, for a bug report (`STROP_LOG=PATH` works too; without PATH the file is `strop-log.jsonl`) |

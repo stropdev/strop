@@ -101,7 +101,7 @@ pub(super) fn content_spans(
         if is_source {
             let selected = if let Some(block) = style.block {
                 (block.first_line..=block.last_line).contains(&row)
-                    && glyph.cell <= block.right_cell
+                    && block.right_cell.is_none_or(|right| glyph.cell <= right)
                     && end_cell > block.left_cell
             } else {
                 let covers = |r: &strop_core::Range| {

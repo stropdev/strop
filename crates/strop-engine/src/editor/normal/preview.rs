@@ -121,6 +121,9 @@ impl Editor {
             };
             command.count = self.walker.state.count();
             command.register = self.walker.state.register;
+            if let std::borrow::Cow::Owned(bound) = super::bind::bind_command(self, &command)? {
+                command = bound;
+            }
             Ok(Some((command, self.all_cursors())))
         }
     }

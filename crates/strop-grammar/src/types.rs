@@ -122,6 +122,23 @@ pub enum WindowLine {
     Bottom,
 }
 
+/// The editor's display geometry for a column motion. Without an editor,
+/// the grammar uses Neovim's default eight-cell tab stops and Normal cursor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ScreenLayout {
+    pub tab_width: usize,
+    pub allow_eol: bool,
+}
+
+impl Default for ScreenLayout {
+    fn default() -> Self {
+        Self {
+            tab_width: 8,
+            allow_eol: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Motion {
     Left,
@@ -140,9 +157,10 @@ pub enum Motion {
     LineEnd,
     /// `g_` — the line's last non-blank, count - 1 lines down.
     LastNonBlank,
-    /// `|` — screen column (count, default 1). Restored to vim semantics
-    /// in 0014; pipe lives under the leader now.
-    Column,
+    /// `|` — screen column (count, default 1).
+    Column {
+        layout: ScreenLayout,
+    },
     FirstLine,
     LastLine,
     /// `-` — count lines up, on the first non-blank.
@@ -153,10 +171,12 @@ pub enum Motion {
     /// so the column matters: `column` is the one the cursor wants (it
     /// can be past a short line), bound by the engine before resolution.
     ScreenDown {
-        column: Option<usize>,
+        column: Option<strop_core::id::DisplayColumn>,
+        layout: ScreenLayout,
     },
     ScreenUp {
-        column: Option<usize>,
+        column: Option<strop_core::id::DisplayColumn>,
+        layout: ScreenLayout,
     },
     /// f/F (till=false) and t/T (till=true).
     FindChar {

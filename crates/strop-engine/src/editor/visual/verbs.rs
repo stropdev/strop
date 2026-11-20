@@ -291,15 +291,11 @@ fn visual_replace(editor: &mut Editor, c: char) {
 /// column 1 of the first line; `A` after the selection's last
 /// character, or in column 1 of the last line of a linewise one.
 fn visual_insert(editor: &mut Editor, append: bool) {
-    let (first, last) = selected_lines(editor);
     if editor.mode == Mode::VisualBlock {
-        if append && editor.wants_line_end() {
-            editor.block_append_at_ends(first, last);
-        } else {
-            editor.block_insert(append);
-        }
+        editor.block_insert(append);
         return;
     }
+    let (first, last) = selected_lines(editor);
     let linewise = editor.mode == Mode::VisualLine;
     let after = editor.visual_range().map(|range| range.end.get());
     editor.mode = Mode::Normal;

@@ -196,7 +196,8 @@ fn nvim_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, St
         .args(["10", "nvim", "--headless", "-u", "NONE", "-i", "NONE", "-n"])
         .args([
             "+set noswapfile",
-            "+set shiftwidth=4 expandtab",
+            // Strop uses its four-cell indent width to display literal tabs too.
+            "+set shiftwidth=4 tabstop=4 expandtab",
             "+set splitbelow splitright",
             "+source win.vim",
         ])

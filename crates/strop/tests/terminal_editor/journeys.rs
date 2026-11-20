@@ -329,6 +329,67 @@ fn two_escapes_in_one_write_close_a_picker() {
     tui.expect_clean_exit("the editor did not exit cleanly");
 }
 
+#[test]
+fn quitting_on_scratch_forgets_closed_buffers_but_keeps_recent_visits() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for (name, text) in [
+        ("old.txt", "restorable content"),
+        ("z-visited.txt", "visited on the second run"),
+        ("a-never.txt", "unvisited content"),
+    ] {
+        std::fs::write(root.join(name), text).unwrap();
+    }
+
+    let start = || {
+        Tui::spawn(
+            root,
+            &root.join("no-trace"),
+            std::path::Path::new(env!("CARGO_BIN_EXE_strop")),
+            false,
+        )
+    };
+    let mut first = start();
+    first.until(|screen| screen.contains("[scratch]"));
+    first.send(b":e old.txt\r");
+    first.until(|screen| numbered_line(screen, "restorable content"));
+    first.send(b":qa\r");
+    first.expect_clean_exit("save the original file set");
+
+    let mut second = start();
+    second.until(|screen| numbered_line(screen, "restorable content"));
+    second.send(b":e z-visited.txt\r");
+    second.until(|screen| numbered_line(screen, "visited on the second run"));
+    second.send(b":bd\r");
+    second.until(|screen| numbered_line(screen, "restorable content"));
+    second.send(b":ene\r");
+    second.until(|screen| screen.contains("[scratch]"));
+    second.send(b":bp\r");
+    second.until(|screen| numbered_line(screen, "restorable content"));
+    second.send(b":bd\r");
+    second.until(|screen| screen.contains("[scratch]"));
+    second.send(b":q\r");
+    second.expect_clean_exit("quit on the last scratch");
+
+    let mut third = start();
+    third.until(|screen| screen.contains("[scratch]"));
+    third.send(b" f");
+    // Both closed files outrank the unvisited file in the empty finder;
+    // in particular z-visited.txt was not in the first run's state.
+    third.until(|screen| {
+        screen.contains("FILES")
+            && screen.find("a-never.txt").is_some_and(|never| {
+                ["old.txt", "z-visited.txt"]
+                    .iter()
+                    .all(|name| screen.find(*name).is_some_and(|visited| visited < never))
+            })
+    });
+    third.send(b"\x1b\x1b");
+    third.until(|screen| screen.contains("NORMAL") && !screen.contains("esc  close"));
+    third.send(b":qa\r");
+    third.expect_clean_exit("quit the fresh session");
+}
+
 /// Plan 0113 §8.6, the zoom loop tab pages exist for: `:vs`, `:tab split`
 /// shows one pane under a tab line, `:q` brings the split back and the
 /// tab line goes.

@@ -185,7 +185,11 @@ pub fn build(tree: &WorkingTree, deltas: &[(StatusEntry, FileDelta)]) -> (String
         for index in members {
             let entry = &tree.entries[index];
             push(
-                &format!("{} {}", entry.change.letter(), entry.rel.to_string_lossy()),
+                &format!(
+                    "{} {}",
+                    entry.change.letter(),
+                    strop_workspace::directory::display_path(&entry.rel)
+                ),
                 StatusRow::File(index),
             );
             let Some((_, delta)) = deltas.iter().find(|(owner, _)| owner == entry) else {

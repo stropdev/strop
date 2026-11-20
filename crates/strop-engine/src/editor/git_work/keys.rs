@@ -79,7 +79,7 @@ fn say(text: &str) -> Action {
 }
 
 fn name(entry: &StatusEntry) -> String {
-    entry.rel.to_string_lossy().into_owned()
+    strop_workspace::directory::display_path(&entry.rel)
 }
 
 fn target(view: &StatusView, line: usize) -> Option<Target> {

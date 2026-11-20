@@ -351,3 +351,45 @@ fn replay_preserves_rejected_filesystem_notification_status() {
     let replayed = replay_fixture(&editor);
     assert_eq!(replayed.message, editor.message);
 }
+
+#[test]
+fn queued_notification_after_last_pane_close_replays_to_quit() {
+    use crate::editor::events::channel;
+    use crate::editor::notify::{Record, SubscribedScope};
+    use strop_fs::notify::{NotifyHint, NotifyKind, Subscription};
+
+    let mut editor = fixture();
+    let subscription = Subscription {
+        id: 1,
+        generation: 1,
+    };
+    editor
+        .notify
+        .queue
+        .push_record(Record::Settled(Outcome::Success(SubscribedScope {
+            subscription,
+            root: editor.cwd.clone(),
+            owned_trace: None,
+        })));
+    editor.notify.queue.push_hints(
+        subscription,
+        vec![NotifyHint {
+            path: b"file".to_vec(),
+            kind: NotifyKind::Modified,
+        }],
+    );
+    let (tx, rx) = channel();
+    tx.send(AppEvent::Notify).unwrap();
+
+    keys(&mut editor, ":q!<cr>");
+    assert!(editor.panes.is_empty());
+    action(&mut editor, rx.try_recv().unwrap());
+    editor
+        .recorded_action(Action::Finish, editor.tape.now())
+        .unwrap();
+
+    let replayed = replay_fixture(&editor);
+    assert!(replayed.should_quit());
+    assert!(replayed.panes.is_empty());
+    assert!(!replayed.async_pending());
+}

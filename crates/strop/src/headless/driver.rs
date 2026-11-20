@@ -46,6 +46,11 @@ impl Driver<'_> {
     fn apply(&mut self, action: Action) -> io::Result<()> {
         self.editor
             .recorded_action(action, self.editor.tape().sample_tick())?;
+        // Match the terminal loop: retire producers before draining anything
+        // queued behind the quit. Accepted writes still settle through events.
+        if self.editor.should_quit() {
+            self.editor.begin_shutdown()?;
+        }
         drop(self.editor.take_terminal_output());
         Ok(())
     }
@@ -287,7 +292,7 @@ pub fn run_script(
             )?,
         }
     }
-    driver.apply(Action::Finish)?;
+    driver.editor.begin_shutdown()?;
     driver.wait(jobs_budget(), WaitTarget::Jobs, false)?;
     driver.editor.tape().finish()?;
     if let Some(error) = driver.editor.take_shutdown_error() {

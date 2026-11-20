@@ -103,10 +103,23 @@ impl<'a> Walk<'a> {
         }
     }
 
+    // Vim walks a base character and its composing marks as one position.
+    // Classify the base, not the mark (which may follow punctuation too).
+    fn on_composing_mark(&self) -> bool {
+        self.pos < self.end
+            && !self.buf.byte(self.pos).is_ascii()
+            && self
+                .ch()
+                .is_some_and(unicode_normalization::char::is_combining_mark)
+    }
+
     /// Vim's `inc()`.
     pub(crate) fn inc(&mut self) -> Step {
         if self.pos < self.end {
             self.pos = self.buf.ceil_boundary(self.pos + 1).min(self.end);
+            while self.on_composing_mark() {
+                self.pos = self.buf.ceil_boundary(self.pos + 1);
+            }
             return if self.pos < self.end {
                 Step::Char
             } else {
@@ -125,6 +138,9 @@ impl<'a> Walk<'a> {
     pub(crate) fn dec(&mut self) -> Step {
         if self.pos > self.start {
             self.pos = self.buf.clamp_boundary(self.pos - 1).max(self.start);
+            while self.pos > self.start && self.on_composing_mark() {
+                self.pos = self.buf.clamp_boundary(self.pos - 1);
+            }
             return Step::Char;
         }
         if self.line > 0 {

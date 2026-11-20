@@ -32,9 +32,7 @@ const CODE: &str = concat!(
 );
 
 /// Two-, three- and four-byte characters, a combining mark, wide
-/// characters inside brackets and quotes. The text before each starting
-/// column (and the mark's, line 2 column 9) is ASCII: `|` counts screen
-/// columns in Vim and bytes in strop, a divergence of its own.
+/// characters inside brackets and quotes.
 const MULTIBYTE: &str = concat!(
     "plain words café über 日本語 text, déjà vu.\n",
     "a plain naïve e\u{301}cole (日本) \"引用 é\" end\n",
@@ -195,8 +193,69 @@ fn name_of(keys: &str) -> String {
     keys.replace("<lt>", "<").replace("<cr>", "⏎")
 }
 
+/// Fixed display-column witnesses. Cursor columns in the names below are
+/// Neovim's *one-based byte columns*, not counts of characters or cells.
+fn display_cases() -> Vec<Run> {
+    let ragged = "abc\na\nab\n";
+    let interior = "abc\nabcdef\na\nuntouched\n";
+    let cases = [
+        ("column/ascii-byte3", "abcz\n", "3|"),
+        ("column/multibyte-byte3", "éab\n", "2|"),
+        ("column/combining-byte4", "e\u{301}ab\n", "2|"),
+        ("column/wide-inside-byte2", "a界b\n", "3|"),
+        ("column/wide-after-byte5", "a界b\n", "4|"),
+        ("column/tab-inside-byte2", "a\tbc\n", "3|"),
+        ("column/tab-after-byte3", "a\tbc\n", "5|"),
+        ("column/short-byte2", "aé\n", "99|"),
+        ("column/empty-byte1", "\nabc\n", "99|"),
+        ("column/short-then-j-byte6", "x\n0123456789\n", "6|j"),
+        ("column/tab-then-j-byte3", "a\tbc\n0123456789\n", "3|j"),
+        ("column/wide-then-gj-byte3", "a界b\n0123456789\n", "3|gj"),
+        ("column/operator-forward", "éab\n", "d2|"),
+        ("column/operator-backward", "éab\n", "3|d1|"),
+        ("column/visual-inclusive", "éab\n", "v2|d"),
+        ("column/visual-past-end", "aé\nb\n", "v99|y"),
+        ("column/operator-gj", "0123456789\na界b\n", "4|dgj"),
+        ("column/operator-gk", "a界b\n0123456789\n", "2G4|dgk"),
+        ("block/eol-delete", ragged, "<c-v>$jd"),
+        ("block/eol-delete-put", ragged, "<c-v>$jdp"),
+        ("block/eol-yank-put", ragged, "<c-v>$jyp"),
+        ("block/eol-change-put", ragged, "<c-v>$jcX<esc>p"),
+        (
+            "block/eol-change-through-empty",
+            "abc\n\nab\n",
+            "<c-v>$jcX<esc>",
+        ),
+        (
+            "block/eol-long-interior-counted-put",
+            interior,
+            "<c-v>$2jy2p",
+        ),
+        ("block/eol-up", interior, "3G<c-v>$2kd"),
+        (
+            "block/eol-nonzero-left",
+            "abcdef\nx\nabcdefghijk\nab\n",
+            "4|<c-v>$3jcX<esc>",
+        ),
+        (
+            "block/eol-clipped-tab-wide-middle",
+            "aZq\n\t界xy\nab\n",
+            "3|<c-v>$2jy",
+        ),
+        ("block/horizontal-clears-eol", ragged, "<c-v>$jhkd"),
+    ];
+    cases
+        .into_iter()
+        .map(|(name, text, keys)| Run {
+            name: format!("display/{name}"),
+            text: text.to_owned(),
+            keys: keys.to_owned(),
+        })
+        .collect()
+}
+
 pub fn cases() -> Vec<Run> {
-    let mut runs = Vec::new();
+    let mut runs = display_cases();
     for (fixture_index, fixture) in FIXTURES.iter().enumerate() {
         let (text, positions, fixture) = (fixture.text, fixture.positions, fixture.name);
         for (index, (line, column)) in positions.iter().enumerate() {

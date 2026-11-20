@@ -472,6 +472,7 @@ impl Editor {
                     _ if entry.is_directory() => OpenIntent::Browse,
                     Some(line) => OpenIntent::AtLine {
                         line: LineIndex::new(line.saturating_sub(1)),
+                        readonly: false,
                     },
                     None => OpenIntent::Switch { readonly: false },
                 };

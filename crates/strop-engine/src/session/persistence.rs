@@ -35,15 +35,33 @@ pub(crate) fn write(path: &Path, value: &impl Serialize) -> Result<(), SessionEr
     })
 }
 
+/// No snapshot remains. As with publication, make the directory update durable.
+pub(super) fn remove(path: &Path) -> Result<(), SessionError> {
+    match fs::remove_file(path) {
+        Ok(()) => sync_directory(parent_directory(path)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io(path, error)),
+    }
+}
+
+fn parent_directory(path: &Path) -> Result<&Path, SessionError> {
+    path.parent()
+        .ok_or_else(|| SessionError::Invalid("state path has no parent".into()))
+}
+
+fn sync_directory(parent: &Path) -> Result<(), SessionError> {
+    File::open(parent)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| io(parent, e))
+}
+
 /// The store callback is the fault-injection seam; privacy and publication
 /// ordering are identical for successful writes and real write/sync failures.
 pub(crate) fn publish(
     path: &Path,
     store: impl FnOnce(&mut File) -> std::io::Result<()>,
 ) -> Result<(), SessionError> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| SessionError::Invalid("state path has no parent".into()))?;
+    let parent = parent_directory(path)?;
     let mut directory = fs::DirBuilder::new();
     directory.recursive(true);
     use std::os::unix::fs::DirBuilderExt;
@@ -74,8 +92,5 @@ pub(crate) fn publish(
             }),
         };
     }
-    File::open(parent)
-        .and_then(|file| file.sync_all())
-        .map_err(|e| io(parent, e))?;
-    Ok(())
+    sync_directory(parent)
 }

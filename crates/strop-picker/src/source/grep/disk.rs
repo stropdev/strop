@@ -134,38 +134,17 @@ fn search_file(
         if !content.admits(&row, &evidence) {
             return Ok(true);
         }
-        let short: String = text.trim().chars().take(80).collect();
-        let first = items.len();
-        let mut expanded = text.len();
-        for hit in content.regex.find_iter(&text).take(4097) {
-            if items.len() - first == 4096 {
-                terminal = Some(Outcome::failed(
-                    FailureKind::Protocol,
-                    format!("{display}:{line}: source line exceeds 4096 matches"),
-                ));
-                return Ok(false);
-            }
-            let item = crate::Item {
-                badge: None,
-                text: format!("{display}:{line} · {short}"),
-                payload: crate::Payload::Grep {
-                    location: location.clone(),
-                    line: line as usize,
-                    col: hit.start() + 1,
-                    match_len: hit.len(),
-                    line_text: text.clone(),
-                },
-                facts: Default::default(),
-            };
-            expanded = expanded.saturating_add(super::super::flow::row_bytes(&item));
-            if expanded > super::super::flow::BACKLOG_BYTES {
-                terminal = Some(Outcome::failed(
-                    FailureKind::Protocol,
-                    format!("{display}:{line}: source line exceeds 4 MiB of result rows"),
-                ));
-                return Ok(false);
-            }
-            items.push(item);
+        if let Err(error) = super::super::query::append_matches(
+            &mut items,
+            content,
+            &location,
+            &display,
+            line as usize,
+            &text,
+            None,
+        ) {
+            terminal = Some(Outcome::failed(FailureKind::Protocol, error));
+            return Ok(false);
         }
         if items.len() >= BATCH {
             if let Err(error) = tx.batch(std::mem::take(&mut items), cancel) {

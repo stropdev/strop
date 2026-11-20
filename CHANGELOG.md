@@ -2,6 +2,21 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## 0.73.0 — 2026-11-20
+
+### Fixed
+
+- **Quitting:** a filesystem notification already in the queue when the last pane closes can no longer crash the editor. Accepted writes still finish, and the recording can be replayed offline.
+- **Read-only startup:** `strop -R headless SCRIPT FILE` honours `-R` just like the interactive editor. Opening an SSH file at a line keeps both the requested line and read-only mode.
+- **Git filenames:** staging or unstaging a hunk uses the original pathname bytes, including literal backslashes and non-UTF-8 names. Status shows one row per entry even when its name contains a newline or tab; opening or staging that row acts on the original file.
+- **File lifecycle:** after `:e!`, a later external change warns again instead of silently leaving a dirty buffer out of date. Closing all file buffers and quitting on scratch no longer restores those files on the next launch; their recent-file history is kept.
+- **Search and Replace:** Boolean searches respect smart case for each match, not just each line. The replacement review counts the edits it actually proposes. Reopening Search restores the selected hit and scroll position even when workers returned files out of order.
+- **Vim motions and operators:** Visual Block `$` keeps extending to each row's end after `j` or `k`; counted `|` uses screen columns rather than bytes. Word motions respect combining marks, and a counted `iw` or `aw` change with too few words left at EOF no longer changes text or registers.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 9. Replay a 0.72 recording with 0.72, or record it again with 0.73.
+
 ## 0.72.0 — 2026-11-18
 
 ### Added

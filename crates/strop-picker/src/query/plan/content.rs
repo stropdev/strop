@@ -11,14 +11,8 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct ContentPlan {
     pub expr: ContentExpr,
-    /// The provider prefilter: one regex matching every line the AST can
-    /// admit (the union of positive content atoms). Exact admission is
-    /// `matches_line`/`admits` — the prefilter only overfetches (0063 §4).
-    pub regex: regex::Regex,
+    atoms: Atoms,
     pub case: CaseMode,
-    /// True when the query carries operators: `admission` then holds
-    /// the whole decision, content atoms included.
-    boolean: bool,
     /// The row decision beyond the expression: the Boolean AST, or the
     /// flat `kind:`/`repo:` filters the file selection cannot apply.
     admission: Option<Admission>,
@@ -28,6 +22,12 @@ pub struct ContentPlan {
     provider: String,
 }
 
+#[derive(Debug, Clone)]
+enum Atoms {
+    Simple(regex::Regex),
+    Boolean(Vec<regex::Regex>),
+}
+
 impl ContentPlan {
     /// The provider pattern (`rg -e`). `-F` only for simple literals.
     pub fn provider_pattern(&self) -> &str {
@@ -35,27 +35,52 @@ impl ContentPlan {
     }
 
     pub fn is_literal(&self) -> bool {
-        !self.boolean && matches!(self.expr, ContentExpr::Literal(_))
+        matches!(self.atoms, Atoms::Simple(_)) && matches!(self.expr, ContentExpr::Literal(_))
     }
 
     /// Smart-case exact admission is per atom. A Boolean provider union must
     /// not become case-sensitive merely because one sibling has uppercase:
     /// folding the prefilter is sound because exact admission remains per atom.
     pub fn provider_case(&self) -> CaseMode {
-        if self.boolean && self.case == CaseMode::Smart {
+        if matches!(self.atoms, Atoms::Boolean(_)) && self.case == CaseMode::Smart {
             CaseMode::Ignore
         } else {
             self.case
         }
     }
 
+    fn atoms(&self) -> &[regex::Regex] {
+        match &self.atoms {
+            Atoms::Simple(regex) => std::slice::from_ref(regex),
+            Atoms::Boolean(atoms) => atoms,
+        }
+    }
+
+    /// Hits come from the atoms, not their provider alternation: even a
+    /// legitimate match of one atom can hide an overlapping sibling.
+    pub(crate) fn spans<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> impl Iterator<Item = regex::Match<'a>> + 'a {
+        let atoms = self.atoms();
+        let mut seen = (atoms.len() > 1).then(std::collections::HashSet::new);
+        atoms
+            .iter()
+            .flat_map(move |atom| atom.find_iter(text))
+            .filter(move |hit| {
+                seen.as_mut()
+                    .is_none_or(|seen| seen.insert((hit.start(), hit.end())))
+            })
+    }
+
     /// The plan's replaceable target. Simple queries target their
     /// content expression; Boolean queries target the unique positive
     /// content atom (parity of `NOT` respected — `NOT NOT x` is x).
     pub fn replacement_target(&self) -> ReplacementTarget {
-        match (&self.admission, self.boolean) {
-            (Some(exact), true) => exact.replacement_target(),
-            _ => ReplacementTarget::Single(self.regex.clone()),
+        match self.atoms() {
+            [] => ReplacementTarget::Missing,
+            [atom] => ReplacementTarget::Single(atom.clone()),
+            many => ReplacementTarget::Ambiguous(many.len()),
         }
     }
 
@@ -75,33 +100,24 @@ impl ContentPlan {
                 }));
             }
             let exact = Admission::compile_expr(boolean, case, query.content_range())?;
-            let mut positive = Vec::new();
-            Admission::prefilter_pattern(boolean, &mut positive);
-            let pattern = if positive.is_empty() {
-                // Pure-negative or metadata-only: providers must surface
-                // every line; exact admission decides.
-                "()".to_string()
-            } else {
-                positive.join("|")
-            };
-            let regex = build_regex(
-                &pattern,
-                if case == CaseMode::Smart {
-                    CaseMode::Ignore
-                } else {
-                    case
-                },
-            )
-            .map_err(|error| QueryDiagnostic {
-                range: query.content_range(),
-                message: error.message,
-                suggestion: None,
-            })?;
+            let positive = exact.positive_atoms();
+            let mut pattern = String::new();
+            for atom in &positive {
+                if !pattern.is_empty() {
+                    pattern.push('|');
+                }
+                pattern.push_str("(?:");
+                pattern.push_str(atom.as_str());
+                pattern.push(')');
+            }
+            if positive.is_empty() {
+                // Line-only surfaces can admit rows without a content hit.
+                pattern.push_str("()");
+            }
             return Ok(Some(ContentPlan {
                 expr: ContentExpr::Regex(boolean.to_query_string()),
-                regex,
+                atoms: Atoms::Boolean(positive),
                 case,
-                boolean: true,
                 admission: Some(exact),
                 provider: pattern,
             }));
@@ -129,9 +145,8 @@ impl ContentPlan {
         };
         Ok(Some(ContentPlan {
             expr: expr.clone(),
-            regex,
+            atoms: Atoms::Simple(regex),
             case,
-            boolean: false,
             admission,
             provider,
         }))
@@ -150,7 +165,11 @@ impl ContentPlan {
 
     /// Exact admission of one line with its path and line number.
     pub fn admits(&self, row: &RowFacts<'_>, evidence: &Evidence<'_>) -> bool {
-        (self.boolean || self.regex.is_match(row.text))
+        let matches = match &self.atoms {
+            Atoms::Simple(regex) => regex.is_match(row.text),
+            Atoms::Boolean(_) => true, // The admission tree already tests the atoms.
+        };
+        matches
             && self
                 .admission
                 .as_ref()
@@ -201,11 +220,7 @@ impl SearchQuery {
     /// alone select files; they are not a search.
     pub fn has_positive_content(&self) -> bool {
         match &self.boolean {
-            Some(expr) => {
-                let mut atoms = Vec::new();
-                Admission::prefilter_pattern(expr, &mut atoms);
-                !atoms.is_empty()
-            }
+            Some(expr) => has_positive_atom(expr, false),
             None => self.content.is_some(),
         }
     }
@@ -231,6 +246,17 @@ impl SearchQuery {
                 Some(ContentExpr::Regex(_)) | None => String::new(),
             },
         })
+    }
+}
+
+fn has_positive_atom(expr: &BooleanExpr, negated: bool) -> bool {
+    match expr {
+        BooleanExpr::And(operands) | BooleanExpr::Or(operands) => operands
+            .iter()
+            .any(|operand| has_positive_atom(operand, negated)),
+        BooleanExpr::Not(inner) => has_positive_atom(inner, !negated),
+        BooleanExpr::Content(_) => !negated,
+        BooleanExpr::Metadata(_) => false,
     }
 }
 

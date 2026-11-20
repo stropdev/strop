@@ -45,6 +45,36 @@ fn configured_tabs_and_empty_rows_keep_block_paste_columns() {
 }
 
 #[test]
+fn column_and_yank_use_the_documents_tab_stops_even_when_readonly() {
+    for readonly in [false, true] {
+        let mut e = editor("a\tbc\n");
+        e.feed_text(":tab-size 6<cr>");
+        if readonly {
+            e.feed_text(":set ro<cr>");
+        }
+        e.feed_text("5|");
+        assert_eq!(e.head(), 1, "cell five is inside the tab");
+        e.feed_text("7|");
+        assert_eq!(e.head(), 2, "cell seven is b");
+        e.feed_text("0y7|");
+        assert_eq!(e.register(None).text, "a\t");
+    }
+}
+
+#[test]
+fn block_eol_register_width_counts_cells_and_keeps_ragged_bytes() {
+    let mut e = editor("aZq\n\t界xy\nab\n");
+    e.feed_text("3|<c-v>$2jy");
+    assert_eq!(e.register(None).text, "q\n  界xy\n");
+    assert_eq!(
+        e.register(None).shape,
+        RegisterShape::Blockwise {
+            width: DisplayColumn::new(6)
+        },
+    );
+}
+
+#[test]
 fn partial_wide_cluster_is_cells_not_broken_utf8() {
     let mut e = editor("aXbc\n界z\naYbc\n");
     e.feed_text("l<c-v>jjy");

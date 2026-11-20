@@ -124,6 +124,8 @@ impl Editor {
                     let mut motion = cmd.clone();
                     motion.op = None;
                     self.move_cursor(&motion);
+                } else if let Some(head) = grammar::cursor_after_refusal(self.buf(), cmd) {
+                    self.set_head(head);
                 }
                 return;
             }
@@ -162,7 +164,7 @@ impl Editor {
             (
                 Op::Indent | Op::Dedent,
                 grammar::Target::Motion(grammar::Motion::LineEnd | grammar::Motion::LastNonBlank),
-            ) => column.map(|_| strop_core::id::DisplayColumn::new(usize::MAX / 2)),
+            ) => column.map(|_| strop_core::id::DisplayColumn::new(usize::MAX)),
             _ => column,
         };
         crate::editor::normal::operators::apply_operator(

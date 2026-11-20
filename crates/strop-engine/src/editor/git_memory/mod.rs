@@ -254,6 +254,14 @@ impl Editor {
     /// Yank the plan's target ranges (shared with normal mode's
     /// dispatch: one implementation, one behavior).
     pub(crate) fn yank_only(&mut self, command: &strop_grammar::Command) {
+        let bound = match super::normal::bind::bind_command(self, command) {
+            Ok(bound) => bound,
+            Err(message) => {
+                self.message = message;
+                return;
+            }
+        };
+        let command = &bound;
         if self.defer_resolution(
             command,
             self.all_cursors(),

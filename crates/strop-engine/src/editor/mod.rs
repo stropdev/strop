@@ -385,7 +385,8 @@ pub struct BlockRect {
     pub first_line: usize,
     pub last_line: usize,
     pub left_cell: strop_core::id::DisplayColumn,
-    pub right_cell: strop_core::id::DisplayColumn,
+    /// Inclusive last cell, or each row's own end after `$`.
+    pub right_cell: Option<strop_core::id::DisplayColumn>,
 }
 
 impl Editor {

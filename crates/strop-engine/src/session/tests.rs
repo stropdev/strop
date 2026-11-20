@@ -1,12 +1,8 @@
 use super::*;
 use strop_core::Buffer;
 
-fn save(editor: &Editor) -> Result<bool, SessionError> {
-    let Some(request) = capture_save(editor) else {
-        return Ok(false);
-    };
-    request.persist()?;
-    Ok(true)
+fn save(editor: &Editor) {
+    capture_save(editor).unwrap().persist().unwrap();
 }
 
 #[test]
@@ -20,7 +16,7 @@ fn roundtrip_restores_buffers_and_position() {
     e.feed_text("jl");
     e.feed_text("ix");
     e.feed(strop_core::frontend_input::Key::Esc);
-    assert!(save(&e).unwrap());
+    save(&e);
     let mut e2 = Editor::new(Buffer::from_text(""));
     e2.cwd = root.to_path_buf();
     e2.state_dir = Some(root.join("state"));
@@ -44,7 +40,7 @@ fn command_line_history_roundtrips_per_project() {
     e.cwd = root.to_path_buf();
     e.state_dir = Some(root.join("state"));
     e.feed_text(":2<cr>/thr<cr>:1<cr>");
-    assert!(save(&e).unwrap());
+    save(&e);
     let mut e2 = Editor::new(Buffer::from_text(""));
     e2.cwd = root.to_path_buf();
     e2.state_dir = Some(root.join("state"));
@@ -89,7 +85,7 @@ fn jump_history_roundtrips_across_documents_with_index_and_view() {
     e.set_head(e.buf().line_start(3));
     e.jump_back();
     let selected = e.view().jumps.position;
-    assert!(save(&e).unwrap());
+    save(&e);
 
     let mut restored = Editor::new(Buffer::from_text(""));
     restored.cwd = root.to_owned();
@@ -184,7 +180,7 @@ fn empty_or_readonly_never_persist() {
     let mut e = Editor::new(Buffer::from_text(""));
     e.cwd = dir.path().to_path_buf();
     e.state_dir = Some(dir.path().join("state"));
-    assert!(!save(&e).unwrap());
+    save(&e);
     assert!(!dir.path().join("state").exists());
     let path = dir.path().join("a");
     std::fs::write(&path, "a").unwrap();
@@ -192,7 +188,7 @@ fn empty_or_readonly_never_persist() {
     buf.readonly = true;
     let mut e = Editor::new(buf);
     e.state_dir = Some(dir.path().join("state"));
-    assert!(!save(&e).unwrap());
+    save(&e);
     assert!(!dir.path().join("state").exists());
 }
 
@@ -208,7 +204,7 @@ fn undo_history_crosses_when_disk_matches() {
     e.feed(strop_core::frontend_input::Key::Esc);
     e.feed_text(":w\r");
     e.wait_io().unwrap();
-    assert!(save(&e).unwrap());
+    save(&e);
     let mut e2 = Editor::new(Buffer::from_text(""));
     e2.cwd = root.to_path_buf();
     e2.state_dir = Some(root.join("state"));
@@ -425,7 +421,7 @@ fn restore_refuses_a_buffer_path_that_became_a_device() {
     e.cwd = root.to_path_buf();
     e.state_dir = Some(root.join("state"));
     e.feed_text("x");
-    assert!(save(&e).unwrap());
+    save(&e);
     std::fs::remove_file(root.join("a.rs")).unwrap();
     std::os::unix::fs::symlink("/dev/zero", root.join("a.rs")).unwrap();
     let mut e2 = Editor::new(Buffer::from_text(""));

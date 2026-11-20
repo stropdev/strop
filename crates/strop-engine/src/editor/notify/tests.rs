@@ -333,6 +333,55 @@ fn modified(path: &str) -> NotifyHint {
     }
 }
 
+#[test]
+fn a_dirty_file_warns_again_after_a_forced_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("note.txt");
+    std::fs::write(&path, "original\n").unwrap();
+    let (mut editor, subscription) = settled_editor(dir.path());
+    editor.open_fixture(&path).unwrap();
+    let rewrite = |editor: &mut Editor, text: &str, seconds| {
+        std::fs::write(&path, text).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(seconds))
+            .unwrap();
+        editor
+            .notify
+            .queue
+            .push_hints(subscription, vec![modified("note.txt")]);
+        editor.drain_notify();
+    };
+
+    let warning = "note.txt: changed on disk; the buffer keeps your edits (:w! forces)";
+    editor.feed_text("imine <esc>");
+    rewrite(&mut editor, "first rewrite\n", 1);
+    assert_eq!(editor.message, warning);
+    assert_eq!(editor.buf().text(), "mine original\n");
+
+    editor.feed_text(":e!<cr>");
+    editor.wait_io().unwrap();
+    assert_eq!(editor.message, "file refreshed");
+    assert_eq!(editor.buf().text(), "first rewrite\n");
+    assert!(!editor.buf().is_dirty());
+    editor.feed_text("gg0inew <esc>");
+    rewrite(&mut editor, "second rewrite\n", 2);
+    assert_eq!(editor.message, warning);
+    assert_eq!(editor.buf().text(), "new first rewrite\n");
+
+    editor.feed_text(":w<cr>");
+    editor.wait_io().unwrap();
+    assert!(
+        editor.message.contains("file changed on disk"),
+        "{}",
+        editor.message
+    );
+    assert!(editor.buf().is_dirty());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "second rewrite\n");
+}
+
 /// 0108 H7: a hint names a path under the watched root, matched against
 /// the documents' own names and the root's resolved twin — the handler
 /// resolves nothing itself. Through a symlinked root the canonical

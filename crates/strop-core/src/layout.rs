@@ -55,6 +55,13 @@ fn grapheme_width(text: &str, cell: DisplayColumn, tab: usize) -> usize {
     }
 }
 
+/// Display width of a register row without constructing a span index.
+pub fn text_width(text: &str, tab: usize) -> DisplayColumn {
+    text.graphemes(true).fold(DisplayColumn::new(0), |cell, g| {
+        cell + grapheme_width(g, cell, tab)
+    })
+}
+
 /// One grapheme cluster's placement on the line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraphemeSpan {

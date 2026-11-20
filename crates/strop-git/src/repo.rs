@@ -1,6 +1,7 @@
 //! The repository: libgit2 in-process (0001 §3 — no shell-outs on
 //! hot paths), hunk staging, content by revision.
 
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use strop_workspace::RemoteEndpoint;
@@ -382,15 +383,17 @@ impl Repo {
         let mut index = self.inner.index().map_err(|e| e.to_string())?;
         index.read(true).map_err(|e| e.to_string())?; // never a stale in-memory index
         let entry = index.get_path(rel, 0);
-        let (old_bytes, mode) = match entry {
+        let (old_bytes, mode, path) = match entry {
             Some(e) => {
                 let blob = self
                     .inner
                     .find_blob(e.id)
                     .map_err(|e| format!("index blob: {e}"))?;
-                (blob.content().to_vec(), e.mode)
+                (blob.content().to_vec(), e.mode, e.path)
             }
-            None => (Vec::new(), 0o100644), // untracked: stage from empty
+            // A new entry has no index spelling to reuse. On Unix the
+            // relative native bytes are already the Git pathname.
+            None => (Vec::new(), 0o100644, rel.as_os_str().as_bytes().to_vec()),
         };
         let lines = split_lines_bytes(&old_bytes);
         let lo = start.saturating_sub(1).min(lines.len());
@@ -425,7 +428,7 @@ impl Repo {
                 id: oid,
                 flags: 0,
                 flags_extended: 0,
-                path: rel.to_string_lossy().replace('\\', "/").into_bytes(),
+                path,
             })
             .map_err(|e| e.to_string())?;
         index.write().map_err(|e| e.to_string())?;

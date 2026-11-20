@@ -215,10 +215,15 @@ impl Editor {
                     self.set_head(0);
                     self.view_mut().view_top = 0;
                 }
+                if matches!(
+                    intent,
+                    OpenIntent::Switch { readonly: true }
+                        | OpenIntent::AtLine { readonly: true, .. }
+                ) {
+                    self.buf_mut()
+                        .set_readonly(strop_core::ReadonlyReason::Command);
+                }
                 match intent {
-                    OpenIntent::Switch { readonly: true } => self
-                        .buf_mut()
-                        .set_readonly(strop_core::ReadonlyReason::Command),
                     OpenIntent::DirectoryParent { child } => {
                         if let Some(line) = self
                             .directory()
@@ -228,7 +233,7 @@ impl Editor {
                             self.place_jump_target();
                         }
                     }
-                    OpenIntent::AtLine { line } => {
+                    OpenIntent::AtLine { line, .. } => {
                         self.set_head(
                             self.buf()
                                 .line_start(line.get().min(self.buf().last_content_line())),

@@ -139,7 +139,7 @@ pub(crate) fn moved(
             };
             linewise(same_column(buf, cursor, target))
         }
-        Motion::ScreenDown { column } | Motion::ScreenUp { column } => {
+        Motion::ScreenDown { column, layout } | Motion::ScreenUp { column, layout } => {
             let down = matches!(motion, Motion::ScreenDown { .. });
             let Some(target) = line_step(buf, cursor, down, count) else {
                 return Ok(None);
@@ -148,10 +148,14 @@ pub(crate) fn moved(
             if pending && target.abs_diff(line) < count {
                 return Ok(None);
             }
-            let (start, end) = (buf.line_start(target), buf.line_end(target));
-            let last = buf.clamp_boundary(end.saturating_sub(1)).max(start);
-            let wanted = column.unwrap_or_else(|| buf.col_of(cursor));
-            exclusive(buf.clamp_boundary(start.saturating_add(wanted).min(last)))
+            let wanted = column.unwrap_or_else(|| {
+                if buf.byte_at(cursor) == Some(b'\t') {
+                    buf.cell_col_with_tab(cursor + 1, layout.tab_width) - 1
+                } else {
+                    buf.cell_col_with_tab(cursor, layout.tab_width)
+                }
+            });
+            exclusive(buf.byte_at_cell(target, wanted, layout.tab_width, layout.allow_eol))
         }
         Motion::LineDown | Motion::LineUp => {
             let Some(target) = line_step(buf, cursor, *motion == Motion::LineDown, count) else {
@@ -256,9 +260,12 @@ pub(crate) fn moved(
             }
             inclusive(to)
         }
-        Motion::Column => {
-            exclusive(buf.clamp_boundary(line_start + (count - 1).min(last_char - line_start)))
-        }
+        Motion::Column { layout } => exclusive(buf.byte_at_cell(
+            line,
+            count.saturating_sub(1).into(),
+            layout.tab_width,
+            layout.allow_eol,
+        )),
         Motion::FirstLine | Motion::LastLine => {
             let target = match (motion, typed_count) {
                 (_, Some(n)) => n.saturating_sub(1),
@@ -360,7 +367,7 @@ pub(crate) fn name(motion: &Motion, op: Option<Op>) -> String {
         Motion::LineStart => "line start",
         Motion::LineEnd => "line end",
         Motion::LastNonBlank => "last non-blank",
-        Motion::Column => "column",
+        Motion::Column { .. } => "column",
         Motion::FirstLine => "gg",
         Motion::LastLine => "G",
         Motion::Window { .. } => "window line",

@@ -17,6 +17,7 @@ pub enum Command {
     Headless {
         script: PathBuf,
         path: Option<FileLocation>,
+        readonly: bool,
         /// `-`: the initial buffer is stdin, read whole.
         stdin: bool,
     },
@@ -285,6 +286,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         (None, None, true) => Command::Headless {
             script: script.ok_or("headless requires a script path")?,
             path: operand,
+            readonly,
             stdin,
         },
         (None, None, false) => Command::Edit {

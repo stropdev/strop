@@ -57,6 +57,23 @@ fn block_mode_highlights_the_rectangle() {
 }
 
 #[test]
+fn block_eol_paints_ragged_rows_only_through_their_text() {
+    let mut e = Editor::new(Buffer::from_text("abc\nabcdef\na\nuntouched\n"));
+    e.feed_text("<c-v>$2j");
+    let mut terminal = viewport_terminal(30, 8);
+    terminal.draw(|f| crate::render::paint(&mut e, f)).unwrap();
+    let grid = terminal.backend().buffer();
+    let selected = crate::render::tokens().selection;
+    for (row, width) in [3, 6, 1].into_iter().enumerate() {
+        for cell in 0..width {
+            assert_eq!(grid[(6 + cell, row as u16)].bg, selected);
+        }
+        assert_ne!(grid[(6 + width, row as u16)].bg, selected);
+    }
+    assert_ne!(grid[(6, 3)].bg, selected);
+}
+
+#[test]
 fn cursor_cell_tracks_wide_chars() {
     // 0017: l through a wide char lands on the next char, and the
     // caret's display CELL tracks layout, not byte columns
@@ -271,7 +288,7 @@ fn clipped_graphemes_keep_overlay_ranges_and_precedence() {
             first_line: 0,
             last_line: 0,
             left_cell: DisplayColumn::new(5),
-            right_cell: DisplayColumn::new(6),
+            right_cell: Some(DisplayColumn::new(6)),
         }),
         search_hits: &hits,
         preview: vec![Range::charwise(6, 9)],
