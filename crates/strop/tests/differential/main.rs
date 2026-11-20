@@ -278,6 +278,15 @@ fn strop_state(text: &str, keys: &str, dir: &std::path::Path) -> Result<State, S
     command.arg("headless").arg(&script).arg("fixture.txt");
     hermetic(&mut command, dir);
     let out = command.output().expect("strop runs");
+    if !out.status.success() {
+        // A partial run may already have printed `state` but not written
+        // the observed text. It cannot be compared with the oracle.
+        return Err(format!(
+            "strop {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
     let stdout = String::from_utf8_lossy(&out.stdout);
     let json = stdout
         .lines()
@@ -397,11 +406,13 @@ fn differential_vs_nvim() {
         );
     }
 
-    // One process pair per case; cases are independent, so they run on
-    // every core.
+    // Each case starts real, multithreaded editors and waits for disk I/O.
+    // Bound concurrent process pairs, not coverage or the hang deadlines.
     let next = AtomicUsize::new(0);
     let reports: Mutex<Vec<(usize, String)>> = Mutex::new(Vec::new());
-    let workers = std::thread::available_parallelism().map_or(4, usize::from);
+    let workers = std::thread::available_parallelism()
+        .map_or(4, usize::from)
+        .min(8);
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| loop {
