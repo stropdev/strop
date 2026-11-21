@@ -181,6 +181,10 @@ fn blame_gutter_refuses_unsaved_shifted_lines() {
     );
     let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
     assert!(!frame.contains(&sha), "{frame}");
+    e.feed_text("3G<cr>"); // the stale gutter's single-line card fallback
+    let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
+    assert!(frame.contains("save unsaved changes first"), "{frame}");
+    assert!(!frame.contains(&sha), "{frame}");
     e.feed_text(" gB"); // toggle the existing gutter off, even while dirty
     e.feed_text(" gB"); // refuse to enable it over unsaved text
     let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();

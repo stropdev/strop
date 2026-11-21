@@ -7,7 +7,7 @@ Earlier releases cite designs by number; find the original decision and its deli
 ### Fixed
 
 - **Counted replace:** `5rx` on `abc` leaves the line untouched, as in Vim. A count that fits still replaces exactly that many characters.
-- **Git blame:** `Space g B` asks you to save a modified buffer instead of showing the disk line's commit beside different text.
+- **Git blame:** `Space g B` asks you to save a modified buffer instead of showing the disk line's commit beside different text. Pressing `Enter` on a shifted line cannot open a card for the wrong commit either.
 - **Command line:** a command such as `strop compat` refuses an extra file instead of silently discarding it. Use `strop -- compat` to edit a file named `compat`. `--log=PATH` preserves native filename bytes just like `--log-file PATH`.
 - **Pickers:** choosing the current buffer in `Space b` keeps the caret, scroll position and jump history. The results scrollbar reaches the bottom when the last result is selected.
 - **Documentation:** the 0.71.0 trace-format note now gives the complete `EnumMember` name.
