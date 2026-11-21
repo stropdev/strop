@@ -2,7 +2,7 @@
 rfc: "2026-11-21-project-index"
 title: "Prepare project symbols and search without making the index authoritative"
 status: "accepted"
-implementation: "in-progress"
+implementation: "complete"
 authors: ["Astra"]
 created: "2026-11-21"
 updated: "2026-11-21"
@@ -123,3 +123,5 @@ Warm-root selection [#243](https://github.com/stropdev/strop/issues/243) owns th
 2026-11-21 — Maintainer accepted revision `5a87dd1`, including the workspace ownership and proof contracts. Acceptance authorizes #263; it is not evidence that the proof gate passed or that the manifest reader shipped.
 
 The first implementation slice is confined to `strop-kernel`: `boundary::deepest` selects a native-component prefix, `admission` checks answer ownership and refresh obligations, and `coverage` issues and checks completion certificates. Host bindings, measurements and the manifest reader are separate from these decisions.
+
+2026-11-21 — For v0.76.0 the maintainer selected demand-driven inventory. The speculative startup walk regressed cold latency and memory and was removed. The demand-only cut stays within the measured memory envelope and improves both warm flows. Its cold ready-server workspace-symbol and finder tails exceeded the original latency envelope; the maintainer explicitly accepted those measured costs, not a relaxation of the artifact qualification gates. [Absolute measurements and disposition](https://github.com/stropdev/strop/issues/262#issuecomment-7070621192).
