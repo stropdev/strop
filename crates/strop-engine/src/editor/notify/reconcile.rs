@@ -135,7 +135,6 @@ impl Editor {
         }
         if self.notify.push_coverage() {
             self.reload_workspace_manifest();
-            self.warm_project_inventory();
         }
     }
 

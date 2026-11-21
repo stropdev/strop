@@ -25,19 +25,6 @@ impl Editor {
         modes::policy(&self.config, self.picker_ranking.modes)
     }
 
-    pub(crate) fn warm_project_inventory(&mut self) {
-        if self.finishing || self.tape.is_replay() {
-            return;
-        }
-        let policy = self.query_policy();
-        let root = self.cwd.clone();
-        if let Err(failure) = self
-            .source_worker()
-            .and_then(|source| source.warm_inventory(root, policy))
-        {
-            self.message = format!("project preparation unavailable: {}", failure.message);
-        }
-    }
     /// Parse the field for its surface (0109): one parse per revision,
     /// against what the surface declares. A Ready query sets the ranked
     /// needle and the filters the ranking pass applies; any other state

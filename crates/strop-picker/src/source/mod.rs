@@ -12,7 +12,6 @@ mod lifecycle_traces;
 mod query;
 mod remote;
 mod snapshots;
-mod warm;
 mod worker;
 pub use worker::{SearchHost, SourceWorker};
 

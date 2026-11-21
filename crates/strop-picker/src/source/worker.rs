@@ -67,7 +67,6 @@ struct Shared {
 
 pub struct SourceWorker {
     shared: Arc<Shared>,
-    warm: Option<super::warm::Lane>,
     thread: Option<JoinHandle<()>>,
     _watchdog: Option<JoinHandle<()>>,
 }
@@ -220,33 +219,9 @@ impl SourceWorker {
         };
         Ok(Self {
             shared,
-            warm: None,
             thread: Some(thread),
             _watchdog: Some(watchdog),
         })
-    }
-
-    /// Speculate only after the workspace is pinned. No source answer can be
-    /// published by this lane; demand owns its own query and cancellation.
-    pub fn warm_inventory(
-        &mut self,
-        root: PathBuf,
-        policy: SelectionPolicy,
-    ) -> Result<(), Failure> {
-        let lane = match &mut self.warm {
-            Some(lane) => lane,
-            slot @ None => slot.insert(
-                super::warm::Lane::new(self.shared.cache.clone())
-                    .map_err(|e| Failure::new(FailureKind::ThreadStart, e.to_string()))?,
-            ),
-        };
-        let query = SearchQuery::parse(
-            "",
-            crate::Kind::WorkspaceSymbols.schema(),
-            Default::default(),
-        );
-        lane.schedule(root, Arc::new(query), policy);
-        Ok(())
     }
 
     /// Push coverage for one scope changed (0058 S7): the editor's
@@ -286,9 +261,6 @@ impl SourceWorker {
     /// A pinned root was explicitly left or rebound, even at the same path.
     /// Workers from its previous incarnation may not publish retained data.
     pub fn retire_root(&self, root: &std::path::Path) {
-        if let Some(warm) = &self.warm {
-            warm.cancel();
-        }
         self.shared.cache.lock().retire_root(root);
     }
 
@@ -366,9 +338,6 @@ impl SourceWorker {
         policy: SelectionPolicy,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
-        if let Some(warm) = &self.warm {
-            warm.cancel();
-        }
         self.submit(sender, move |tx, token| {
             super::run_files(root, query, policy, tx, token)
         })
@@ -399,9 +368,6 @@ impl SourceWorker {
         host: Option<SearchHost>,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
-        if let Some(warm) = &self.warm {
-            warm.cancel();
-        }
         let cache = Arc::clone(&self.shared.cache);
         self.submit(sender, move |tx, token| match &root.filesystem {
             Filesystem::Local => {
