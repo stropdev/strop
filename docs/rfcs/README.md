@@ -1,6 +1,6 @@
 # Strop RFCs
 
-Use [GitHub issues](https://github.com/stropdev/strop/issues) for work and [milestones](https://github.com/stropdev/strop/milestones) for release scope. An RFC records the decision, why it was made and what actually landed. Start with the [next release](https://github.com/stropdev/strop/milestone/2) for pickup order or [Later](https://github.com/stropdev/strop/milestone/1) for unscheduled work. The [changelog](../../CHANGELOG.md) and [published releases](https://github.com/stropdev/strop/releases) are the shipping record.
+Use [GitHub issues](https://github.com/stropdev/strop/issues) for work and [milestones](https://github.com/stropdev/strop/milestones) for release scope. Start with the [next development cut](https://github.com/stropdev/strop/milestone/79) for pickup order or [Later](https://github.com/stropdev/strop/milestone/1) for unscheduled work. An RFC records the decision, why it was made and what actually landed. The [changelog](../../CHANGELOG.md) and [published releases](https://github.com/stropdev/strop/releases) are the shipping record.
 
 ## When and how to propose a decision
 
@@ -69,6 +69,7 @@ Old citations such as `plan 0104 §4` or `plans/0104` in code, fixtures and past
 |---|---|---|---|---|---|
 | <a id="legacy-0060"></a>0060 | [DAP debugger workflow and architecture](2026-09-13-debugger-workflow-and-architecture.md) | draft | not-started | — | [#155](https://github.com/stropdev/strop/issues/155) |
 | <a id="legacy-0084"></a>0084 | [Project policy for access-label indentation](2026-11-20-project-indentation-policy.md) | draft | not-started | — | [#180](https://github.com/stropdev/strop/issues/180) |
+| — | [Prepare project symbols and search without making the index authoritative](2026-11-21-project-index.md) | draft | not-started | — | [#261](https://github.com/stropdev/strop/issues/261) |
 
 ## Historical delivery
 
