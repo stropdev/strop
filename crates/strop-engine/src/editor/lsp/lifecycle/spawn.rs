@@ -7,13 +7,14 @@ impl Editor {
     pub(super) fn lsp_spawn_discovery(
         &mut self,
         ticket: strop_core::worker::WorkerId,
-        doc: ResourceLocation,
+        target: Filesystem,
+        directory: PathBuf,
         ext: String,
         language: &'static str,
     ) {
-        let place = match doc.filesystem.clone() {
+        let place = match &target {
             Filesystem::Local => attach::DiscoverPlace::Local {
-                abs: doc.path.clone(),
+                directory: directory.clone(),
                 cwd: self.cwd.clone(),
                 git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
             },
@@ -43,8 +44,8 @@ impl Editor {
             server: None,
             language: language.to_owned(),
             name: language.to_owned(),
-            root: doc.path.parent().unwrap_or(Path::new("/")).to_owned(),
-            target: doc.filesystem,
+            root: directory,
+            target,
             outcome: attach::AttachDecision::Cancelled,
             layers: Vec::new(),
         };

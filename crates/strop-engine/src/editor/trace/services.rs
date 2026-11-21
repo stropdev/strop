@@ -188,11 +188,12 @@ pub fn lsp(event: &strop_lsp::LspEvent) {
             }
             LspEvent::WorkspaceSymbols {
                 server,
+                encoding,
                 generation,
                 symbols,
             } => json!({
                 "service":"lsp","result":"workspace-symbols","server":server,
-                "generation":generation,"count":symbols.len(),
+                "generation":generation,"count":symbols.len(),"encoding":encoding,
             }),
             LspEvent::WorkspaceSymbolsFailed {
                 server,

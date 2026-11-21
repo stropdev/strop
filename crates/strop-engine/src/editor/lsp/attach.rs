@@ -193,7 +193,7 @@ impl AttachState {
 /// reachable through `client`.
 pub(crate) enum DiscoverPlace {
     Local {
-        abs: PathBuf,
+        directory: PathBuf,
         cwd: PathBuf,
         git_workdir: Option<PathBuf>,
     },
@@ -226,12 +226,12 @@ pub(crate) struct DiscoverInput {
 pub(crate) fn discover(input: DiscoverInput, token: &CancelToken) -> Option<AttachRecord> {
     match &input.place {
         DiscoverPlace::Local {
-            abs,
+            directory,
             cwd,
             git_workdir,
         } => Some(discover_local(
             &input,
-            abs,
+            directory,
             cwd,
             git_workdir.as_deref(),
             token,
@@ -246,7 +246,7 @@ pub(crate) fn discover(input: DiscoverInput, token: &CancelToken) -> Option<Atta
 /// executability → spawn.
 fn discover_local(
     input: &DiscoverInput,
-    abs: &Path,
+    directory: &Path,
     cwd: &Path,
     git_workdir: Option<&Path>,
     token: &CancelToken,
@@ -262,7 +262,7 @@ fn discover_local(
     } = input;
     let languages = strop_lsp::languages::Languages::load(
         xdg.as_deref(),
-        strop_lsp::languages::project_path(abs).as_deref(),
+        strop_lsp::languages::project_path(directory).as_deref(),
     );
     // Malformed layers ride along with every outcome (0033 §2) — even
     // a healthy fallback attach must keep diagnosing them.
@@ -287,9 +287,9 @@ fn discover_local(
     let name = spec.name.to_string();
     let root = match languages.project_root.as_deref() {
         Some(root) => root.to_path_buf(),
-        None => match git_workdir.filter(|workdir| abs.starts_with(workdir)) {
+        None => match git_workdir.filter(|workdir| directory.starts_with(workdir)) {
             Some(workdir) => workdir.to_path_buf(),
-            None => registry::workspace_root(abs, cwd),
+            None => registry::workspace_root(directory, cwd),
         },
     };
     if let Some(outcome) = trust_refusal(&spec, state_dir.as_deref(), &root) {
@@ -425,7 +425,6 @@ mod tests {
         // An extension no layer or registry entry covers: an honest
         // NoServer refusal, target local, no layer diagnostics.
         let dir = std::path::Path::new("/w/definitely-not-here");
-        let abs = dir.join("a.nosuchlang");
         let record = std::thread::scope(|scope| {
             let (tokens, issued) = std::sync::mpsc::channel();
             let _handle = strop_core::worker::spawn_scoped(
@@ -441,13 +440,13 @@ mod tests {
             discover_local(
                 &input(
                     DiscoverPlace::Local {
-                        abs: abs.clone(),
+                        directory: dir.to_owned(),
                         cwd: dir.to_path_buf(),
                         git_workdir: None,
                     },
                     ".nosuchlang",
                 ),
-                &abs,
+                dir,
                 dir,
                 None,
                 &token,

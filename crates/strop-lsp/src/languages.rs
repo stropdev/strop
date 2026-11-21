@@ -244,16 +244,19 @@ pub fn xdg_path() -> Option<PathBuf> {
     Some(base.join("strop").join("languages.toml"))
 }
 
-/// Nearest ancestor of `buffer` holding `.strop/languages.toml` — the
-/// project layer (0012 §1). None when there is no project config.
-pub fn project_path(buffer: &Path) -> Option<PathBuf> {
-    let mut dir = buffer.parent()?.to_path_buf();
+/// Project layer (0012 §1): start in `directory` itself, then walk up.
+pub fn project_path(directory: &Path) -> Option<PathBuf> {
+    const LAYER: &str = ".strop/languages.toml";
+    let mut probe = PathBuf::with_capacity(directory.as_os_str().len() + 1 + LAYER.len());
+    probe.push(directory);
     loop {
-        let f = dir.join(".strop").join("languages.toml");
-        if f.is_file() {
-            return Some(f);
+        probe.push(LAYER);
+        if probe.is_file() {
+            return Some(probe);
         }
-        if !dir.pop() {
+        probe.pop(); // languages.toml
+        probe.pop(); // .strop
+        if !probe.pop() {
             return None;
         }
     }
@@ -608,9 +611,10 @@ language-servers = ["pyright"]
         std::fs::create_dir_all(&layer).unwrap();
         std::fs::write(layer.join("languages.toml"), "").unwrap();
 
-        let found = project_path(&dir.join("src/deep/main.py")).unwrap();
+        let found = project_path(&dir.join("src/deep")).unwrap();
         assert_eq!(found, layer.join("languages.toml"));
-        assert!(project_path(&std::env::temp_dir().join("nowhere.rs")).is_none());
+        assert_eq!(project_path(&dir), Some(found));
+        assert!(project_path(&std::env::temp_dir()).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

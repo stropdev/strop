@@ -25,7 +25,7 @@ use std::sync::{mpsc, Arc};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket};
-use strop_lsp::{ProtoSymbol, ReplyContext, RequestKind, ServerId};
+use strop_lsp::{PositionEncoding, ProtoSymbol, ReplyContext, RequestKind, ServerId};
 use strop_syntax::languages::LanguageId;
 use strop_syntax::symbols::DeclExtractor;
 
@@ -33,7 +33,7 @@ use super::analysis::AnalysisEvent;
 use super::{trace, Editor, Mode};
 use outline::{OutlineKey, Work};
 use scope::Scopes;
-use store::{Build, BuildId, Current, Delivery, Producer, SymbolStore};
+use store::{Build, BuildId, Current, Delivery, Producer, SymbolList, SymbolStore};
 
 pub(crate) struct SymbolState {
     pub(crate) store: SymbolStore,
@@ -269,7 +269,7 @@ pub(crate) fn follow(editor: &mut Editor) {
     match (list, editor.docs.get(document)) {
         (Some(list), Some(doc)) => {
             let rope = doc.buf.text();
-            symbols.scope = Some(Scopes::build(document, producer, revision, list, rope));
+            symbols.scope = Some(Scopes::build(document, producer, revision, list.rows, rope));
         }
         // carried through every edit since its list: it still describes
         // this text; anything else is a revision it never saw
@@ -299,7 +299,7 @@ pub(crate) fn open(editor: &mut Editor) {
             .store
             .lookup(document, producer, revision);
         if let Some(symbols) = kept {
-            record_finish("kept", symbols.len());
+            record_finish("kept", symbols.rows.len());
             show(editor, producer, symbols);
             return;
         }
@@ -441,7 +441,14 @@ pub(crate) fn outline_done(
         Outcome::Failed { failure, .. } => (None, Some(failure.message)),
         Outcome::Cancelled(_) => (None, None),
     };
-    settle(editor, id, current, symbols, failure);
+    settle(
+        editor,
+        id,
+        current,
+        symbols,
+        PositionEncoding::Utf8,
+        failure,
+    );
 }
 
 /// A server answered a `documentSymbol` request, with symbols or with a
@@ -458,6 +465,7 @@ pub(crate) fn server_reply(
         BuildId::Server(context.stamp),
         current,
         symbols,
+        context.encoding,
         note,
     );
 }
@@ -468,10 +476,15 @@ fn settle(
     id: BuildId,
     current: Option<Current>,
     symbols: Option<Vec<ProtoSymbol>>,
+    encoding: PositionEncoding,
     failure: Option<String>,
 ) {
     let outline = matches!(id, BuildId::Outline(_));
-    let delivery = editor.analysis.symbols.store.deliver(id, current, symbols);
+    let delivery = editor
+        .analysis
+        .symbols
+        .store
+        .deliver(id, current, symbols, encoding);
     if outline && !matches!(delivery, Delivery::Unowned) {
         editor.analysis.symbols.cancel = None;
     }
@@ -491,7 +504,7 @@ fn settle(
             }
         }
         Delivery::Fresh(build, symbols) => {
-            record_finish("fresh", symbols.len());
+            record_finish("fresh", symbols.rows.len());
             if build.open && !editor.docs.is_empty() && editor.current() == build.document {
                 show(editor, build.producer, symbols);
             }
@@ -500,8 +513,8 @@ fn settle(
 }
 
 /// Open the picker on one list.
-fn show(editor: &mut Editor, producer: Producer, symbols: Arc<Vec<ProtoSymbol>>) {
-    if symbols.is_empty() {
+fn show(editor: &mut Editor, producer: Producer, symbols: SymbolList) {
+    if symbols.rows.is_empty() {
         editor.message = "no symbols in this document".into();
         return;
     }
@@ -512,9 +525,13 @@ fn show(editor: &mut Editor, producer: Producer, symbols: Arc<Vec<ProtoSymbol>>)
         .lsp_state
         .bindings
         .get(&editor.current())
-        .map(|binding| binding.root.clone())
-        .unwrap_or_else(|| editor.cwd.clone());
-    let items = super::lsp::document_symbol_items(&symbols, &root);
+        .map(|binding| &binding.root)
+        .unwrap_or(&editor.cwd);
+    let server = match producer {
+        Producer::Server(id) => Some((id, symbols.encoding)),
+        Producer::Outline => None,
+    };
+    let items = super::lsp::document_symbol_items(&symbols.rows, root, server);
     editor.open_picker(strop_picker::Kind::Symbols);
     if let Some(glue) = editor.picker.as_mut() {
         glue.picker.append(items);

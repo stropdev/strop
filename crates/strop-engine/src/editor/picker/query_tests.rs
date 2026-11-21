@@ -303,6 +303,7 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
     // One new semantic hit, one duplicate of the syntax tier (dropped).
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
         server: ServerId::new(9),
+        encoding: strop_lsp::PositionEncoding::Utf16,
         generation,
         symbols: vec![symbol("semantic_only", 0), symbol("wrap", 1)],
     });
@@ -321,6 +322,7 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
     // A stale generation's reply never lands.
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
         server: ServerId::new(9),
+        encoding: strop_lsp::PositionEncoding::Utf16,
         generation: generation - 1,
         symbols: vec![symbol("stale", 0)],
     });
@@ -431,6 +433,7 @@ fn workspace_symbols_server_rows_are_filtered_like_syntax_rows() {
     };
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
         server: ServerId::new(9),
+        encoding: strop_lsp::PositionEncoding::Utf16,
         generation,
         symbols: vec![
             symbol("semantic.rs", "parse_semantic", "Function", "", 0),

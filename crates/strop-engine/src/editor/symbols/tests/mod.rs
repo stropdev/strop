@@ -567,6 +567,7 @@ fn the_outline_spans_a_python_class_and_its_method() {
         .lookup(document, Producer::Outline, revision)
         .expect("the outline was kept");
     let spans: Vec<(&str, usize, usize)> = list
+        .rows
         .iter()
         .map(|symbol| {
             (

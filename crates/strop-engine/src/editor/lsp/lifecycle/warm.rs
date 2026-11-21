@@ -115,12 +115,9 @@ impl Editor {
             target,
         };
         match self.tape.request("lsp.attach", &args) {
-            Ok(true) => self.lsp_spawn_discovery(
-                ticket,
-                strop_workspace::ResourceLocation::local(root),
-                ext.to_string(),
-                language,
-            ),
+            Ok(true) => {
+                self.lsp_spawn_discovery(ticket, args.target, root, ext.to_string(), language)
+            }
             Ok(false) => {}
             Err(error) => {
                 self.lsp_state.attach.pending.remove(&args_key(&args));

@@ -22,6 +22,16 @@ def allowedAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 /-- The headline claims (plans/0086 §4, ring 0; plans/0094 §3.1; plans/0099 §3.1;
 plans/0104 §9; plans/0108 D4; plans/0111 D9). -/
 def claims : List Name := [
+  ``Strop.Kernel.admission_resource_exact,
+  ``Strop.Kernel.admission_stamp_exact,
+  ``Strop.Kernel.admission_origin_exact,
+  ``Strop.Kernel.admission_authorized_producer,
+  ``Strop.Kernel.admit_live_answer,
+  ``Strop.Kernel.refresh_settles_only_captured,
+  ``Strop.Kernel.deepest_boundary,
+  ``Strop.Kernel.candidate_hints_only_prioritize,
+  ``Strop.Kernel.settle_certifies_verified_walk,
+  ``Strop.Kernel.workspace_all_and_loose,
   ``Strop.Kernel.vacant_spec,
   ``Strop.Kernel.holds_spec,
   ``Strop.Kernel.find_spec,

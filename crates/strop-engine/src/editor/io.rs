@@ -48,6 +48,13 @@ pub enum OpenIntent {
         line: LineIndex,
         column: ByteColumn,
     },
+    /// No document request owns a symbol-picker jump. Its original
+    /// server and encoding travel with the open, independent of focus.
+    ServerSymbol {
+        server: strop_lsp::ServerId,
+        encoding: strop_lsp::PositionEncoding,
+        position: strop_lsp::ServerPosition,
+    },
     SearchHit(super::picker::ReplacementHit),
     LspLocation {
         context: strop_lsp::ReplyContext,
@@ -63,7 +70,11 @@ impl OpenIntent {
     fn requires_file(&self) -> bool {
         matches!(
             self,
-            Self::AtLine { .. } | Self::Grep { .. } | Self::SearchHit(_) | Self::LspLocation { .. }
+            Self::AtLine { .. }
+                | Self::Grep { .. }
+                | Self::SearchHit(_)
+                | Self::LspLocation { .. }
+                | Self::ServerSymbol { .. }
         )
     }
 }

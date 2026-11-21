@@ -144,9 +144,12 @@ impl Editor {
                         cwd,
                         state_dir,
                     } => {
-                        let root = strop_lsp::languages::project_path(&probe)
+                        let directory = probe.parent().unwrap_or(&cwd);
+                        let root = strop_lsp::languages::project_path(directory)
                             .and_then(|layer| layer.parent()?.parent().map(Path::to_path_buf))
-                            .unwrap_or_else(|| strop_lsp::registry::workspace_root(&probe, &cwd));
+                            .unwrap_or_else(|| {
+                                strop_lsp::registry::workspace_root(directory, &cwd)
+                            });
                         match crate::session::trust(state_dir.as_deref(), &root) {
                             Ok(()) => Outcome::Success(NativeResult::Trusted(root)),
                             Err(error) => Outcome::failed(FailureKind::Io, error.to_string()),

@@ -329,11 +329,12 @@ fn symbol_fields(item: &strop_picker::Item) -> (String, String, String) {
     let text = item.text.trim_end();
     let (head, tail) = text.rsplit_once('·').unwrap_or((text, ""));
     let location = match &item.payload {
-        strop_picker::Payload::Grep { line, .. } => format!(":{line}"),
-        strop_picker::Payload::Remote { line, .. } => format!(":{line}"),
         // A project status row's right-edge field is its reason.
         strop_picker::Payload::ProjectStatus(_) => tail.trim().to_string(),
-        _ => String::new(),
+        _ => item
+            .facts()
+            .line
+            .map_or_else(String::new, |line| format!(":{line}")),
     };
     let mut parts = head.splitn(2, "  ");
     let name = parts.next().unwrap_or("").trim().to_string();

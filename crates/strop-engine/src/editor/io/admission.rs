@@ -252,6 +252,12 @@ impl Editor {
                         // placement: center unless comfortably visible
                         self.place_jump_target();
                     }
+                    OpenIntent::ServerSymbol {
+                        encoding, position, ..
+                    } => {
+                        self.set_head(position.navigation_offset(self.buf(), encoding).get());
+                        self.place_jump_target();
+                    }
                     _ => {}
                 }
                 self.remember_directory_view();

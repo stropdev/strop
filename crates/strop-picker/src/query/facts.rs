@@ -44,6 +44,7 @@ impl Item {
         let (path, line) = match &self.payload {
             Payload::File(path) => (path.to_str(), None),
             Payload::Grep { line, .. } | Payload::Remote { line, .. } => (None, Some(*line)),
+            Payload::Symbol { line, .. } => (None, Some(line.get() + 1)),
             _ => (None, None),
         };
         RowFacts {

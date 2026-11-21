@@ -110,7 +110,7 @@ impl BatchError {
 pub(super) fn row_bytes(item: &Item) -> usize {
     let path = match &item.payload {
         Payload::File(path) => path.capacity(),
-        Payload::Grep { location, .. } => {
+        Payload::Grep { location, .. } | Payload::Symbol { location, .. } => {
             let namespace = match &location.filesystem {
                 strop_workspace::Filesystem::Local => 0,
                 strop_workspace::Filesystem::Remote(endpoint) => {

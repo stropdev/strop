@@ -1,7 +1,7 @@
 //! Reply admission and presentation, guarded by request ownership.
 use crate::editor::{trace, Editor};
 use strop_lsp::{protocol::ResolvedDiag, LspEvent};
-use strop_workspace::{Filesystem, ResourceLocation};
+use strop_workspace::ResourceLocation;
 
 impl Editor {
     pub(crate) fn handle_lsp_event(&mut self, event: LspEvent) {
@@ -190,9 +190,10 @@ impl Editor {
 
             LspEvent::WorkspaceSymbols {
                 server,
+                encoding,
                 generation,
                 symbols,
-            } => self.merge_workspace_symbols(server, generation, symbols),
+            } => self.merge_workspace_symbols(server, encoding, generation, symbols),
             LspEvent::WorkspaceSymbolsFailed {
                 server: _,
                 generation,
@@ -315,6 +316,7 @@ impl Editor {
     fn merge_workspace_symbols(
         &mut self,
         server: strop_lsp::ServerId,
+        encoding: strop_lsp::PositionEncoding,
         generation: u64,
         symbols: Vec<strop_lsp::ProtoSymbol>,
     ) {
@@ -332,75 +334,57 @@ impl Editor {
             return;
         }
         use strop_picker::Payload;
-        let mut known: std::collections::HashSet<(Filesystem, std::path::PathBuf, usize, String)> =
-            self.picker
-                .as_ref()
-                .map(|glue| {
-                    glue.picker
-                        .items
-                        .iter()
-                        .filter_map(|item| {
-                            let name = item.facts().text.to_owned();
-                            match &item.payload {
-                                Payload::Grep { location, line, .. } => Some((
-                                    location.filesystem.clone(),
-                                    location.path.clone(),
-                                    *line,
-                                    name,
-                                )),
-                                Payload::Remote {
-                                    endpoint,
-                                    path,
-                                    line,
-                                    ..
-                                } => Some((
-                                    Filesystem::Remote(endpoint.clone()),
-                                    path.clone(),
-                                    *line,
-                                    name,
-                                )),
-                                _ => None,
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+        let mut known: std::collections::HashSet<(&ResourceLocation, usize, &str)> = self
+            .picker
+            .as_ref()
+            .map(|glue| {
+                glue.picker
+                    .items
+                    .iter()
+                    .filter_map(|item| {
+                        let Payload::Symbol { location, line, .. } = &item.payload else {
+                            return None;
+                        };
+                        Some((location, line.get(), item.facts().text))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let root = self
             .lsp_state
             .attach
             .attached
             .iter()
             .find(|attachment| attachment.server == server)
-            .map(|attachment| attachment.root.clone())
-            .unwrap_or_else(|| self.cwd.clone());
-        let mut paths = RelativePaths::new(&root);
-        // symbol rows show no source line: one shared empty text for all
-        let no_text: std::sync::Arc<str> = "".into();
+            .map(|attachment| &attachment.root)
+            .unwrap_or(&self.cwd);
+        let mut paths = RelativePaths::new(root);
         let items = symbols
-            .into_iter()
+            .iter()
             .filter_map(|symbol| {
-                let line = symbol.location.position.line.get() + 1;
-                let path = symbol.location.doc.path.clone();
-                if !known.insert((
-                    symbol.location.doc.filesystem.clone(),
-                    path.clone(),
-                    line,
-                    symbol.name.clone(),
-                )) {
+                let position = symbol.location.position;
+                let line = position.line.get() + 1;
+                let path = &symbol.location.doc.path;
+                if !known.insert((&symbol.location.doc, position.line.get(), &symbol.name)) {
                     return None;
                 }
-                let shown = path
-                    .strip_prefix(&root)
-                    .map(strop_picker::display_path)
-                    .unwrap_or_else(|_| std::borrow::Cow::from(path.display().to_string()))
-                    .into_owned();
-                Some(symbol_item(
-                    &symbol,
-                    None,
-                    format_args!("{shown} · :{line}"),
-                    paths.of(&path),
-                    &no_text,
-                ))
+                let shown = path.strip_prefix(root).unwrap_or(path);
+                Some(strop_picker::Item::symbol(strop_picker::SymbolRow {
+                    name: &symbol.name,
+                    container: None,
+                    detail: format_args!("{} · :{line}", strop_picker::display_path(shown)),
+                    kind: symbol.kind,
+                    path: paths.of(path),
+                    payload: Payload::Symbol {
+                        location: symbol.location.doc.clone(),
+                        line: position.line,
+                        column: strop_picker::SymbolColumn::Server {
+                            server,
+                            encoding,
+                            column: position.column,
+                        },
+                    },
+                }))
             })
             .collect::<Vec<_>>();
         if let Some(glue) = self.picker.as_mut() {
@@ -434,44 +418,6 @@ impl<'a> RelativePaths<'a> {
     }
 }
 
-/// One server or outline symbol as a list row (0109): the kind is the
-/// chip and a fact the ranking pass filters on.
-fn symbol_item(
-    symbol: &strop_lsp::ProtoSymbol,
-    container: Option<&str>,
-    detail: std::fmt::Arguments<'_>,
-    path: Option<std::sync::Arc<str>>,
-    no_text: &std::sync::Arc<str>,
-) -> strop_picker::Item {
-    use strop_picker::Payload;
-    let line = symbol.location.position.line.get() + 1;
-    let col = symbol.location.position.column.get() + 1;
-    let location = symbol.location.doc.path.clone();
-    let payload = match &symbol.location.doc.filesystem {
-        Filesystem::Local => Payload::Grep {
-            location: strop_workspace::ResourceLocation::local(location),
-            line,
-            col,
-            match_len: 1,
-            line_text: no_text.clone(),
-        },
-        Filesystem::Remote(endpoint) => Payload::Remote {
-            endpoint: endpoint.clone(),
-            path: location,
-            line,
-            col,
-        },
-    };
-    strop_picker::Item::symbol(strop_picker::SymbolRow {
-        name: &symbol.name,
-        container,
-        detail,
-        kind: symbol.kind,
-        path,
-        payload,
-    })
-}
-
 /// Document-symbol rows from one `documentSymbol` reply or outline
 /// (0063 §3): the kind rides in the chip; the row text is name,
 /// container, line. The wire carries no query: the ranking pass filters
@@ -479,22 +425,35 @@ fn symbol_item(
 pub(crate) fn document_symbol_items(
     symbols: &[strop_lsp::ProtoSymbol],
     root: &std::path::Path,
+    server: Option<(strop_lsp::ServerId, strop_lsp::PositionEncoding)>,
 ) -> Vec<strop_picker::Item> {
     let mut paths = RelativePaths::new(root);
-    // symbol rows show no source line: one shared empty text for all
-    let no_text: std::sync::Arc<str> = "".into();
     symbols
         .iter()
         .map(|symbol| {
-            let line = symbol.location.position.line.get() + 1;
-            let path = paths.of(&symbol.location.doc.path);
-            symbol_item(
-                symbol,
-                Some(&symbol.container),
-                format_args!("· :{line}"),
-                path,
-                &no_text,
-            )
+            let position = symbol.location.position;
+            let column = match server {
+                Some((server, encoding)) => strop_picker::SymbolColumn::Server {
+                    server,
+                    encoding,
+                    column: position.column,
+                },
+                None => strop_picker::SymbolColumn::Byte(strop_core::id::ByteColumn::new(
+                    position.column.get(),
+                )),
+            };
+            strop_picker::Item::symbol(strop_picker::SymbolRow {
+                name: &symbol.name,
+                container: Some(&symbol.container),
+                detail: format_args!("· :{}", position.line.get() + 1),
+                kind: symbol.kind,
+                path: paths.of(&symbol.location.doc.path),
+                payload: strop_picker::Payload::Symbol {
+                    location: symbol.location.doc.clone(),
+                    line: position.line,
+                    column,
+                },
+            })
         })
         .collect()
 }

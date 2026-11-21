@@ -469,6 +469,7 @@ pub enum LspEvent {
     /// rides the caller's generation, not a document stamp.
     WorkspaceSymbols {
         server: ServerId,
+        encoding: PositionEncoding,
         generation: u64,
         symbols: Vec<ProtoSymbol>,
     },
