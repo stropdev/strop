@@ -323,9 +323,7 @@ impl Editor {
             || self.notify.pending()
             || self.recovery.pending()
     }
-}
 
-impl Editor {
     /// `strop -`: the current scratch buffer receives stdin. It reads as
     /// `stdin` and stays read-only while the pipe streams (a live
     /// `tail -f`); EOF hands it to the user like any scratch buffer.

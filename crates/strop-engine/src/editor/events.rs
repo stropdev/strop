@@ -277,8 +277,6 @@ impl Editor {
             .join(", ");
         self.message = format!("event queue full — refused: {summary}");
     }
-}
-impl Editor {
     /// Outstanding finite work, independent of whether channels are
     /// forwarded (0056 AR06): start/handshake, mutation, checkpoint and
     /// stopping steps — never the liveness of a long-lived service. A
