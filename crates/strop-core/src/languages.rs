@@ -78,6 +78,11 @@ pub const LANGUAGES: &[Language] = &[
         extensions: &["spl"],
         aliases: &["splicery", "spl"],
     },
+    Language {
+        name: "lean",
+        extensions: &["lean"],
+        aliases: &["lean4"],
+    },
 ];
 
 /// Language name for a bare extension (no dot).

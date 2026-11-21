@@ -11,7 +11,7 @@ pub(crate) fn line_comment(language: LanguageId) -> Option<&'static str> {
             Some("//")
         }
         Python | Bash | Fish | CMake | Ruby | Toml | Yaml | Splicery => Some("#"),
-        Lua | Sql => Some("--"),
+        Lean | Lua | Sql => Some("--"),
         Php => Some("//"),
         Css | Html | Markdown | MarkdownInline | MarkdownRustdoc | Sovel => None,
     }

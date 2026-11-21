@@ -29,6 +29,8 @@ tree-sitter-html = "0.23"
 tree-sitter-java = "0.23"
 tree-sitter-javascript = "0.25"
 tree-sitter-json = "0.24"
+# Upstream ships the generated parser and highlight query, but no crates.io release.
+tree-sitter-lean = { git = "https://github.com/Julian/tree-sitter-lean", rev = "fefc2eff9a83eeb72cda44646709e40e33e09175" }
 tree-sitter-lua = "0.5.0"
 tree-sitter-md = "0.5"
 tree-sitter-php = "0.24"

@@ -48,6 +48,29 @@ fn rust_keywords_and_strings() {
 }
 
 #[test]
+fn lean_proof_highlights_survive_nested_comments_and_unicode() {
+    let src = "/- outer /- theorem fake -/ still a comment -/\n\
+               theorem refl' (α : Type) (x : α) : x = x := by rfl\n\
+               #eval \"λ\"\n";
+    let spans = clean_spans(std::path::Path::new("Proof.lean"), &Rope::from_str(src));
+    for (text, class) in [
+        ("still a comment", Class::Comment),
+        ("theorem refl'", Class::Keyword),
+        ("Type", Class::Type),
+        ("by rfl", Class::Keyword),
+        ("λ", Class::String),
+    ] {
+        let byte = src.find(text).unwrap();
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.start <= byte && byte < span.end && span.class == class),
+            "{text} should be {class:?}: {spans:?}"
+        );
+    }
+}
+
+#[test]
 fn cpp_highlights_with_cxx_scanner() {
     // the 0002 §5 gate: C++ grammar's scanner is C++ — a broken
     // static-libstdc++ link fails here, per-PR, not at a user's file.

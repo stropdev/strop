@@ -66,6 +66,10 @@ partner that is off screen.
 
 ## What is on screen
 
+Lean 4 files (`.lean`) have built-in syntax highlighting for declarations,
+proofs, literals and nested comments. It works without Lean or a language
+server. The colours describe the source text, not whether a proof checks.
+
 The accent colour marks where you are and what will happen next: the mode
 chip, the current line number, a pending operator, the cursor in an input
 field, and the characters a search matched. In a list, the selected row has
