@@ -5,7 +5,7 @@ status: "accepted"
 implementation: "complete"
 authors: ["tknawara"]
 created: "2026-11-03"
-updated: "2026-11-20"
+updated: "2026-11-21"
 issue: "https://github.com/stropdev/strop/issues/174"
 milestone: "v0.47.2"
 supersedes: ["2026-09-13-distribution-and-wsl-onboarding"]
@@ -53,9 +53,10 @@ routine local gate is:
 2. `.github/scripts/release-local.sh package <x.y.z>`. It first runs
    `qualify` on the same checkout: an exact clean committed tree whose
    workspace version matches, a green GitHub `ci` run for HEAD,
-   `sh tests/release-catalog.sh`, `sh tests/install.sh` and the Compose `test`
-   and `proofs` gates. Only then does it build through Compose into
-   `dist/v<x.y.z>/` and run checksum, static-link, version, headless-parse
+   `sh tests/release-catalog.sh`, `sh tests/release-candidate.sh`,
+   `sh tests/install.sh` and the Compose `test` and `proofs` gates.
+   Only then does it build through Compose into a fresh candidate directory
+   under `dist/v<x.y.z>/<full-commit>/` and run checksum, static-link, version, headless-parse
    and the find/search/symbols/history budgets (0093 §7, 0099 §7, 0101 §5.1)
    against the extracted shipping binary. `qualify` alone runs the gates
    without packaging.
@@ -63,9 +64,17 @@ routine local gate is:
 *2026-11-17 (plan 0108 D3):* `package` used to trust that `qualify` had been
 run; it now runs it itself, so no artifact is built from an unqualified
 commit and no receipt file is needed. The TLC `model` lane is deleted.
-BuildKit caches are performance state, never qualification evidence. Release
-outputs stay in a version-specific ignored `dist/v<x.y.z>/` directory and may be
-copied to cold storage without rebuilding them.
+BuildKit caches are performance state, never qualification evidence.
+
+*2026-11-21 ([#252](https://github.com/stropdev/strop/issues/252)):*
+The same version can have multiple candidate commits. `package` never adopts
+an existing tarball, even one with a matching sidecar. After the shipping
+binary passes, the script atomically renames `.building` to a bundle ID derived
+from the commit and the checksums of the archive, sidecar, catalog and notes.
+It prints the resulting directory. Old version-only outputs and other commits'
+bundles are untouched. To retry the **same** candidate, first move its entire
+`dist/v<x.y.z>/<full-commit>/` directory aside, including any partial build.
+Keep the path and contents together if archiving a qualified bundle.
 
 ## Publication
 
@@ -73,10 +82,13 @@ copied to cold storage without rebuilding them.
 `publish` and `verify`. Publication uses the exact local bytes:
 
 1. Push the qualified commit and immutable `v<x.y.z>` tag.
-2. `draft` verifies the remote tag identity and creates a draft GitHub release
-   with the tarball, sidecar, completion report, notes and catalog.
-3. Review the draft assets and notes. `publish` marks that existing draft public
-   and latest; it never rebuilds or replaces assets.
+2. `draft` checks the clean HEAD against the remote tag, resolves its qualified
+   bundle and checks the bytes against the bundle ID. It uploads the tarball,
+   sidecar and catalog, and uses the notes as the release body.
+3. Review the draft assets and notes. `publish` repeats the source and bundle
+   checks, then downloads the draft's assets and compares their names and
+   contents and the release body to the local bundle before marking the draft
+   public and latest. Neither promotion step rebuilds or replaces assets.
 4. `verify` compares the public catalog to the local artifact facts and installs
    the public tarball into a fresh directory.
 5. Vendor `CHANGELOG.md` and `install.sh` into `stropdev/stropdev.github.io`,
