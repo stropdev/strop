@@ -51,6 +51,10 @@ impl Editor {
             }
             return;
         }
+        if self.buf().is_dirty() {
+            self.message = "blame reads the file on disk; save unsaved changes first".into();
+            return;
+        }
         let doc = self.current();
         let revision = self.buf().revision();
         let Some(file) = self.doc(doc).file_target(&self.cwd) else {
@@ -145,7 +149,7 @@ impl Editor {
     }
 
     /// The buffer's blame gutter, if its data is still trustworthy:
-    /// same revision, same line count. Any edit since the capture
+    /// clean buffer, same revision, same line count. Any edit since the capture
     /// voids the line↔buffer-line pairing. A remote buffer pairs only
     /// with its endpoint-qualified entry.
     pub fn blame_gutter_for(&self, buffer: strop_core::id::DocumentId) -> Option<&BlameGutter> {
@@ -154,8 +158,10 @@ impl Editor {
         let gutter = self.blame_gutters.get(&buffer)?;
         // len_lines counts the trailing newline's phantom line — the
         // content count is what blame rows pair with
-        let content_lines = buf.last_content_line() + 1;
-        (gutter.revision == buf.revision() && gutter.lines.len() == content_lines).then_some(gutter)
+        (!buf.is_dirty()
+            && gutter.revision == buf.revision()
+            && gutter.lines.len() == buf.last_content_line() + 1)
+            .then_some(gutter)
     }
 
     /// `Space g B` fallback / surface blame: the card for the cursor

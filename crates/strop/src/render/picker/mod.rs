@@ -330,8 +330,7 @@ pub fn render_picker(editor: &Editor, t: &Tokens, frame: &mut Frame) {
     if !results.is_empty() && row_count > results.height as usize {
         let track_x = results.x + results.width - 1;
         let track_h = results.height as usize;
-        let frac = p.selected as f32 / row_count.max(1) as f32;
-        let thumb = ((track_h - 1) as f32 * frac) as usize;
+        let thumb = p.selected * (track_h - 1) / (row_count - 1);
         let cell = &mut frame.buffer_mut()[(track_x, results.y + thumb as u16)];
         cell.set_symbol("▮");
         cell.set_fg(t.muted);

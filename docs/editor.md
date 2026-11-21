@@ -266,7 +266,9 @@ binds that strop does not (**Missing**) or uses differently (**Reassigned**).
   `Ctrl-X` (add to the number at or after the cursor: decimal, `0x`, `0b`),
   `p P gp gP ]p [p`, `&` and `g&` (the last `:s` again), `@:` (the last `:`
   line again), `q` and `@` macros, `Ctrl-E` / `Ctrl-Y` (scroll one line),
-  `ZZ` `ZQ`.
+  `ZZ` `ZQ`. `[count]r<char>` replaces exactly that many characters starting
+  at the cursor, landing on the last replacement. If the count runs past the
+  line end, nothing changes and `.` still repeats the previous change.
 - **Visual** (`v`, `V`, `Ctrl-V`; the same key leaves, another switches):
   every operator, `U u ~` for case, `J gJ`, `r`, `p` and `P` (see
   Registers), `I` and `A`, `o`, `*` and `#`, `D X Y C R` on whole lines,

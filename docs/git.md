@@ -176,9 +176,10 @@ first.
   (`git log · src/lib.rs`); from a visual selection, the history of those
   lines.
 - `Space g B` shows who last changed each line, in the gutter; press it
-  again to hide it. `enter` on a line opens the log at that commit. The
-  gutter hides while the buffer has edits made after blame ran. In a
-  read-only buffer (a file opened with `-R`, a git view) there is no
+  again to hide it. `enter` on a line opens the log at that commit. Blame
+  reads the file on disk, so save unsaved changes before turning the
+  gutter on. Editing hides an existing gutter. In a read-only buffer
+  (a file opened with `-R`, a git view) there is no
   gutter; a card shows the blame for the current line instead.
 
 ### Large repositories

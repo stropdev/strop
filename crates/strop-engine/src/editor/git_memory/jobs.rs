@@ -436,7 +436,9 @@ impl Editor {
         self.worker_handles.remove(&completion.ticket.request);
         let key = completion.ticket.key;
         let valid = self.docs.get(key.document).is_some_and(|d| {
-            d.buf.revision() == key.revision && d.file_target(&self.cwd).as_ref() == Some(&key.file)
+            !d.buf.is_dirty()
+                && d.buf.revision() == key.revision
+                && d.file_target(&self.cwd).as_ref() == Some(&key.file)
         });
         match completion.outcome {
             Outcome::Success(lines) => {

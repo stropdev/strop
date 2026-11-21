@@ -24,7 +24,8 @@ says exactly which.
   to the file you were just in. When you type, a file you use often wins
   among equally good matches.
 - **`Space b`** lists buffers most recent first with the bar on the
-  previous buffer, so `Space b` `Enter` switches back.
+  previous buffer, so `Space b` `Enter` switches back. Choosing the current
+  buffer just closes the list: the caret, viewport and jump history stay put.
 
 ## Keys in the search field
 

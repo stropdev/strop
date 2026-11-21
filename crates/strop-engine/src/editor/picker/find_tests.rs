@@ -254,6 +254,27 @@ fn the_buffer_list_rests_on_the_alternate_buffer() {
     assert_eq!(editor.picker.as_ref().unwrap().picker.selected, 0);
 }
 
+#[test]
+fn accepting_the_current_buffer_preserves_position_and_jump_history() {
+    let mut editor = Editor::new(Buffer::from_text(&"some text\n".repeat(16)));
+    editor.feed_text("5Gll");
+    editor.scroll_to_cursor(3);
+    let head = editor.head();
+    let top = editor.view().view_top;
+    let jumps = editor.view().jumps.clone();
+    assert_eq!(editor.buf().line_of(head), 4);
+    assert!(top > 0);
+
+    editor.feed_text(" b");
+    editor.wait_picker();
+    assert!(editor.picker_open());
+    editor.feed(Key::Enter);
+    assert!(!editor.picker_open());
+    assert_eq!(editor.head(), head);
+    assert_eq!(editor.view().view_top, top);
+    assert_eq!(editor.view().jumps, jumps);
+}
+
 /// 0091 B12: in a query field, readline's Ctrl-U wins.
 #[test]
 fn ctrl_u_clears_the_query_back_to_the_start() {

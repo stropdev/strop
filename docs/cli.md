@@ -13,6 +13,10 @@ With no command, strop opens the file or directory, or an empty buffer.
 [Sessions](editor.md#sessions)). `strop -` reads standard input
 ([Reading stdin](editor.md#reading-stdin)).
 
+Use `--` to open a file whose name would otherwise be a command or option:
+`strop -- compat` edits the file `compat`. Commands such as `strop compat`
+and `strop config` do not take an editor file or stdin operand.
+
 ## Commands
 
 | Command | What it does |
@@ -42,7 +46,8 @@ Scripts, recordings and replay are described in
 | `--log-terminal-content` | also what you type and see in terminals |
 | `-h`, `--help` / `-V`, `--version` | help and version |
 
-`--log-file PATH` is `--log=PATH` with the path as its own argument.
+`--log-file PATH` is `--log=PATH` with the path as its own argument. Both
+use the exact filename, including non-UTF-8 bytes.
 
 ## Remote locations
 

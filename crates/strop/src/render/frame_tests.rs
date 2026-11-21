@@ -147,6 +147,47 @@ fn key_soup_never_panics() {
     }
 }
 
+#[test]
+fn blame_gutter_refuses_unsaved_shifted_lines() {
+    use strop_engine::editor::test_support::git::{editor_in, git_out, pump_ready};
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git_out(root, &["init", "-q"]);
+    git_out(root, &["config", "user.email", "t@t.t"]);
+    git_out(root, &["config", "user.name", "t"]);
+    let path = root.join("lines");
+    std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\n").unwrap();
+    git_out(root, &["add", "lines"]);
+    git_out(root, &["commit", "-qm", "c1"]);
+    std::fs::write(&path, "one\ntwo\nTHREE\nfour\nfive\n").unwrap();
+    git_out(root, &["commit", "-qam", "c2"]);
+    let sha = git_out(root, &["rev-parse", "--short=7", "HEAD"]);
+    let mut e = editor_in(root, "lines");
+    e.feed_text(" gB");
+    pump_ready(&mut e, |e| e.blame_gutter_for(e.first_doc()).is_some());
+    let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
+    assert!(
+        frame
+            .lines()
+            .any(|l| l.contains(&sha) && l.contains("THREE")),
+        "{frame}"
+    );
+
+    e.feed_text("ggddGoafter<esc>");
+    assert_eq!(
+        e.buf().text().to_string(),
+        "two\nTHREE\nfour\nfive\nafter\n"
+    );
+    let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
+    assert!(!frame.contains(&sha), "{frame}");
+    e.feed_text(" gB"); // toggle the existing gutter off, even while dirty
+    e.feed_text(" gB"); // refuse to enable it over unsaved text
+    let frame = crate::headless::frame_string(&mut e, 100, 12).unwrap();
+    assert!(frame.contains("save unsaved changes first"), "{frame}");
+    assert!(!frame.contains(&sha), "{frame}");
+}
+
 /// Golden shape: the blame column renders per line; the commit
 /// sidebar renders beside the delta with the current file marked.
 #[test]

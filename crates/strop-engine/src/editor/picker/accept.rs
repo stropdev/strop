@@ -51,7 +51,7 @@ impl Editor {
                 self.message = "file choice requires its captured project scope".into()
             }
             Payload::Buffer(i) => {
-                if self.docs.get(i).is_some() {
+                if i != self.current() && self.docs.get(i).is_some() {
                     self.push_jump();
                     self.switch_to(i);
                     self.set_head(0);
