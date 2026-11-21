@@ -272,16 +272,15 @@ fn server_by_name<'a>(cfg: &'a Languages, name: &str) -> Option<ServerSpec<'a>> 
     })
 }
 
-/// Workspace root for a buffer: the git root, else the file's directory.
-pub fn workspace_root(path: &Path, cwd: &Path) -> std::path::PathBuf {
+/// Workspace root starting in `directory`: its nearest Git root, else itself.
+pub fn workspace_root(directory: &Path, cwd: &Path) -> std::path::PathBuf {
     let joined;
-    let path = if path.is_absolute() {
-        path
+    let directory = if directory.is_absolute() {
+        directory
     } else {
-        joined = cwd.join(path);
+        joined = cwd.join(directory);
         &joined
     };
-    let directory = path.parent().unwrap_or(cwd);
     let mut probe = std::path::PathBuf::with_capacity(directory.as_os_str().len() + 5);
     probe.push(directory);
     loop {
@@ -409,7 +408,8 @@ mod tests {
         std::fs::create_dir_all(inner.join("src/deep")).unwrap();
         std::fs::create_dir_all(outer.join(".git")).unwrap();
         std::fs::write(inner.join(".git"), "gitdir: elsewhere\n").unwrap();
-        assert_eq!(workspace_root(&inner.join("src/deep/f.rs"), outer), inner);
+        assert_eq!(workspace_root(&inner.join("src/deep"), outer), inner);
+        assert_eq!(workspace_root(&inner, outer), inner);
     }
 
     #[test]
@@ -419,9 +419,9 @@ mod tests {
         let cwd = fixture.path().join("unrelated");
         std::fs::create_dir_all(&source).unwrap();
         std::fs::create_dir_all(&cwd).unwrap();
-        assert_eq!(workspace_root(&source.join("new.c"), &cwd), source);
+        assert_eq!(workspace_root(&source, &cwd), source);
         assert_eq!(
-            workspace_root(Path::new("source/deep/new.c"), fixture.path()),
+            workspace_root(Path::new("source/deep"), fixture.path()),
             source
         );
     }
@@ -434,7 +434,7 @@ mod tests {
         std::fs::create_dir_all(&physical).unwrap();
         std::os::unix::fs::symlink(&physical, &alias).unwrap();
         let document = alias.join("new.c");
-        let root = workspace_root(&document, &physical);
+        let root = workspace_root(&alias, &physical);
         assert_eq!(root, alias);
         assert!(document.starts_with(root));
     }

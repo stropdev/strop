@@ -206,3 +206,105 @@ fn a_symbol_reply_too_large_to_decode_fails_one_request_and_keeps_the_server() {
         "one server, asked ahead and then by the press"
     );
 }
+
+fn check_symbol_jump(root: &Path, start: &str, keys: &str, name: &str, mixed: bool) {
+    let output = run(
+        root,
+        &format!(
+            "settle 20000\nkeys {keys}\nsettle 20000\nframe\n\
+             keys {name}\nsettle 20000\nkeys <enter>\nsettle 20000\nstate\nframe\n"
+        ),
+        start,
+    );
+    let screens = frames(&output);
+    if mixed {
+        for row in ["SECOND_CONST", "THIRD_CONST"] {
+            assert!(
+                screens[0].contains(row),
+                "missing {row} in the mixed picker:\n{output}"
+            );
+        }
+    }
+    let state = output
+        .lines()
+        .find_map(|line| line.strip_prefix("─── state "))
+        .unwrap();
+    let state: serde_json::Value = serde_json::from_str(state).unwrap();
+    assert_eq!(state["picker"], false, "{output}");
+    assert_eq!(state["line"], 1, "{output}");
+    assert_eq!(state["cursor"], 28, "{output}"); // zero-based byte offset
+    assert_eq!(state["col"], 29, "{output}"); // one-based byte column
+    assert!(
+        screens[1].contains(name),
+        "opened another target:\n{output}"
+    );
+}
+
+#[test]
+fn symbol_jumps_use_each_producing_servers_encoding() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("notes.txt"), "no server here\n").unwrap();
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/symbol_jumps_server.py"
+    );
+    let mut config = String::new();
+    let projects = [
+        (
+            "python",
+            "pyproject.toml",
+            "main.py",
+            "pyright",
+            "utf-16",
+            "SECOND_CONST",
+            "# éé",
+        ),
+        (
+            "rust",
+            "Cargo.toml",
+            "lib.rs",
+            "rust-analyzer",
+            "utf-8",
+            "THIRD_CONST",
+            "//éé",
+        ),
+    ];
+    for (project, marker, file, server, encoding, name, prefix) in projects {
+        let project = root.join(project);
+        std::fs::create_dir(&project).unwrap();
+        std::fs::write(project.join(marker), "").unwrap();
+        let path = project.join(file);
+        // Only the semantic server has this row; the grammar sees a comment.
+        let padding = " ".repeat(28 - prefix.len());
+        std::fs::write(&path, format!("{prefix}{padding}{name}\n")).unwrap();
+        config.push_str(&format!(
+            "[language-server.{server}]\ncommand = {:?}\nargs = [{fixture:?}, {encoding:?}, {path:?}, {name:?}]\n",
+            python(),
+        ));
+    }
+    let dir = directory.path().join("config/strop");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("languages.toml"), config).unwrap();
+    for (project, _, file, _, _, name, _) in projects {
+        // Cold document: the picker opens from a retained documentSymbol
+        // reply. Warm workspace: both servers contribute to one picker,
+        // and Enter has to open the previously unopened target file.
+        check_symbol_jump(&root, &format!("{project}/{file}"), "<space>s", name, false);
+        check_symbol_jump(&root, "notes.txt", "<space>S", name, true);
+    }
+}
+
+#[test]
+fn symbol_jumps_keep_syntax_outline_byte_columns() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    std::fs::create_dir(&root).unwrap();
+    let text = format!("/*éé*/{}const SECOND_CONST: i32 = 1;\n", " ".repeat(14));
+    assert_eq!(text.find("SECOND_CONST"), Some(28));
+    std::fs::write(root.join("lib.rs"), text).unwrap();
+    std::fs::write(root.join("notes.txt"), "").unwrap();
+    check_symbol_jump(&root, "lib.rs", "<space>s", "SECOND_CONST", false);
+    check_symbol_jump(&root, "notes.txt", "<space>S", "SECOND_CONST", false);
+}

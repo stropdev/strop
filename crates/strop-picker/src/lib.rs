@@ -25,6 +25,18 @@ pub use source::{
 
 use std::path::PathBuf;
 
+/// A syntax outline reports byte columns; a server reports columns in
+/// its negotiated encoding. Keep that distinction until the target opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SymbolColumn {
+    Byte(strop_core::id::ByteColumn),
+    Server {
+        server: strop_lsp::ServerId,
+        encoding: strop_lsp::PositionEncoding,
+        column: strop_lsp::ServerColumn,
+    },
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Payload {
     /// A file path relative to the working directory.
@@ -39,6 +51,12 @@ pub enum Payload {
         col: usize,
         match_len: usize,
         line_text: std::sync::Arc<str>,
+    },
+    /// A declaration's exact target (zero-based).
+    Symbol {
+        location: strop_workspace::ResourceLocation,
+        line: strop_core::id::LineIndex,
+        column: SymbolColumn,
     },
     /// A location on a validated remote endpoint. The native path can never
     /// be previewed or opened as an analogous local file.

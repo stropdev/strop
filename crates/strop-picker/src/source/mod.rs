@@ -247,15 +247,15 @@ fn run_workspace_symbols(
                 detail: format_args!("{shown} · :{}", declaration.line),
                 kind: declaration.kind,
                 path: Some(shared.clone()),
-                payload: Payload::Grep {
+                payload: Payload::Symbol {
                     location: strop_workspace::ResourceLocation {
                         filesystem: root.filesystem.clone(),
                         path: root.path.join(&relative),
                     },
-                    line: declaration.line,
-                    col: declaration.col,
-                    match_len: declaration.name.len(),
-                    line_text: "".into(),
+                    line: strop_core::id::LineIndex::new(declaration.line.saturating_sub(1)),
+                    column: crate::SymbolColumn::Byte(strop_core::id::ByteColumn::new(
+                        declaration.col.saturating_sub(1),
+                    )),
                 },
             }));
         }

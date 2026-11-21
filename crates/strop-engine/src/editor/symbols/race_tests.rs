@@ -92,7 +92,12 @@ impl World {
 }
 
 fn honest(store: &mut SymbolStore, world: &World, id: BuildId, symbols: Vec<ProtoSymbol>) {
-    store.deliver(id, Some(world.current()), Some(symbols));
+    store.deliver(
+        id,
+        Some(world.current()),
+        Some(symbols),
+        strop_lsp::PositionEncoding::Utf8,
+    );
 }
 
 /// Wrong: the result is filed under the revision current when it arrives.
@@ -110,7 +115,7 @@ fn stamped_at_delivery(
             ..build
         });
     }
-    store.deliver(id, Some(world.current()), Some(symbols));
+    honest(store, world, id, symbols);
 }
 
 /// Wrong: whoever computed the list, it is filed as the server's.
@@ -127,7 +132,7 @@ fn filed_as_the_server(
             ..build
         });
     }
-    store.deliver(id, Some(world.current()), Some(symbols));
+    honest(store, world, id, symbols);
 }
 
 /// Run one sequence; `Err` names the first step after which a lookup
@@ -200,7 +205,7 @@ fn run(sequence: &[Step], accept: Accept) -> Result<(), String> {
                 BufferRevision::new(world.revision),
             );
             let expected = list(world.document(), world.revision, producer);
-            if served.is_some_and(|served| *served != expected) {
+            if served.is_some_and(|served| *served.rows != expected) {
                 return Err(format!(
                     "after step {at} of {sequence:?}: {producer:?} served a list of another state"
                 ));

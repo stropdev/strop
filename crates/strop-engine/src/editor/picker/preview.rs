@@ -211,6 +211,9 @@ impl Editor {
                 None,
             )),
             Payload::Grep { location, line, .. } => Some((location.clone(), Some(*line))),
+            Payload::Symbol { location, line, .. } => {
+                Some((location.clone(), Some(line.get() + 1)))
+            }
             Payload::Remote {
                 endpoint,
                 path,

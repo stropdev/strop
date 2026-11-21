@@ -14,6 +14,23 @@ pub enum PositionError {
     CharacterBoundary,
 }
 
+impl ServerPosition {
+    /// Navigation clamps to the target line. Resolve only against the
+    /// buffer being opened, never against the requesting document.
+    pub fn navigation_offset(
+        self,
+        buffer: &strop_core::Buffer,
+        encoding: PositionEncoding,
+    ) -> ByteOffset {
+        let line = self.line.get().min(buffer.len_lines().saturating_sub(1));
+        let start = buffer.line_start(line);
+        let end = buffer.line_end(line);
+        let text = buffer.text().byte_slice(start..end);
+        let column = crate::to_byte_col_slice(text, self.column, encoding);
+        ByteOffset::new(buffer.clamp_boundary(start.saturating_add(column.get()).min(end)))
+    }
+}
+
 pub fn checked_byte_offset(
     text: &Rope,
     position: ServerPosition,

@@ -23,7 +23,8 @@ use crate::editor::{Document, Editor, Pane};
 // Version 9: quit retires the view before queued input and watcher wakes.
 // Version 10: counted replace, buffer picker jumps and disk blame on unsaved text.
 // Version 11: counted Visual shifts, collection positions and uncommitted blame.
-const SEMANTIC_VERSION: u32 = 11;
+// Version 12: symbol jumps use the producing server's negotiated encoding.
+const SEMANTIC_VERSION: u32 = 12;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::WorkerId;
-use strop_lsp::{ProtoSymbol, RequestStamp, ServerId};
+use strop_lsp::{PositionEncoding, ProtoSymbol, RequestStamp, ServerId};
 
 use crate::editor::cache::{Cache, Key};
 
@@ -72,6 +72,13 @@ pub(crate) struct Current {
     pub server: Option<ServerId>,
 }
 
+/// Columns in a kept list must retain the encoding of the original reply.
+#[derive(Clone)]
+pub(crate) struct SymbolList {
+    pub rows: Arc<Vec<ProtoSymbol>>,
+    pub encoding: PositionEncoding,
+}
+
 pub(crate) enum Delivery {
     /// Not the build being waited for: nothing changes.
     Unowned,
@@ -81,11 +88,11 @@ pub(crate) enum Delivery {
     /// The awaited build failed or was cancelled.
     Failed(Build),
     /// Accepted, and kept unless it is over the size limit.
-    Fresh(Build, Arc<Vec<ProtoSymbol>>),
+    Fresh(Build, SymbolList),
 }
 
 pub(crate) struct SymbolStore {
-    cache: Cache<Arc<Vec<ProtoSymbol>>>,
+    cache: Cache<SymbolList>,
     build: Option<Build>,
 }
 
@@ -105,7 +112,7 @@ impl SymbolStore {
         document: DocumentId,
         producer: Producer,
         revision: BufferRevision,
-    ) -> Option<Arc<Vec<ProtoSymbol>>> {
+    ) -> Option<SymbolList> {
         self.cache.get(key(document, producer, revision)).cloned()
     }
 
@@ -142,6 +149,7 @@ impl SymbolStore {
         id: BuildId,
         current: Option<Current>,
         symbols: Option<Vec<ProtoSymbol>>,
+        encoding: PositionEncoding,
     ) -> Delivery {
         if self.build.map(|build| build.id) != Some(id) {
             return Delivery::Unowned;
@@ -162,13 +170,16 @@ impl SymbolStore {
         let Some(symbols) = symbols else {
             return Delivery::Failed(build);
         };
-        let symbols = Arc::new(symbols);
+        let list = SymbolList {
+            rows: Arc::new(symbols),
+            encoding,
+        };
         self.cache.put(
             key(build.document, build.producer, build.revision),
-            symbols.len(),
-            symbols.clone(),
+            list.rows.len(),
+            list.clone(),
         );
-        Delivery::Fresh(build, symbols)
+        Delivery::Fresh(build, list)
     }
 
     /// The document closed: its lists are gone and its build is unowned.
