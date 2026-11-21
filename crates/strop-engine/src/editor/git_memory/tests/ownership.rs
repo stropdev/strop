@@ -59,6 +59,7 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
     let stale = install_running_hunk(&mut e, view);
     let owner = install_running_hunk(&mut e, view);
     let data = || HunkData {
+        rel: "f.rs".into(),
         unstaged: Default::default(),
         staged: Default::default(),
         untracked: false,
@@ -82,6 +83,7 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
         &mut e,
         owner,
         Outcome::Success(HunkData {
+            rel: "f.rs".into(),
             unstaged: crate::editor::git_memory::HunkSet::new(vec![all_add_hunk()], 3),
             staged: Default::default(),
             untracked: false,
@@ -139,6 +141,7 @@ fn hunk_failures_are_terminal_and_retry_gets_a_new_request() {
         &mut e,
         ticket.clone(),
         Outcome::Success(HunkData {
+            rel: "f.rs".into(),
             unstaged: Default::default(),
             staged: Default::default(),
             untracked: false,
@@ -188,6 +191,7 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
         &mut e,
         hunk_ticket,
         Outcome::Success(HunkData {
+            rel: "f.rs".into(),
             unstaged: crate::editor::git_memory::HunkSet::new(vec![all_add_hunk()], 3),
             staged: Default::default(),
             untracked: true,

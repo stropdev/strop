@@ -44,7 +44,9 @@ impl Editor {
                 Ok(Some(request)) => {
                     batch.pending.insert(request, name);
                 }
-                Ok(None) => batch.failed.push(format!("{name} (filename changes need review)")),
+                Ok(None) => batch
+                    .failed
+                    .push(format!("{name} (filename changes need review)")),
                 Err(reason) => batch.failed.push(format!("{name} ({reason})")),
             }
         }

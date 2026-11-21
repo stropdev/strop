@@ -131,7 +131,9 @@ The gutter marks the lines that differ from what is staged. `]c` / `[c` move bet
 hunks, `Space g p` previews one, `Space g s` stages it, `Space g u` unstages
 the staged hunk under the cursor, and `Space g X` discards it in the buffer
 (an ordinary edit: `u` undoes it). Staging reads the file on disk, so save
-first.
+first. Opening a local file through a directory symlink uses the same index
+entry as opening it through its physical directory. Git still treats a
+symlink in the final filename as its own entry.
 
 ## Log, history, blame
 
@@ -176,8 +178,10 @@ first.
   (`git log · src/lib.rs`); from a visual selection, the history of those
   lines.
 - `Space g B` shows who last changed each line, in the gutter; press it
-  again to hide it. `enter` on a line opens the log at that commit. Blame
-  reads the file on disk, so save unsaved changes before asking for blame.
+  again to hide it. `enter` on a committed line opens the log at its commit.
+  On a line changed on disk but not yet committed, `enter` stays in the file
+  and reports `uncommitted line`. This applies to both the gutter and the
+  blame card. Blame reads the file on disk, so save unsaved changes first.
   Editing hides an existing gutter; `enter` will not show a card for its
   stale line. In a read-only buffer
   (a file opened with `-R`, a git view) there is no

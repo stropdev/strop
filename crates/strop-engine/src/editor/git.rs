@@ -19,7 +19,7 @@ use super::transact::ChangeSet;
 use super::Editor;
 
 /// What a hunk verb (`Space g X`/`g s`) targets from the current view.
-enum HunkTarget {
+enum HunkTarget<'a> {
     /// Not on a hunk surface: act on the cursor's own buffer.
     NotASurface,
     /// A hunk preview whose origin buffer still matches the revision
@@ -27,6 +27,7 @@ enum HunkTarget {
     Fresh {
         buffer: strop_core::id::DocumentId,
         hunk: Arc<Hunk>,
+        rel: &'a std::path::Path,
         /// The origin buffer was untracked when captured: undo refuses.
         untracked: bool,
     },
@@ -108,6 +109,7 @@ impl Editor {
         self.admissions.hunks += 1;
         // stale signs paint WRONG lines after an edit — clear honestly
         // for the frames the diff takes, never lie
+        self.hunk_rel = None;
         self.hunks = HunkSet::default();
         self.staged_hunks = HunkSet::default();
         self.hunks_untracked = false;
@@ -164,6 +166,7 @@ impl Editor {
                         &cancel,
                     ) {
                         Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
+                            rel,
                             unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
                             staged: HunkSet::new(staged, snapshot.len_lines()),
                             untracked,
@@ -205,37 +208,20 @@ impl Editor {
                         }
                     }
                 };
-                let unstaged = match repo.unstaged_hunks(&path, &text) {
-                    Ok(hunks) => hunks,
+                let gutter = match repo.gutter(&path, &text) {
+                    Ok(gutter) => gutter,
                     Err(error) => {
                         return Outcome::Failed {
-                            failure: git_failure("diff index↔buffer", error),
-                            partial: None,
-                        }
-                    }
-                };
-                let staged = match repo.staged_hunks(&path) {
-                    Ok(hunks) => hunks,
-                    Err(error) => {
-                        return Outcome::Failed {
-                            failure: git_failure("diff HEAD↔index", error),
-                            partial: None,
-                        }
-                    }
-                };
-                let untracked = match repo.is_untracked(&path) {
-                    Ok(untracked) => untracked,
-                    Err(error) => {
-                        return Outcome::Failed {
-                            failure: git_failure("index lookup", error),
+                            failure: git_failure("read gutter", error),
                             partial: None,
                         }
                     }
                 };
                 Outcome::Success(HunkData {
-                    unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
-                    staged: HunkSet::new(staged, snapshot.len_lines()),
-                    untracked,
+                    rel: gutter.rel,
+                    unstaged: HunkSet::new(gutter.unstaged, snapshot.len_lines()),
+                    staged: HunkSet::new(gutter.staged, snapshot.len_lines()),
+                    untracked: gutter.untracked,
                 })
             },
         );
@@ -247,6 +233,7 @@ impl Editor {
     /// remote window).
     fn clear_hunk_view(&mut self) {
         self.cancel_hunk_owner();
+        self.hunk_rel = None;
         self.hunks = HunkSet::default();
         self.staged_hunks = HunkSet::default();
         self.hunks_untracked = false;
@@ -431,6 +418,7 @@ impl Editor {
                 buffer,
                 hunk,
                 untracked,
+                ..
             } => {
                 if let Some(message) = remote_refusal(self, buffer) {
                     self.message = message;
@@ -467,22 +455,28 @@ impl Editor {
             return;
         }
         match self.hunk_surface_target() {
-            HunkTarget::Fresh { buffer, hunk, .. } => self.stage_hunk_in(buffer, &hunk),
+            HunkTarget::Fresh {
+                buffer, hunk, rel, ..
+            } => self.stage_hunk_in(buffer, hunk, rel.to_owned()),
             HunkTarget::Stale => self.message = "buffer changed — reopen the hunk preview".into(),
             HunkTarget::NotASurface => {
                 let Some(hunk) = self.hunk_under_cursor() else {
                     self.message = "no hunk here".into();
                     return;
                 };
-                self.stage_hunk_in(self.current(), &hunk);
+                if let Some(rel) = self.hunk_rel.clone() {
+                    self.stage_hunk_in(self.current(), hunk, rel);
+                }
             }
         }
     }
 
-    fn stage_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Arc<Hunk>) {
-        let Some(path) = self.doc(idx).buf.path.clone() else {
-            return;
-        };
+    fn stage_hunk_in(
+        &mut self,
+        idx: strop_core::id::DocumentId,
+        hunk: Arc<Hunk>,
+        rel: std::path::PathBuf,
+    ) {
         // staging reads the *disk* file's hunk: a dirty buffer means the
         // two disagree, and auto-saving would silently write every
         // unrelated unsaved edit to the worktree (0014). Refuse loudly.
@@ -498,14 +492,7 @@ impl Editor {
             self.message = "remote repositories are read-only — staging is refused (RW4)".into();
             return;
         }
-        let Ok(rel) = std::path::Path::new(&path)
-            .strip_prefix(context.workdir())
-            .map(|p| p.to_path_buf())
-        else {
-            self.message = "buffer not under workdir".into();
-            return;
-        };
-        let op = MutationOp::Stage { hunk: hunk.clone() };
+        let op = MutationOp::Stage { hunk };
         let key = MutationKey {
             document: idx,
             revision: self.doc(idx).buf.revision(),
@@ -540,7 +527,7 @@ impl Editor {
             self.message = "no staged hunk here".into();
             return;
         };
-        let Some(path) = self.buf().path.clone() else {
+        let Some(rel) = self.hunk_rel.clone() else {
             return;
         };
         let Some(context) = self.git.clone() else {
@@ -551,13 +538,6 @@ impl Editor {
             self.message = "remote repositories are read-only — unstaging is refused (RW4)".into();
             return;
         }
-        let Ok(rel) = std::path::Path::new(&path)
-            .strip_prefix(context.workdir())
-            .map(|p| p.to_path_buf())
-        else {
-            self.message = "buffer not under workdir".into();
-            return;
-        };
         let op = MutationOp::Unstage { hunk };
         let key = MutationKey {
             document: self.current(),
@@ -582,7 +562,11 @@ impl Editor {
             self.message = "no hunk here".into();
             return;
         };
+        let Some(rel) = self.hunk_rel.clone() else {
+            return;
+        };
         let origin = super::git_memory::HunkOrigin {
+            rel,
             buffer: self.current(),
             revision: self.cur().buf.revision(),
             untracked: self.hunks_untracked,
@@ -602,7 +586,7 @@ impl Editor {
     /// What a `Space g X`/`g s` from the current buffer should act on:
     /// the hunk surface's origin when fresh, a refusal when the origin
     /// buffer has moved on, and the cursor's own hunk otherwise.
-    fn hunk_surface_target(&self) -> HunkTarget {
+    fn hunk_surface_target(&self) -> HunkTarget<'_> {
         let Some(super::Surface::Diff { hunks, origin, .. }) = self.surface() else {
             return HunkTarget::NotASurface;
         };
@@ -617,6 +601,7 @@ impl Editor {
                 buffer: origin.buffer,
                 hunk: hunk.clone(),
                 untracked: origin.untracked,
+                rel: &origin.rel,
             },
             _ => HunkTarget::Stale,
         }

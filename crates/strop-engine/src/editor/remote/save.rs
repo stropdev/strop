@@ -80,7 +80,14 @@ impl Editor {
                     .map(|document| document.buf.revision())
                     .unwrap_or_default();
                 self.note_save_failure(
-                    document, true, revision, target, force, close, false, error.clone(),
+                    document,
+                    true,
+                    revision,
+                    target,
+                    force,
+                    close,
+                    false,
+                    error.clone(),
                 );
             })
     }
@@ -259,7 +266,10 @@ impl Editor {
             if let Some(handle) = self.worker_handles.remove(&ticket.request) {
                 handle.cancel(CancelReason::OwnerClosed);
             }
-            self.finish_batch_write(ticket.request, Some("save abandoned; source binding closed"));
+            self.finish_batch_write(
+                ticket.request,
+                Some("save abandoned; source binding closed"),
+            );
         }
     }
 

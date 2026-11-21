@@ -172,6 +172,7 @@ impl Editor {
             Operation {
                 op,
                 register: cmd.register,
+                shift_levels: 1,
                 operands: &operands,
                 reg_one: crate::editor::registers::reg_one_motion(&cmd.target),
                 keys: &cmd.keys,
@@ -267,27 +268,33 @@ impl Editor {
     }
 
     /// > / < applied to every line a resolved range covers.
-    pub(crate) fn apply_indent(&mut self, range: Range, right: bool) {
+    pub(crate) fn apply_indent(&mut self, range: Range, right: bool, levels: usize) {
         let line = self.buf().line_of(range.start);
         let last = self.buf().line_of(range.end.saturating_sub(1)) + 1;
+        let width = self.cur_indent().width;
+        let indent = right.then(|| self.cur_indent().units(levels));
         for l in line..last {
             let start = self.buf().line_start(l);
-            if right {
+            if let Some(indent) = &indent {
                 // vim: an empty line gets no indent
                 if self.buf().line_end(l) > start {
-                    let indent = self.cur_indent().unit();
-                    self.buf_mut().insert(start, &indent);
+                    self.buf_mut().insert(start, indent);
                 }
             } else {
                 let end = self.buf().line_end(l);
-                let width = self.cur_indent().width;
                 let mut strip = 0;
-                while strip < width && start + strip < end && self.buf().byte(start + strip) == b' '
-                {
-                    strip += 1;
-                }
-                if strip == 0 && self.buf().byte_at(start) == Some(b'\t') {
-                    strip = 1;
+                for _ in 0..levels {
+                    let from = start + strip;
+                    match self.buf().byte_at(from) {
+                        Some(b' ') => {
+                            let limit = end.min(from + width);
+                            strip += (from..limit)
+                                .take_while(|&at| self.buf().byte(at) == b' ')
+                                .count();
+                        }
+                        Some(b'\t') => strip += 1,
+                        _ => break,
+                    }
                 }
                 if strip > 0 {
                     self.buf_mut().delete(Range::charwise(start, start + strip));

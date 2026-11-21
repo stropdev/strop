@@ -1,5 +1,5 @@
-//! `Space g l` on a large repository, on the real binary (plans/0101
-//! §5.1): the first press is slow and leaves a private commit-graph in
+//! Blame navigation and `Space g l` on the real binary. On a large
+//! repository (plans/0101 §5.1) the first press leaves a private commit-graph in
 //! strop's state directory — not in the repository — and the second
 //! press shows exactly the same log.
 use std::io::Write;
@@ -58,7 +58,7 @@ fn repository(root: &Path) {
     git(root, &["reset", "-q", "--hard", "main"], None);
 }
 
-fn run(root: &Path, state: &Path, script: &str) -> String {
+fn run(root: &Path, state: &Path, options: &[&str], file: &str, script: &str) -> String {
     let outside = root.parent().unwrap();
     let steps = outside.join("steps");
     std::fs::write(&steps, script).unwrap();
@@ -71,9 +71,10 @@ fn run(root: &Path, state: &Path, script: &str) -> String {
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
         .env_remove("STROP_LOG")
+        .args(options)
         .arg("headless")
         .arg(&steps)
-        .arg("src/f007.txt")
+        .arg(file)
         .output()
         .unwrap();
     assert!(
@@ -114,6 +115,8 @@ fn a_slow_log_leaves_a_private_graph_and_the_log_reads_the_same() {
     let output = run(
         root,
         &state,
+        &[],
+        "src/f007.txt",
         "settle 60000\n\
          keys <space>gl\n\
          settle 60000\n\
@@ -135,4 +138,56 @@ fn a_slow_log_leaves_a_private_graph_and_the_log_reads_the_same() {
     assert_eq!(graphs.len(), 1, "one graph in the state directory");
     assert_eq!(files(&root.join(".git")), before, "nothing new in .git");
     assert!(!root.join(".git/objects/info/commit-graph").exists());
+}
+
+#[test]
+fn blame_card_enter_requires_an_attributed_commit() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    std::fs::create_dir(&root).unwrap();
+    git(&root, &["init", "-q", "-b", "main"], None);
+    // The anchor belongs to the first commit, not HEAD: opening a log
+    // at its default selection cannot satisfy the committed-line control.
+    git(
+        &root,
+        &["fast-import", "--quiet"],
+        Some(
+            b"commit refs/heads/main\n\
+              committer Ada <ada@example.org> 1500000000 +0000\n\
+              data <<END\nanchor origin\nEND\n\
+              M 100644 inline note\ndata <<END\ncommitted\nanchor\nEND\n\
+              commit refs/heads/main\n\
+              committer Ada <ada@example.org> 1500000001 +0000\n\
+              data <<END\nunrelated tip\nEND\n\
+              M 100644 inline other\ndata <<END\nother\nEND\n",
+        ),
+    );
+    git(&root, &["reset", "-q", "--hard", "main"], None);
+    std::fs::write(root.join("note"), "edited on disk\nanchor\n").unwrap();
+    let output = run(
+        &root,
+        &directory.path().join("state"),
+        &["-R"],
+        "note",
+        "settle\nkeys <space>gB\nsettle\nframe\n\
+         keys <cr>\nsettle\nframe\n\
+         keys j<space>gB\nsettle\nframe\n\
+         keys <cr>\nsettle\nframe\n\
+         keys <cr>\nsettle\nframe\n",
+    );
+    let frames = frames(&output);
+    let [dirty_card, source, clean_card, log, commit] = frames.as_slice() else {
+        panic!("{output}");
+    };
+    assert!(dirty_card.contains("Not Committed Yet"), "{dirty_card}");
+    assert!(dirty_card.contains("dismiss"), "{dirty_card}");
+    assert!(!dirty_card.contains("dive"), "{dirty_card}");
+    assert!(source.contains("edited on disk"), "{source}");
+    assert!(source.contains("uncommitted line"), "{source}");
+    assert!(!source.contains("git log"), "{source}");
+    assert!(clean_card.contains("anchor origin"), "{clean_card}");
+    assert!(clean_card.contains("dive"), "{clean_card}");
+    assert!(log.contains("git log"), "{log}");
+    assert!(commit.contains("anchor origin"), "{commit}");
+    assert!(!commit.contains("unrelated tip"), "{commit}");
 }

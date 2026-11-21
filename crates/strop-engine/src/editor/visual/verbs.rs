@@ -30,8 +30,8 @@ pub(crate) fn visual_verb(
         return;
     }
     match verb {
-        VisualVerb::Operator(op) => visual_operate(editor, op, register, false),
-        VisualVerb::Lines(op) => visual_operate(editor, op, register, true),
+        VisualVerb::Operator(op) => visual_operate(editor, op, register, false, count.unwrap_or(1)),
+        VisualVerb::Lines(op) => visual_operate(editor, op, register, true, count.unwrap_or(1)),
         VisualVerb::Put { keep } => visual_put(editor, register, count.unwrap_or(1), keep),
         VisualVerb::Join { spaces } => {
             let (first, last) = selected_lines(editor);
@@ -91,7 +91,13 @@ fn selected_ranges(editor: &Editor, whole_lines: bool) -> Vec<Range> {
 }
 
 /// An operator over the selection, through the one operator engine.
-fn visual_operate(editor: &mut Editor, op: Op, register: Option<char>, whole_lines: bool) {
+fn visual_operate(
+    editor: &mut Editor,
+    op: Op,
+    register: Option<char>,
+    whole_lines: bool,
+    count: usize,
+) {
     if !editor.register_writable(register) {
         return;
     }
@@ -141,7 +147,8 @@ fn visual_operate(editor: &mut Editor, op: Op, register: Option<char>, whole_lin
         .collect();
     let column = crate::editor::normal::operators::kept_column(editor, op, &operands[0]);
     let linewise = first.is_linewise();
-    let repeat = (op != Op::Yank && ranges.len() == 1).then(|| visual_repeat(editor, op, first));
+    let repeat =
+        (op != Op::Yank && ranges.len() == 1).then(|| visual_repeat(editor, op, first, count));
     editor.mode = Mode::Normal;
     editor.sels_mut().collapse_extras();
     crate::editor::normal::operators::apply_operator(
@@ -149,6 +156,7 @@ fn visual_operate(editor: &mut Editor, op: Op, register: Option<char>, whole_lin
         Operation {
             op,
             register,
+            shift_levels: count,
             operands: &operands,
             reg_one: false,
             keys: if linewise { "V..." } else { "v..." },
@@ -173,8 +181,22 @@ fn visual_operate(editor: &mut Editor, op: Op, register: Option<char>, whole_lin
 /// same extent from the cursor — N lines or N characters of one line
 /// as a command, otherwise the keys for the selection's line and
 /// column deltas.
-fn visual_repeat(editor: &Editor, op: Op, range: Range) -> Result<grammar::Command, String> {
+fn visual_repeat(
+    editor: &Editor,
+    op: Op,
+    range: Range,
+    count: usize,
+) -> Result<grammar::Command, String> {
     let (first, last) = selected_lines(editor);
+    if matches!(op, Op::Indent | Op::Dedent) && count > 1 {
+        // A Normal shift's count is its height. Replay a Visual shift to
+        // preserve both the selected height and the number of indent levels.
+        let key = op.key();
+        return Err(match last - first {
+            0 => format!("V{count}{key}"),
+            down => format!("V{down}j{count}{key}"),
+        });
+    }
     let command = |count: usize, target: grammar::Target, keys: String| grammar::Command {
         op: Some(op),
         register: None,

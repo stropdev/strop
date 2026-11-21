@@ -107,11 +107,7 @@ pub(crate) fn release_unheld(editor: &mut Editor) {
             !editor.docs.get(*id).is_some_and(|d| d.buf.is_dirty()),
             "a dirty buffer is never released"
         );
-        let released = editor.release_document(*id);
-        debug_assert!(
-            released.affected.is_empty(),
-            "a released file held no excerpt"
-        );
+        editor.release_document(*id);
     }
     if !release.is_empty() {
         editor.lsp_retire_workspace_servers();

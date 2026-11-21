@@ -70,6 +70,13 @@ impl GitContext {
     }
 }
 
+pub struct Gutter {
+    pub rel: PathBuf,
+    pub unstaged: Vec<Hunk>,
+    pub staged: Vec<Hunk>,
+    pub untracked: bool,
+}
+
 pub struct Repo {
     pub(crate) inner: git2::Repository,
     pub(crate) workdir: PathBuf,
@@ -139,16 +146,21 @@ impl Repo {
         }
     }
 
-    /// Repo-relative path for a buffer path (diff keys are relative).
-    fn rel_path(&self, path: &Path) -> Option<PathBuf> {
-        let abs = if path.is_absolute() {
-            path.to_path_buf()
+    /// Resolve directory aliases, never the final entry (Git tracks a
+    /// symlink's own name and blob). The workdir from libgit2 is physical.
+    fn rel_path(&self, path: &Path) -> Result<PathBuf, GitError> {
+        let parent = path.parent().ok_or(GitError::OutsideWorkdir)?;
+        let name = path.file_name().ok_or(GitError::OutsideWorkdir)?;
+        let directory = if parent.is_absolute() {
+            parent.canonicalize()
         } else {
-            self.workdir.join(path)
-        };
-        abs.strip_prefix(&self.workdir)
-            .ok()
-            .map(|p| p.to_path_buf())
+            self.workdir.join(parent).canonicalize()
+        }
+        .map_err(|error| GitError::Native(format!("resolve directory {parent:?}: {error}")))?;
+        let rel = directory
+            .strip_prefix(&self.workdir)
+            .map_err(|_| GitError::OutsideWorkdir)?;
+        Ok(rel.join(name))
     }
 
     /// HEAD's content for `path`, if tracked.
@@ -191,13 +203,14 @@ impl Repo {
 
     #[cfg(test)]
     pub fn head_content(&self, path: &Path) -> Option<String> {
-        self.head_content_res(path).ok().flatten()
+        self.head_content_res(&self.rel_path(path).ok()?)
+            .ok()
+            .flatten()
     }
 
     /// HEAD's content for `path`, distinguishing "not in HEAD's tree"
     /// (Ok(None) — untracked or unborn) from a native failure.
-    fn head_content_res(&self, path: &Path) -> Result<Option<String>, GitError> {
-        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+    fn head_content_res(&self, rel: &Path) -> Result<Option<String>, GitError> {
         let head = match self.inner.head() {
             Ok(reference) => reference
                 .peel_to_tree()
@@ -209,7 +222,7 @@ impl Repo {
             }
             Err(error) => return Err(GitError::Native(format!("read HEAD: {error}"))),
         };
-        match head.get_path(&rel) {
+        match head.get_path(rel) {
             // not in HEAD's tree: untracked — the file is new
             Err(_) => Ok(None),
             Ok(entry) => self.blob_utf8(entry.id(), "HEAD").map(Some),
@@ -218,13 +231,14 @@ impl Repo {
 
     /// The index's content for `path` (the staged version), if any.
     pub fn index_content(&self, path: &Path) -> Option<String> {
-        self.index_content_res(path).ok().flatten()
+        self.index_content_res(&self.rel_path(path).ok()?)
+            .ok()
+            .flatten()
     }
 
     /// The index's content distinguishing "nothing staged" (Ok(None))
     /// from a native failure. Reloads — never a stale snapshot.
-    fn index_content_res(&self, path: &Path) -> Result<Option<String>, GitError> {
-        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
+    fn index_content_res(&self, rel: &Path) -> Result<Option<String>, GitError> {
         let mut index = self
             .inner
             .index()
@@ -232,7 +246,7 @@ impl Repo {
         index
             .read(true)
             .map_err(|e| GitError::Native(format!("reload index: {e}")))?;
-        match index.get_path(&rel, 0) {
+        match index.get_path(rel, 0) {
             Some(entry) => self.blob_utf8(entry.id, "index").map(Some),
             None => Ok(None),
         }
@@ -252,7 +266,8 @@ impl Repo {
     /// True when neither the index nor HEAD knows `path` — the buffer
     /// is untracked, so hunk undo has nothing to restore from.
     pub fn is_untracked(&self, path: &Path) -> Result<bool, GitError> {
-        Ok(self.index_content_res(path)?.is_none() && self.head_content_res(path)?.is_none())
+        let rel = self.rel_path(path)?;
+        Ok(self.index_content_res(&rel)?.is_none() && self.head_content_res(&rel)?.is_none())
     }
 
     /// Hunks between HEAD and the index — the STAGED set (0014 wave 4:
@@ -260,12 +275,12 @@ impl Repo {
     /// every command names its edge). Nothing staged is an honest
     /// empty set; an unborn HEAD diffs the index against empty.
     pub fn staged_hunks(&self, path: &Path) -> Result<Vec<Hunk>, GitError> {
-        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
-        let Some(index) = self.index_content_res(path)? else {
+        let rel = self.rel_path(path)?;
+        let Some(index) = self.index_content_res(&rel)? else {
             return Ok(vec![]);
         };
-        let head = self.head_content_res(path)?.unwrap_or_default();
-        self.diff_strings(&head, &index, &rel)
+        let head = self.head_content_res(&rel)?.unwrap_or_default();
+        hunks_from_strings(&head, &index, &rel)
     }
 
     /// Hunks between the index and `content` — the UNSTAGED set (what
@@ -273,14 +288,14 @@ impl Repo {
     /// equals HEAD↔content, matching pre-0.5 behavior. An untracked
     /// file reports one all-add hunk against empty.
     pub fn unstaged_hunks(&self, path: &Path, content: &str) -> Result<Vec<Hunk>, GitError> {
-        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
-        let base = match self.index_content_res(path)? {
+        let rel = self.rel_path(path)?;
+        let base = match self.index_content_res(&rel)? {
             Some(index) => Some(index),
-            None => self.head_content_res(path)?,
+            None => self.head_content_res(&rel)?,
         };
         match base {
-            Some(base) => self.diff_strings(&base, content, &rel),
-            None => self.hunks(path, content),
+            Some(base) => hunks_from_strings(&base, content, &rel),
+            None => Ok(all_add_hunk(content)),
         }
     }
 
@@ -299,25 +314,27 @@ impl Repo {
     /// report a single all-Add hunk — a useful empty-history case, not
     /// a failure. Native failures are typed, never empty.
     pub fn hunks(&self, path: &Path, content: &str) -> Result<Vec<Hunk>, GitError> {
-        let rel = self.rel_path(path).ok_or(GitError::OutsideWorkdir)?;
-        match self.head_content_res(path)? {
-            Some(old) => self.diff_strings(&old, content, &rel),
+        let rel = self.rel_path(path)?;
+        match self.head_content_res(&rel)? {
+            Some(old) => hunks_from_strings(&old, content, &rel),
             None => Ok(all_add_hunk(content)),
         }
     }
 
-    fn diff_strings(&self, old: &str, new: &str, rel: &Path) -> Result<Vec<Hunk>, GitError> {
-        let mut opts = git2::DiffOptions::new();
-        opts.context_lines(3);
-        let patch = git2::Patch::from_buffers(
-            old.as_bytes(),
-            Some(rel),
-            new.as_bytes(),
-            Some(rel),
-            Some(&mut opts),
-        )
-        .map_err(|e| GitError::Native(format!("diff {rel:?}: {e}")))?;
-        Ok(hunks_from_patch(&patch))
+    /// The native index key and both gutter edges from one resolution.
+    /// Subsequent hunk mutations use this key, not the alias spelling.
+    pub fn gutter(&self, path: &Path, text: &str) -> Result<Gutter, GitError> {
+        let rel = self.rel_path(path)?;
+        let head = self.head_content_res(&rel)?;
+        let index = self.index_content_res(&rel)?;
+        let (unstaged, staged, untracked) =
+            gutter_from_contents(head.as_deref(), index.as_deref(), text, &rel)?;
+        Ok(Gutter {
+            rel,
+            unstaged,
+            staged,
+            untracked,
+        })
     }
 
     /// One file's diff at `sha` vs its first parent, as structured

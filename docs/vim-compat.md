@@ -116,8 +116,8 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ d x` — delete the selection
 - `✓ y` — yank the selection
 - `✓ c s` — change the selection
-- `✓ >` — indent the selected lines
-- `✓ <` — dedent the selected lines
+- `✓ >` — indent the selected lines (linewise: count is indent levels)
+- `✓ <` — dedent the selected lines (linewise: count is indent levels)
 - `✓ U gU` — uppercase the selection
 - `✓ u gu` — lowercase the selection
 - `✓ ~ g~` — toggle the selection's case

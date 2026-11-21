@@ -1,7 +1,6 @@
-//! 0083: Weft and Splicery highlighting at the real draw boundary —
-//! styled cells through `render::paint` on a TestBackend, one 100×30
-//! pane, one narrow pane, and a frame after an edit inside a heredoc
-//! body. Fixtures are original miniatures in the showcase families.
+//! Bundled grammars at the real draw boundary: styled cells through
+//! `render::paint` on a TestBackend, including narrow panes, Markdown
+//! fences and edits inside heredocs.
 use crate::editor::Editor;
 use ratatui::style::Color;
 use strop_core::Buffer;
@@ -87,6 +86,30 @@ fn editor_with(name: &str, source: &str) -> Editor {
     let mut editor = Editor::new(Buffer::from_text(""));
     editor.open_fixture(&path).unwrap();
     editor
+}
+
+#[test]
+fn lean_declarations_are_coloured_in_source_and_markdown_fences() {
+    let proof = "theorem id_prop (p : Prop) (h : p) : p := by exact h\n";
+    let fenced = format!("```lean4\n{proof}```\n");
+    for (name, source) in [("Proof.lean", proof), ("Proof.md", fenced.as_str())] {
+        let mut editor = editor_with(name, source);
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 15)).unwrap();
+        let _ = draw(&mut editor, &mut term);
+        editor.wait_analysis();
+        let grid = draw(&mut editor, &mut term);
+        let row = row_with(&grid, "theorem id_prop");
+        for (token, class) in [
+            ("theorem", strop_syntax::Class::Keyword),
+            ("Prop", strop_syntax::Class::Type),
+        ] {
+            assert_eq!(
+                fg_at(row, token),
+                crate::render::tokens().class(class),
+                "{name}: {token}"
+            );
+        }
+    }
 }
 
 #[test]

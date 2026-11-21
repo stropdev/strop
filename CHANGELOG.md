@@ -2,6 +2,25 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## 0.75.0 — 2026-11-21
+
+### Added
+
+- **Lean 4:** open a `.lean` file to highlight declarations, proof syntax, strings and nested comments. The grammar ships in the binary; no Lean installation or language server is needed.
+
+### Fixed
+
+- **Visual shifts:** with a four-space shift width, `Vj2>` indents the two selected lines by eight spaces. Undo reverses the shift in one step, and `.` repeats its depth, not just its selection height.
+- **Git:** staging a hunk through a directory symlink uses the same tracked path as staging through the canonical directory. On an uncommitted line, `Enter` in the blame card stays in the source instead of opening history at HEAD.
+- **Collections:** changing context keeps marks and carets on surviving source text. Rebuilding a collection preserves the visible source line in a parked tab, not just the old row number.
+- **Batch writes:** a review and a collection saving the same file each report their own result. A successful write of an older revision counts as written; edits made in the meantime stay dirty.
+- **Installer:** if `bin/strop` is a directory, installation fails without changing its contents or writing a success receipt.
+- **Release packaging:** two source commits with the same version no longer share an output archive. Publication checks the draft's bytes against those qualified for the tagged commit.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 11. Replay a 0.74 recording with 0.74, or record it again with 0.75.
+
 ## 0.74.0 — 2026-11-21
 
 ### Fixed

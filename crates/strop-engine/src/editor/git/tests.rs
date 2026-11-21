@@ -241,3 +241,78 @@ fn stage_and_unstage_name_their_edges() {
     pump_hunks(&mut e);
     assert_eq!(e.sign_at(3), Some('+'));
 }
+
+#[test]
+fn directory_alias_and_physical_path_stage_the_same_native_hunk() {
+    use std::ffi::OsStr;
+    use std::os::unix::{ffi::OsStrExt, fs::symlink};
+    use std::path::Path;
+
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    let alias = dir.path().join("alias");
+    std::fs::create_dir(&project).unwrap();
+    symlink(&project, &alias).unwrap();
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .current_dir(&project)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out.stdout
+    };
+    let rel = Path::new(OsStr::from_bytes(b"text-\xff\\name"));
+    let old = b"one\ntwo\nthree\n";
+    let edit = b"ONE\ntwo\nthree\n";
+    std::fs::write(project.join(rel), old).unwrap();
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.org",
+        "commit",
+        "-qm",
+        "base",
+    ]);
+    std::fs::write(project.join(rel), edit).unwrap();
+    let repo = strop_git::Repo::discover(&project).unwrap();
+
+    for cwd in [&project, &alias] {
+        let path = cwd.join(rel);
+        let mut e = Editor::new(Buffer::open(&path).unwrap());
+        e.cwd = cwd.clone();
+        e.discover_git();
+        pump_hunks(&mut e);
+        assert_eq!(
+            e.sign_lines().map(|(line, _)| line).collect::<Vec<_>>(),
+            [1],
+            "{path:?}: {}",
+            e.message
+        );
+        e.feed_text(" gs");
+        settle(&mut e, |e| e.git_work.mutation.is_none());
+        assert_eq!(e.message, "hunk staged");
+        assert_eq!(
+            git(&["diff", "--cached", "--name-only", "-z"]),
+            b"text-\xff\\name\0"
+        );
+        assert_eq!(repo.index_bytes(rel).unwrap(), edit);
+        pump_hunks(&mut e);
+        assert_eq!(e.sign_at(1), None);
+        assert!(e.sign_at_staged(1));
+        e.feed_text(" gu");
+        settle(&mut e, |e| e.git_work.mutation.is_none());
+        assert_eq!(e.message, "hunk unstaged");
+        assert_eq!(repo.index_bytes(rel).unwrap(), old);
+        assert!(git(&["diff", "--cached", "--name-only", "-z"]).is_empty());
+    }
+}

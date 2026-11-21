@@ -45,6 +45,8 @@ pub struct HunkKey {
 /// to go back to).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HunkData {
+    #[serde(with = "strop_core::path_serde")]
+    pub rel: PathBuf,
     pub unstaged: super::HunkSet,
     pub staged: super::HunkSet,
     pub untracked: bool,

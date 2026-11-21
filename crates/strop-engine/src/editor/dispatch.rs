@@ -100,13 +100,13 @@ impl Editor {
                 }
             }
             InputOwner::BlameCard => {
-                let had_card = self.blame_card.is_some();
+                // Only a visible card consumes the key.
                 if let Some(card) = self.dismiss_card_authority() {
                     if key == Key::Enter {
-                        self.open_log_at(&card.sha);
+                        let commit = (!card.is_uncommitted()).then_some(card.sha);
+                        self.navigate_blame(commit);
                     }
-                }
-                if !had_card {
+                } else {
                     // only an in-flight request was cancelled above; the
                     // key still belongs to whatever owns it next
                     self.dispatch_owned(key);

@@ -183,6 +183,7 @@ impl Editor {
             self.cancel_git_worker(request, CancelReason::Superseded);
         }
         self.hunk_load = Load::Idle;
+        self.hunk_rel = None;
         self.hunks = super::HunkSet::default();
         self.staged_hunks = super::HunkSet::default();
         self.hunks_untracked = false;
@@ -269,6 +270,7 @@ impl Editor {
         }
         match completion.outcome {
             Outcome::Success(data) => {
+                self.hunk_rel = Some(data.rel);
                 self.hunks = data.unstaged;
                 self.staged_hunks = data.staged;
                 self.hunks_untracked = data.untracked;

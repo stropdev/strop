@@ -105,7 +105,9 @@ impl Editor {
                 crate::editor::document::DocumentSource::Remote(_)
             )
         }) {
-            return self.request_remote_save(document, target, force, close).map(Some);
+            return self
+                .request_remote_save(document, target, force, close)
+                .map(Some);
         }
         if target
             .as_ref()
@@ -139,7 +141,14 @@ impl Editor {
             Err(error) => {
                 let detail = format!("write failed: {error}");
                 self.note_save_failure(
-                    document, false, revision, target, force, close, true, detail.clone(),
+                    document,
+                    false,
+                    revision,
+                    target,
+                    force,
+                    close,
+                    true,
+                    detail.clone(),
                 );
                 return Err(detail);
             }
@@ -206,8 +215,15 @@ impl Editor {
     /// Verify a frozen unconfirmed store instead of rewriting: the next `:w` after an unconfirmed outcome reconciles
     /// first. Verification never writes; after `Unchanged` an explicit
     /// fresh `:w` is the user's retry.
-    pub(crate) fn request_store_verification(&mut self, document: DocumentId) -> Result<WorkerId, String> {
-        let attempt = self.io.store_attempts.get(&document).cloned()
+    pub(crate) fn request_store_verification(
+        &mut self,
+        document: DocumentId,
+    ) -> Result<WorkerId, String> {
+        let attempt = self
+            .io
+            .store_attempts
+            .get(&document)
+            .cloned()
             .ok_or("no unconfirmed write to verify")?;
         let request = self.worker_ids.allocate().map_err(|error| error.message)?;
         let ticket = Ticket {
@@ -343,7 +359,8 @@ impl Editor {
                 Err("the original is unchanged on disk; :w writes again".into())
             }
             VerifiedOutcome::Unknown { detail } => {
-                let reason = format!("write outcome still unconfirmed: {detail}; :w verifies again");
+                let reason =
+                    format!("write outcome still unconfirmed: {detail}; :w verifies again");
                 self.note_unconfirmed_save(key.document, attempt.revision, reason.clone());
                 Err(reason)
             }

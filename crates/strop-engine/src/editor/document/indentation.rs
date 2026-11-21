@@ -48,11 +48,11 @@ impl Default for Indent {
 }
 
 impl Indent {
-    /// The unit auto-indent, `>>` and the Tab key emit.
-    pub fn unit(&self) -> String {
+    /// The whitespace for this many levels of the document's indentation.
+    pub fn units(&self, levels: usize) -> String {
         match self.style {
-            crate::config::IndentStyle::Spaces => " ".repeat(self.width),
-            crate::config::IndentStyle::Tabs => "\t".into(),
+            crate::config::IndentStyle::Spaces => " ".repeat(self.width * levels),
+            crate::config::IndentStyle::Tabs => "\t".repeat(levels),
         }
     }
 

@@ -27,7 +27,7 @@ mod revision;
 
 pub use diff::{DiffLine, FileDiff, Hunk, HunkKind, LineOrigin, Sign};
 pub use exec::{GitExec, GitExecError, GitRun};
-pub use repo::{GitContext, GitError, Repo};
+pub use repo::{GitContext, GitError, Gutter, Repo};
 pub use revision::{GitRevision, SourceLocation};
 pub use status::{
     Branch, Change, FileDelta, LineStat, LineStats, Section, StatusEntry, Tracking, WorkingTree,
@@ -267,6 +267,34 @@ mod tests {
             repo.staged_hunks(&outside),
             Err(GitError::OutsideWorkdir)
         ));
+    }
+
+    #[test]
+    fn directory_alias_preserves_the_final_symlink_and_refuses_outside_parents() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, repo, _) = fixture();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let alias = elsewhere.path().join("alias");
+        symlink(root, &alias).unwrap();
+        symlink("f.rs", root.join("file-link")).unwrap();
+        git(root, &["add", "file-link"]);
+        git(root, &["commit", "-qm", "track symlink"]);
+        // The tracked blob is the link text, not the referent's contents.
+        let gutter = repo.gutter(&alias.join("file-link"), "f.rs").unwrap();
+        assert_eq!(gutter.rel, Path::new("file-link"));
+        assert!(!gutter.untracked);
+        assert!(gutter.unstaged.is_empty());
+        assert!(gutter.staged.is_empty());
+
+        symlink(elsewhere.path(), root.join("escape")).unwrap();
+        for path in [root.join("escape/f.rs"), alias.join("../outside")] {
+            assert!(matches!(
+                repo.gutter(&path, "outside\n"),
+                Err(GitError::OutsideWorkdir)
+            ));
+        }
     }
 
     /// An untracked file's unstaged set is one all-add hunk against

@@ -14,6 +14,14 @@ use super::git_memory::{
 use super::Editor;
 
 impl Editor {
+    pub(super) fn navigate_blame(&mut self, commit: Option<String>) {
+        if let Some(sha) = commit {
+            self.open_log_at(&sha);
+        } else {
+            self.message = "uncommitted line".into();
+        }
+    }
+
     /// Enter with the blame gutter on: dive into the cursor line's
     /// commit, positioned at its sha (0011 §3). An unloaded or edited-
     /// stale gutter falls back to the single-line card; with the gutter
@@ -25,13 +33,9 @@ impl Editor {
             Some(_) if self.blame_gutter_for(self.current()).is_some() => {
                 let line = self.buf().line_of(self.head());
                 match self.blame_gutters.get(&key).and_then(|g| g.lines.get(line)) {
-                    Some(bl) if bl.is_uncommitted() => {
-                        self.message = "uncommitted line".into();
-                        true
-                    }
                     Some(bl) => {
-                        let sha = bl.sha.clone();
-                        self.open_log_at(&sha);
+                        let commit = (!bl.is_uncommitted()).then(|| bl.sha.clone());
+                        self.navigate_blame(commit);
                         true
                     }
                     None => false,
@@ -155,10 +159,9 @@ impl Editor {
         // a hunk preview is named for its file (0100 §4.5): the heading
         // says which file, and the path gives the preview its syntax
         let hunk_label = match &target {
-            DiveTarget::HunkPreview { .. } => self
-                .current_buffer_rel(&repo)
-                .map(|path| strop_core::layout::printable_text(path.to_string_lossy()).into_owned())
-                .unwrap_or_else(|| self.cur().label(&self.cwd)),
+            DiveTarget::HunkPreview { origin, .. } => {
+                strop_core::layout::printable_text(origin.rel.to_string_lossy()).into_owned()
+            }
             _ => String::new(),
         };
         let client = self.remote_client();

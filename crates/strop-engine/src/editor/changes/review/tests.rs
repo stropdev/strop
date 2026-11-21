@@ -173,13 +173,12 @@ fn deliver_review_saves(e: &mut Editor, first: DocumentId, second: DocumentId) {
     use crate::editor::io::IoEvent;
     let mut receipts = std::collections::HashMap::new();
     while receipts.len() < 2 {
-        let event = e
-            .io
-            .rx
-            .as_ref()
-            .unwrap()
-            .recv_timeout(std::time::Duration::from_secs(30))
-            .expect("both workers return their receipts");
+        let event =
+            e.io.rx
+                .as_ref()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .expect("both workers return their receipts");
         if let IoEvent::Save(completion) = event {
             assert!(receipts
                 .insert(completion.ticket.key.document, completion)
@@ -228,8 +227,10 @@ fn batch_save_overlap_reports_the_refusal_only_to_the_collection() {
     assert!(!e.doc(b).buf.is_dirty());
     let heading = text_of(&e, review);
     assert_eq!(
-        collection_report, "collection: wrote 0 file(s); could not write a.txt (write already in progress)",
-        "after both completions: {}; review: {heading}", e.message
+        collection_report,
+        "collection: wrote 0 file(s); could not write a.txt (write already in progress)",
+        "after both completions: {}; review: {heading}",
+        e.message
     );
     assert_eq!(e.message, "rename: wrote 2 file(s)");
     assert!(heading.starts_with("rename: changed and wrote 2 file(s), 1 refused\nu reverts"));
@@ -448,8 +449,14 @@ fn batch_save_failure_names_the_file_and_reason_and_keeps_it_dirty() {
     assert_eq!(disk(&dir, "a.txt"), "omega here\n");
     assert!(editor.docs.get(second).unwrap().buf.is_dirty());
     let after = text_of(&editor, review);
-    assert!(after.contains("could not write b.txt (write failed:"), "{after}");
-    assert!(after.contains("store replaces only regular files"), "{after}");
+    assert!(
+        after.contains("could not write b.txt (write failed:"),
+        "{after}"
+    );
+    assert!(
+        after.contains("store replaces only regular files"),
+        "{after}"
+    );
     assert!(
         editor
             .message

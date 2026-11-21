@@ -54,7 +54,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: ">",
-        desc: "indent the selected lines",
+        desc: "indent the selected lines (linewise: count is indent levels)",
         sections: &["visual"],
         live: true,
         id: "visual-indent",
@@ -62,7 +62,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "<",
-        desc: "dedent the selected lines",
+        desc: "dedent the selected lines (linewise: count is indent levels)",
         sections: &["visual"],
         live: true,
         id: "visual-dedent",
