@@ -664,7 +664,8 @@ mod reload {
                 // SAFETY: two live, NUL-terminated absolute names. Exchange is
                 // atomic: every watcher observation sees one tree or the other.
                 let result = unsafe {
-                    libc::renameat2(
+                    libc::syscall(
+                        libc::SYS_renameat2,
                         libc::AT_FDCWD,
                         old.as_ptr(),
                         libc::AT_FDCWD,
