@@ -139,7 +139,7 @@ fn request(document: &Document, trigger: Trigger) -> Request {
             }),
         electric_labels: detected
             .is_some_and(|spec| matches!(spec.id, LanguageId::C | LanguageId::Cpp)),
-        unit: document.indent.unit(),
+        unit: document.indent.units(1),
         newline: newline.into(),
     }
 }

@@ -153,7 +153,7 @@ pub(crate) fn insert_shift(editor: &mut Editor, right: bool) {
     let line = editor.buf().line_of(head);
     let start = editor.buf().line_start(line);
     let before = editor.buf().line_end(line) - start;
-    editor.apply_indent(Range::charwise(start, start + 1), right);
+    editor.apply_indent(Range::charwise(start, start + 1), right, 1);
     let after = editor.buf().line_end(line) - start;
     let moved = (head as isize + after as isize - before as isize).max(start as isize);
     editor.set_head(moved as usize);

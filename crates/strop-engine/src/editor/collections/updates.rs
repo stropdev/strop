@@ -149,7 +149,7 @@ impl Editor {
             if rebuild {
                 update.edits.clear();
                 update.rebuild =
-                    Some(self.capture_rebuild_positions(*id, source, buffer.changes()));
+                    Some(self.capture_rebuild_positions(*id, Some((source, buffer.changes()))));
             }
             if update.rebuild.is_some() || !update.edits.is_empty() {
                 updates.push(update);

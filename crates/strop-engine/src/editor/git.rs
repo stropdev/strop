@@ -19,7 +19,7 @@ use super::transact::ChangeSet;
 use super::Editor;
 
 /// What a hunk verb (`Space g X`/`g s`) targets from the current view.
-enum HunkTarget {
+enum HunkTarget<'a> {
     /// Not on a hunk surface: act on the cursor's own buffer.
     NotASurface,
     /// A hunk preview whose origin buffer still matches the revision
@@ -27,6 +27,7 @@ enum HunkTarget {
     Fresh {
         buffer: strop_core::id::DocumentId,
         hunk: Arc<Hunk>,
+        rel: &'a std::path::Path,
         /// The origin buffer was untracked when captured: undo refuses.
         untracked: bool,
     },
@@ -108,9 +109,7 @@ impl Editor {
         self.admissions.hunks += 1;
         // stale signs paint WRONG lines after an edit — clear honestly
         // for the frames the diff takes, never lie
-        self.hunks = HunkSet::default();
-        self.staged_hunks = HunkSet::default();
-        self.hunks_untracked = false;
+        self.hunk_snapshot = None;
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
             serde_json::json!({
                 "service":"git","request":"hunks",
@@ -164,6 +163,7 @@ impl Editor {
                         &cancel,
                     ) {
                         Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
+                            rel,
                             unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
                             staged: HunkSet::new(staged, snapshot.len_lines()),
                             untracked,
@@ -205,37 +205,20 @@ impl Editor {
                         }
                     }
                 };
-                let unstaged = match repo.unstaged_hunks(&path, &text) {
-                    Ok(hunks) => hunks,
+                let gutter = match repo.gutter(&path, &text) {
+                    Ok(gutter) => gutter,
                     Err(error) => {
                         return Outcome::Failed {
-                            failure: git_failure("diff index↔buffer", error),
-                            partial: None,
-                        }
-                    }
-                };
-                let staged = match repo.staged_hunks(&path) {
-                    Ok(hunks) => hunks,
-                    Err(error) => {
-                        return Outcome::Failed {
-                            failure: git_failure("diff HEAD↔index", error),
-                            partial: None,
-                        }
-                    }
-                };
-                let untracked = match repo.is_untracked(&path) {
-                    Ok(untracked) => untracked,
-                    Err(error) => {
-                        return Outcome::Failed {
-                            failure: git_failure("index lookup", error),
+                            failure: git_failure("read gutter", error),
                             partial: None,
                         }
                     }
                 };
                 Outcome::Success(HunkData {
-                    unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
-                    staged: HunkSet::new(staged, snapshot.len_lines()),
-                    untracked,
+                    rel: gutter.rel,
+                    unstaged: HunkSet::new(gutter.unstaged, snapshot.len_lines()),
+                    staged: HunkSet::new(gutter.staged, snapshot.len_lines()),
+                    untracked: gutter.untracked,
                 })
             },
         );
@@ -247,9 +230,7 @@ impl Editor {
     /// remote window).
     fn clear_hunk_view(&mut self) {
         self.cancel_hunk_owner();
-        self.hunks = HunkSet::default();
-        self.staged_hunks = HunkSet::default();
-        self.hunks_untracked = false;
+        self.hunk_snapshot = None;
     }
 
     /// Revoke the running hunk owner (if any) and return to Idle. The
@@ -272,11 +253,11 @@ impl Editor {
     /// their gutter signs — the scrollbar's Git overview source
     /// (0064 §1). Empty when no diff is live.
     pub fn sign_lines(&self) -> impl Iterator<Item = (usize, char)> + '_ {
-        self.hunks.sign_lines()
+        self.hunks().sign_lines()
     }
 
     pub fn sign_at(&self, line_1based: usize) -> Option<char> {
-        self.hunks.sign(line_1based)
+        self.hunks().sign(line_1based)
     }
 
     /// Staged sign (HEAD↔index edge, 0014 wave 4): the line sits inside
@@ -284,7 +265,7 @@ impl Editor {
     /// text is approximate when both sets exist — the gutter's rule:
     /// unstaged wins, staged marks what's already in the index.
     pub fn sign_at_staged(&self, line_1based: usize) -> bool {
-        self.staged_hunks.addition(line_1based)
+        self.staged_hunks().addition(line_1based)
     }
 
     /// `]c` / `[c`: jump to the next/previous changed line. An explicit
@@ -293,7 +274,7 @@ impl Editor {
         self.hunk_load.retry_failed();
         self.refresh_hunks();
         let cur = self.buf().line_of(self.head()) + 1;
-        let target = self.hunks.next_line(cur, forward);
+        let target = self.hunks().next_line(cur, forward);
         match target {
             Some(l) => {
                 self.set_head(self.buf().line_start(l - 1));
@@ -304,13 +285,12 @@ impl Editor {
     }
 
     /// The hunk under the cursor, if any.
-    fn hunk_under_cursor(&mut self) -> Option<Arc<Hunk>> {
+    fn hunk_under_cursor(&mut self) -> Option<(&HunkData, usize)> {
         self.hunk_load.retry_failed();
         self.refresh_hunks();
         let line = self.buf().line_of(self.head()) + 1;
-        self.hunks
-            .at_line(line)
-            .map(|index| self.hunks[index].clone())
+        let data = self.hunk_snapshot.as_ref()?;
+        Some((data, data.unstaged.at_line(line)?))
     }
 
     /// Apply `hunk`'s reverse to buffer `idx`: pure deletions reinsert,
@@ -431,6 +411,7 @@ impl Editor {
                 buffer,
                 hunk,
                 untracked,
+                ..
             } => {
                 if let Some(message) = remote_refusal(self, buffer) {
                     self.message = message;
@@ -440,15 +421,16 @@ impl Editor {
             }
             HunkTarget::Stale => self.message = "buffer changed — reopen the hunk preview".into(),
             HunkTarget::NotASurface => {
-                let Some(hunk) = self.hunk_under_cursor() else {
+                let Some((data, index)) = self.hunk_under_cursor() else {
                     self.message = "no hunk here".into();
                     return;
                 };
+                let hunk = data.unstaged[index].clone();
+                let untracked = data.untracked;
                 if let Some(message) = remote_refusal(self, self.current()) {
                     self.message = message;
                     return;
                 }
-                let untracked = self.hunks_untracked;
                 if self.restore_hunk_in(self.current(), &hunk, untracked) {
                     self.message = "hunk discarded".into();
                 }
@@ -467,22 +449,28 @@ impl Editor {
             return;
         }
         match self.hunk_surface_target() {
-            HunkTarget::Fresh { buffer, hunk, .. } => self.stage_hunk_in(buffer, &hunk),
+            HunkTarget::Fresh {
+                buffer, hunk, rel, ..
+            } => self.stage_hunk_in(buffer, hunk, rel.to_owned()),
             HunkTarget::Stale => self.message = "buffer changed — reopen the hunk preview".into(),
             HunkTarget::NotASurface => {
-                let Some(hunk) = self.hunk_under_cursor() else {
+                let Some((data, index)) = self.hunk_under_cursor() else {
                     self.message = "no hunk here".into();
                     return;
                 };
-                self.stage_hunk_in(self.current(), &hunk);
+                let hunk = data.unstaged[index].clone();
+                let rel = data.rel.clone();
+                self.stage_hunk_in(self.current(), hunk, rel);
             }
         }
     }
 
-    fn stage_hunk_in(&mut self, idx: strop_core::id::DocumentId, hunk: &Arc<Hunk>) {
-        let Some(path) = self.doc(idx).buf.path.clone() else {
-            return;
-        };
+    fn stage_hunk_in(
+        &mut self,
+        idx: strop_core::id::DocumentId,
+        hunk: Arc<Hunk>,
+        rel: std::path::PathBuf,
+    ) {
         // staging reads the *disk* file's hunk: a dirty buffer means the
         // two disagree, and auto-saving would silently write every
         // unrelated unsaved edit to the worktree (0014). Refuse loudly.
@@ -498,14 +486,7 @@ impl Editor {
             self.message = "remote repositories are read-only — staging is refused (RW4)".into();
             return;
         }
-        let Ok(rel) = std::path::Path::new(&path)
-            .strip_prefix(context.workdir())
-            .map(|p| p.to_path_buf())
-        else {
-            self.message = "buffer not under workdir".into();
-            return;
-        };
-        let op = MutationOp::Stage { hunk: hunk.clone() };
+        let op = MutationOp::Stage { hunk };
         let key = MutationKey {
             document: idx,
             revision: self.doc(idx).buf.revision(),
@@ -532,17 +513,16 @@ impl Editor {
             return;
         }
         let line = self.buf().line_of(self.head()) + 1;
-        let Some(hunk) = self
-            .staged_hunks
-            .at_line(line)
-            .map(|index| self.staged_hunks[index].clone())
+        let Some((data, index)) = self
+            .hunk_snapshot
+            .as_ref()
+            .and_then(|data| Some((data, data.staged.at_line(line)?)))
         else {
             self.message = "no staged hunk here".into();
             return;
         };
-        let Some(path) = self.buf().path.clone() else {
-            return;
-        };
+        let hunk = data.staged[index].clone();
+        let rel = data.rel.clone();
         let Some(context) = self.git.clone() else {
             self.message = "not a git repo".into();
             return;
@@ -551,13 +531,6 @@ impl Editor {
             self.message = "remote repositories are read-only — unstaging is refused (RW4)".into();
             return;
         }
-        let Ok(rel) = std::path::Path::new(&path)
-            .strip_prefix(context.workdir())
-            .map(|p| p.to_path_buf())
-        else {
-            self.message = "buffer not under workdir".into();
-            return;
-        };
         let op = MutationOp::Unstage { hunk };
         let key = MutationKey {
             document: self.current(),
@@ -575,17 +548,17 @@ impl Editor {
     /// (0010 §2) — a readonly buffer you can move in; `q` closes,
     /// `Space g X`/`g s` still act on the file.
     pub(crate) fn preview_hunk(&mut self) {
-        self.hunk_load.retry_failed();
-        self.refresh_hunks();
-        let line = self.buf().line_of(self.head()) + 1;
-        let Some(index) = self.hunks.at_line(line) else {
+        let Some((data, index)) = self.hunk_under_cursor() else {
             self.message = "no hunk here".into();
             return;
         };
+        let rel = data.rel.clone();
+        let untracked = data.untracked;
         let origin = super::git_memory::HunkOrigin {
+            rel,
             buffer: self.current(),
             revision: self.cur().buf.revision(),
-            untracked: self.hunks_untracked,
+            untracked,
         };
         let Some(context) = self.git_context() else {
             return;
@@ -602,7 +575,7 @@ impl Editor {
     /// What a `Space g X`/`g s` from the current buffer should act on:
     /// the hunk surface's origin when fresh, a refusal when the origin
     /// buffer has moved on, and the cursor's own hunk otherwise.
-    fn hunk_surface_target(&self) -> HunkTarget {
+    fn hunk_surface_target(&self) -> HunkTarget<'_> {
         let Some(super::Surface::Diff { hunks, origin, .. }) = self.surface() else {
             return HunkTarget::NotASurface;
         };
@@ -617,6 +590,7 @@ impl Editor {
                 buffer: origin.buffer,
                 hunk: hunk.clone(),
                 untracked: origin.untracked,
+                rel: &origin.rel,
             },
             _ => HunkTarget::Stale,
         }

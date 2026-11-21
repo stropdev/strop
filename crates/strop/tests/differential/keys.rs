@@ -6,6 +6,8 @@ use super::Case;
 
 const WORDS: &str = "alpha beta gamma\n  delta epsilon\n\nzeta eta\ntheta\n";
 const NUMBERS: &str = "x = 7; y = -3\nport 0x0f, mask 0b0101, id 007\nnone here\n";
+const SHIFT_RIGHT: &str = "a\nb\nc\nd\n";
+const SHIFT_LEFT: &str = "            alpha\nbeta\n    gamma\ndelta\n";
 
 #[rustfmt::skip]
 pub const CASES: &[Case] = &[
@@ -100,6 +102,12 @@ pub const CASES: &[Case] = &[
     ("visual X", WORDS, "wveX"),
     ("visual >", WORDS, "Vj>"),
     ("visual > then dot", WORDS, "Vj>."),
+    ("counted visual shift right", SHIFT_RIGHT, "Vj2>"),
+    ("counted visual shift right then dot", SHIFT_RIGHT, "Vj2>."),
+    ("counted visual shift right then undo", SHIFT_RIGHT, "Vj2>u"),
+    ("counted visual shift repeats depth independently of height", SHIFT_RIGHT, "Vj3>."),
+    ("counted visual shift left stops at the margin and keeps the column", SHIFT_LEFT, "2lVj2<lt>"),
+    ("counted visual shift left then undo", SHIFT_LEFT, "2lVj2<lt>u"),
     ("visual d then dot", WORDS, "wved."),
     ("visual line d then dot", WORDS, "Vjdd."),
     ("visual *", "one two one two\n", "wve*"),

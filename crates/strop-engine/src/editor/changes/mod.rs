@@ -66,7 +66,6 @@ pub(crate) struct ChangeState {
     pub(crate) pending_encoding: strop_lsp::PositionEncoding,
     /// Groups of files being written together (`write.rs`).
     pub(crate) writes: Vec<write::BatchWrite>,
-    pub(crate) write_seq: u64,
     /// The quickfix list: the newest collection (0094 §3.1).
     pub(crate) quickfix: Option<DocumentId>,
 }
@@ -78,7 +77,6 @@ impl Default for ChangeState {
             pending_actions: Vec::new(),
             pending_encoding: strop_lsp::PositionEncoding::Utf16,
             writes: Vec::new(),
-            write_seq: 0,
             quickfix: None,
         }
     }

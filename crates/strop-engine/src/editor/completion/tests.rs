@@ -85,7 +85,7 @@ fn automatic_results_do_not_steal_newline_or_indent_without_selection() {
     ));
     editor.feed(Key::Enter);
     assert_eq!(editor.buf().text().to_string(), "result\nre\n\n");
-    let indentation = editor.cur_indent().unit();
+    let indentation = editor.cur_indent().units(1);
     editor.feed(Key::Tab);
     assert_eq!(
         editor.buf().text().to_string(),

@@ -23,6 +23,16 @@ pub struct BlameCard {
     pub line: usize,
 }
 
+impl BlameCard {
+    pub fn is_uncommitted(&self) -> bool {
+        is_uncommitted_sha(&self.sha)
+    }
+}
+
+fn is_uncommitted_sha(sha: &str) -> bool {
+    !sha.is_empty() && sha.bytes().all(|b| b == b'0')
+}
+
 /// Blame one line of a file (1-based). Porcelain format.
 pub fn blame_line(
     exec: &GitExec,
@@ -87,7 +97,7 @@ pub struct BlameLine {
 impl BlameLine {
     /// Worktree lines git blame attributes to nobody (all-zero sha).
     pub fn is_uncommitted(&self) -> bool {
-        !self.sha.is_empty() && self.sha.chars().all(|c| c == '0')
+        is_uncommitted_sha(&self.sha)
     }
 }
 
@@ -115,7 +125,7 @@ pub fn blame_file(
             // the full header per line, so every tab row emits one
             let _ = content;
             if !sha.is_empty() {
-                let uncommitted = sha.chars().all(|c| c == '0');
+                let uncommitted = is_uncommitted_sha(&sha);
                 lines.push(BlameLine {
                     sha: sha.clone(),
                     age: if uncommitted {

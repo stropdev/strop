@@ -1,4 +1,4 @@
-//! Explicit context resizing retains the active source position.
+//! Explicit context resizing preserves positions in surviving source text.
 use super::{Editor, Excerpt};
 
 impl Editor {
@@ -17,10 +17,6 @@ impl Editor {
         };
         let excerpt = &collection.excerpts[index];
         let source = excerpt.source;
-        let offset = excerpt.start
-            + head
-                .saturating_sub(excerpt.view_start)
-                .min(excerpt.end - excerpt.start);
         let context = if expand {
             excerpt.context.saturating_add(1)
         } else {
@@ -62,6 +58,7 @@ impl Editor {
                 .filter(|(start, _)| *start >= part.start && *start < part.end)
                 .collect();
         }
+        let previous = self.capture_rebuild_positions(id, None);
         let collection = self.collections.get_mut(&id).unwrap();
         collection.excerpts.splice(index..=index, resized);
         let mut at = 0;
@@ -83,16 +80,8 @@ impl Editor {
                 at += 1;
             }
         }
-        self.collection_render_view(id);
-        if let Some(excerpt) = self.collections[&id]
-            .excerpts
-            .iter()
-            .find(|e| e.source == source && offset >= e.start && offset <= e.end)
-        {
-            self.set_head(excerpt.view_start + offset - excerpt.start);
-            self.clamp_cursor();
-            self.scroll_to_cursor(self.view_rows());
-        }
+        self.rebuild_collection_sources(id, previous);
+        self.scroll_to_cursor(self.view_rows());
         self.message = format!(
             "context: {} around each hit — + more, - less",
             super::counted(context, "line")

@@ -1,5 +1,5 @@
-//! Structural source refreshes preserve source positions, not offsets into a
-//! wholesale replacement of the presentation buffer. Only cold rebuilds snapshot
+//! Structural refreshes preserve source positions, not offsets into a wholesale
+//! replacement of the presentation buffer. Only cold rebuilds snapshot
 //! excerpt geometry; ordinary edits use the exact projected journal instead.
 use super::Editor;
 use strop_core::id::DocumentId;
@@ -14,39 +14,31 @@ struct ExcerptPosition {
 }
 
 pub(super) struct RebuildPositions {
-    source: DocumentId,
-    /// The source's journal, `(start, old_end, new_end)` in application order.
-    journal: Vec<(usize, usize, usize)>,
+    edit: Option<SourceEdit>,
     excerpts: Vec<ExcerptPosition>,
     title_end: usize,
-    viewports: Vec<(usize, usize)>,
+}
+
+struct SourceEdit {
+    source: DocumentId,
+    /// `(start, old_end, new_end)` in application order.
+    journal: Vec<(usize, usize, usize)>,
 }
 
 impl Editor {
     pub(super) fn capture_rebuild_positions(
         &self,
         document: DocumentId,
-        source: DocumentId,
-        changes: &[Change],
+        edit: Option<(DocumentId, &[Change])>,
     ) -> RebuildPositions {
         let buffer = &self.doc(document).buf;
         RebuildPositions {
-            source,
-            journal: changes.iter().map(Change::extent).collect(),
+            edit: edit.map(|(source, changes)| SourceEdit {
+                source,
+                journal: changes.iter().map(Change::extent).collect(),
+            }),
             excerpts: positions(&self.collections[&document]),
             title_end: buffer.line_start(1),
-            viewports: self
-                .panes
-                .iter()
-                .enumerate()
-                .filter(|(_, pane)| pane.doc == document)
-                .map(|(index, pane)| {
-                    (
-                        index,
-                        buffer.line_start(pane.view_top.min(buffer.last_content_line())),
-                    )
-                })
-                .collect(),
         }
     }
 
@@ -63,6 +55,10 @@ impl Editor {
         let Some(doc) = self.docs.get_mut(document) else {
             return;
         };
+        // Pane viewports are line numbers. Read each pane's own top against
+        // the old rope, including panes whose tab is currently parked.
+        let old_text = doc.buf.snapshot();
+        let old_last = doc.buf.last_content_line();
         if let Err(error) = doc.buf.system_edit().replace_all(&text) {
             self.invalidate_collection_projection(document, error);
             return;
@@ -83,8 +79,14 @@ impl Editor {
         collection.revision = doc.buf.revision();
         collection.mapped = collection.revision;
         let title_end = doc.buf.line_start(1);
-        let length = doc.buf.len_bytes();
-        let map = |position| previous.map(position, &next, title_end).min(length);
+        let text = doc.buf.snapshot();
+        let map = |position| {
+            let byte = previous
+                .map(position, &next, title_end)
+                .min(text.len_bytes());
+            // A changed file heading can put a chrome offset inside a glyph.
+            text.char_to_byte(text.byte_to_char(byte))
+        };
         self.map_navigation_records(document, map);
         for (owner, position) in self.marks.values_mut() {
             if *owner == document {
@@ -94,11 +96,8 @@ impl Editor {
         for pane in self.panes.iter_mut().chain(self.tabs.panes_mut()) {
             if pane.doc == document {
                 pane.sels.map_positions(map);
-            }
-        }
-        if let Some(doc) = self.docs.get(document) {
-            for &(index, top) in &previous.viewports {
-                self.panes[index].view_top = doc.buf.line_of(map(top));
+                let top = old_text.line_to_byte(pane.view_top.min(old_last));
+                pane.view_top = text.byte_to_line(map(top));
             }
         }
         if self.current() == document {
@@ -122,6 +121,15 @@ fn positions(collection: &super::Collection) -> Vec<ExcerptPosition> {
 }
 
 impl RebuildPositions {
+    fn source_position(&self, source: DocumentId, byte: usize) -> usize {
+        match &self.edit {
+            Some(edit) if edit.source == source => {
+                strop_kernel::editmap::map_through_edits(byte, &edit.journal)
+            }
+            _ => byte,
+        }
+    }
+
     fn map(&self, position: usize, next: &[ExcerptPosition], title_end: usize) -> usize {
         if position < self.title_end {
             return position.min(title_end.saturating_sub(1));
@@ -134,26 +142,31 @@ impl RebuildPositions {
             .and_then(|index| self.excerpts.get(index))
         {
             if position < old.view_end {
-                let mut source_position =
-                    old.start + (position - old.view_start).min(old.end - old.start);
-                if old.source == self.source {
-                    source_position =
-                        strop_kernel::editmap::map_through_edits(source_position, &self.journal);
-                }
-                if let Some(new) = next.get(index - 1).filter(|new| new.source == old.source) {
-                    return new.view_start
+                let source_position = self.source_position(
+                    old.source,
+                    old.start + (position - old.view_start).min(old.end - old.start),
+                );
+                return nearest(next, index - 1, old.source, source_position).map_or(0, |i| {
+                    let new = &next[i];
+                    // Keep omitted context on the nearest surviving body byte,
+                    // not on the following block's heading.
+                    new.view_start
                         + source_position
                             .saturating_sub(new.start)
-                            .min(new.end - new.start);
-                }
-                return 0;
+                            .min((new.view_end - new.view_start).saturating_sub(1))
+                });
             }
         }
         // Chrome belongs to the following body (or the end of the last block).
-        if let Some((old, new)) = self.excerpts.get(index).zip(next.get(index)) {
-            let lower = index
+        if let Some(old) = self.excerpts.get(index) {
+            let start = self.source_position(old.source, old.start);
+            let Some(i) = nearest(next, index, old.source, start) else {
+                return 0; // the file was removed
+            };
+            let new = &next[i];
+            let lower = i
                 .checked_sub(1)
-                .and_then(|index| next.get(index))
+                .and_then(|i| next.get(i))
                 .map_or(title_end, |old| old.view_end);
             return new
                 .view_start
@@ -168,4 +181,25 @@ impl RebuildPositions {
                     .saturating_add(position.saturating_sub(old.view_end))
             })
     }
+}
+
+/// Excerpts may split, merge, or disappear. The old slot is merely a fast
+/// path; the file and byte are the identity. A removed file lands on the title.
+fn nearest(
+    next: &[ExcerptPosition],
+    slot: usize,
+    source: DocumentId,
+    byte: usize,
+) -> Option<usize> {
+    if next
+        .get(slot)
+        .is_some_and(|e| e.source == source && (e.start..e.end).contains(&byte))
+    {
+        return Some(slot);
+    }
+    next.iter()
+        .enumerate()
+        .filter(|(_, e)| e.source == source && e.start < e.end)
+        .min_by_key(|(_, e)| byte.abs_diff(byte.clamp(e.start, e.end - 1)))
+        .map(|(i, _)| i)
 }

@@ -524,7 +524,7 @@ impl Editor {
                 )
             })
             .hash(&mut stamp);
-        self.hunks.identity().hash(&mut stamp);
+        self.hunks().identity().hash(&mut stamp);
         // Git discovery and repository identity: the first hunk load is
         // admitted when discovery lands, not one edit later.
         self.git.is_some().hash(&mut stamp);

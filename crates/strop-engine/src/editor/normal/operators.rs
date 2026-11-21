@@ -25,6 +25,8 @@ pub(crate) struct Operand {
 pub(crate) struct Operation<'a> {
     pub(crate) op: Op,
     pub(crate) register: Option<char>,
+    /// Levels per line for `>` / `<`; independent of the operand's extent.
+    pub(crate) shift_levels: usize,
     /// Sorted by start, non-overlapping.
     pub(crate) operands: &'a [Operand],
     /// Vim's `use_reg_one`: a delete by `%`, a search or a paragraph
@@ -70,6 +72,7 @@ pub(crate) fn apply_operator(editor: &mut Editor, operation: Operation<'_>) {
     let Operation {
         op,
         register,
+        shift_levels,
         operands,
         reg_one,
         keys,
@@ -117,7 +120,7 @@ pub(crate) fn apply_operator(editor: &mut Editor, operation: Operation<'_>) {
         Op::Indent | Op::Dedent => {
             editor.tx_begin();
             for operand in operands.iter().rev() {
-                editor.apply_indent(operand.range, op == Op::Indent);
+                editor.apply_indent(operand.range, op == Op::Indent, shift_levels);
             }
             editor.tx_commit();
             land_in_line(editor, column);

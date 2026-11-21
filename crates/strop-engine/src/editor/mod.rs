@@ -178,7 +178,7 @@ pub struct Editor {
     pub(crate) git_view: strop_core::worker::WorkerId,
     pub(crate) git_discovery: strop_core::worker::Load<git_memory::ContextKey>,
     pub(crate) hunk_load: strop_core::worker::Load<git_memory::HunkKey>,
-    pub(crate) hunks_untracked: bool,
+    pub(crate) hunk_snapshot: Option<git_memory::HunkData>,
     pub(crate) log_requests: HashMap<strop_core::id::DocumentId, git_memory::LogRequest>,
     pub(crate) card_request: Option<strop_core::worker::Ticket<git_memory::CardKey>>,
     pub(crate) dive_requests:
@@ -264,10 +264,6 @@ pub struct Editor {
     pub(crate) preview_watchdog: picker::PreviewWatchdog,
     /// Insertion order for bounded preview cache eviction.
     pub(crate) preview_cache_order: std::collections::VecDeque<strop_workspace::ResourceLocation>,
-    pub(crate) hunks: git_memory::HunkSet,
-    /// HEAD↔index — the staged set (0014 wave 4); rendered in the
-    /// gutter's committed-adjacent color.
-    pub(crate) staged_hunks: git_memory::HunkSet,
     /// Git memory (M3): per-buffer surface kinds, blame card, job channel,
     /// OSC52 clipboard payload drained by the TUI.
     pub(crate) blame_card: Option<strop_git::memory::BlameCard>,
@@ -452,7 +448,7 @@ impl Editor {
             git_view: strop_core::worker::WorkerId::new(0),
             git_discovery: strop_core::worker::Load::Idle,
             hunk_load: strop_core::worker::Load::Idle,
-            hunks_untracked: false,
+            hunk_snapshot: None,
             log_requests: HashMap::new(),
             card_request: None,
             dive_requests: HashMap::new(),
@@ -520,8 +516,6 @@ impl Editor {
             shell_tx,
             shell_rx: Some(shell_rx),
             git: None,
-            hunks: git_memory::HunkSet::default(),
-            staged_hunks: git_memory::HunkSet::default(),
             blame_card: None,
             git_tx,
             git_rx: Some(git_rx),

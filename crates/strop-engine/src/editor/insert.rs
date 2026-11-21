@@ -354,7 +354,7 @@ impl Editor {
                 // vim: Tab inserts the indent unit — a tab or the
                 // document's spaces (config indent_style; detection may
                 // have resolved this buffer's own).
-                let unit = self.cur_indent().unit();
+                let unit = self.cur_indent().units(1);
                 let mut positions = self.all_cursors();
                 positions.sort_unstable();
                 positions.dedup();

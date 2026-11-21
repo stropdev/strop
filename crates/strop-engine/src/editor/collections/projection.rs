@@ -97,40 +97,28 @@ pub(super) fn render(
 }
 
 impl Editor {
-    /// Re-render the collection view from its sources and reset shadow +
-    /// revision together (0049 §5: no stale text may be presented).
+    /// Re-render an unchanged excerpt list (for example, renamed file headings).
     pub(crate) fn collection_render_view(&mut self, id: DocumentId) {
-        // Preserve the logical caret across the regeneration (0049 §5):
-        // same row/column clamped into the new text.
-        let caret = if self.current() == id {
-            Some((
-                self.buf().line_of(self.head()),
-                self.buf().col_of(self.head()),
-            ))
-        } else {
-            None
-        };
-        let text = {
-            let entry = self.collections.get_mut(&id).unwrap();
-            render(&self.docs, &self.cwd, entry)
-        };
-        let _ = self.doc_mut(id).buf.system_edit().replace_all(&text);
-        if let Some((line, col)) = caret {
-            let line = line.min(self.docs.get(id).unwrap().buf.len_lines().saturating_sub(1));
-            let head = self.docs.get(id).unwrap().buf.clamp_boundary(
-                self.docs
-                    .get(id)
-                    .unwrap()
-                    .buf
-                    .line_start(line)
-                    .saturating_add(col),
-            );
-            if self.current() == id {
-                self.set_head(head);
-                self.clamp_cursor();
+        let previous = self.capture_rebuild_positions(id, None);
+        self.rebuild_collection_sources(id, previous);
+    }
+
+    /// Drop a closing file's excerpts while every pane and navigation origin
+    /// still addresses the old view (before close rebinds panes or jumps).
+    pub(crate) fn remove_collection_source(&mut self, source: DocumentId) {
+        let affected: Vec<_> = self
+            .collections
+            .iter()
+            .filter(|(_, c)| c.excerpts.iter().any(|e| e.source == source))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in affected {
+            let previous = self.capture_rebuild_positions(id, None);
+            if let Some(collection) = self.collections.get_mut(&id) {
+                collection.excerpts.retain(|e| e.source != source);
             }
+            self.rebuild_collection_sources(id, previous);
         }
-        self.collection_settle(id);
     }
 }
 

@@ -13,9 +13,6 @@ pub(crate) struct Released {
     pub return_to: Option<JumpRecord>,
     /// A change review whose document this was.
     pub review: Option<crate::editor::changes::review::ChangeProposal>,
-    /// Collections that lost excerpts of this document: re-rendered once
-    /// the panes are rebound.
-    pub affected: Vec<DocumentId>,
 }
 
 impl Editor {
@@ -67,16 +64,13 @@ impl Editor {
     /// rebinds the panes from the returned record.
     pub(crate) fn release_document(&mut self, closed: DocumentId) -> Released {
         self.forget_terminal_document(closed);
-        let mut affected = Vec::new();
-        for (id, collection) in &mut self.collections {
-            let before = collection.excerpts.len();
-            collection
+        debug_assert!(
+            !self.collections.values().any(|collection| collection
                 .excerpts
-                .retain(|excerpt| excerpt.source != closed);
-            if collection.excerpts.len() != before {
-                affected.push(*id);
-            }
-        }
+                .iter()
+                .any(|excerpt| excerpt.source == closed)),
+            "a released file held no excerpt"
+        );
         self.drop_remote_write(closed);
         self.analysis
             .forget(super::super::analysis::AnalysisTarget::Document(closed));
@@ -95,11 +89,7 @@ impl Editor {
         self.mru.retain(|&x| x != closed);
         self.generation += 1; // document set changed: old jobs are stale (0011 §2)
         crate::editor::git_memory::graph::document_closed(self);
-        Released {
-            return_to,
-            review,
-            affected,
-        }
+        Released { return_to, review }
     }
 
     /// Close the current document; quits when the last one closes.
@@ -152,6 +142,7 @@ impl Editor {
             self.request_session_save();
         }
         let closed = self.current();
+        self.remove_collection_source(closed);
         let released = self.release_document(closed);
         if self.docs.is_empty() {
             self.collection_build = None;
@@ -190,9 +181,6 @@ impl Editor {
             } else if self.doc(next).directory_metadata_ref().is_some() {
                 self.restore_directory_view(next);
             }
-        }
-        for collection in released.affected {
-            self.collection_render_view(collection);
         }
         self.lsp_retire_workspace_servers();
         if let Some(review) = released.review.filter(|_| !self.should_quit) {

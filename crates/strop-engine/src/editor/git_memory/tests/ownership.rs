@@ -59,6 +59,7 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
     let stale = install_running_hunk(&mut e, view);
     let owner = install_running_hunk(&mut e, view);
     let data = || HunkData {
+        rel: "f.rs".into(),
         unstaged: Default::default(),
         staged: Default::default(),
         untracked: false,
@@ -77,18 +78,20 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
         stale,
         Outcome::Cancelled(strop_core::worker::CancelReason::Superseded),
     );
-    assert!(e.hunks.is_empty() && e.staged_hunks.is_empty());
+    assert!(e.hunk_snapshot.is_none());
     inject_hunks(
         &mut e,
         owner,
         Outcome::Success(HunkData {
+            rel: "f.rs".into(),
             unstaged: crate::editor::git_memory::HunkSet::new(vec![all_add_hunk()], 3),
             staged: Default::default(),
             untracked: false,
         }),
     );
     assert_eq!(
-        e.hunks[0].new_count, 1,
+        e.hunks()[0].new_count,
+        1,
         "the surviving request still publishes"
     );
 }
@@ -139,6 +142,7 @@ fn hunk_failures_are_terminal_and_retry_gets_a_new_request() {
         &mut e,
         ticket.clone(),
         Outcome::Success(HunkData {
+            rel: "f.rs".into(),
             unstaged: Default::default(),
             staged: Default::default(),
             untracked: false,
@@ -182,18 +186,19 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
         matches!(e.hunk_load, Load::Idle),
         "the pre-index hunk owner died with the view"
     );
-    assert!(e.hunks.is_empty() && e.staged_hunks.is_empty());
+    assert!(e.hunk_snapshot.is_none());
     // the old view's result cannot repopulate anything
     inject_hunks(
         &mut e,
         hunk_ticket,
         Outcome::Success(HunkData {
+            rel: "f.rs".into(),
             unstaged: crate::editor::git_memory::HunkSet::new(vec![all_add_hunk()], 3),
             staged: Default::default(),
             untracked: true,
         }),
     );
-    assert!(e.hunks.is_empty(), "pre-index hunks refused");
+    assert!(e.hunk_snapshot.is_none(), "pre-index hunks refused");
 }
 
 /// The mutation queue is strictly FIFO and one-at-a-time; a

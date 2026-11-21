@@ -44,7 +44,10 @@ pub struct HunkKey {
 /// was absent entirely (the buffer is untracked — restore has nothing
 /// to go back to).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(any(test, feature = "test-support"), derive(Default))]
 pub struct HunkData {
+    #[serde(with = "strop_core::path_serde")]
+    pub rel: PathBuf,
     pub unstaged: super::HunkSet,
     pub staged: super::HunkSet,
     pub untracked: bool,

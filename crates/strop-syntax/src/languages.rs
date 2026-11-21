@@ -36,6 +36,7 @@ pub enum LanguageId {
     Weft,
     /// Experimental syntax highlighting (0083); presentation grammar only.
     Splicery,
+    Lean,
 }
 
 /// How a trailing `:` on a code line opens the next line's indent
@@ -436,6 +437,17 @@ static LANGUAGES: &[Entry] = &[
         interpreters: &[],
         aliases: &["splicery", "spl"],
         highlights: include_str!("../queries/splicery/highlights.scm"),
+        injections: "",
+    },
+    Entry {
+        id: LanguageId::Lean,
+        name: "lean",
+        grammar: || tree_sitter_lean::LANGUAGE.into(),
+        extensions: &["lean"],
+        filenames: &[],
+        interpreters: &[],
+        aliases: &["lean", "lean4"],
+        highlights: tree_sitter_lean::HIGHLIGHTS_QUERY,
         injections: "",
     },
 ];

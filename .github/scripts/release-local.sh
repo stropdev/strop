@@ -2,9 +2,8 @@
 # Local Linux/WSL release entrypoint (plans/0079, plans/0086 §8).
 # qualify: every blocking gate on the exact clean source, including the
 # GitHub ci run for HEAD and the local-only Lean proofs gate.
-# package: runs qualify itself, then builds and checks the artifact, so an
-# artifact can only come from a commit that passed qualification in the
-# same invocation (no receipt files: plans/0108 D3).
+# package: builds into a fresh directory and gives it its qualified name
+# only after the extracted bytes pass the gates. Promotion never rebuilds.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -14,8 +13,9 @@ COMMAND=${1:?"usage: release-local.sh qualify|package|draft|publish|verify VERSI
 VERSION=${2#v}
 TAG="v$VERSION"
 TARGET="x86_64-unknown-linux-musl"
-DIST="$ROOT/dist/$TAG"
-ARCHIVE="$DIST/strop-$VERSION-$TARGET.tar.gz"
+COMMIT=$(git rev-parse HEAD)
+CANDIDATE="$ROOT/dist/$TAG/$COMMIT"
+ARCHIVE="strop-$VERSION-$TARGET.tar.gz"
 REPO="stropdev/strop"
 
 case "$VERSION" in
@@ -27,6 +27,10 @@ case "$COMMAND" in
 esac
 
 clean_source() {
+    if [ "$(git rev-parse HEAD)" != "$COMMIT" ]; then
+        echo "checkout moved away from release candidate $COMMIT" >&2
+        exit 1
+    fi
     dirty=$(git status --porcelain)
     if [ -n "$dirty" ]; then
         printf '%s\n' "release requires an exact clean checkout:" "$dirty" >&2
@@ -41,24 +45,56 @@ if actual != sys.argv[1]:
 PY
 }
 
-catalog() {
-    python3 .github/scripts/release-catalog.py catalog \
-        --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json"
+# Bind all four outputs, including the release body, to the source. The
+# directory name is local only; neither a receipt nor a new public asset.
+bundle_id() (
+    cd "$1"
+    sums=$(sha256sum "$ARCHIVE" "$ARCHIVE.sha256" catalog.json release-notes.md)
+    digest=$(printf '%s\n' "$COMMIT" "$sums" | sha256sum)
+    printf '%s\n' "${digest%% *}"
+)
+
+qualified_bundle() {
+    set -- "$CANDIDATE"/*
+    if [ "$#" -ne 1 ] || [ ! -d "$1" ]; then
+        echo "no unique qualified bundle for $TAG at $COMMIT; run package" >&2
+        exit 1
+    fi
+    DIST=$1
+    expected=$(bundle_id "$DIST")
+    if [ "${DIST##*/}" != "$expected" ]; then
+        echo "release bytes do not match the qualified bundle: $DIST" >&2
+        exit 1
+    fi
+}
+
+tagged_bundle() {
+    clean_source
+    qualified_bundle
+    remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
+    if [ -z "$remote_commit" ]; then
+        remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+    fi
+    if [ "$remote_commit" != "$COMMIT" ]; then
+        echo "remote tag $TAG does not point at qualified HEAD $COMMIT" >&2
+        exit 1
+    fi
 }
 
 qualify() {
     clean_source
-    head=$(git rev-parse HEAD)
-    conclusion=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$head" \
+    conclusion=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$COMMIT" \
         --json conclusion --jq '.[0].conclusion // "missing"')
     if [ "$conclusion" != "success" ]; then
-        echo "ci for $head is '$conclusion', not success — push and wait for green" >&2
+        echo "ci for $COMMIT is '$conclusion', not success — push and wait for green" >&2
         exit 1
     fi
     sh tests/release-catalog.sh
+    sh tests/release-candidate.sh
     sh tests/install.sh
     docker compose run --build --rm test
     docker compose run --build --rm proofs
+    clean_source
 }
 
 case "$COMMAND" in
@@ -66,19 +102,22 @@ qualify)
     qualify
     ;;
 package)
-    qualify
-    mkdir -p "$DIST"
-    if [ -e "$ARCHIVE" ]; then
-        echo "reusing existing artifact without rebuilding: $ARCHIVE"
-    else
-        STROP_DIST="$DIST" docker compose run --build --rm \
-            -e "VERSION=$VERSION" -e "TARGET=$TARGET" release
+    if [ -e "$CANDIDATE" ]; then
+        echo "need a fresh candidate directory; move existing outputs aside: $CANDIDATE" >&2
+        exit 1
     fi
-    (cd "$DIST" && sha256sum -c "$(basename "$ARCHIVE").sha256")
+    qualify
+    mkdir -p "$(dirname "$CANDIDATE")"
+    mkdir "$CANDIDATE"
+    DIST="$CANDIDATE/.building"
+    mkdir "$DIST"
+    STROP_DIST="$DIST" docker compose run --build --rm \
+        -e "VERSION=$VERSION" -e "TARGET=$TARGET" release
+    (cd "$DIST" && sha256sum -c "$ARCHIVE.sha256")
 
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/strop-release-$VERSION.XXXXXX")
     trap 'rm -rf "$WORK"' EXIT HUP INT TERM
-    tar -xzf "$ARCHIVE" -C "$WORK"
+    tar -xzf "$DIST/$ARCHIVE" -C "$WORK"
     BINARY="$WORK/strop-$VERSION-$TARGET/strop"
     file "$BINARY"
     file "$BINARY" | grep -qE "static-pie linked|statically linked"
@@ -98,49 +137,44 @@ package)
     TMPDIR="$WORK" "$BINARY" bench search
     TMPDIR="$WORK" "$BINARY" bench symbols
     TMPDIR="$WORK" "$BINARY" bench history
-    catalog
+    python3 .github/scripts/release-catalog.py catalog \
+        --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json"
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"
-    echo "qualified local release directory: $DIST"
+    clean_source
+    id=$(bundle_id "$DIST")
+    mv -T "$DIST" "$CANDIDATE/$id"
+    echo "qualified local release directory: $CANDIDATE/$id"
     ;;
 draft)
-    clean_source
-    [ -f "$ARCHIVE" ] && [ -f "$ARCHIVE.sha256" ] \
-        && [ -f "$DIST/catalog.json" ] && [ -f "$DIST/release-notes.md" ]
-    (cd "$DIST" && sha256sum -c "$(basename "$ARCHIVE").sha256")
-    local_commit=$(git rev-parse HEAD)
-    remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
-    if [ -z "$remote_commit" ]; then
-        remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
-    fi
-    if [ -z "$remote_commit" ] || [ "$local_commit" != "$remote_commit" ]; then
-        echo "remote tag $TAG does not point at qualified HEAD $local_commit" >&2
-        exit 1
-    fi
+    tagged_bundle
     gh release create "$TAG" --repo "$REPO" --verify-tag --draft \
         --title "strop $TAG" --notes-file "$DIST/release-notes.md" \
-        "$ARCHIVE" "$ARCHIVE.sha256" "$DIST/catalog.json"
+        "$DIST/$ARCHIVE" "$DIST/$ARCHIVE.sha256" "$DIST/catalog.json"
     gh release view "$TAG" --repo "$REPO"
     ;;
 publish)
-    clean_source
-    (cd "$DIST" && sha256sum -c "$(basename "$ARCHIVE").sha256")
-    local_commit=$(git rev-parse HEAD)
-    remote_commit=$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)
-    if [ -z "$remote_commit" ]; then
-        remote_commit=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
-    fi
-    if [ -z "$remote_commit" ] || [ "$local_commit" != "$remote_commit" ]; then
-        echo "remote tag $TAG does not point at qualified HEAD $local_commit" >&2
-        exit 1
-    fi
-    if [ "$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft)" != "true" ]; then
-        echo "release $TAG is not an existing draft" >&2
-        exit 1
-    fi
-    gh release view "$TAG" --repo "$REPO" --json isDraft,assets,url
+    tagged_bundle
+    gh release view "$TAG" --repo "$REPO" --json isDraft,body | python3 -c '
+import json, pathlib, sys
+release = json.load(sys.stdin)
+if not release["isDraft"]:
+    sys.exit("release is not an existing draft")
+if release["body"].encode("utf-8") != pathlib.Path(sys.argv[1]).read_bytes():
+    sys.exit("draft release notes differ from the qualified bundle")
+' "$DIST/release-notes.md"
+    WORK=$(mktemp -d "${TMPDIR:-/tmp}/strop-draft-$VERSION.XXXXXX")
+    trap 'rm -rf "$WORK"' EXIT HUP INT TERM
+    gh release download "$TAG" --repo "$REPO" --dir "$WORK"
+    for asset in "$ARCHIVE" "$ARCHIVE.sha256" catalog.json; do
+        cmp "$DIST/$asset" "$WORK/$asset"
+        rm "$WORK/$asset"
+    done
+    # All three assets matched, and no unexpected assets may go public.
+    rmdir "$WORK"
     gh release edit "$TAG" --repo "$REPO" --draft=false --latest
     ;;
 verify)
+    qualified_bundle
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/strop-public-$VERSION.XXXXXX")
     trap 'rm -rf "$WORK"' EXIT HUP INT TERM
     curl -fsSL -o "$WORK/catalog.json" \

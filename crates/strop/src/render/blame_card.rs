@@ -1,5 +1,5 @@
 //! Blame card (`Space g B`): the commit card for the cursor line.
-//! Enter dives into the commit browser; anything else dismisses.
+//! Enter dives only for committed lines; any other key dismisses.
 
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -48,7 +48,12 @@ pub fn render_blame_card(editor: &Editor, t: &Tokens, frame: &mut Frame) {
         height,
     };
     let title = format!("blame · line {}", card.line);
-    let inner = Card::new(&title).hints(HINTS).render(frame, rect, t);
+    let hints = if card.is_uncommitted() {
+        &HINTS[1..] // dismiss only: there is no commit to dive into
+    } else {
+        HINTS
+    };
+    let inner = Card::new(&title).hints(hints).render(frame, rect, t);
     let lines = vec![
         Line::from(vec![
             Span::styled(

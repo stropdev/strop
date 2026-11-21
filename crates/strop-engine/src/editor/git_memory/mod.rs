@@ -64,6 +64,8 @@ pub struct CommitFiles {
 pub struct HunkOrigin {
     pub buffer: DocumentId,
     pub revision: BufferRevision,
+    #[serde(with = "strop_core::path_serde")]
+    pub rel: PathBuf,
     /// The origin was untracked when captured: undo refuses (there is
     /// no HEAD content to restore from).
     pub untracked: bool,

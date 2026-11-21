@@ -16,12 +16,16 @@ struct HunkIndex {
 }
 impl Default for HunkSet {
     fn default() -> Self {
-        static EMPTY: std::sync::LazyLock<Arc<HunkIndex>> =
-            std::sync::LazyLock::new(|| Arc::new(HunkIndex::default()));
-        Self(Arc::clone(&EMPTY))
+        Self::empty().clone()
     }
 }
 impl HunkSet {
+    pub(crate) fn empty() -> &'static Self {
+        static EMPTY: std::sync::LazyLock<HunkSet> =
+            std::sync::LazyLock::new(|| HunkSet(Arc::new(HunkIndex::default())));
+        &EMPTY
+    }
+
     /// Public fixture construction (the worker path stays
     /// crate-private by design): parsed hunks over a known line count.
     pub fn from_parts(hunks: Vec<Hunk>, total_lines: usize) -> Self {

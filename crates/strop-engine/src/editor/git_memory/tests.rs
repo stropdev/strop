@@ -647,7 +647,7 @@ fn hunk_discard_undoes_byte_exact() {
     settle(&mut e, |e| {
         !matches!(e.hunk_load, strop_core::worker::Load::Running(_))
     });
-    assert!(!e.hunks.is_empty(), "the worktree edit shows as a hunk");
+    assert!(!e.hunks().is_empty(), "the worktree edit shows as a hunk");
     e.discard_hunk();
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
     // u restores the exact pre-discard text

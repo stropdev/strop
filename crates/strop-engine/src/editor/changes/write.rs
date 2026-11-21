@@ -1,16 +1,17 @@
 //! Writing a group of files as one act (0094): a collection's `:w`, a
 //! review's apply and its revert. Each file is an ordinary owned save; the
 //! group reports once, when the last one lands, and names what failed.
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use strop_core::id::DocumentId;
+use strop_core::worker::WorkerId;
 
 use crate::editor::Editor;
 
 pub(crate) struct BatchWrite {
-    id: u64,
     label: String,
-    pending: HashSet<DocumentId>,
+    /// Worker identity and the file name at admission, even if later closed.
+    pending: HashMap<WorkerId, String>,
     wrote: usize,
     failed: Vec<String>,
     /// The review whose heading reports the result.
@@ -26,39 +27,60 @@ impl Editor {
         documents: Vec<DocumentId>,
         review: Option<DocumentId>,
     ) {
-        // Registered before the first request: a save can complete inside
-        // its own admission (replay, protocol failure).
-        let id = self.changes.write_seq;
-        self.changes.write_seq = id.wrapping_add(1);
-        self.changes.writes.push(BatchWrite {
-            id,
+        let count = documents.len();
+        let mut batch = BatchWrite {
             label: label.to_owned(),
-            pending: documents.iter().copied().collect(),
+            pending: HashMap::with_capacity(count),
             wrote: 0,
             failed: Vec::new(),
             review,
-        });
-        let count = documents.len();
+        };
         for document in documents {
-            if self.request_save_document(document, None, false, false) {
-                continue;
+            let name = self
+                .docs
+                .get(document)
+                .map_or_else(|| "a closed buffer".to_owned(), |doc| doc.label(&self.cwd));
+            match self.admit_document_save(document, None, false, false) {
+                Ok(Some(request)) => {
+                    batch.pending.insert(request, name);
+                }
+                Ok(None) => batch
+                    .failed
+                    .push(format!("{name} (filename changes need review)")),
+                Err(reason) => batch.failed.push(format!("{name} ({reason})")),
             }
-            let reason = self.message.clone();
-            self.settle_batch_write(document, Some(reason));
         }
-        if self.changes.writes.iter().any(|batch| batch.id == id) {
+        if batch.pending.is_empty() {
+            self.report_batch_write(batch);
+        } else {
+            self.changes.writes.push(batch);
             self.message = format!("{label}: writing {count} file(s)");
         }
     }
 
-    /// One save finished, successfully or not.
-    pub(crate) fn finish_batch_write(&mut self, document: DocumentId) {
-        let failure = self
-            .docs
-            .get(document)
-            .is_none_or(|doc| doc.buf.is_dirty())
-            .then(|| self.message.clone());
-        self.settle_batch_write(document, failure);
+    /// A worker result belongs only to the batch that admitted this request.
+    /// Returns whether its final report was published.
+    pub(crate) fn finish_batch_write(&mut self, request: WorkerId, failure: Option<&str>) -> bool {
+        let Some((index, name)) = self
+            .changes
+            .writes
+            .iter_mut()
+            .enumerate()
+            .find_map(|(i, batch)| batch.pending.remove(&request).map(|name| (i, name)))
+        else {
+            return false;
+        };
+        let batch = &mut self.changes.writes[index];
+        match failure {
+            None => batch.wrote += 1,
+            Some(reason) => batch.failed.push(format!("{name} ({reason})")),
+        }
+        if !batch.pending.is_empty() {
+            return false;
+        }
+        let batch = self.changes.writes.remove(index);
+        self.report_batch_write(batch);
+        true
     }
 
     /// A review's files are still on their way to disk.
@@ -69,33 +91,7 @@ impl Editor {
             .any(|batch| batch.review == Some(review))
     }
 
-    fn settle_batch_write(&mut self, document: DocumentId, failure: Option<String>) {
-        let Some(index) = self
-            .changes
-            .writes
-            .iter()
-            .position(|batch| batch.pending.contains(&document))
-        else {
-            return;
-        };
-        let batch = &mut self.changes.writes[index];
-        batch.pending.remove(&document);
-        match failure {
-            None => batch.wrote += 1,
-            Some(reason) => {
-                let name = self
-                    .docs
-                    .get(document)
-                    .map_or_else(|| "a closed buffer".to_owned(), |doc| doc.label(&self.cwd));
-                self.changes.writes[index]
-                    .failed
-                    .push(format!("{name} ({reason})"));
-            }
-        }
-        if !self.changes.writes[index].pending.is_empty() {
-            return;
-        }
-        let batch = self.changes.writes.remove(index);
+    fn report_batch_write(&mut self, batch: BatchWrite) {
         self.message = match batch.failed.as_slice() {
             [] => format!("{}: wrote {} file(s)", batch.label, batch.wrote),
             failed => format!(
