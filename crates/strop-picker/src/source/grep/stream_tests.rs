@@ -214,6 +214,33 @@ fn overflow_during_hint_publication_retires_the_physical_scan() {
 }
 
 #[test]
+fn gaining_watch_coverage_and_protocol_writes_do_not_cancel_an_authoritative_walk() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("note"), "needle\nneedle\n").unwrap();
+    let worker = SourceWorker::new().unwrap();
+    worker.set_watching(root, false);
+    let (sink, rx, barrier) = held_first();
+    let guard = sink.inventory_guard();
+    let _request = start(&worker, root, "needle", vec![], sink);
+    let first = rx.recv_timeout(TIMEOUT).unwrap();
+    // Real startup ordering: an already pinned local root is now watched,
+    // and this editor's lock file was created alongside the source.
+    worker.set_watching(root, true);
+    let lock = PathBuf::from(format!(".strop-lock-{}", "a".repeat(64)));
+    fs::write(root.join(&lock), "needle\n").unwrap();
+    worker.invalidate(root, std::slice::from_ref(&lock), false);
+    barrier.wait();
+    assert!(matches!(first, PickerMsg::Items(rows) if rows.len() == 1));
+    assert!(guard.is_current());
+    assert_eq!(drain(&rx, root), [(PathBuf::from("note"), 2, 1, 6)]);
+    // A user-visible endpoint in the same notification batch still retires
+    // the observation, including after the completion was already delivered.
+    worker.invalidate(root, &[lock, PathBuf::from("note")], false);
+    assert!(!guard.is_current());
+}
+
+#[test]
 fn rapid_retype_while_a_warm_hit_is_in_flight_never_finishes_its_successor() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

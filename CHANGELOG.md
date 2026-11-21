@@ -4,10 +4,15 @@ Earlier releases cite designs by number; find the original decision and its deli
 
 ## Unreleased
 
+### Added
+
+- **Mixed workspaces:** optionally declare child project directories and language hints in `.strop/workspace.toml`. Unlisted projects and loose files stay searchable; executable settings still belong in `.strop/languages.toml` and require the existing trust decision.
+
 ### Fixed
 
 - **Symbol jumps:** selecting a document or workspace symbol lands on its token even when non-ASCII text comes before it. Each language server's rows retain its negotiated column encoding; syntax outlines keep byte columns.
 - **Workspace symbols:** warming a project starts root and configuration discovery in the marker's directory, not its parent. A project-specific command still requires trust for that project.
+- **Search results:** a cached path can prioritize a fresh check, but cannot hide new files or override an unsaved buffer. Truncated results stay openable individually and cannot authorize collection or replacement review.
 
 ### Compatibility
 

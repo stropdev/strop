@@ -372,6 +372,18 @@ impl Caches {
                     return;
                 }
                 *state = watching;
+                if watching {
+                    // Establishing coverage on this same incarnation is not
+                    // a mutation. Unwatched requests always walk afresh; let
+                    // them finish, and let newly arriving hints revoke them.
+                    // Loss (below) already retired pre-loss observations.
+                    for scope in &mut self.scopes {
+                        if !scope.retired && Arc::ptr_eq(&scope.root, pinned) {
+                            scope.watching = true;
+                        }
+                    }
+                    return;
+                }
             }
             _ => {
                 for scope in &mut self.scopes {
@@ -523,6 +535,12 @@ impl Caches {
                 let Ok(prefix) = path.strip_prefix(folder) else {
                     continue;
                 };
+                // Locks and staging trees are never walked, even with
+                // ignored:include. A real rename/write also notifies its
+                // user-visible endpoint; overflow still invalidates all.
+                if strop_fs::is_protocol_path(prefix) {
+                    continue;
+                }
                 changed = true;
                 if scope.rescan || scope.invalidated.iter().any(|old| prefix.starts_with(old)) {
                     continue;
