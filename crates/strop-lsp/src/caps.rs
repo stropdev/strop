@@ -66,13 +66,13 @@ impl ServerCaps {
     }
     /// Workspace-symbol provider advertised? (unknown-is-no)
     pub fn workspace_symbols(&self) -> bool {
-        let Ok(guard) = self.0.lock() else {
-            return false;
-        };
-        guard
-            .as_ref()
-            .and_then(|c| c.workspace_symbol_provider.as_ref())
-            .is_some()
+        self.flag(|c| {
+            matches!(
+                c.workspace_symbol_provider,
+                Some(async_lsp::lsp_types::OneOf::Left(true))
+                    | Some(async_lsp::lsp_types::OneOf::Right(_))
+            )
+        })
     }
 
     pub fn document_symbols(&self) -> bool {

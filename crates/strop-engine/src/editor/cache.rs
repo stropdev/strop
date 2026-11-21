@@ -56,6 +56,7 @@ impl<V> Cache<V> {
     }
 
     /// Whether `get` would hit, without counting as a use.
+    #[cfg(test)]
     pub fn contains(&self, key: Key) -> bool {
         cache::find(&self.slots, key.subject, key.producer, key.version).is_some()
     }

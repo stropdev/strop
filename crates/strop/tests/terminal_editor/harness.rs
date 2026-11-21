@@ -32,6 +32,24 @@ impl Tui {
         binary: &std::path::Path,
         capture: bool,
     ) -> Self {
+        Self::spawn_with_env(
+            directory,
+            trace,
+            binary,
+            capture,
+            directory,
+            &std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
+        )
+    }
+
+    pub(crate) fn spawn_with_env(
+        directory: &std::path::Path,
+        trace: &std::path::Path,
+        binary: &std::path::Path,
+        capture: bool,
+        home: &std::path::Path,
+        path: &std::ffi::OsStr,
+    ) -> Self {
         let (mut master, mut slave) = (-1, -1);
         let mut size = std::mem::MaybeUninit::new(libc::winsize {
             ws_row: 30,
@@ -73,14 +91,11 @@ impl Tui {
         let mut command = Command::new(binary);
         command
             .env_clear()
-            .env(
-                "PATH",
-                std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
-            )
+            .env("PATH", path)
             .current_dir(directory)
-            .env("HOME", directory)
-            .env("XDG_CONFIG_HOME", directory.join("config"))
-            .env("XDG_STATE_HOME", directory.join("state"))
+            .env("HOME", home)
+            .env("XDG_CONFIG_HOME", home.join("config"))
+            .env("XDG_STATE_HOME", home.join("state"))
             .env("SHELL", "/bin/sh")
             .env("TERM", "xterm-256color")
             .env_remove("STROP_LOG")

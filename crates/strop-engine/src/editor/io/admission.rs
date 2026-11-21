@@ -138,12 +138,47 @@ impl Editor {
             },
             request,
         };
+        // The picker no longer owns this open. Compare the actual loaded
+        // rope on the I/O worker; a same-stat rewrite is not a witness.
+        let disk = match &ticket.key.intent {
+            OpenIntent::Symbol {
+                query: Some(query), ..
+            } => self
+                .analysis
+                .symbols
+                .jump
+                .as_ref()
+                .filter(|jump| jump.query == *query)
+                .and_then(|jump| jump.disk.clone()),
+            _ => None,
+        };
         let handle = worker::spawn(
             "strop-open",
             move |outcome| {
                 let _ = tx.send(IoEvent::Open(Box::new(Completion { ticket, outcome })));
             },
-            move |cancel| work.run(&cancel),
+            move |cancel| {
+                let outcome = work.run(&cancel);
+                if let (Some(disk), Outcome::Success(opened)) = (disk, &outcome) {
+                    let mut bytes = disk.source();
+                    let rope = opened.document.buf.text();
+                    if bytes.len() != rope.len_bytes()
+                        || !rope.chunks().all(|chunk| {
+                            if cancel.is_cancelled() || !bytes.starts_with(chunk.as_bytes()) {
+                                return false;
+                            }
+                            bytes = &bytes[chunk.len()..];
+                            true
+                        })
+                    {
+                        return Outcome::failed(
+                            FailureKind::InvalidInput,
+                            "workspace symbol target changed — reopen the list",
+                        );
+                    }
+                }
+                outcome
+            },
         );
         self.worker_handles.insert(request, handle);
     }
@@ -196,6 +231,121 @@ impl Editor {
                 self.jump_land(document, range.start.get());
                 self.discover_git();
                 self.lsp_attach_document(self.current());
+            }
+            OpenIntent::Symbol {
+                query,
+                buffer,
+                name,
+                location,
+                line,
+                column,
+            } => {
+                let stale = || "symbol target changed — reopen the list".to_owned();
+                let mut disk_verified = false;
+                if let Some(query) = query {
+                    let jump = self
+                        .analysis
+                        .symbols
+                        .jump
+                        .take()
+                        .filter(|jump| jump.query == query);
+                    let evidence =
+                        self.tape
+                            .observe_owned("symbols.navigation_evidence", &query, || {
+                                jump.map(|j| {
+                                    let root_live = self
+                                        .workspaces
+                                        .resolve(&j.root)
+                                        .map(|(id, ctx)| (id, ctx.incarnation))
+                                        == j.workspace;
+                                    let scan_live = if j.root.local_path().is_some() {
+                                        j.epoch.is_some_and(|v| {
+                                            v.load(std::sync::atomic::Ordering::Acquire)
+                                        })
+                                    } else {
+                                        j.workspace.is_some()
+                                    };
+                                    (root_live && scan_live, j.disk.is_some())
+                                })
+                            });
+                    let Ok(Some((true, disk))) = evidence else {
+                        self.message = stale();
+                        return;
+                    };
+                    disk_verified = disk && buffer.is_none();
+                }
+                let doc = self.doc(document);
+                if self.lsp_document_location(document).as_ref() != Some(&location)
+                    || buffer.is_some_and(|b| b != (document, doc.buf.revision()))
+                {
+                    self.message = stale();
+                    return;
+                }
+                let source = column;
+                let (column, encoding) = match source {
+                    strop_picker::SymbolColumn::Byte(column) => (
+                        strop_lsp::ServerColumn::new(column.get()),
+                        strop_lsp::PositionEncoding::Utf8,
+                    ),
+                    strop_picker::SymbolColumn::Server {
+                        server,
+                        encoding,
+                        column,
+                    } => {
+                        if !self.lsp_servers.iter().any(|s| s.ready && s.id == server)
+                            || self
+                                .lsp_state
+                                .bindings
+                                .get(&document)
+                                .is_some_and(|b| b.server != server)
+                            || (query.is_some()
+                                && !self.lsp_state.attach.attached.iter().any(|a| {
+                                    a.server == server
+                                        && a.target == location.filesystem
+                                        && location.path.starts_with(&a.root)
+                                }))
+                        {
+                            self.message = stale();
+                            return;
+                        }
+                        (column, encoding)
+                    }
+                };
+                let text = doc.buf.text();
+                let Ok(offset) = strop_lsp::checked_byte_offset(
+                    text,
+                    strop_lsp::ServerPosition { line, column },
+                    encoding,
+                ) else {
+                    self.message = stale();
+                    return;
+                };
+                // Unversioned workspace/symbol ranges do not certify the
+                // server saw the target bytes. Check the actual name, or
+                // corroborate a qualified label with this server's exact
+                // documentSymbol selection. Never search for a nearby token.
+                if query.is_some()
+                    && !super::super::symbols::token_at(text, offset.get(), &name)
+                    && match source {
+                        strop_picker::SymbolColumn::Byte(_) => !disk_verified,
+                        strop_picker::SymbolColumn::Server { server, .. } => {
+                            !super::super::symbols::corroborates(
+                                self,
+                                document,
+                                server,
+                                strop_lsp::ServerPosition { line, column },
+                                offset.get(),
+                                &name,
+                            )
+                        }
+                    }
+                {
+                    self.message = stale();
+                    return;
+                }
+                self.push_jump();
+                self.jump_land(document, offset.get());
+                self.lsp_attach_document(document);
             }
             OpenIntent::LspLocation { context, position } => {
                 self.finish_lsp_jump(document, position, context)
@@ -252,12 +402,6 @@ impl Editor {
                         // placement: center unless comfortably visible
                         self.place_jump_target();
                     }
-                    OpenIntent::ServerSymbol {
-                        encoding, position, ..
-                    } => {
-                        self.set_head(position.navigation_offset(self.buf(), encoding).get());
-                        self.place_jump_target();
-                    }
                     _ => {}
                 }
                 self.remember_directory_view();
@@ -296,6 +440,12 @@ impl Editor {
                 let existing = self.docs.iter().find_map(|(id, document)| {
                     document.matches_target(&opened.canonical).then_some(id)
                 });
+                if existing.is_some()
+                    && matches!(key.intent, OpenIntent::Symbol { buffer: None, .. })
+                {
+                    self.message = "symbol target opened while loading — reopen the list".into();
+                    return;
+                }
                 let id = if let Some(id) = existing {
                     if self.doc(id).directory_metadata_ref().is_some() {
                         if let Err(error) = self.publish_source_snapshot(id, opened.document) {

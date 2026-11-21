@@ -189,6 +189,7 @@ mod tests {
         let mut e = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
         e.open_picker(Kind::WorkspaceSymbols);
         e.wait_picker();
+        super::super::query_tests::arm_workspace_reply(&mut e, dir.path());
         let g = e.picker.as_ref().unwrap().wsymbols_generation;
         let symbol = |name: &str| ProtoSymbol {
             name: name.into(),
@@ -220,6 +221,7 @@ mod tests {
         // TypeQuery: typing retires generation g.
         e.paste_bracketed("wrap");
         e.wait_picker();
+        super::super::query_tests::arm_workspace_reply(&mut e, dir.path());
         let retired = g;
         let g = e.picker.as_ref().unwrap().wsymbols_generation;
         assert_eq!(g, retired + 1, "the query change bumped the generation");
@@ -251,6 +253,19 @@ mod tests {
                 .any(|text| text.starts_with("wrap_semantic  ")),
             "the new live generation merges"
         );
+        // A new picker instance may use the same query and exact paths.
+        // Its first generation is still distinct from the retired one.
+        e.close_picker();
+        e.open_picker(Kind::WorkspaceSymbols);
+        e.wait_picker();
+        super::super::query_tests::arm_workspace_reply(&mut e, dir.path());
+        e.handle_lsp_event(LspEvent::WorkspaceSymbols {
+            server: ServerId::new(9),
+            generation: g,
+            encoding: strop_lsp::PositionEncoding::Utf16,
+            symbols: vec![symbol("closed_picker")],
+        });
+        assert!(!item_texts(&e).iter().any(|s| s.contains("closed_picker")));
     }
 
     /// Trace: TypeQuery (g), TruncateIndex, ProviderDone(g).
@@ -264,6 +279,10 @@ mod tests {
         e.open_picker(Kind::Search);
         let g1 = arm_stream(&mut e);
         // TruncateIndex: the source reports its bounds were hit.
+        e.handle_picker_event(PickerEvent {
+            ticket: g1.clone(),
+            msg: PickerMsg::PartialCoverage,
+        });
         e.handle_picker_event(PickerEvent {
             ticket: g1.clone(),
             msg: PickerMsg::Warning(
@@ -282,6 +301,10 @@ mod tests {
             "CompletionHonest: a truncated completion stays visibly incomplete"
         );
         assert!(glue.picker.error.is_none(), "a bound hit is not a failure");
+        e.open_collection_from_picker();
+        assert!(e.message().contains("coverage is partial"));
+        e.prepare_search_review();
+        assert!(e.message().contains("dataset is incomplete"));
     }
 
     /// Trace: WarmStart ×3 (pre-filled), WarmEnqueue ×3 — exactly one
@@ -310,7 +333,10 @@ mod tests {
         // WarmEnqueue ×3 with one slot free: exactly one WarmStart.
         e.lsp_warm_scope_projects(
             (0..3)
-                .map(|n| (dir.path().join(format!("p{n}")), "Cargo.toml".to_string()))
+                .map(|n| strop_picker::WarmProject {
+                    root: dir.path().join(format!("p{n}")),
+                    hint: strop_picker::WarmHint::Language("rust".into()),
+                })
                 .collect(),
         );
         assert_eq!(
@@ -326,7 +352,7 @@ mod tests {
         // WarmDone frees a slot: the drain starts exactly one more.
         let freed = e.lsp_state.attach.pending.keys().next().unwrap().clone();
         e.lsp_state.attach.pending.remove(&freed);
-        e.lsp_warm_scope_projects(Vec::new());
+        e.lsp_warm_progress();
         assert_eq!(
             e.lsp_state.attach.pending.len(),
             4,

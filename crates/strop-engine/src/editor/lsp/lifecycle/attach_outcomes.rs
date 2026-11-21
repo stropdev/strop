@@ -11,6 +11,19 @@ impl Editor {
     pub(crate) fn handle_lsp_attach(&mut self, record: AttachRecord) {
         trace_attach(&record);
         self.worker_handles.remove(&record.ticket);
+        let member = self
+            .lsp_state
+            .attach
+            .members
+            .jobs
+            .remove(&record.ticket)
+            .filter(|j| {
+                j.declared
+                    || matches!(
+                        record.outcome,
+                        attach::AttachDecision::Discovered | attach::AttachDecision::Reused(_)
+                    )
+            });
         let key = self
             .lsp_state
             .attach
@@ -26,7 +39,21 @@ impl Editor {
         // Warm-up completions feed per-project status rows (0063 §2);
         // document attach completions already have the status line.
         let warm = self.lsp_state.attach.warm_attempts.remove(&key);
-        if key.target != record.target || key.language != record.language {
+        if key.target != record.target
+            || key.language != record.language
+            || (member.is_some()
+                && matches!(
+                    record.outcome,
+                    attach::AttachDecision::Attached
+                        | attach::AttachDecision::Discovered
+                        | attach::AttachDecision::Reused(_)
+                )
+                && (if warm && member.as_ref().is_some_and(|j| j.declared) {
+                    key.path != record.root
+                } else {
+                    !key.path.starts_with(&record.root)
+                }))
+        {
             self.retire_superseded_transport(record.server);
             trace::services::rejected("lsp", "attach result differs from its requested workspace");
             return;
@@ -47,28 +74,64 @@ impl Editor {
         let warning = layer_suffix(&layers);
         match outcome {
             attach::AttachDecision::Cancelled => {}
-            attach::AttachDecision::Attached => {
-                if warm {
-                    self.record_project_status(key.path.clone(), ProjectStatus::healthy());
+            attach::AttachDecision::Reused(server) => {
+                if let Some(job) = &member {
+                    if self.lsp_state.attach.attached.iter().any(|a| {
+                        a.server == server
+                            && a.target == target
+                            && a.language == language
+                            && a.root == root
+                    }) && self.lsp_state.attach.members.servers.contains_key(&server)
+                    {
+                        self.lsp_accept_member_file(job, &key, server);
+                        if warm {
+                            self.record_project_status(
+                                key.path.clone(),
+                                ProjectStatus::healthy(&language),
+                            );
+                        }
+                    }
                 }
+            }
+            attach::AttachDecision::Attached | attach::AttachDecision::Discovered => {
                 let Some(server) = server else { return };
                 self.lsp_state.attach.refused.remove(&key);
                 // Discovery only spawned a replacement. Keep the old
                 // failure visible and explainable until this server Ready.
-                if self.lsp_state.attach.attached.iter().any(|attachment| {
+                if let Some(existing) = self.lsp_state.attach.attached.iter().find(|attachment| {
                     attachment.language == language
                         && attachment.root == root
                         && attachment.target == target
-                }) {
+                        // An ordinary ancestor config may already serve other
+                        // documents. Never adopt its unverified process (or
+                        // replace their binding); the certified cold placement
+                        // is usable only for its explicitly observed files.
+                        && (warm || member.is_some() == self.lsp_state.attach.members.servers.contains_key(&attachment.server))
+                }).map(|a| a.server) {
                     self.retire_superseded_transport(Some(server));
+                    if let Some(job) = &member {
+                        // Concurrent warm/cold discoveries can finish in either
+                        // order. A different launch configuration is not reuse.
+                        if self.lsp_state.attach.members.servers.get(&existing)
+                            .is_none_or(|w| w.get() != job.witness.get()) {
+                            if warm {
+                                let conflict = attach::AttachDecision::SpawnFailed { reason: "another placement owns this root".into() };
+                                self.record_project_status(key.path.clone(), ProjectStatus::from_decision(&conflict, &language));
+                            }
+                            self.lsp_warm_progress();
+                            return;
+                        }
+                        self.lsp_accept_member_file(job, &key, existing);
+                    }
+                    if warm { self.record_project_status(key.path.clone(), ProjectStatus::healthy(&language)); }
                     self.lsp_did_open_document(self.current());
                     self.lsp_reopen_restarted(&language, &root, &target);
+                    self.lsp_warm_progress();
                     return;
                 }
-                self.lsp_state
-                    .attach
-                    .attached
-                    .retain(|a| !(a.language == language && a.root == root && a.target == target));
+                if warm {
+                    self.record_project_status(key.path.clone(), ProjectStatus::healthy(&language));
+                }
                 // The placement exists before any didOpen resolves
                 // against it — live and replayed alike.
                 self.lsp_state.attach.attached.push(attach::Attachment {
@@ -142,14 +205,32 @@ impl Editor {
                         });
                     }
                 }
+                if let Some(job) = &member {
+                    self.lsp_state
+                        .attach
+                        .members
+                        .servers
+                        .insert(server, job.witness.clone());
+                    if job.declared {
+                        self.lsp_state
+                            .attach
+                            .members
+                            .declaration_servers
+                            .insert(server);
+                    }
+                    self.lsp_accept_member_file(job, &key, server);
+                }
                 self.lsp_did_open_document(self.current());
                 self.lsp_reopen_restarted(&language, &root, &target);
             }
             decision => {
+                if member.is_some() {
+                    self.lsp_state.attach.members.refused.insert(key.clone());
+                }
                 if warm {
                     self.record_project_status(
                         key.path.clone(),
-                        ProjectStatus::from_decision(&decision, &name),
+                        ProjectStatus::from_decision(&decision, &language),
                     );
                 }
                 if matches!(
@@ -196,7 +277,10 @@ impl Editor {
                     attach::AttachDecision::RemoteIo { .. } => {
                         format!("lsp: {name} could not start on the host — :explain for details")
                     }
-                    attach::AttachDecision::Attached | attach::AttachDecision::Cancelled => {
+                    attach::AttachDecision::Attached
+                    | attach::AttachDecision::Discovered
+                    | attach::AttachDecision::Reused(_)
+                    | attach::AttachDecision::Cancelled => {
                         unreachable!("matched above")
                     }
                 };

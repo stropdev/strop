@@ -438,6 +438,7 @@ fn admission_agrees_with_the_reference_interpreter() {
     .unwrap();
     std::fs::create_dir(directory.path().join("a/.git")).unwrap();
     std::fs::create_dir_all(directory.path().join("b/.git")).unwrap();
+    std::fs::create_dir(directory.path().join("b/loose")).unwrap();
     let index = crate::source::symbols::SymbolIndex::build(
         directory.path(),
         &[std::path::PathBuf::from("a/src/x.rs")],
@@ -501,6 +502,7 @@ fn admission_agrees_with_the_reference_interpreter() {
                 let line_number = line_index + 1;
                 let row = RowFacts {
                     path: Some(path),
+                    native_path: Some(std::path::Path::new(path)),
                     line: Some(line_number),
                     text: line,
                     ..RowFacts::default()

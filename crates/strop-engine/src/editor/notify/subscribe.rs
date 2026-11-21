@@ -22,6 +22,7 @@ const WATCH_TICK: Duration = Duration::from_millis(25);
 /// The editor's notification state: subscription identity, the watcher
 /// thread's stop latch and the in-flight guarded reloads.
 pub(crate) struct NotifyState {
+    pub(super) manifest: super::manifest::Manifest,
     pub(crate) queue: Arc<super::NotifyQueue>,
     /// The live subscription identity; events stamped otherwise are dead.
     pub(crate) subscription: Option<Subscription>,
@@ -40,6 +41,7 @@ pub(crate) struct NotifyState {
 impl Default for NotifyState {
     fn default() -> Self {
         Self {
+            manifest: Default::default(),
             queue: Arc::new(super::NotifyQueue::new()),
             subscription: None,
             root: None,
@@ -63,7 +65,7 @@ impl NotifyState {
     /// settles onto the notify queue, not the io channel, so it never
     /// parks an io drain.
     pub(crate) fn pending(&self) -> bool {
-        !self.reloads.is_empty()
+        !self.reloads.is_empty() || self.manifest.pending()
     }
 
     /// Whether native watching covers the scope (search baselines may

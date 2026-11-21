@@ -5,6 +5,7 @@
 //! successes, no stream that never ends).
 
 mod cache;
+pub use cache::InventoryRoot;
 mod grep;
 #[cfg(test)]
 mod lifecycle_traces;
@@ -16,7 +17,7 @@ pub use worker::{SearchHost, SourceWorker};
 
 mod flow;
 use flow::StreamSender;
-pub use flow::{ItemBatch, SourceSink};
+pub use flow::{InventoryGuard, ItemBatch, SourceSink};
 pub use snapshots::SourceSnapshot;
 
 use std::path::PathBuf;
@@ -32,11 +33,10 @@ pub enum PickerMsg {
     /// A successful source can still issue a useful warning (rg's
     /// stderr on exit 0): it lands in the picker, not the void.
     Warning(String),
-    /// Language-project boundaries the walk discovered (0063 §2):
-    /// absolute roots with their marker file, for bounded LSP warm-up
-    /// of unopened projects. Delivered once per workspace-symbols
-    /// source run.
-    ScopeProjects(Vec<(PathBuf, String)>),
+    /// Rows may open individually, but cannot authorize complete-only actions.
+    PartialCoverage,
+    /// Independent native root/language proposals for the existing resolver.
+    ScopeProjects(Vec<catalog::WarmProject>),
     QueryError(crate::query::QueryDiagnostic),
     /// Terminal: exactly one per request, on every path — success,
     /// failure (keeping whatever items already streamed), panic or
@@ -128,6 +128,7 @@ fn run_workspace_symbols(
     cwd: PathBuf,
     query: std::sync::Arc<crate::query::SearchQuery>,
     policy: selection::SelectionPolicy,
+    snapshots: Vec<SourceSnapshot>,
     cache: std::sync::Arc<parking_lot::Mutex<cache::Caches>>,
     tx: StreamSender,
     cancel: CancelToken,
@@ -143,94 +144,65 @@ fn run_workspace_symbols(
             return Outcome::failed(FailureKind::Protocol, message);
         }
     };
-    let cancelled = || cancel.is_cancelled();
-    let mut paths: Vec<PathBuf> = Vec::new();
-    let mut path_bytes = 0usize;
-    let mut path_limit = false;
-    let walk = selection::walk(&cwd, &plan, policy, &cancelled, |rel| {
-        path_bytes = path_bytes.saturating_add(rel.as_os_str().as_encoded_bytes().len());
-        if paths.len() >= selection::PATH_LIMIT || path_bytes > selection::PATH_BYTES {
-            path_limit = true;
-            return false;
-        }
-        paths.push(rel);
-        true
-    });
-    if path_limit {
-        return Outcome::failed(
-            FailureKind::Unavailable,
-            "workspace symbols selection exceeds 100000 paths or 16 MiB; narrow the scope",
-        );
-    }
-    if let Err(error) = walk {
-        return Outcome::failed(FailureKind::Io, error);
-    }
-    if cancelled() {
-        return Outcome::Cancelled(CancelReason::OwnerClosed);
-    }
-    // Retained baseline (0063 residual, 0058 S7): with push coverage,
-    // reuse the unchanged subtrees of the last scan and rescan only
-    // what hints invalidated; without it, scan per search exactly as
-    // before. The lock never spans filesystem I/O.
-    let baseline = cache.lock().begin(&cwd);
-    let invalidated = cache::Caches::invalidated(&baseline).to_vec();
-    let full = baseline.symbols.is_none() || baseline.catalog.is_none();
-    let (index, symbol_stats) = symbols::SymbolIndex::refresh(
-        baseline.symbols.as_deref(),
-        &cwd,
-        &paths,
-        &invalidated,
-        &cancelled,
-    );
-    if cancelled() {
-        cache.lock().abandon(&cwd, baseline);
-        return Outcome::Cancelled(CancelReason::OwnerClosed);
-    }
-    // The same walk feeds LSP warm-up (0063 §2): marker subprojects
-    // are the eligible unopened projects. Git-only repositories carry
-    // no language evidence and stay cold until a document opens.
-    let (catalog, catalog_stats) = match baseline.catalog.as_deref() {
-        Some(prior) => catalog::ProjectCatalog::refresh(prior, &cwd, &invalidated, &cancelled),
-        None => (
-            catalog::ProjectCatalog::discover(&cwd, &cancelled),
-            catalog::CatalogStats::default(),
-        ),
+    let cancelled = || cancel.is_cancelled() || !tx.inventory_current();
+    let inventory = match cache::inventory(
+        &cache,
+        cache::ScanRequest {
+            root: &cwd,
+            query: &query,
+            plan: &plan,
+            policy,
+            need_symbols: true,
+        },
+        1,
+        &cancel,
+        &|| tx.heartbeat(),
+    ) {
+        Ok(inventory) => inventory,
+        Err(error) => return error.outcome("workspace symbols"),
     };
-    if cancelled() {
-        cache.lock().abandon(&cwd, baseline);
-        return Outcome::Cancelled(CancelReason::OwnerClosed);
+    if !tx.bind_inventory(inventory.epoch) {
+        return Outcome::Cancelled(CancelReason::Superseded);
     }
-    let index = std::sync::Arc::new(index);
-    let catalog = std::sync::Arc::new(catalog);
-    cache.lock().settle(
-        &cwd,
-        Some((std::sync::Arc::clone(&index), symbol_stats)),
-        Some((std::sync::Arc::clone(&catalog), catalog_stats)),
-        full,
-    );
-    let mut warm: Vec<(PathBuf, String)> = catalog
-        .projects()
-        .filter_map(|project| match project.kind {
-            catalog::ProjectKind::Marker(marker) => {
-                Some((cwd.join(&project.root), marker.to_string()))
-            }
-            _ => None,
-        })
-        .collect();
-    warm.sort();
-    if !warm.is_empty() {
-        let _ = tx.control(PickerMsg::ScopeProjects(warm));
+    let Some(mut index) = inventory.symbols else {
+        return Outcome::failed(
+            FailureKind::Protocol,
+            "workspace inventory returned no syntax producer",
+        );
+    };
+    let catalog = inventory.catalog;
+    let mut extractors = symbols::Extractors::default();
+    for snapshot in snapshots {
+        let Ok(relative) = snapshot.path.strip_prefix(&cwd) else {
+            continue;
+        };
+        if inventory.paths.iter().any(|p| p == relative) {
+            std::sync::Arc::make_mut(&mut index).overlay(
+                relative,
+                &snapshot.text,
+                &mut extractors,
+                &cancelled,
+            );
+        }
     }
+    tx.workspace_scope(inventory.paths, catalog.clone(), index.clone());
+    let (warm, limited) = catalog.warm_projects();
+    if limited {
+        tx.mark_partial();
+        let _ = tx.control(PickerMsg::Warning(
+            "project discovery or warm-up is bounded; semantic coverage is partial".into(),
+        ));
+    }
+    let _ = tx.control(PickerMsg::ScopeProjects(warm));
     let root = strop_workspace::ResourceLocation::local(cwd);
     let mut batch = Vec::with_capacity(512);
-    let mut delivery_error = None;
+    let mut first = true;
     // Deterministic rows: path order, then declaration order in file.
     let mut entries: Vec<_> = index.iter().collect();
     entries.sort_by_key(|(path, _)| *path);
-    for (path, declarations) in entries {
-        let relative = PathBuf::from(path);
-        let shown = display_path(&relative);
-        let shared: std::sync::Arc<str> = path.into();
+    for (relative, declarations) in entries {
+        let shown = display_path(relative);
+        let shared: std::sync::Arc<str> = shown.as_ref().into();
         for declaration in declarations {
             if cancelled() {
                 return Outcome::Cancelled(CancelReason::OwnerClosed);
@@ -241,40 +213,40 @@ fn run_workspace_symbols(
             if declaration.kind == strop_core::symbol_kind::SymbolKind::Impl {
                 continue;
             }
+            let (row, column) = declaration.selection[0];
             batch.push(Item::symbol(SymbolRow {
                 name: &declaration.name,
                 container: None,
-                detail: format_args!("{shown} · :{}", declaration.line),
+                detail: format_args!("{shown} · :{}", row as usize + 1),
                 kind: declaration.kind,
                 path: Some(shared.clone()),
                 payload: Payload::Symbol {
                     location: strop_workspace::ResourceLocation {
                         filesystem: root.filesystem.clone(),
-                        path: root.path.join(&relative),
+                        path: root.path.join(relative),
                     },
-                    line: strop_core::id::LineIndex::new(declaration.line.saturating_sub(1)),
+                    line: strop_core::id::LineIndex::new(row as usize),
                     column: crate::SymbolColumn::Byte(strop_core::id::ByteColumn::new(
-                        declaration.col.saturating_sub(1),
+                        column as usize,
                     )),
                 },
             }));
-        }
-        if batch.len() >= 512 {
-            if let Err(error) = tx.batch(std::mem::take(&mut batch), &cancel) {
-                delivery_error = Some(error);
-                break;
+            if batch.len() >= if first { 32 } else { 512 } {
+                if let Err(error) = tx.batch(std::mem::take(&mut batch), &cancel) {
+                    return error.finish(&tx);
+                }
+                first = false;
             }
         }
-    }
-    if let Some(error) = delivery_error {
-        return error.finish(&tx);
     }
     if let Err(error) = tx.batch(batch, &cancel) {
         return error.finish(&tx);
     }
     if index.coverage_gap() {
+        tx.mark_partial();
         let _ = tx.control(PickerMsg::Warning(
-            "workspace symbols: syntax tier truncated at its bounds; narrow the scope for full coverage".into(),
+            "workspace symbols: incomplete syntax coverage (bound, read or extraction failure)"
+                .into(),
         ));
     }
     Outcome::Success(())
@@ -352,10 +324,11 @@ mod tests {
                 hidden: true,
                 respect_ignore: true,
             },
+            Vec::new(),
             tx,
         );
         let mut rows: Vec<(Option<String>, String)> = Vec::new();
-        let mut scope: Option<Vec<(std::path::PathBuf, String)>> = None;
+        let mut scope = None;
         let mut done = false;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while !done && std::time::Instant::now() < deadline {
@@ -383,13 +356,15 @@ mod tests {
             !rows.iter().any(|(_, text)| text.contains("notes.txt")),
             "non-source files contribute no rows"
         );
-        // The same walk reports the marker project for LSP warm-up
-        // (0063 §2), sorted, with its marker file.
+        // The scope worker reports the native root and inferred language.
         let scope = scope.expect("scope projects message");
         assert_eq!(
             scope,
-            vec![(dir.path().join("engine"), "Cargo.toml".to_string())],
-            "one marker project with its family"
+            vec![super::catalog::WarmProject {
+                root: dir.path().join("engine"),
+                hint: super::catalog::WarmHint::Language("rust".into()),
+            }],
+            "one candidate for the observed project/language"
         );
     }
 
@@ -417,6 +392,7 @@ mod tests {
                     hidden: true,
                     respect_ignore: true,
                 },
+                Vec::new(),
                 tx,
             );
             let mut rows = Vec::new();

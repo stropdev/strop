@@ -2,12 +2,21 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
-## Unreleased
+## 0.76.0 — 2026-11-21
+
+### Added
+
+- **Mixed workspaces:** optionally declare child project directories and language hints in `.strop/workspace.toml`. Unlisted projects and loose files stay searchable; executable settings still belong in `.strop/languages.toml` and require the existing trust decision.
+
+### Performance
+
+- On the [mixed-project fixture](https://github.com/stropdev/strop/issues/262), warm p95 time to the first selectable row fell from 59.28 to 22.64 ms for rare search and from 30.59 to 8.31 ms for document symbols. Cold workspace symbols with a ready server took 125.00 ms instead of 95.32 ms. Workspace discovery runs on demand.
 
 ### Fixed
 
 - **Symbol jumps:** selecting a document or workspace symbol lands on its token even when non-ASCII text comes before it. Each language server's rows retain its negotiated column encoding; syntax outlines keep byte columns.
 - **Workspace symbols:** warming a project starts root and configuration discovery in the marker's directory, not its parent. A project-specific command still requires trust for that project.
+- **Search results:** a cached path can prioritize a fresh check, but cannot hide new files or override an unsaved buffer. Truncated results stay openable individually and cannot authorize collection or replacement review.
 
 ### Compatibility
 

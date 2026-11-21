@@ -33,7 +33,12 @@ mod tests {
         );
         // EditBuffer: the dirty text is authoritative — the overlay
         // replaces whatever the disk pass extracted.
-        index.overlay("src/lib.rs", "struct Dirty;\n", &|| false);
+        index.overlay(
+            std::path::Path::new("src/lib.rs"),
+            &ropey::Rope::from_str("struct Dirty;\n"),
+            &mut Default::default(),
+            &|| false,
+        );
         // Accept re-check at the bumped revision: the stale disk answer
         // (a function at line 1) is gone; only current evidence decides.
         assert!(
@@ -68,14 +73,21 @@ mod tests {
         );
         // EditBuffer with the extraction cancelled mid-flight: the
         // overlay records no evidence for the new revision.
-        index.overlay("src/lib.rs", "fn dirty_fn() {}\n", &|| true);
+        index.overlay(
+            std::path::Path::new("src/lib.rs"),
+            &ropey::Rope::from_str("fn dirty_fn() {}\n"),
+            &mut Default::default(),
+            &|| true,
+        );
         assert_eq!(
             index.kind_decides("src/lib.rs", Some(1), &[SymbolKind::Function]),
             None,
             "StaleAcceptsNever: incomplete evidence is Unknown — it admits, never claims"
         );
         assert!(
-            index.iter().all(|(path, _)| path != "src/lib.rs"),
+            index
+                .iter()
+                .all(|(path, _)| path != std::path::Path::new("src/lib.rs")),
             "the incomplete entry never publishes as complete evidence"
         );
         let _ = std::fs::remove_dir_all(&dir);

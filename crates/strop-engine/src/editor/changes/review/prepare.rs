@@ -70,6 +70,9 @@ pub struct PreparedReview {
 
 impl Editor {
     pub(crate) fn prepare_search_review(&mut self) {
+        if self.picker_inventory_retired() {
+            return;
+        }
         let Some(glue) = self.picker.as_ref() else {
             return;
         };
@@ -81,7 +84,11 @@ impl Editor {
             self.message = "SSH Search is read-only; With and Review are unavailable".into();
             return;
         }
-        if glue.picker.streaming || glue.rank_pending.is_some() || glue.picker.error.is_some() {
+        if glue.partial_coverage
+            || glue.picker.streaming
+            || glue.rank_pending.is_some()
+            || glue.picker.error.is_some()
+        {
             self.message =
                 "Search dataset is incomplete; finish or refresh it before Review".into();
             return;

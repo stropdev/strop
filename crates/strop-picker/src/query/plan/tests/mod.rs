@@ -33,6 +33,7 @@ fn content_plan(input: &str) -> ContentPlan {
 fn line<'a>(path: &'a str, text: &'a str) -> RowFacts<'a> {
     RowFacts {
         path: Some(path),
+        native_path: Some(std::path::Path::new(path)),
         text,
         ..RowFacts::default()
     }

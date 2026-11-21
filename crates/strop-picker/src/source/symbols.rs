@@ -10,45 +10,94 @@
 //! extraction may answer No. Unsaved sources overlay their disk entry
 //! — dirty text is authoritative.
 //!
-//! Incremental reuse (0063 residual, 0058 §2): [`SymbolIndex::refresh`]
-//! reuses an entry only when the file's fresh stat matches the
-//! observation recorded at parse time AND no notification hint
-//! invalidated the path — observation self-heals missed hints, so
-//! watching improves freshness but is never the only cache-validity
-//! mechanism. Entries are `Arc`-shared: a per-search working copy is a
-//! shallow clone, and the dirty-text overlay never mutates the retained
-//! disk-pure baseline.
+//! A retained disk shard owns the same bytes its linked extractor saw.
+//! Refresh compares bytes on the worker; watcher silence, matching
+//! timestamps and display spellings are not reuse evidence.
 use std::collections::HashMap;
-use std::path::Path;
+use std::io::Read;
+use std::mem::{size_of, size_of_val};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use strop_core::symbol_kind::SymbolKind;
 use strop_syntax::languages;
-use strop_syntax::symbols::{DeclExtractor, Declaration};
+use strop_syntax::symbols::{DeclExtractor, Declaration, DeclarationSchema};
 
-/// Files whose extraction is attempted per search. Files beyond the
-/// bound stay absent — Unknown, sound overfetch.
-const FILE_LIMIT: usize = 4096;
-/// Per-file source bound; larger sources stay absent.
-const FILE_BYTES: u64 = 2 * 1024 * 1024;
-/// Total source bytes extracted per search.
-const TOTAL_BYTES: u64 = 64 * 1024 * 1024;
-
-/// One file's declarations. `complete` is false when extraction had no
-/// evidence (parse failure or cancellation) — never a claim of
-/// emptiness.
-pub struct FileSymbols {
-    declarations: Vec<Declaration>,
-    complete: bool,
-    /// The stat evidence (length, mtime) captured when the source was
-    /// read for this extraction; refresh reuses the entry only while a
-    /// fresh stat still matches it.
-    observed: FileObservation,
+#[derive(Clone, Copy)]
+struct Limits {
+    files: usize,
+    file_bytes: usize,
+    total_bytes: usize,
 }
 
-/// The on-disk state an extraction was taken against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FileObservation {
-    len: u64,
-    modified: Option<std::time::SystemTime>,
+const LIMITS: Limits = Limits {
+    files: 4096,
+    file_bytes: 2 * 1024 * 1024,
+    total_bytes: 64 * 1024 * 1024,
+};
+
+/// Immutable syntax evidence, not a document revision or semantic binding.
+/// Compare the actual source and schema before adopting for another request.
+pub struct DiskShard {
+    source: Box<[u8]>,
+    schema: DeclarationSchema,
+    declarations: Box<[Declaration]>,
+    allocation: usize,
+}
+
+impl DiskShard {
+    pub fn source(&self) -> &[u8] {
+        &self.source
+    }
+
+    pub fn schema(&self) -> DeclarationSchema {
+        self.schema
+    }
+
+    pub fn declarations(&self) -> &[Declaration] {
+        &self.declarations
+    }
+}
+
+#[derive(Clone)]
+enum FileSymbols {
+    Disk(Arc<DiskShard>),
+    Buffer(Arc<[Declaration]>),
+}
+
+impl FileSymbols {
+    fn declarations(&self) -> &[Declaration] {
+        match self {
+            Self::Disk(shard) => shard.declarations(),
+            Self::Buffer(declarations) => declarations,
+        }
+    }
+
+    fn allocation(&self) -> usize {
+        // Two reference counts in each Arc allocation.
+        2 * size_of::<usize>()
+            + match self {
+                Self::Disk(shard) => shard.allocation,
+                Self::Buffer(rows) => declaration_bytes(rows),
+            }
+    }
+}
+
+fn declaration_bytes(rows: &[Declaration]) -> usize {
+    size_of_val(rows) + rows.iter().map(|row| row.name.capacity()).sum::<usize>()
+}
+
+/// Per-worker pass, including dirty snapshots. Failed static queries are
+/// cached too; learning eligibility never constructs a throwaway parser.
+#[derive(Default)]
+pub(super) struct Extractors(HashMap<languages::LanguageId, Option<DeclExtractor>>);
+
+impl Extractors {
+    fn get(&mut self, language: languages::LanguageId) -> Option<&mut DeclExtractor> {
+        self.0
+            .entry(language)
+            .or_insert_with(|| DeclExtractor::for_language(language))
+            .as_mut()
+    }
 }
 
 /// Scan accounting for one build/refresh (0058 S7 evidence): how many
@@ -62,26 +111,23 @@ pub struct ScanStats {
 /// The per-search symbol evidence for `kind:` atoms.
 #[derive(Clone)]
 pub struct SymbolIndex {
-    files: HashMap<Box<str>, std::sync::Arc<FileSymbols>>,
-    /// Files whose extension maps to an extractor language.
+    files: HashMap<Arc<Path>, FileSymbols>,
     eligible: usize,
-    /// Eligible files with complete evidence (parse succeeded).
-    covered: usize,
+    interrupted: bool,
+    source_bytes: usize,
+    allocation: usize,
 }
 
 impl SymbolIndex {
     /// Extract declarations from the selection's eligible files. Paths
     /// are workspace-relative, matching admission's path vocabulary.
-    pub fn build(cwd: &Path, paths: &[std::path::PathBuf], cancelled: &dyn Fn() -> bool) -> Self {
-        Self::scan(cwd, paths, None, &[], cancelled).0
+    pub fn build(cwd: &Path, paths: &[PathBuf], cancelled: &dyn Fn() -> bool) -> Self {
+        Self::refresh(None, cwd, paths, &[], cancelled).0
     }
 
-    /// Refresh against the current selection: with `prior`, reuse an
-    /// entry only while its recorded observation still matches a fresh
-    /// stat and no hint invalidated the path (a relative path or a
-    /// directory prefix of it); re-parse everything else. The
-    /// self-healing stat check means a missed or coalesced hint costs
-    /// one re-parse, never a stale answer.
+    /// Refresh only the current selection. A hint retires a path even if
+    /// recreated identically. Without a hint, reuse requires byte equality
+    /// and the exact linked syntax format; a missing path is never copied.
     pub fn refresh(
         prior: Option<&SymbolIndex>,
         cwd: &Path,
@@ -89,7 +135,7 @@ impl SymbolIndex {
         invalidated: &[std::path::PathBuf],
         cancelled: &dyn Fn() -> bool,
     ) -> (Self, ScanStats) {
-        Self::scan(cwd, paths, prior, invalidated, cancelled)
+        Self::scan(cwd, paths, prior, invalidated, cancelled, LIMITS)
     }
 
     fn scan(
@@ -98,111 +144,145 @@ impl SymbolIndex {
         prior: Option<&SymbolIndex>,
         invalidated: &[std::path::PathBuf],
         cancelled: &dyn Fn() -> bool,
+        limits: Limits,
     ) -> (Self, ScanStats) {
         let mut index = Self {
             files: HashMap::new(),
             eligible: 0,
-            covered: 0,
+            interrupted: false,
+            source_bytes: 0,
+            allocation: 0,
         };
         let mut stats = ScanStats::default();
-        let mut extractors: HashMap<languages::LanguageId, DeclExtractor> = HashMap::new();
-        let mut total = 0u64;
+        let mut extractors = Extractors::default();
+        let mut scratch = Vec::new();
         for path in paths {
-            if cancelled() || index.files.len() >= FILE_LIMIT || total >= TOTAL_BYTES {
+            if cancelled() {
+                index.interrupted = true;
                 break;
             }
-            let Some(extension) = path.extension().and_then(|e| e.to_str()) else {
-                continue;
-            };
-            let Some(spec) = languages::for_extension(extension) else {
-                continue;
-            };
-            let Some(language) = DeclExtractor::for_language(spec.id).map(|_| spec.id) else {
-                // Not extractor-eligible: out of the tier's declared
-                // coverage, not a coverage gap.
+            let Some(language) =
+                languages::detect_id(path, None).filter(|id| DeclExtractor::supports(*id))
+            else {
                 continue;
             };
             index.eligible += 1;
-            let absolute = cwd.join(path);
-            let Ok(metadata) = std::fs::metadata(&absolute) else {
-                continue;
-            };
-            if !metadata.is_file() || metadata.len() > FILE_BYTES {
+            let remaining = limits.total_bytes.saturating_sub(index.source_bytes);
+            if index.eligible > limits.files || remaining == 0 {
                 continue;
             }
-            let observed = FileObservation {
-                len: metadata.len(),
-                modified: metadata.modified().ok(),
+            let limit = remaining.min(limits.file_bytes);
+            let Ok(file) = std::fs::File::open(cwd.join(path)) else {
+                continue;
             };
-            let key = path.to_string_lossy().into_owned().into_boxed_str();
-            let hinted = invalidated.iter().any(|prefix| path.starts_with(prefix));
-            if !hinted && !cancelled() {
-                if let Some(entry) = prior.and_then(|prior| prior.files.get(&key)) {
-                    if entry.observed == observed {
-                        // Same bytes as the retained extraction —
-                        // complete or not, the parse outcome is
-                        // identical, so reuse keeps soundness.
-                        index.covered += usize::from(entry.complete);
+            let Ok(metadata) = file.metadata() else {
+                continue;
+            };
+            if !metadata.is_file() || metadata.len() > limit as u64 {
+                continue;
+            }
+            // Size is only an allocation hint. A file growing during the
+            // read must not create an oversized (or prefix-only) witness.
+            scratch.clear();
+            scratch.reserve(metadata.len() as usize);
+            let read = file.take(limit as u64 + 1).read_to_end(&mut scratch);
+            // The one overflow probe is never part of an extracted source.
+            index.source_bytes += scratch.len().min(limit);
+            if read.is_err() || scratch.len() > limit {
+                continue;
+            }
+            if !invalidated.iter().any(|prefix| path.starts_with(prefix)) {
+                if let Some((key, FileSymbols::Disk(shard))) =
+                    prior.and_then(|prior| prior.files.get_key_value(path.as_path()))
+                {
+                    if shard.schema == DeclarationSchema::ByteRangesV2(language)
+                        && shard.source() == scratch.as_slice()
+                    {
+                        index.insert(Arc::clone(key), FileSymbols::Disk(Arc::clone(shard)));
                         stats.reused += 1;
-                        index.files.insert(key, std::sync::Arc::clone(entry));
                         continue;
                     }
                 }
             }
-            let extractor = match extractors.entry(language) {
-                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    match DeclExtractor::for_language(language) {
-                        Some(extractor) => entry.insert(extractor),
-                        None => continue,
-                    }
-                }
-            };
-            let Ok(source) = std::fs::read(&absolute) else {
+            let Some(extractor) = extractors.get(language) else {
                 continue;
             };
-            total = total.saturating_add(source.len() as u64);
-            let declarations = extractor.extract(&source, cancelled);
-            let complete = declarations.is_some();
-            index.covered += usize::from(complete);
             stats.parsed += 1;
-            index.files.insert(
-                key,
-                std::sync::Arc::new(FileSymbols {
-                    declarations: declarations.unwrap_or_default(),
-                    complete,
-                    observed,
-                }),
+            let Some(declarations) = extractor.extract(&scratch, cancelled) else {
+                continue;
+            };
+            let allocation =
+                size_of::<DiskShard>() + scratch.len() + declaration_bytes(&declarations);
+            let shard = DiskShard {
+                source: std::mem::take(&mut scratch).into_boxed_slice(),
+                schema: extractor.schema(),
+                declarations: declarations.into_boxed_slice(),
+                allocation,
+            };
+            index.insert(
+                Arc::from(path.as_path()),
+                FileSymbols::Disk(Arc::new(shard)),
             );
         }
         (index, stats)
     }
 
-    /// Overlay one unsaved source: its text is authoritative for that
-    /// path, replacing whatever the disk pass extracted.
-    pub fn overlay(&mut self, relative: &str, text: &str, cancelled: &dyn Fn() -> bool) {
-        let Some(language) = languages::detect(Path::new(relative), None).map(|spec| spec.id)
+    fn insert(&mut self, path: Arc<Path>, entry: FileSymbols) {
+        self.allocation += path.as_os_str().len() + 2 * size_of::<usize>() + entry.allocation();
+        self.files.insert(path, entry);
+    }
+
+    /// Bounded ownership charge, computed on the worker, O(1) to inspect
+    /// under the owner's lock. Charge shared shards in full, plus map slack.
+    pub(crate) fn retained_bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.allocation
+            + (self.files.capacity() * 2 + 1) * (size_of::<(Arc<Path>, FileSymbols)>() + 1)
+            + 16
+    }
+
+    /// Look up a candidate by native path in this inventory's root. Callers
+    /// may hold a single immutable shard without pinning the whole inventory.
+    pub fn disk_shard(&self, relative: &Path) -> Option<&Arc<DiskShard>> {
+        match self.files.get(relative)? {
+            FileSymbols::Disk(shard) => Some(shard),
+            FileSymbols::Buffer(_) => None,
+        }
+    }
+
+    /// An eligible dirty rope replaces its disk evidence even when its
+    /// extraction fails or exceeds the budget. Never copy an oversize rope.
+    pub(super) fn overlay(
+        &mut self,
+        relative: &Path,
+        text: &ropey::Rope,
+        extractors: &mut Extractors,
+        cancelled: &dyn Fn() -> bool,
+    ) {
+        let prior = self.files.remove_entry(relative).map(|(key, entry)| {
+            self.allocation -= key.as_os_str().len() + 2 * size_of::<usize>() + entry.allocation();
+            key
+        });
+        if cancelled()
+            || text.len_bytes() > LIMITS.file_bytes
+            || text.len_bytes() > LIMITS.total_bytes.saturating_sub(self.source_bytes)
+            || self.files.len() >= LIMITS.files
+        {
+            return;
+        }
+        let Some(extractor) =
+            languages::detect_id(relative, None).and_then(|id| extractors.get(id))
         else {
             return;
         };
-        let Some(mut extractor) = DeclExtractor::for_language(language) else {
-            return;
-        };
-        let declarations = extractor.extract(text.as_bytes(), cancelled);
-        let complete = declarations.is_some();
-        self.files.insert(
-            relative.to_owned().into_boxed_str(),
-            std::sync::Arc::new(FileSymbols {
-                declarations: declarations.unwrap_or_default(),
-                complete,
-                // Overlays live in per-search working copies only; the
-                // sentinel observation is never a disk baseline.
-                observed: FileObservation {
-                    len: text.len() as u64,
-                    modified: None,
-                },
-            }),
-        );
+        self.source_bytes += text.len_bytes();
+        let source: std::borrow::Cow<'_, str> = text.slice(..).into();
+        if let Some(declarations) = extractor.extract(source.as_bytes(), cancelled) {
+            self.insert(
+                prior.unwrap_or_else(|| Arc::from(relative)),
+                FileSymbols::Buffer(declarations.into()),
+            );
+        }
     }
 
     /// Decide whether `line` (1-based) lies inside a declaration of one
@@ -210,19 +290,15 @@ impl SymbolIndex {
     /// or a surface without line numbers.
     pub fn kind_decides(
         &self,
-        relative: &str,
+        relative: impl AsRef<Path>,
         line: Option<usize>,
         kinds: &[SymbolKind],
     ) -> Option<bool> {
-        let entry = self.files.get(relative)?;
-        if !entry.complete {
-            return None;
-        }
+        let entry = self.files.get(relative.as_ref())?;
         let line = line?;
-        Some(entry.declarations.iter().any(|declaration| {
-            kinds.contains(&declaration.kind)
-                && declaration.line <= line
-                && line <= declaration.end_line
+        Some(entry.declarations().iter().any(|declaration| {
+            let (first, last) = declaration.lines();
+            kinds.contains(&declaration.kind) && first <= line && line <= last
         }))
     }
 
@@ -230,16 +306,15 @@ impl SymbolIndex {
     /// evidence — bounds, unreadable, or a failed parse. True means
     /// the list is knowingly incomplete, never silently empty.
     pub fn coverage_gap(&self) -> bool {
-        self.covered < self.eligible
+        self.interrupted || self.files.len() < self.eligible
     }
 
     /// Iterate every complete entry, path first: `(relative path,
     /// declarations)`. Incomplete entries are absent — no evidence.
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &[Declaration])> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Path, &[Declaration])> {
         self.files
             .iter()
-            .filter(|(_, entry)| entry.complete)
-            .map(|(path, entry)| (path.as_ref(), entry.declarations.as_slice()))
+            .map(|(path, entry)| (path.as_ref(), entry.declarations()))
     }
 }
 
@@ -314,7 +389,18 @@ mod tests {
         write(dir.path(), "src/lib.rs", "fn disk_only() {\n}\n");
         let paths = vec![std::path::PathBuf::from("src/lib.rs")];
         let mut index = SymbolIndex::build(dir.path(), &paths, &|| false);
-        index.overlay("src/lib.rs", "fn dirty() {\n    let y = 2;\n}\n", &|| false);
+        let baseline = index.clone();
+        index.overlay(
+            Path::new("src/lib.rs"),
+            &ropey::Rope::from_str("fn dirty() {\n    let y = 2;\n}\n"),
+            &mut Extractors::default(),
+            &|| false,
+        );
+        assert!(index.disk_shard(&paths[0]).is_none());
+        assert_eq!(
+            baseline.disk_shard(&paths[0]).unwrap().declarations()[0].name,
+            "disk_only"
+        );
         let function = &[SymbolKind::Function, SymbolKind::Method];
         assert_eq!(
             index.kind_decides("src/lib.rs", Some(2), function),
@@ -334,6 +420,7 @@ mod tests {
         write(dir.path(), "big.rs", &big);
         let paths = vec![std::path::PathBuf::from("big.rs")];
         let index = SymbolIndex::build(dir.path(), &paths, &|| false);
+        assert!(index.coverage_gap());
         assert_eq!(
             index.kind_decides("big.rs", Some(1), &[SymbolKind::Function]),
             None,
@@ -347,8 +434,148 @@ mod tests {
         write(dir.path(), "src/lib.rs", "fn hello() {}\n");
         let paths = vec![std::path::PathBuf::from("src/lib.rs")];
         let index = SymbolIndex::build(dir.path(), &paths, &|| true);
+        assert!(index.coverage_gap());
         assert_eq!(
             index.kind_decides("src/lib.rs", Some(1), &[SymbolKind::Function]),
+            None
+        );
+    }
+
+    #[test]
+    fn same_length_restored_mtime_is_not_a_byte_witness() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("lib.rs");
+        let paths = std::slice::from_ref(&path);
+        let absolute = dir.path().join(&path);
+        let before = b"fn first() {}\n";
+        let after = b"fn other() {}\n";
+        std::fs::write(&absolute, before).unwrap();
+        let mtime = std::fs::metadata(&absolute).unwrap().modified().unwrap();
+        let initial = SymbolIndex::build(dir.path(), paths, &|| false);
+        let (unchanged, stats) =
+            SymbolIndex::refresh(Some(&initial), dir.path(), paths, &[], &|| false);
+        let shard = initial.disk_shard(&path).unwrap();
+        assert!(Arc::ptr_eq(shard, unchanged.disk_shard(&path).unwrap()));
+        assert_eq!(
+            stats,
+            ScanStats {
+                parsed: 0,
+                reused: 1
+            }
+        );
+        std::fs::write(&absolute, after).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&absolute)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+        assert_eq!(
+            std::fs::metadata(&absolute).unwrap().modified().unwrap(),
+            mtime
+        );
+        let (changed, stats) =
+            SymbolIndex::refresh(Some(&unchanged), dir.path(), paths, &[], &|| false);
+        assert_eq!(
+            stats,
+            ScanStats {
+                parsed: 1,
+                reused: 0
+            }
+        );
+        let new = changed.disk_shard(&path).unwrap();
+        assert_eq!(shard.source(), before);
+        assert_eq!(new.source(), after);
+        assert_eq!(
+            new.schema(),
+            DeclarationSchema::ByteRangesV2(languages::LanguageId::Rust)
+        );
+        assert_eq!(
+            new.declarations(),
+            SymbolIndex::build(dir.path(), paths, &|| false)
+                .disk_shard(&path)
+                .unwrap()
+                .declarations()
+        );
+        assert_eq!(new.declarations()[0].name, "other");
+    }
+
+    #[test]
+    fn rename_and_recreate_retire_old_shards() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = PathBuf::from("a/lib.rs");
+        let new = PathBuf::from("b/lib.rs");
+        write(dir.path(), "a/lib.rs", "fn old() {}\n");
+        let prior = SymbolIndex::build(dir.path(), std::slice::from_ref(&old), &|| false);
+        std::fs::rename(dir.path().join("a"), dir.path().join("b")).unwrap();
+        let (moved, stats) = SymbolIndex::refresh(
+            Some(&prior),
+            dir.path(),
+            std::slice::from_ref(&new),
+            &[],
+            &|| false,
+        );
+        assert_eq!(stats.parsed, 1);
+        assert!(moved.disk_shard(&old).is_none());
+        assert_eq!(
+            moved.disk_shard(&new).unwrap().declarations()[0].name,
+            "old"
+        );
+        write(dir.path(), "a/lib.rs", "fn old() {}\n");
+        let (recreated, stats) = SymbolIndex::refresh(
+            Some(&prior),
+            dir.path(),
+            std::slice::from_ref(&old),
+            &[PathBuf::from("a")],
+            &|| false,
+        );
+        assert_eq!(stats.reused, 0);
+        assert!(!Arc::ptr_eq(
+            prior.disk_shard(&old).unwrap(),
+            recreated.disk_shard(&old).unwrap()
+        ));
+    }
+
+    #[test]
+    fn missing_files_and_exhausted_refresh_budgets_are_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = [PathBuf::from("a.rs"), PathBuf::from("b.rs")];
+        let text = "fn name() {}\n";
+        for path in &paths {
+            std::fs::write(dir.path().join(path), text).unwrap();
+        }
+        let prior = SymbolIndex::build(dir.path(), &paths, &|| false);
+        assert!(!prior.coverage_gap());
+        assert!(prior.retained_bytes() >= 2 * (text.len() + size_of::<Declaration>()));
+        for limits in [
+            Limits { files: 1, ..LIMITS },
+            Limits {
+                total_bytes: text.len(),
+                ..LIMITS
+            },
+            Limits {
+                total_bytes: 2 * text.len() - 1,
+                ..LIMITS
+            },
+        ] {
+            let (capped, stats) =
+                SymbolIndex::scan(dir.path(), &paths, Some(&prior), &[], &|| false, limits);
+            assert!(capped.coverage_gap());
+            assert_eq!(
+                stats,
+                ScanStats {
+                    parsed: 0,
+                    reused: 1
+                }
+            );
+            assert!(capped.disk_shard(&paths[1]).is_none());
+            assert!(capped.source_bytes <= limits.total_bytes);
+        }
+        std::fs::remove_file(dir.path().join(&paths[1])).unwrap();
+        let (missing, _) = SymbolIndex::refresh(Some(&prior), dir.path(), &paths, &[], &|| false);
+        assert!(missing.coverage_gap());
+        assert_eq!(
+            missing.kind_decides(&paths[1], Some(1), &[SymbolKind::Function]),
             None
         );
     }

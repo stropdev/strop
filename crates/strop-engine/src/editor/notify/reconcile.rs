@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use strop_core::id::DocumentId;
 use strop_core::worker::{self, Completion, Outcome};
-use strop_fs::notify::NotifyHint;
+use strop_fs::notify::{NotifyHint, NotifyKind};
 use strop_workspace::Filesystem;
 
 use super::super::directory::DirectoryTask;
@@ -83,6 +83,16 @@ impl Editor {
         if !deferred.is_empty() {
             self.notify.queue.requeue_front(deferred);
         }
+        if hints.iter().any(|hint| hint.path.is_empty()) {
+            // A replacement at the same root name is a new incarnation,
+            // even if this batch also contains an overflow.
+            self.retire_warm_discovery();
+            if let Some(source) = &self.picker_source {
+                source.retire_root(&self.cwd);
+                source.set_watching(&self.cwd, self.notify.push_coverage());
+            }
+            rescan = true;
+        }
         if rescan {
             self.notify_rescan();
             return;
@@ -123,6 +133,9 @@ impl Editor {
         if let Some(source) = self.picker_source.as_ref() {
             source.set_watching(&self.cwd, self.notify.push_coverage());
         }
+        if self.notify.push_coverage() {
+            self.reload_workspace_manifest();
+        }
     }
 
     /// Hints against open state: dirty documents gain external-change
@@ -137,11 +150,18 @@ impl Editor {
     /// index of the open documents.
     fn apply_notify_hints(&mut self, hints: Vec<NotifyHint>) {
         use std::os::unix::ffi::OsStrExt;
-        if hints.iter().any(|hint| hint.path.is_empty()) {
-            // The scope root itself moved/was replaced (parent/name
-            // guard): the whole baseline is suspect.
-            self.notify_rescan();
-            return;
+        let declaration_changed = hints.iter().any(|hint| {
+            let path = Path::new(std::ffi::OsStr::from_bytes(&hint.path));
+            path == Path::new(".strop/workspace.toml")
+                || path == Path::new(".strop")
+                || self.manifest_binding_hint(path, hint.kind != NotifyKind::Modified)
+                || self
+                    .workspace_declarations()
+                    .iter()
+                    .any(|entry| entry.path().starts_with(path))
+        });
+        if declaration_changed {
+            self.reload_workspace_manifest();
         }
         let current = self.current();
         // Every name an open local document or directory answers to.
@@ -268,6 +288,7 @@ impl Editor {
         if let Some(source) = self.picker_source.as_ref() {
             source.invalidate(&self.cwd, &[], true);
         }
+        self.reload_workspace_manifest();
         self.cancel_hunk_owner();
         self.refresh_status_buffers();
         let documents: Vec<DocumentId> = self.docs.iter().map(|(id, _)| id).collect();

@@ -56,6 +56,32 @@ fn stale_attach_completion_is_refused() {
 }
 
 #[test]
+fn same_path_cd_rejects_a_previous_warm_attachment() {
+    let mut e = editor("a\n");
+    let root = e.cwd.clone();
+    let ticket = WorkerId::new(11);
+    let key = super::super::attach::AttachKey {
+        target: strop_workspace::Filesystem::Local,
+        language: "rust".into(),
+        path: root.join("tools"),
+    };
+    e.lsp_state.attach.pending.insert(key.clone(), ticket);
+    e.lsp_state.attach.warm_attempts.insert(key);
+    crate::editor::ex::change_directory(&mut e, root.clone());
+    e.handle_lsp_attach(AttachRecord {
+        ticket,
+        server: Some(ServerId::new(12)),
+        language: "rust".into(),
+        name: "rust-analyzer".into(),
+        root: root.join("tools"),
+        target: strop_workspace::Filesystem::Local,
+        outcome: AttachDecision::Attached,
+        layers: Vec::new(),
+    });
+    assert!(e.lsp_state.attach.attached.is_empty());
+}
+
+#[test]
 fn sticky_refusal_reports_once_but_trust_refusals_repeat() {
     let mut e = editor("a\n");
     let first = WorkerId::new(1);

@@ -36,6 +36,31 @@ come with the binary.
 | **Terminal** | `Space t` | A shell in a split. `Ctrl-\ Ctrl-N` leaves it; its output is a buffer you search and yank from. |
 | **SSH** | `strop remote ssh://host/path` | Open, edit and save over plain OpenSSH. Nothing is installed on the host. |
 
+## Working in a directory with several projects
+
+Open the parent directory as usual. If markers are missing or ambiguous,
+you can declare child project roots in `.strop/workspace.toml` at that
+parent. For example, `/workarea/.strop/workspace.toml` can contain:
+
+```toml
+version = 1
+
+[[project]]
+path = "platform/agent"
+languages = ["rust", "go"]
+
+[[project]]
+path = "tools/reporter"
+```
+
+Paths are literal descendant directories, not globs or symlinks. Omitting
+`languages` keeps ordinary language discovery; `[]` disables speculative
+server startup for that child. Neither changes how an opened file's
+language is detected. `Space f` and `Space /` still include eligible
+unlisted projects and loose files, even when no language server exists.
+Choose servers in `.strop/languages.toml`; a declaration never grants
+[trust to a project command](docs/editor.md#trust).
+
 ## Install
 
 ```sh

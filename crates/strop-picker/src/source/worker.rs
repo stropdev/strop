@@ -231,6 +231,39 @@ impl SourceWorker {
         self.shared.cache.lock().set_watching(root, watching);
     }
 
+    /// Capture the incarnation before dispatching a manifest read.
+    pub fn inventory_root(&self, root: &std::path::Path) -> Option<super::InventoryRoot> {
+        self.shared.cache.lock().root_ticket(root)
+    }
+
+    /// Candidate for off-thread verification against a frozen document.
+    pub fn disk_shard(
+        &self,
+        root: &super::InventoryRoot,
+        absolute: &std::path::Path,
+    ) -> Option<Arc<crate::DiskShard>> {
+        self.shared.cache.lock().disk_shard(root, absolute)
+    }
+
+    /// Replace boundary evidence for the current pinned root. Declarations
+    /// neither filter the selection walk nor authorize server commands.
+    pub fn set_declarations(
+        &self,
+        root: &super::InventoryRoot,
+        declarations: Arc<[crate::DeclaredBoundary]>,
+    ) -> bool {
+        self.shared
+            .cache
+            .lock()
+            .set_declarations(root, declarations)
+    }
+
+    /// A pinned root was explicitly left or rebound, even at the same path.
+    /// Workers from its previous incarnation may not publish retained data.
+    pub fn retire_root(&self, root: &std::path::Path) {
+        self.shared.cache.lock().retire_root(root);
+    }
+
     /// Notification hints for one covered scope (0058 S7): paths are
     /// relative to `root`; `rescan` is the conservative overflow/loss
     /// obligation. The next search over each covered scope rescans the
@@ -317,11 +350,12 @@ impl SourceWorker {
         root: PathBuf,
         query: Arc<SearchQuery>,
         policy: SelectionPolicy,
+        snapshots: Vec<SourceSnapshot>,
         sender: impl Into<SourceSink>,
     ) -> CancelHandle {
         let cache = Arc::clone(&self.shared.cache);
         self.submit(sender, move |tx, token| {
-            super::run_workspace_symbols(root, query, policy, cache, tx, token)
+            super::run_workspace_symbols(root, query, policy, snapshots, cache, tx, token)
         })
     }
 

@@ -193,7 +193,6 @@ mod tests {
     #[test]
     fn stalled_preview_recovers_after_physical_reader_returns() {
         let mut editor = editor();
-        editor.preview_watchdog = PreviewWatchdog::with_timeout(Duration::from_millis(20));
         let first = strop_workspace::ResourceLocation::local(editor.cwd.join("blocked.txt"));
         let (started_tx, started_rx) = channel();
         let (release_tx, release_rx) = channel();
@@ -205,6 +204,19 @@ mod tests {
             Outcome::Success(String::from("late").into())
         }));
         started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Expire only the deliberately blocked read. A 20 ms timeout for
+        // every read also expires the healthy successor under scheduler load.
+        {
+            let shared = &editor.preview_watchdog.shared;
+            let mut state = shared.state.lock();
+            let entry = state
+                .requests
+                .values_mut()
+                .find(|e| e.ticket.key.path == first)
+                .unwrap();
+            entry.deadline = Instant::now();
+            shared.wake.notify_all();
+        }
 
         let result = editor
             .preview_rx

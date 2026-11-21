@@ -135,9 +135,36 @@ impl Languages {
     /// unreadable or unparseable layers are skipped with a typed
     /// diagnostic naming the file, and the remaining layers carry on.
     pub fn load(xdg: Option<&Path>, project: Option<&Path>) -> Self {
+        Self::load_local(xdg, project, read_layer)
+    }
+
+    /// A project layer opened relative to a verified directory handle.
+    /// Keep its logical path for trust/diagnostics; never reopen that path.
+    pub fn load_opened(xdg: Option<&Path>, path: &Path, mut file: std::fs::File) -> Self {
+        use std::io::Read;
+        Self::load_local(xdg, Some(path), |path, diagnostics| {
+            let mut text = String::new();
+            match file.read_to_string(&mut text) {
+                Ok(_) => parse_layer(path, &text, diagnostics, LayerDiagnostic::new),
+                Err(error) => {
+                    diagnostics.push(LayerDiagnostic::new(
+                        path,
+                        format!("{error} — layer ignored"),
+                    ));
+                    None
+                }
+            }
+        })
+    }
+
+    fn load_local(
+        xdg: Option<&Path>,
+        project: Option<&Path>,
+        open: impl FnOnce(&Path, &mut Vec<LayerDiagnostic>) -> Option<LanguagesToml>,
+    ) -> Self {
         let mut layers = Vec::new();
         let xdg_file = xdg.and_then(|p| read_layer(p, &mut layers));
-        let project_file = project.and_then(|p| read_layer(p, &mut layers));
+        let project_file = project.and_then(|p| open(p, &mut layers));
         let mut merged = Self::merge(xdg_file, project_file);
         // `.strop/languages.toml` — the project root is the dir holding
         // `.strop`, two parents up from the file

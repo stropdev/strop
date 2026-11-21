@@ -170,6 +170,19 @@ impl Client {
         tx: Sender<LspEvent>,
         command: std::process::Command,
     ) -> Result<Self, SpawnError> {
+        Self::spawn_checked(spec, workspace, tx, command, || Ok(()))
+    }
+
+    /// Run a native authority check on the process thread, immediately
+    /// before spawn (never after fork). A declined launch is a normal
+    /// Failed event, with no child process.
+    pub fn spawn_checked(
+        spec: &registry::ServerSpec<'_>,
+        workspace: Workspace,
+        tx: Sender<LspEvent>,
+        command: std::process::Command,
+        check: impl FnOnce() -> std::io::Result<()> + Send + 'static,
+    ) -> Result<Self, SpawnError> {
         let root_uri = workspace.uri(workspace.root()).ok_or(SpawnError::RootUri)?;
         let label_workspace = workspace.label();
         // The thread is 'static: it gets owned copies, never borrows
@@ -258,7 +271,9 @@ impl Client {
         let thread = std::thread::Builder::new()
             .name("strop-lsp-client".into())
             .spawn(move || {
-                rt.block_on(super::process::run(launch, command, mainloop, stopping));
+                rt.block_on(super::process::run(
+                    launch, command, check, mainloop, stopping,
+                ));
             })
             .map_err(|error| {
                 SpawnError::Startup(format!("cannot start the LSP client thread: {error}"))

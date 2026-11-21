@@ -53,6 +53,9 @@ pub(crate) enum BuildId {
     Server(RequestStamp),
 }
 
+/// Registry identity plus this filesystem connection's incarnation.
+pub(crate) type Workspace = Option<(strop_core::id::WorkspaceId, u64)>;
+
 /// The one build in flight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Build {
@@ -60,6 +63,7 @@ pub(crate) struct Build {
     pub document: DocumentId,
     pub revision: BufferRevision,
     pub producer: Producer,
+    pub workspace: Workspace,
     /// `Space s` is waiting for this build: its result opens the picker.
     pub open: bool,
 }
@@ -68,15 +72,47 @@ pub(crate) struct Build {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Current {
     pub revision: BufferRevision,
-    /// The server the document is open on now, if any.
-    pub server: Option<ServerId>,
+    pub document: DocumentId,
+    pub producer: Option<Producer>,
+    pub workspace: Workspace,
 }
 
 /// Columns in a kept list must retain the encoding of the original reply.
-#[derive(Clone)]
-pub(crate) struct SymbolList {
-    pub rows: Arc<Vec<ProtoSymbol>>,
-    pub encoding: PositionEncoding,
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct SymbolList {
+    pub(crate) rows: Arc<Vec<ProtoSymbol>>,
+    pub(crate) catalog: strop_picker::Catalog,
+    pub(crate) listing: Arc<Vec<strop_picker::Row>>,
+    pub(crate) root: Arc<strop_workspace::ResourceLocation>,
+    pub(crate) location: Arc<strop_workspace::ResourceLocation>,
+    /// Set only from the owned build's dispatch stamp at admission.
+    #[serde(skip)]
+    pub(crate) workspace: Workspace,
+}
+
+impl SymbolList {
+    pub(super) fn prepare(
+        mut rows: Vec<ProtoSymbol>,
+        root: &std::path::Path,
+        location: &strop_workspace::ResourceLocation,
+        server: Option<(ServerId, PositionEncoding)>,
+    ) -> Self {
+        rows.retain(|row| &row.location.doc == location);
+        let catalog = super::super::lsp::document_symbol_items(&rows, root, server).into();
+        let listing = (0..rows.len()).map(strop_picker::Row::listing).collect();
+        let root = Arc::new(strop_workspace::ResourceLocation {
+            filesystem: location.filesystem.clone(),
+            path: root.to_owned(),
+        });
+        Self {
+            rows: Arc::new(rows),
+            catalog,
+            listing: Arc::new(listing),
+            root,
+            location: Arc::new(location.clone()),
+            workspace: None,
+        }
+    }
 }
 
 pub(crate) enum Delivery {
@@ -116,6 +152,7 @@ impl SymbolStore {
         self.cache.get(key(document, producer, revision)).cloned()
     }
 
+    #[cfg(test)]
     pub fn has(&self, document: DocumentId, producer: Producer, revision: BufferRevision) -> bool {
         self.cache.contains(key(document, producer, revision))
     }
@@ -148,8 +185,7 @@ impl SymbolStore {
         &mut self,
         id: BuildId,
         current: Option<Current>,
-        symbols: Option<Vec<ProtoSymbol>>,
-        encoding: PositionEncoding,
+        symbols: Option<SymbolList>,
     ) -> Delivery {
         if self.build.map(|build| build.id) != Some(id) {
             return Delivery::Unowned;
@@ -160,20 +196,17 @@ impl SymbolStore {
         let Some(current) = current else {
             return Delivery::Stale(build);
         };
-        let served = match build.producer {
-            Producer::Outline => true,
-            Producer::Server(server) => current.server == Some(server),
-        };
-        if current.revision != build.revision || !served {
+        if current.document != build.document
+            || current.revision != build.revision
+            || current.workspace != build.workspace
+            || current.producer != Some(build.producer)
+        {
             return Delivery::Stale(build);
         }
-        let Some(symbols) = symbols else {
+        let Some(mut list) = symbols else {
             return Delivery::Failed(build);
         };
-        let list = SymbolList {
-            rows: Arc::new(symbols),
-            encoding,
-        };
+        list.workspace = build.workspace;
         self.cache.put(
             key(build.document, build.producer, build.revision),
             list.rows.len(),

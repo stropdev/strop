@@ -8,11 +8,13 @@ publish = false
 
 [dependencies]
 ignore = "0.4"
+libc = "0.2"
 grep = "0.3"
 nucleo-matcher = "0.3"
 imbl = { version = "7", features = ["serde"] }
 parking_lot = "0.12"
 strop-core = { path = "../strop-core" }
+strop-kernel = { path = "../strop-kernel" }
 strop-workspace = { path = "../strop-workspace" }
 strop-fs = { path = "../strop-fs" }
 strop-lsp = { path = "../strop-lsp" }

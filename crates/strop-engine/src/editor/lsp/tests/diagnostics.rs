@@ -92,6 +92,32 @@ fn attached_server_diagnostics_survive_full_replay() {
     e.tape.seed(&Seed::capture(&e).unwrap()).unwrap();
     e.recorded_action(Action::Start { open: None }, Tick::default())
         .unwrap();
+    // The startup file now waits for its pinned workspace declaration before
+    // resolving a server. Feed the same no-manifest completion to the tape.
+    let request = e
+        .tape
+        .fixture_nodes()
+        .into_iter()
+        .find_map(|node| match node {
+            strop_trace::replay::Node::Request {
+                operation,
+                arguments,
+            } if operation == "workspace.declarations" => {
+                serde_json::from_value(arguments[0].clone()).ok()
+            }
+            _ => None,
+        })
+        .unwrap();
+    e.recorded_action(
+        Action::Event(AppEvent::Io(
+            crate::editor::io::IoEvent::WorkspaceDeclarations {
+                request,
+                outcome: strop_core::worker::Outcome::Success(Default::default()),
+            },
+        )),
+        Tick::default(),
+    )
+    .unwrap();
     let ticket = *e.lsp_state.attach.pending.values().next().unwrap();
     let attach = AttachRecord {
         ticket,

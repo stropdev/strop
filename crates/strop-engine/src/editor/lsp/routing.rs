@@ -11,6 +11,17 @@ impl Editor {
                 if let Some(index) = self.lsp_servers.iter().position(|owner| owner.id == server) {
                     self.clear_lsp_failure(server);
                     self.lsp_servers[index].ready = true;
+                    let capable =
+                        self.tape
+                            .observe_owned("lsp.document_symbol_capability", &server, || {
+                                self.lsp_servers[index]
+                                    .client
+                                    .as_ref()
+                                    .is_some_and(|c| c.caps().document_symbols())
+                            });
+                    if !matches!(capable, Ok(true)) {
+                        self.analysis.symbols.incapable.insert(server);
+                    }
                     // Success must not erase a configuration warning
                     // (0033 §2): readiness is reported alongside it.
                     self.message = match self.layer_warning() {
@@ -193,17 +204,28 @@ impl Editor {
                 encoding,
                 generation,
                 symbols,
-            } => self.merge_workspace_symbols(server, encoding, generation, symbols),
+            } => {
+                let owns = self
+                    .picker
+                    .as_mut()
+                    .filter(|g| g.wsymbols_generation == generation)
+                    .and_then(|g| g.wsources.get_mut(&server))
+                    .is_some_and(|(enc, pending)| *enc == encoding && std::mem::take(pending));
+                if owns {
+                    self.merge_workspace_symbols(server, encoding, generation, symbols);
+                }
+            }
             LspEvent::WorkspaceSymbolsFailed {
-                server: _,
+                server,
                 generation,
                 reason,
             } => {
                 let live = self
                     .picker
-                    .as_ref()
-                    .filter(|glue| glue.picker.kind == strop_picker::Kind::WorkspaceSymbols)
-                    .is_some_and(|glue| glue.wsymbols_generation == generation);
+                    .as_mut()
+                    .filter(|g| g.wsymbols_generation == generation)
+                    .and_then(|g| g.wsources.get_mut(&server))
+                    .is_some_and(|(_, pending)| std::mem::take(pending));
                 if live {
                     self.message = format!("lsp: {reason}");
                 } else {
@@ -261,19 +283,41 @@ impl Editor {
         }
     }
 
+    pub(crate) fn retire_workspace_symbol_source(&mut self, server: strop_lsp::ServerId) {
+        let Some(glue) = self.picker.as_mut() else {
+            return;
+        };
+        if glue.wsources.remove(&server).is_none() {
+            return;
+        }
+        if let Some(len) = glue.ws_syntax_len {
+            glue.picker.truncate_results(len);
+        }
+        self.query_workspace_symbols();
+        self.request_picker_ranking();
+    }
+
     /// Ask every warm attached server for workspace symbols (0063
     /// §2): one generation bump per query change; only that
     /// generation's replies merge. Refusals are per-server skips —
     /// not-ready servers join on their `Ready` event.
     pub(crate) fn query_workspace_symbols(&mut self) {
-        let (generation, query) = {
+        let (generation, query, scope) = {
             let Some(glue) = self.picker.as_mut() else {
                 return;
             };
             if glue.picker.kind != strop_picker::Kind::WorkspaceSymbols {
                 return;
             }
-            glue.wsymbols_generation += 1;
+            glue.wsources.clear();
+            glue.ws_pending.clear();
+            glue.ws_pending_bytes = 0;
+            let Some(generation) = self.analysis.symbols.workspace_generation.checked_add(1) else {
+                glue.picker.error = Some("workspace-symbol request identities exhausted".into());
+                return;
+            };
+            self.analysis.symbols.workspace_generation = generation;
+            glue.wsymbols_generation = generation;
             // Only bare content text crosses the wire (0063 §4):
             // qualifiers and operators never reach `workspace/symbol`;
             // the reply is filtered locally against the full AST. A
@@ -282,26 +326,66 @@ impl Editor {
             let Some(probe) = glue.query.as_ref().and_then(|query| query.wsymbols_probe()) else {
                 return;
             };
-            (glue.wsymbols_generation, probe)
+            if let Some(len) = glue.ws_syntax_len {
+                if glue.picker.items.len() - glue.picker.pinned_tail > len {
+                    glue.picker.truncate_results(len);
+                }
+            }
+            let Some(scope) = glue.file_root.clone() else {
+                return;
+            };
+            (glue.wsymbols_generation, probe, scope)
         };
         for attachment in self.lsp_state.attach.attached.clone() {
+            if attachment.target != scope.filesystem
+                || !(attachment.root.starts_with(&scope.path)
+                    || scope.path.starts_with(&attachment.root))
+            {
+                continue;
+            }
             let args = serde_json::json!({
                 "server": attachment.server,
                 "generation": generation,
                 "query": query,
             });
-            match self.tape.request("lsp.wsymbols", &args) {
-                Ok(true) => {
-                    if let Some(client) = self.lsp_live_client(attachment.server) {
-                        // Admission refusals (still initializing, no
-                        // provider) are skips, not errors: the syntax
-                        // tier already carries the surface.
-                        let _ = client.workspace_symbols(generation, &query);
-                    }
-                }
-                Ok(false) => {}
+            let launch = match self.tape.request("lsp.wsymbols", &args) {
+                Ok(launch) => launch,
                 Err(error) => {
                     self.message = format!("workspace symbols diverged from trace: {error}");
+                    return;
+                }
+            };
+            let admitted = self.tape.observe_owned("lsp.wsymbols_admitted", &args, || {
+                let client = self.lsp_live_client(attachment.server)?;
+                if !launch {
+                    return None;
+                }
+                Some(
+                    client
+                        .workspace_symbols(generation, &query)
+                        .map(|()| client.caps().encoding()),
+                )
+            });
+            match admitted {
+                Ok(Some(Ok(encoding))) => {
+                    if let Some(glue) = self.picker.as_mut() {
+                        glue.wsources.insert(attachment.server, (encoding, true));
+                    }
+                }
+                Ok(Some(Err(refusal))) => {
+                    if let Some(glue) = self.picker.as_mut() {
+                        glue.partial_coverage = true;
+                        if refusal == strop_lsp::RequestRefusal::Unsupported {
+                            glue.picker.warning = Some(format!(
+                                "workspace symbols: {} server does not provide workspace symbols",
+                                attachment.language
+                            ));
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.message = error.to_string();
                     return;
                 }
             }
@@ -328,40 +412,113 @@ impl Editor {
             .filter(|glue| glue.picker.kind == strop_picker::Kind::WorkspaceSymbols)
             .is_some_and(|glue| {
                 strop_core::searchguard::generation_is_live(generation, glue.wsymbols_generation)
+                    && glue
+                        .wsources
+                        .get(&server)
+                        .is_some_and(|(enc, _)| *enc == encoding)
             });
         if !picker_live {
             trace::services::rejected("lsp", "workspace-symbol reply superseded");
             return;
         }
-        use strop_picker::Payload;
-        let mut known: std::collections::HashSet<(&ResourceLocation, usize, &str)> = self
-            .picker
-            .as_ref()
-            .map(|glue| {
-                glue.picker
-                    .items
-                    .iter()
-                    .filter_map(|item| {
-                        let Payload::Symbol { location, line, .. } = &item.payload else {
-                            return None;
-                        };
-                        Some((location, line.get(), item.facts().text))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let root = self
+        let Some(placement) = self
             .lsp_state
             .attach
             .attached
             .iter()
-            .find(|attachment| attachment.server == server)
-            .map(|attachment| &attachment.root)
-            .unwrap_or(&self.cwd);
+            .find(|a| a.server == server)
+        else {
+            return;
+        };
+        let Some(glue) = self.picker.as_mut() else {
+            return;
+        };
+        // Defer an early reply until file eligibility and child ownership
+        // arrive, and dedup in syntax-first order regardless of event order.
+        if glue.active.is_some() {
+            let bytes = symbols.iter().fold(
+                symbols
+                    .capacity()
+                    .saturating_mul(size_of::<strop_lsp::ProtoSymbol>()),
+                |n, s| {
+                    n.saturating_add(s.name.capacity())
+                        .saturating_add(s.container.capacity())
+                        .saturating_add(s.location.doc.path.capacity())
+                },
+            );
+            if bytes > (16 * 1024 * 1024usize).saturating_sub(glue.ws_pending_bytes) {
+                glue.partial_coverage = true;
+                glue.picker.warning =
+                    Some("workspace semantic reply exceeds the delivery budget".into());
+            } else {
+                glue.ws_pending_bytes += bytes;
+                glue.ws_pending.push((server, encoding, symbols));
+            }
+            return;
+        }
+        if glue.picker.error.is_some() || glue.ws_syntax_len.is_none() {
+            return;
+        }
+        let Some(scope) = glue.file_root.as_ref() else {
+            return;
+        };
+        let dirty: std::collections::HashSet<_> = self
+            .docs
+            .iter()
+            .filter_map(|(_, doc)| {
+                doc.buf
+                    .is_dirty()
+                    .then(|| doc.file_target(&self.cwd)?.resource_location())
+                    .flatten()
+            })
+            .collect();
+        let mask = self.tape.observe_owned("lsp.wsymbols_members", &(server, generation), || {
+            symbols.iter().map(|symbol| {
+                let target = &symbol.location.doc;
+                let Ok(relative) = target.path.strip_prefix(&scope.path) else { return false };
+                let scope_admits = if scope.local_path().is_some() {
+                    glue.inventory.symbol_owner(relative).is_some_and(|child|
+                        child.as_os_str().is_empty() || placement.root.strip_prefix(&scope.path).is_ok_and(|r| r.starts_with(child)))
+                } else {
+                    // No local index or local path probing for an SSH endpoint.
+                    relative.components().all(|component| matches!(component, std::path::Component::Normal(name) if name != ".git"))
+                        && !self.lsp_state.attach.attached.iter().any(|a|
+                            a.target == target.filesystem && a.root != placement.root
+                            && a.root.starts_with(&placement.root) && target.path.starts_with(&a.root))
+                };
+                scope_admits && placement.target == target.filesystem && scope.filesystem == target.filesystem
+                    && target.path.starts_with(&placement.root)
+                    && super::lsp_language(&target.path) == Some(placement.language.as_str())
+                    && !dirty.contains(target)
+                    && !self.lsp_state.bindings.values().any(|b|
+                        b.path == target.path && b.target == target.filesystem && b.server != server)
+            }).collect::<Vec<_>>()
+        });
+        let mask = match mask {
+            Ok(mask) if mask.len() == symbols.len() => mask,
+            _ => return,
+        };
+        use strop_picker::Payload;
+        let mut known: std::collections::HashSet<(&ResourceLocation, usize, &str)> = glue
+            .picker
+            .items
+            .iter()
+            .filter_map(|item| {
+                let Payload::Symbol { location, line, .. } = &item.payload else {
+                    return None;
+                };
+                Some((location, line.get(), item.facts().text))
+            })
+            .collect();
+        let root = &scope.path;
         let mut paths = RelativePaths::new(root);
         let items = symbols
             .iter()
-            .filter_map(|symbol| {
+            .zip(mask)
+            .filter_map(|(symbol, admitted)| {
+                if !admitted {
+                    return None;
+                }
                 let position = symbol.location.position;
                 let line = position.line.get() + 1;
                 let path = &symbol.location.doc.path;
@@ -391,6 +548,18 @@ impl Editor {
             glue.picker.append(items);
         }
         self.request_picker_ranking();
+    }
+
+    pub(crate) fn finish_workspace_symbols(&mut self) {
+        let Some(glue) = self.picker.as_mut() else {
+            return;
+        };
+        glue.ws_syntax_len = Some(glue.picker.items.len() - glue.picker.pinned_tail);
+        let generation = glue.wsymbols_generation;
+        glue.ws_pending_bytes = 0;
+        for (server, encoding, symbols) in std::mem::take(&mut glue.ws_pending) {
+            self.merge_workspace_symbols(server, encoding, generation, symbols);
+        }
     }
 }
 

@@ -355,6 +355,7 @@ mod project;
 mod warm_up {
     use super::super::attach::{AttachDecision, AttachKey, Attachment};
     use super::*;
+    use strop_picker::{WarmHint, WarmProject};
     use strop_workspace::Filesystem;
 
     fn warm_editor(dir: &std::path::Path) -> Editor {
@@ -372,15 +373,47 @@ mod warm_up {
         }
     }
 
+    fn candidate(root: PathBuf, language: &str) -> WarmProject {
+        WarmProject {
+            root,
+            hint: WarmHint::Language(language.into()),
+        }
+    }
+
+    fn ambiguous(root: PathBuf) -> WarmProject {
+        WarmProject {
+            root,
+            hint: WarmHint::AmbiguousPackage,
+        }
+    }
+
     #[test]
-    fn marker_families_map_to_languages_and_ambiguity_stays_cold() {
-        use super::super::lifecycle::warm_language;
-        assert_eq!(warm_language("Cargo.toml"), Some(("rust", ".rs")));
-        assert_eq!(warm_language("pyproject.toml"), Some(("python", ".py")));
-        assert_eq!(warm_language("setup.py"), Some(("python", ".py")));
-        assert_eq!(warm_language("CMakeLists.txt"), Some(("cpp", ".cpp")));
-        assert_eq!(warm_language("go.mod"), Some(("go", ".go")));
-        assert_eq!(warm_language("package.json"), None);
+    fn unavailable_hint_cannot_launch_or_hide_a_supported_binding() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut editor = warm_editor(dir.path());
+        let root = dir.path().join("multilingual");
+        let key = rust_key(&root);
+        editor
+            .lsp_state
+            .attach
+            .pending
+            .insert(key.clone(), WorkerId::new(77));
+        editor.lsp_warm_scope_projects(vec![
+            candidate(root.clone(), "unknown"),
+            candidate(root, "rust"),
+        ]);
+        assert_eq!(editor.lsp_state.attach.pending.len(), 1);
+        assert!(editor.lsp_state.attach.pending.contains_key(&key));
+        let glue = editor.picker.as_ref().unwrap();
+        assert_eq!(glue.picker.pinned_tail, 1);
+        assert!(glue
+            .picker
+            .items
+            .iter()
+            .last()
+            .unwrap()
+            .text
+            .contains("no language server for unknown"));
     }
 
     #[test]
@@ -389,12 +422,12 @@ mod warm_up {
         // Services never started: nothing queues, nothing spawns.
         let mut cold = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
         cold.open_picker(strop_picker::Kind::WorkspaceSymbols);
-        cold.lsp_warm_scope_projects(vec![(dir.path().join("p"), "Cargo.toml".into())]);
+        cold.lsp_warm_scope_projects(vec![candidate(dir.path().join("p"), "rust")]);
         assert!(cold.lsp_state.attach.warm_queue.is_empty());
         let mut warm = warm_editor(dir.path());
         // An ambiguous marker queues but maps to no language: the
         // queue drains past it with nothing in flight.
-        warm.lsp_warm_scope_projects(vec![(dir.path().join("web"), "package.json".into())]);
+        warm.lsp_warm_scope_projects(vec![ambiguous(dir.path().join("web"))]);
         assert!(warm.lsp_state.attach.warm_queue.is_empty());
         assert!(warm.lsp_state.attach.pending.is_empty());
         // A project already pending discovery is not rediscovered:
@@ -403,7 +436,7 @@ mod warm_up {
         let key = rust_key(&root);
         let ticket = WorkerId::new(77);
         warm.lsp_state.attach.pending.insert(key.clone(), ticket);
-        warm.lsp_warm_scope_projects(vec![(root, "Cargo.toml".into())]);
+        warm.lsp_warm_scope_projects(vec![candidate(root, "rust")]);
         assert!(warm.lsp_state.attach.warm_queue.is_empty());
         assert_eq!(
             warm.lsp_state.attach.pending.get(&key),
@@ -414,7 +447,7 @@ mod warm_up {
         warm.lsp_state
             .attach
             .warm_queue
-            .push_back((dir.path().join("q"), "Cargo.toml".into()));
+            .push_back(candidate(dir.path().join("q"), "rust"));
         warm.open_picker(strop_picker::Kind::Files);
         assert!(
             warm.lsp_state.attach.warm_queue.is_empty(),
@@ -435,7 +468,7 @@ mod warm_up {
             server: ServerId::new(31),
             target: Filesystem::Local,
         });
-        editor.lsp_warm_scope_projects(vec![(root.clone(), "Cargo.toml".into())]);
+        editor.lsp_warm_scope_projects(vec![candidate(root.clone(), "rust")]);
         assert!(editor.lsp_state.attach.warm_queue.is_empty());
         assert!(editor.lsp_state.attach.pending.is_empty());
         // A sticky refusal for another project is respected — no spawn,
@@ -449,7 +482,7 @@ mod warm_up {
             },
             AttachDecision::NoServer,
         );
-        editor.lsp_warm_scope_projects(vec![(other, "Cargo.toml".into())]);
+        editor.lsp_warm_scope_projects(vec![candidate(other, "rust")]);
         assert!(editor.lsp_state.attach.pending.is_empty());
     }
 
@@ -459,7 +492,7 @@ mod warm_up {
         let dir = tempfile::tempdir().unwrap();
         let mut editor = warm_editor(dir.path());
         let web = dir.path().join("web");
-        editor.lsp_warm_scope_projects(vec![(web.clone(), "package.json".into())]);
+        editor.lsp_warm_scope_projects(vec![ambiguous(web.clone())]);
         let glue = editor.picker.as_ref().unwrap();
         assert_eq!(
             glue.project_statuses,
@@ -467,6 +500,7 @@ mod warm_up {
                 web.clone(),
                 ProjectStatus {
                     kind: ProjectStatusKind::Ambiguous,
+                    language: None,
                     reason: glue.project_statuses[0].1.reason.clone(),
                 }
             )],
@@ -503,7 +537,7 @@ mod warm_up {
             },
             AttachDecision::NoServer,
         );
-        editor.lsp_warm_scope_projects(vec![(root.clone(), "Cargo.toml".into())]);
+        editor.lsp_warm_scope_projects(vec![candidate(root.clone(), "rust")]);
         let glue = editor.picker.as_ref().unwrap();
         assert_eq!(glue.project_statuses.len(), 1);
         assert_eq!(glue.project_statuses[0].0, root);
@@ -522,7 +556,7 @@ mod warm_up {
     fn surface_change_clears_project_statuses() {
         let dir = tempfile::tempdir().unwrap();
         let mut editor = warm_editor(dir.path());
-        editor.lsp_warm_scope_projects(vec![(dir.path().join("web"), "package.json".into())]);
+        editor.lsp_warm_scope_projects(vec![ambiguous(dir.path().join("web"))]);
         assert_eq!(editor.picker.as_ref().unwrap().project_statuses.len(), 1);
         // An in-flight warm attempt's tracking dies with the surface too.
         let key = AttachKey {
@@ -616,7 +650,7 @@ mod warm_up {
         std::fs::create_dir(dir.path().join("web")).unwrap();
         let mut editor = warm_editor(dir.path());
         let web = dir.path().join("web");
-        editor.lsp_warm_scope_projects(vec![(web.clone(), "package.json".into())]);
+        editor.lsp_warm_scope_projects(vec![ambiguous(web.clone())]);
         editor.wait_picker();
         {
             let glue = editor.picker.as_ref().unwrap();

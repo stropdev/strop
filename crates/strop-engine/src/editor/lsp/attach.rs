@@ -6,6 +6,7 @@
 //! faking a client. Remote discovery (0036 RW8) lives in
 //! [`super::remote`]; this module owns the shared record/key types and
 //! the local path.
+pub(super) mod member;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -60,6 +61,10 @@ pub struct AttachRecord {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AttachDecision {
     Attached,
+    /// The local worker observed this actual marker-backed project.
+    Discovered,
+    /// The worker revalidated this already live placement; no new transport.
+    Reused(ServerId),
     NoServer,
     Cancelled,
     TrustRequired {
@@ -92,7 +97,8 @@ impl AttachDecision {
     /// Stable trace label for attach completions.
     pub(crate) fn label(&self) -> &'static str {
         match self {
-            Self::Attached => "attached",
+            Self::Attached | Self::Discovered => "attached",
+            Self::Reused(_) => "reused",
             Self::NoServer => "no_server",
             Self::Cancelled => "cancelled",
             Self::TrustRequired { .. } => "trust_required",
@@ -143,10 +149,11 @@ pub(crate) struct AttachState {
     pub layer_diagnostics: Vec<LayerDiagnostic>,
     /// Servers placed for (target, language, root) — live or replayed.
     pub attached: Vec<Attachment>,
+    pub(super) members: member::Placements,
     /// Unopened projects waiting for bounded warm-up (0063 §2):
-    /// absolute root + marker file. Drained while the
-    /// workspace-symbols picker is open.
-    pub warm_queue: std::collections::VecDeque<(PathBuf, String)>,
+    /// absolute root + language hint. Drained while the workspace-symbols
+    /// picker is open; replaced, never accumulated, on a newer observation.
+    pub warm_queue: std::collections::VecDeque<strop_picker::WarmProject>,
     /// Warm-up attempts in flight (0063 §2): their completions record
     /// per-project status rows; document attach completions never do.
     /// Cleared with the warm queue when the surface changes.
@@ -167,6 +174,7 @@ impl AttachState {
             trust_roots: HashMap::new(),
             layer_diagnostics: Vec::new(),
             attached: Vec::new(),
+            members: member::Placements::default(),
             warm_queue: std::collections::VecDeque::new(),
             transport: Arc::new(Mutex::new(HashMap::new())),
             warm_attempts: std::collections::HashSet::new(),
@@ -196,6 +204,7 @@ pub(crate) enum DiscoverPlace {
         directory: PathBuf,
         cwd: PathBuf,
         git_workdir: Option<PathBuf>,
+        member: Option<member::Request>,
     },
     Remote {
         file: strop_workspace::RemoteFile,
@@ -229,11 +238,13 @@ pub(crate) fn discover(input: DiscoverInput, token: &CancelToken) -> Option<Atta
             directory,
             cwd,
             git_workdir,
+            member,
         } => Some(discover_local(
             &input,
             directory,
             cwd,
             git_workdir.as_deref(),
+            member.as_ref(),
             token,
         )),
         DiscoverPlace::Remote { file, client } => {
@@ -249,6 +260,7 @@ fn discover_local(
     directory: &Path,
     cwd: &Path,
     git_workdir: Option<&Path>,
+    member: Option<&member::Request>,
     token: &CancelToken,
 ) -> AttachRecord {
     let DiscoverInput {
@@ -260,10 +272,40 @@ fn discover_local(
         transport,
         ..
     } = input;
-    let languages = strop_lsp::languages::Languages::load(
-        xdg.as_deref(),
-        strop_lsp::languages::project_path(directory).as_deref(),
-    );
+    let resolved = match member {
+        Some(request) => match request.resolve(cwd, directory, language, xdg.as_deref(), token) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                return AttachRecord {
+                    ticket: *ticket,
+                    server: None,
+                    language: language.to_string(),
+                    name: language.to_string(),
+                    root: directory.to_owned(),
+                    target: Filesystem::Local,
+                    outcome: AttachDecision::SpawnFailed {
+                        reason: error.to_string(),
+                    },
+                    layers: Vec::new(),
+                };
+            }
+        },
+        None => None,
+    };
+    let (languages, root, pin) = if let Some(resolved) = resolved {
+        (resolved.languages, resolved.root, Some(resolved.pin))
+    } else {
+        let languages = strop_lsp::languages::Languages::load(
+            xdg.as_deref(),
+            strop_lsp::languages::project_path(directory).as_deref(),
+        );
+        let root = languages.project_root.clone().unwrap_or_else(|| {
+            git_workdir
+                .filter(|workdir| directory.starts_with(workdir))
+                .map_or_else(|| registry::workspace_root(directory, cwd), Path::to_owned)
+        });
+        (languages, root, None)
+    };
     // Malformed layers ride along with every outcome (0033 §2) — even
     // a healthy fallback attach must keep diagnosing them.
     let layers: Vec<LayerDiagnostic> = languages.layer_diagnostics().to_vec();
@@ -278,27 +320,23 @@ fn discover_local(
         layers: layers.clone(),
     };
     let Some(spec) = registry::for_extension(ext, &languages) else {
-        return refused(
-            AttachDecision::NoServer,
-            language.to_string(),
-            cwd.to_owned(),
-        );
+        return refused(AttachDecision::NoServer, language.to_string(), root);
     };
     let name = spec.name.to_string();
-    let root = match languages.project_root.as_deref() {
-        Some(root) => root.to_path_buf(),
-        None => match git_workdir.filter(|workdir| directory.starts_with(workdir)) {
-            Some(workdir) => workdir.to_path_buf(),
-            None => registry::workspace_root(directory, cwd),
-        },
-    };
+    // The actual selected configuration root owns the command, never the
+    // spelling of an enclosing manifest entry or a sibling with that name.
     if let Some(outcome) = trust_refusal(&spec, state_dir.as_deref(), &root) {
         return refused(outcome, name, root);
     }
     // The executability check is pure metadata (0033 §3): no process is
     // spawned, so no orphan probe exists and an untrusted project
     // command is never executed merely to test it.
-    match registry::command_status(&spec, &root, std::env::var_os("PATH").as_deref()) {
+    let probe = pin.as_ref().map(member::Pin::probe_root);
+    match registry::command_status(
+        &spec,
+        probe.as_deref().unwrap_or(&root),
+        std::env::var_os("PATH").as_deref(),
+    ) {
         registry::CommandStatus::Executable => {}
         registry::CommandStatus::Unrunnable(reason) => {
             let decision = AttachDecision::NotExecutable {
@@ -309,15 +347,47 @@ fn discover_local(
             return refused(decision, name, root);
         }
     }
+    let discovered = pin.is_some() && member.is_some_and(|r| r.index.is_none());
     if token.is_cancelled() {
         return refused(AttachDecision::Cancelled, name, root);
     }
+    let (command, launch_check) = match (pin, member) {
+        (Some(pin), Some(request)) => {
+            let check = request.launch_check(cwd, &pin.project, language);
+            if let Some(server) = request.reusable(&pin, &spec) {
+                if let Err(error) = check() {
+                    return refused(
+                        AttachDecision::SpawnFailed {
+                            reason: error.to_string(),
+                        },
+                        name,
+                        root,
+                    );
+                }
+                return refused(AttachDecision::Reused(server), name, root);
+            }
+            match pin.command(&spec, &root, request.retired.clone()) {
+                Ok(command) => (command, Some(check)),
+                Err(error) => {
+                    return refused(
+                        AttachDecision::SpawnFailed {
+                            reason: error.to_string(),
+                        },
+                        name,
+                        root,
+                    )
+                }
+            }
+        }
+        _ => (spec.local_command(&root), None),
+    };
     let (tx, rx) = channel();
-    match Client::spawn(
+    match Client::spawn_checked(
         &spec,
         strop_lsp::Workspace::Local { root: root.clone() },
         tx,
-        spec.local_command(&root),
+        command,
+        move || launch_check.map_or(Ok(()), |check| check()),
     ) {
         Ok(client) => {
             let server = client.id();
@@ -331,7 +401,11 @@ fn discover_local(
                 name,
                 root,
                 target: Filesystem::Local,
-                outcome: AttachDecision::Attached,
+                outcome: if discovered {
+                    AttachDecision::Discovered
+                } else {
+                    AttachDecision::Attached
+                },
                 layers,
             }
         }
@@ -443,11 +517,13 @@ mod tests {
                         directory: dir.to_owned(),
                         cwd: dir.to_path_buf(),
                         git_workdir: None,
+                        member: None,
                     },
                     ".nosuchlang",
                 ),
                 dir,
                 dir,
+                None,
                 None,
                 &token,
             )

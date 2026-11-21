@@ -55,7 +55,16 @@ pub enum AnalysisEvent {
     Matched(Box<Completion<MatchKey, Option<PairMatch>>>),
     /// A symbol-outline job landed (0099 §4.1).
     Outlined(
-        Box<Completion<crate::editor::symbols::outline::OutlineKey, Vec<strop_lsp::ProtoSymbol>>>,
+        Box<
+            Completion<
+                crate::editor::symbols::outline::OutlineKey,
+                crate::editor::symbols::store::SymbolList,
+            >,
+        >,
+    ),
+    ServerOutline(
+        strop_lsp::ReplyContext,
+        Box<crate::editor::symbols::store::SymbolList>,
     ),
     Stopped,
 }
@@ -524,6 +533,10 @@ impl Editor {
             }
             AnalysisEvent::Outlined(completion) => {
                 crate::editor::symbols::outline_done(self, *completion);
+                return;
+            }
+            AnalysisEvent::ServerOutline(context, list) => {
+                crate::editor::symbols::server_prepared(self, context, *list);
                 return;
             }
             AnalysisEvent::Completed(completion) => completion,

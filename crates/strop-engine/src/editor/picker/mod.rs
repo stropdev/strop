@@ -90,6 +90,8 @@ pub struct PickerGlue {
     /// The request owning the stream: set at launch, cleared by its
     /// terminal Finished event or by cancellation.
     pub(crate) active: Option<Ticket<PickerKey>>,
+    pub(crate) inventory: strop_picker::InventoryGuard,
+    pub(crate) partial_coverage: bool,
     /// Headless only: the active request's raw stream (the TUI gets a
     /// ticket-stamping bridge at launch instead).
     pub(crate) rx: Option<(Ticket<PickerKey>, Receiver<PickerMsg>)>,
@@ -117,11 +119,26 @@ pub struct PickerGlue {
     /// Exact namespace/root captured when a Files surface opens.
     pub(crate) file_root: Option<strop_workspace::ResourceLocation>,
     pub(crate) indent_target: Option<strop_core::id::DocumentId>,
+    pub(crate) document_symbols: Option<super::symbols::store::Current>,
     pub(crate) search: Option<search::SearchContext>,
     preview_witness: Option<preview::WitnessCheck>,
     /// Workspace-symbols ownership (0063 §2): bumped on every query
     /// change; only the live generation's replies merge.
     pub(crate) wsymbols_generation: u64,
+    /// Live admitted producers and their still-outstanding replies.
+    pub(crate) wsources:
+        std::collections::HashMap<strop_lsp::ServerId, (strop_lsp::PositionEncoding, bool)>,
+    pub(crate) ws_pending: Vec<(
+        strop_lsp::ServerId,
+        strop_lsp::PositionEncoding,
+        Vec<strop_lsp::ProtoSymbol>,
+    )>,
+    pub(crate) ws_pending_bytes: usize,
+    pub(crate) ws_syntax_len: Option<usize>,
+    pub(crate) ws_buffers: std::collections::HashMap<
+        PathBuf,
+        (strop_core::id::DocumentId, strop_core::id::BufferRevision),
+    >,
     /// Per-project warm-attach outcomes (0063 §2), keyed by project
     /// root: the source of truth behind the picker's pinned status rows.
     /// Recorded at every warm-up decision point; lives and dies with
@@ -149,6 +166,8 @@ impl PickerGlue {
             field_keys: super::field::FieldMachine::default(),
             id: PickerId(WorkerId::new(0)), // replaced on install
             active: None,
+            inventory: Default::default(),
+            partial_coverage: false,
             rx: None,
             worker: None,
             lsp_context: None,
@@ -167,9 +186,15 @@ impl PickerGlue {
             query: None,
             replace_target: None,
             indent_target: None,
+            document_symbols: None,
             search: None,
             preview_witness: None,
             wsymbols_generation: 0,
+            wsources: Default::default(),
+            ws_pending: Vec::new(),
+            ws_pending_bytes: 0,
+            ws_syntax_len: None,
+            ws_buffers: Default::default(),
             actions: None,
         }
     }
@@ -196,6 +221,17 @@ impl PickerGlue {
 }
 
 impl Editor {
+    /// Revoke publication before moving the workspace or its declarations.
+    /// Leave the worker's completion channel intact: a process already
+    /// spawned must still report its server ID so its transport is retired.
+    pub(crate) fn retire_warm_discovery(&mut self) {
+        let attach = &mut self.lsp_state.attach;
+        attach.warm_queue.clear();
+        for key in attach.warm_attempts.drain() {
+            attach.pending.remove(&key);
+        }
+    }
+
     /// Install a picker: tears down any previous instance (revoking
     /// its streams and previews) and allocates a fresh identity from
     /// the worker id pool.
@@ -203,8 +239,7 @@ impl Editor {
         // Warm-up is on demand (0063 §2): another surface installing
         // ends the queue — servers never start for a closed picker.
         if glue.picker.kind != Kind::WorkspaceSymbols {
-            self.lsp_state.attach.warm_queue.clear();
-            self.lsp_state.attach.warm_attempts.clear();
+            self.retire_warm_discovery();
         }
         self.cancel_cmdline();
         self.close_picker();
@@ -217,7 +252,9 @@ impl Editor {
         };
         glue.preview_witness = None;
         glue.id = PickerId(id);
-        if glue.picker.kind == Kind::Files && glue.file_root.is_none() {
+        if matches!(glue.picker.kind, Kind::Files | Kind::WorkspaceSymbols)
+            && glue.file_root.is_none()
+        {
             glue.file_root = Some(self.current_workspace_root());
         }
         if glue.picker.kind == Kind::Search && glue.search.is_none() {
@@ -268,14 +305,19 @@ impl Editor {
     /// Register headless delivery before launch, or stamp directly onto the live
     /// app queue. Source restarts never allocate per-request bridge threads.
     fn picker_source_sink(&mut self, ticket: Ticket<PickerKey>) -> strop_picker::SourceSink {
-        if let Some(app_tx) = self.app_tx.clone() {
-            return Self::app_source_sink(app_tx, ticket);
-        }
-        let (tx, rx) = channel();
+        let sink = if let Some(app_tx) = self.app_tx.clone() {
+            Self::app_source_sink(app_tx, ticket)
+        } else {
+            let (tx, rx) = channel();
+            if let Some(glue) = self.picker.as_mut() {
+                glue.rx = Some((ticket, rx));
+            }
+            tx.into()
+        };
         if let Some(glue) = self.picker.as_mut() {
-            glue.rx = Some((ticket, rx));
+            glue.inventory = sink.inventory_guard();
         }
-        tx.into()
+        sink
     }
 
     /// Connect-time: hand any already-registered headless stream to
@@ -365,7 +407,35 @@ impl Editor {
         }
     }
 
+    /// A queued or already ranked row can outlive the inventory that
+    /// supplied it. Check again at the action, not just on delivery.
+    pub(crate) fn picker_inventory_retired(&mut self) -> bool {
+        let Some(glue) = self.picker.as_mut() else {
+            return false;
+        };
+        let current = match self
+            .tape
+            .observe_owned("picker.action_inventory", &glue.id, || {
+                glue.inventory.is_current()
+            }) {
+            Ok(current) => current,
+            Err(error) => {
+                self.message = error.to_string();
+                return true;
+            }
+        };
+        if !current {
+            glue.deferred = None;
+            self.message = "project changed; refresh the list".into();
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn accept_current_picker(&mut self) {
+        if self.picker_inventory_retired() {
+            return;
+        }
         if self
             .picker
             .as_ref()
@@ -494,6 +564,96 @@ impl Editor {
             return;
         }
         let context = glue.lsp_context;
+        if let Payload::Symbol {
+            location,
+            line,
+            column,
+        } = &payload
+        {
+            let name = glue
+                .picker
+                .current()
+                .expect("selected payload")
+                .facts()
+                .text
+                .to_owned();
+            let owner = glue.document_symbols;
+            let (query, buffer) = if glue.picker.kind == Kind::WorkspaceSymbols {
+                let scope = glue.wsymbols_generation;
+                let admitted = match column {
+                    strop_picker::SymbolColumn::Byte(_) => true,
+                    strop_picker::SymbolColumn::Server {
+                        server, encoding, ..
+                    } => {
+                        glue.wsources
+                            .get(server)
+                            .is_some_and(|(enc, _)| enc == encoding)
+                            && self
+                                .lsp_state
+                                .attach
+                                .attached
+                                .iter()
+                                .any(|a| a.server == *server)
+                    }
+                };
+                if !admitted || glue.query_diagnosed() {
+                    self.message = "workspace symbols changed — reopen the list".into();
+                    return;
+                }
+                let buffer = glue.ws_buffers.get(&location.path).copied();
+                let live = self.docs.iter().find_map(|(id, doc)| {
+                    (doc.file_target(&self.cwd)?
+                        .resource_location()?
+                        .eq(location))
+                    .then_some((id, doc.buf.revision()))
+                });
+                if buffer != live {
+                    self.message = "workspace symbol target changed — reopen the list".into();
+                    return;
+                }
+                let Some(root) = glue.file_root.as_ref() else {
+                    return;
+                };
+                let disk = location
+                    .local_path()
+                    .and_then(|path| path.strip_prefix(&root.path).ok())
+                    .and_then(|relative| glue.inventory.workspace_witness(relative));
+                self.analysis.symbols.jump = Some(super::symbols::WorkspaceJump {
+                    query: scope,
+                    epoch: glue.inventory.epoch(),
+                    disk,
+                    root: root.clone(),
+                    workspace: self
+                        .workspaces
+                        .resolve(root)
+                        .map(|(id, context)| (id, context.incarnation)),
+                });
+                (Some(scope), buffer)
+            } else if let Some(owner) = owner {
+                if self.current() != owner.document
+                    || super::symbols::current_of(self, owner.document) != Some(owner)
+                {
+                    self.close_picker();
+                    self.message = "document symbols changed — reopen the list".into();
+                    return;
+                }
+                (None, Some((owner.document, owner.revision)))
+            } else {
+                self.message = "symbol list has no source — reopen it".into();
+                return;
+            };
+            let intent = super::io::OpenIntent::Symbol {
+                query,
+                buffer,
+                name,
+                location: location.clone(),
+                line: *line,
+                column: *column,
+            };
+            self.close_picker();
+            self.request_navigation_target(location.clone(), intent);
+            return;
+        }
         self.close_picker();
         self.accept_picker(payload, context);
     }
