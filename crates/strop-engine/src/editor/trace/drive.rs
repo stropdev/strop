@@ -161,8 +161,8 @@ impl Editor {
             "message": self.message,
             "headless": crate::editor::state_json(self),
             "hover": self.hover_card,
-            "hunks": self.hunks,
-            "staged_hunks": self.staged_hunks,
+            "hunks": self.hunks(),
+            "staged_hunks": self.staged_hunks(),
             "picker_items": self.picker.as_ref().map(|glue| &glue.picker.items),
         })
     }

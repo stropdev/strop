@@ -155,7 +155,7 @@ impl Editor {
         let args = (ticket.clone(),);
         let repo = ticket.key.repo.clone();
         let target = ticket.key.target.clone();
-        let captured_hunks = self.hunks.clone();
+        let captured_hunks = self.hunks().clone();
         // a hunk preview is named for its file (0100 §4.5): the heading
         // says which file, and the path gives the preview its syntax
         let hunk_label = match &target {

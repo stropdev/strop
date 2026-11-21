@@ -78,7 +78,7 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
         stale,
         Outcome::Cancelled(strop_core::worker::CancelReason::Superseded),
     );
-    assert!(e.hunks.is_empty() && e.staged_hunks.is_empty());
+    assert!(e.hunk_snapshot.is_none());
     inject_hunks(
         &mut e,
         owner,
@@ -90,7 +90,8 @@ fn stale_hunk_results_never_clear_the_newer_owner() {
         }),
     );
     assert_eq!(
-        e.hunks[0].new_count, 1,
+        e.hunks()[0].new_count,
+        1,
         "the surviving request still publishes"
     );
 }
@@ -185,7 +186,7 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
         matches!(e.hunk_load, Load::Idle),
         "the pre-index hunk owner died with the view"
     );
-    assert!(e.hunks.is_empty() && e.staged_hunks.is_empty());
+    assert!(e.hunk_snapshot.is_none());
     // the old view's result cannot repopulate anything
     inject_hunks(
         &mut e,
@@ -197,7 +198,7 @@ fn mutation_success_invalidates_view_and_rejects_preindex_results() {
             untracked: true,
         }),
     );
-    assert!(e.hunks.is_empty(), "pre-index hunks refused");
+    assert!(e.hunk_snapshot.is_none(), "pre-index hunks refused");
 }
 
 /// The mutation queue is strictly FIFO and one-at-a-time; a

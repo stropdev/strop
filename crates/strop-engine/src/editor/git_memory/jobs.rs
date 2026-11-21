@@ -183,10 +183,7 @@ impl Editor {
             self.cancel_git_worker(request, CancelReason::Superseded);
         }
         self.hunk_load = Load::Idle;
-        self.hunk_rel = None;
-        self.hunks = super::HunkSet::default();
-        self.staged_hunks = super::HunkSet::default();
-        self.hunks_untracked = false;
+        self.hunk_snapshot = None;
         if let Ok(view) = self.worker_ids.allocate() {
             self.git_view = view;
         }
@@ -270,10 +267,7 @@ impl Editor {
         }
         match completion.outcome {
             Outcome::Success(data) => {
-                self.hunk_rel = Some(data.rel);
-                self.hunks = data.unstaged;
-                self.staged_hunks = data.staged;
-                self.hunks_untracked = data.untracked;
+                self.hunk_snapshot = Some(data);
                 self.hunk_load = Load::Ready(key);
             }
             Outcome::Failed { failure, .. } => {

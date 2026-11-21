@@ -91,17 +91,25 @@ impl Editor {
 
     /// The working-tree hunk set (readonly; AR02).
     pub fn hunks(&self) -> &git_memory::HunkSet {
-        &self.hunks
+        match &self.hunk_snapshot {
+            Some(data) => &data.unstaged,
+            None => git_memory::HunkSet::empty(),
+        }
     }
 
     /// The staged (HEAD↔index) hunk set (readonly; AR02).
     pub fn staged_hunks(&self) -> &git_memory::HunkSet {
-        &self.staged_hunks
+        match &self.hunk_snapshot {
+            Some(data) => &data.staged,
+            None => git_memory::HunkSet::empty(),
+        }
     }
 
     /// Whether untracked files exist beside the hunk sets (readonly; AR02).
     pub fn hunks_untracked(&self) -> bool {
-        self.hunks_untracked
+        self.hunk_snapshot
+            .as_ref()
+            .is_some_and(|data| data.untracked)
     }
 
     /// The blame card under the cursor, when one is up (readonly; AR02).
@@ -211,7 +219,7 @@ impl Editor {
     /// Fixture hook (tests only): plant the untracked-files flag.
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture_set_hunks_untracked(&mut self, untracked: bool) {
-        self.hunks_untracked = untracked;
+        self.hunk_snapshot.get_or_insert_default().untracked = untracked;
     }
 
     /// Fixture hook (tests only): plant an LSP hover card.
@@ -260,7 +268,7 @@ impl Editor {
     /// without a git worker round-trip.
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixture_set_hunks(&mut self, hunks: git_memory::HunkSet) {
-        self.hunks = hunks;
+        self.hunk_snapshot.get_or_insert_default().unstaged = hunks;
     }
 
     /// Fixture hook (tests only): plant the cursor fade-in clock.
