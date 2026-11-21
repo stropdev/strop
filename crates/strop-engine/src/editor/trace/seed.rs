@@ -21,7 +21,8 @@ use crate::editor::{Document, Editor, Pane};
 // Version 7: the window tree; panes are in layout order (plans/0104).
 // Version 8: tab pages (plans/0113).
 // Version 9: quit retires the view before queued input and watcher wakes.
-const SEMANTIC_VERSION: u32 = 9;
+// Version 10: counted replace, buffer picker jumps and disk blame on unsaved text.
+const SEMANTIC_VERSION: u32 = 10;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.

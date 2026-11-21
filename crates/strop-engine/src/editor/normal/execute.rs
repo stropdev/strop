@@ -187,15 +187,8 @@ impl Editor {
         {
             return;
         }
-        if let Some(count) = count {
-            if let Some(change) = self.last_change.as_mut() {
-                change.count = Some(count);
-            } else {
-                let keys = self
-                    .last_cmd_keys
-                    .trim_start_matches(|c: char| c.is_ascii_digit());
-                self.last_cmd_keys = format!("{count}{keys}");
-            }
+        if let (Some(count), Some(change)) = (count, self.last_change.as_mut()) {
+            change.count = Some(count);
         }
         if let Some(command) = self.last_change.clone() {
             if self.defer_resolution(
@@ -216,12 +209,19 @@ impl Editor {
                 // to type the text into
                 return;
             }
-        } else {
-            // direct (non-grammar) commands replay their keys
-            let keys = self.last_cmd_keys.clone();
-            if !keys.is_empty() {
-                self.feed_text(&keys);
-            }
+        } else if !self.last_cmd_keys.is_empty() {
+            // Replay the requested count without recording it first. A
+            // refused direct command must leave the previous repeat intact.
+            let keys = match count {
+                Some(count) => {
+                    let cmd = self
+                        .last_cmd_keys
+                        .trim_start_matches(|c: char| c.is_ascii_digit());
+                    format!("{count}{cmd}")
+                }
+                None => self.last_cmd_keys.clone(),
+            };
+            self.feed_text(&keys);
         }
         if let Some(text) = insert {
             let was_insert = self.mode == Mode::Insert;
@@ -242,44 +242,28 @@ impl Editor {
         }
     }
 
-    /// vim `3rx` replaces three chars (clamped to the line end).
+    /// `[count]r<c>` replaces exactly that many characters on this line.
     pub(super) fn replace_char_n(&mut self, c: char, count: usize) {
-        // count is CHARS (0017) — a byte count splits multibyte text
-        let line = self.buf().line_of(self.head());
-        let (s, e) = (self.buf().line_start(line), self.buf().line_end(line));
-        let text_line = self.buf().text().byte_slice(s..e).to_string();
-        let col = self.head().saturating_sub(s);
-        let end = text_line
-            .trim_end_matches('\n')
-            .get(col..)
-            .map(|t| {
-                t.char_indices()
-                    .nth(count)
-                    .map(|(i, _)| s + col + i)
-                    .unwrap_or(e)
-            })
-            .unwrap_or(e);
-        if end <= self.head() || c == '\n' {
+        let cursor = self.head();
+        let line_end = self.buf().line_end(self.buf().line_of(cursor));
+        if cursor >= line_end || count == 0 || c == '\n' {
             return;
         }
-        let cursor = self.head();
-        let n_chars = self
-            .buf()
-            .text()
-            .byte_slice(cursor..end)
-            .to_string()
-            .chars()
-            .count();
+        let rest = self.buf().text().byte_slice(cursor..line_end);
+        let Some(end) = strop_core::layout::RopeGraphemes::new(rest, self.cur_indent().width)
+            .nth(count - 1)
+            .map(|(span, cluster)| cursor + span.byte + cluster.len())
+        else {
+            return;
+        };
         self.tx_begin();
         self.buf_mut().delete(Range::charwise(cursor, end));
-        let text: String = std::iter::repeat_n(c, n_chars).collect();
+        let text = c.encode_utf8(&mut [0; 4]).repeat(count);
         self.buf_mut().insert(cursor, &text);
         self.tx_commit();
         self.set_head(cursor + text.len() - c.len_utf8()); // last replaced char
         self.flash(Range::charwise(self.head(), self.head()));
-        self.last_cmd_keys = format!("r{c}");
-        self.last_change = None;
-        self.last_insert = None;
+        super::edits::record_keys(self, format!("{count}r{c}"));
     }
 
     /// > / < applied to every line a resolved range covers.

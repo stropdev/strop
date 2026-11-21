@@ -2,6 +2,20 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## 0.74.0 — 2026-11-21
+
+### Fixed
+
+- **Counted replace:** `5rx` on `abc` leaves the line untouched, as in Vim. A count that fits still replaces exactly that many characters.
+- **Git blame:** `Space g B` asks you to save a modified buffer instead of showing the disk line's commit beside different text. Pressing `Enter` on a shifted line cannot open a card for the wrong commit either.
+- **Command line:** a command such as `strop compat` refuses an extra file instead of silently discarding it. Use `strop -- compat` to edit a file named `compat`. `--log=PATH` preserves native filename bytes just like `--log-file PATH`.
+- **Pickers:** choosing the current buffer in `Space b` keeps the caret, scroll position and jump history. The results scrollbar reaches the bottom when the last result is selected.
+- **Documentation:** the 0.71.0 trace-format note now gives the complete `EnumMember` name.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 10. Use 0.73 to replay a 0.73 recording, or record it again with 0.74.
+
 ## 0.73.0 — 2026-11-20
 
 ### Fixed
@@ -52,7 +66,7 @@ Earlier releases cite designs by number; find the original decision and its deli
 - **Every list that takes filters says so**: the row under an empty field shows its everyday filters, the footer shows `ctrl-space filters`, and Ctrl-Space offers only the filters that list takes. Actions, themes, branches and SSH destinations take none: there a colon is just a colon.
 - **`repo:` is Search's alone**; Files and workspace symbols never applied it.
 - **Filtering a kept list happens off the input thread**, in the pass that ranks it, over facts each row carries from when the list was built: a keystroke allocates nothing per row.
-- **Recorded traces store a symbol's kind by name in strop's kind table** (`Variant`, not the protocol's `EnumMe
+- **Recorded traces store a symbol's kind by name in strop's kind table** (`Variant`, not the protocol's `EnumMember`).
 - **`Esc` closes the command line at once**, as in Vim; Normal-mode editing of the line is the command-line window.
 - **Errors look like errors**: a failed command or a search with no match shows `✗` in the error colour.
 - **`?` lists every command** with its usage, written from the same table that runs it.
@@ -86,8 +100,6 @@ Earlier releases cite designs by number; find the original decision and its deli
 - **Edits move spans, highlights and cursors through one proved function.** The kernel's edit map now also maps spans, the multi-cursor filter that drops overlapping edits, and the way highlights carry through an edit and merge with a fresh result; Lean proofs cover each. Every proved claim now has a mutant that breaks it, and a kernel function without a claim fails the build.
 - **The two TLA+ models are gone** after fifteen releases without a catch; a Loom test checks the worker's cancel and finish happen exactly once, and an exhaustive test covers the list generation guard.
 - **A random-key test runs in every build** over multibyte, CRLF and unterminated files: no crash, the cursor always on a character, undo returns the original text.
-
-mber`).
 
 ## 0.70.0 — 2026-11-16
 

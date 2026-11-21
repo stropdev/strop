@@ -31,6 +31,35 @@ fn events(path: &Path) -> Vec<Value> {
 }
 
 #[test]
+fn both_log_path_spellings_create_the_exact_native_filename() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let name = OsStr::from_bytes(b"trace-\xff.jsonl");
+    for flags in [
+        &[OsStr::from_bytes(b"--log=logs/trace-\xff.jsonl")][..],
+        &[
+            "--log-file".as_ref(),
+            OsStr::from_bytes(b"logs/trace-\xff.jsonl"),
+        ],
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let logs = root.join("logs");
+        std::fs::create_dir(&logs).unwrap();
+        std::fs::write(root.join("steps"), "state\n").unwrap();
+        let mut args = vec!["headless".as_ref(), "steps".as_ref()];
+        args.extend_from_slice(flags);
+        successful(run(root, &args));
+        let names: Vec<_> = std::fs::read_dir(logs)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [name]);
+    }
+}
+
+#[test]
 fn full_trace_roundtrips_literal_keys_and_closes_cleanly() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();

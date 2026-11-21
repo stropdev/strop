@@ -268,6 +268,40 @@ fn workspace_symbols_scrollbar_paints_track_thumb_and_moves_with_selection() {
 }
 
 #[test]
+fn file_picker_thumb_reaches_both_endpoints_and_disappears_without_matches() {
+    let root = tempfile::tempdir().unwrap();
+    for n in 0..40 {
+        std::fs::write(root.path().join(format!("file{n:02}")), "text\n").unwrap();
+    }
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.path().to_path_buf());
+    editor.feed_text(" f");
+    editor.wait_picker();
+    assert_eq!(editor.picker().unwrap().picker.rows.len(), 40);
+
+    for (key, selected) in [(Key::Up, 39), (Key::Down, 0)] {
+        editor.feed(key);
+        assert_eq!(editor.picker().unwrap().picker.selected, selected);
+        let (x, rows) = track_column(&mut editor, 100, 30);
+        let y = if selected == 0 {
+            rows.start
+        } else {
+            rows.end - 1
+        };
+        let grid = draw(&mut editor, 100, 30);
+        assert_eq!(assert_track(&grid, x, rows), vec![y]);
+    }
+
+    editor.feed_text("missing");
+    editor.wait_picker();
+    assert!(editor.picker().unwrap().picker.rows.is_empty());
+    let (x, rows) = track_column(&mut editor, 100, 30);
+    let grid = draw(&mut editor, 100, 30);
+    for y in rows {
+        assert_eq!(grid[(x, y)].symbol(), " ");
+    }
+}
+
+#[test]
 fn short_lists_keep_the_reserved_column_empty_when_text_overflows() {
     // 0064 §3: the column is carved BEFORE the text budget — with no
     // scrollbar painted over it, overflowing row text must still stop

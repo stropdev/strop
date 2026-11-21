@@ -51,6 +51,9 @@ impl Editor {
             }
             return;
         }
+        if self.refuse_unsaved_blame() {
+            return;
+        }
         let doc = self.current();
         let revision = self.buf().revision();
         let Some(file) = self.doc(doc).file_target(&self.cwd) else {
@@ -145,7 +148,7 @@ impl Editor {
     }
 
     /// The buffer's blame gutter, if its data is still trustworthy:
-    /// same revision, same line count. Any edit since the capture
+    /// clean buffer, same revision, same line count. Any edit since the capture
     /// voids the line↔buffer-line pairing. A remote buffer pairs only
     /// with its endpoint-qualified entry.
     pub fn blame_gutter_for(&self, buffer: strop_core::id::DocumentId) -> Option<&BlameGutter> {
@@ -154,8 +157,20 @@ impl Editor {
         let gutter = self.blame_gutters.get(&buffer)?;
         // len_lines counts the trailing newline's phantom line — the
         // content count is what blame rows pair with
-        let content_lines = buf.last_content_line() + 1;
-        (gutter.revision == buf.revision() && gutter.lines.len() == content_lines).then_some(gutter)
+        (!buf.is_dirty()
+            && gutter.revision == buf.revision()
+            && gutter.lines.len() == buf.last_content_line() + 1)
+            .then_some(gutter)
+    }
+
+    // Both blame surfaces ask Git for a line on disk, not in the buffer.
+    fn refuse_unsaved_blame(&mut self) -> bool {
+        let dirty_file =
+            self.buf().is_dirty() && (self.buf().path.is_some() || self.remote_file().is_some());
+        if dirty_file {
+            self.message = "blame reads the file on disk; save unsaved changes first".into();
+        }
+        dirty_file
     }
 
     /// `Space g B` fallback / surface blame: the card for the cursor
@@ -164,6 +179,9 @@ impl Editor {
     /// partial remote window refuses rather than blaming the wrong
     /// line of the file.
     pub(crate) fn blame_line(&mut self) {
+        if self.refuse_unsaved_blame() {
+            return;
+        }
         match self.remote_file().cloned() {
             Some(file) => {
                 // the card names a file line: a partial window's line

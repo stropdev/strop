@@ -322,6 +322,35 @@ fn log_results_need_the_registered_request() {
     // a duplicate delivery cannot double-publish
 }
 
+#[test]
+fn disk_blame_delivery_rejects_a_newly_dirty_buffer() {
+    let (_d, mut e) = editor_with_context();
+    e.toggle_blame_gutter();
+    let doc = e.current();
+    let ticket = e.blame_gutters[&doc].request.clone().unwrap();
+    let card = e.card_request.clone().unwrap();
+    // Losing the saved reference need not change the text revision.
+    e.doc_mut(doc).buf.mark_dirty();
+    e.handle_git_job(GitJob::Gutter(Completion {
+        ticket,
+        outcome: Outcome::Success(vec![blame_line("aa"), blame_line("bb")]),
+    }));
+    assert!(e.blame_gutters[&doc].lines.is_empty());
+    assert!(e.blame_gutter_for(doc).is_none());
+    e.handle_git_job(GitJob::Card(Completion {
+        ticket: card,
+        outcome: Outcome::Success(Box::new(strop_git::memory::BlameCard {
+            sha: "aa".into(),
+            short_sha: "aa".into(),
+            author: "t".into(),
+            age: "1m".into(),
+            summary: "on disk".into(),
+            line: 1,
+        })),
+    }));
+    assert!(e.blame_card.is_none());
+}
+
 /// Gutter markers are incarnation-safe: a toggle-off/on cycle at
 /// the same path cannot be populated by the previous incarnation's
 /// result; failures remove the marker so the next toggle retries.

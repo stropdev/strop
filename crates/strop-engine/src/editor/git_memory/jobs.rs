@@ -417,6 +417,14 @@ impl Editor {
 
     // ---- blame -------------------------------------------------------------------
 
+    fn blame_matches_document(&self, key: &BlameKey) -> bool {
+        self.docs.get(key.document).is_some_and(|d| {
+            !d.buf.is_dirty()
+                && d.buf.revision() == key.revision
+                && d.file_target(&self.cwd).as_ref() == Some(&key.file)
+        })
+    }
+
     pub(crate) fn handle_gutter_completion(
         &mut self,
         completion: Completion<BlameKey, Vec<BlameLine>>,
@@ -435,9 +443,7 @@ impl Editor {
             .and_then(|g| g.request.take());
         self.worker_handles.remove(&completion.ticket.request);
         let key = completion.ticket.key;
-        let valid = self.docs.get(key.document).is_some_and(|d| {
-            d.buf.revision() == key.revision && d.file_target(&self.cwd).as_ref() == Some(&key.file)
-        });
+        let valid = self.blame_matches_document(&key);
         match completion.outcome {
             Outcome::Success(lines) => {
                 if !valid {
@@ -491,9 +497,8 @@ impl Editor {
         // asked, at the revision it asked at
         let valid = !self.docs.is_empty()
             && self.current() == key.origin.document
-            && self.buf().revision() == key.origin.revision
             && self.buf().line_of(self.head()) + 1 == key.line
-            && self.cur().file_target(&self.cwd).as_ref() == Some(&key.origin.file);
+            && self.blame_matches_document(&key.origin);
         if !valid {
             trace::services::rejected("git", "card origin changed");
             return;

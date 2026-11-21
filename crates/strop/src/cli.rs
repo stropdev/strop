@@ -1,5 +1,6 @@
 //! Command-line parsing. File operands remain OsString/PathBuf end to end.
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 use strop_trace::ContentPolicy;
 
@@ -74,8 +75,15 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     let mut positional = false;
     let mut stdin = false;
     while let Some(argument) = args.next() {
-        let text = argument.to_string_lossy();
         if !positional {
+            if let Some(path) = argument.as_bytes().strip_prefix(b"--log=") {
+                if path.is_empty() {
+                    return Err("--log= requires a nonempty path".into());
+                }
+                trace_path = Some(OsStr::from_bytes(path).into());
+                continue;
+            }
+            let text = argument.to_string_lossy();
             if let Some(line) = text.strip_prefix('+') {
                 if initial_line.is_some() {
                     return Err(location::LocationError::DuplicateLine.to_string());
@@ -238,13 +246,6 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
                 }
                 _ => {}
             }
-            if let Some(path) = text.strip_prefix("--log=") {
-                if path.is_empty() {
-                    return Err("--log= requires a nonempty path".into());
-                }
-                trace_path = Some(path.into());
-                continue;
-            }
             if text.starts_with('-') {
                 return Err(format!("unknown option: {text}"));
             }
@@ -270,11 +271,14 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
         }
         .into());
     }
+    if (command.is_some() || replay.is_some()) && (operand.is_some() || stdin) {
+        return Err("this command does not take an editor file or stdin operand".into());
+    }
     // Replay/export consume exactly one trace file and never record one.
     if matches!(
         &command,
         Some(Command::ReplayFull { .. } | Command::ExportMetadata { .. })
-    ) && (trace_path.is_some() || content == ContentPolicy::Full || operand.is_some())
+    ) && (trace_path.is_some() || content == ContentPolicy::Full)
     {
         return Err(
             "replay/export take exactly one trace and record no log; unset STROP_LOG".into(),
@@ -282,7 +286,7 @@ pub fn parse(args: Vec<OsString>) -> Result<Options, String> {
     }
     let command = match (command, replay, headless) {
         (Some(command), None, false) => command,
-        (None, Some(trace), false) if operand.is_none() => Command::Replay { trace },
+        (None, Some(trace), false) => Command::Replay { trace },
         (None, None, true) => Command::Headless {
             script: script.ok_or("headless requires a script path")?,
             path: operand,
@@ -443,14 +447,23 @@ mod tests {
     }
 
     #[test]
-    fn a_word_after_a_command_is_still_an_operand_slot() {
-        // The first word chose the command; the trailing word takes the
-        // one operand slot (the flag commands ignore it, like their
-        // --compat ancestors).
-        assert!(matches!(
-            parse(&["config", "x.txt"]).unwrap().command,
-            Command::Config
-        ));
-        assert!(parse(&["config", "x.txt", "y.txt"]).is_err());
+    fn non_editing_commands_do_not_discard_an_editor_operand() {
+        for args in [
+            &["file.txt", "compat"][..],
+            &["compat", "file.txt"],
+            &["config", "file.txt"],
+            &["file.txt", "bench", "startup"],
+            &["help", "-"],
+            &["--version", "--", "file.txt"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?}");
+        }
+        let Command::Edit {
+            path: Some(file), ..
+        } = parse(&["--", "compat"]).unwrap().command
+        else {
+            panic!("expected to edit the literal file");
+        };
+        assert_eq!(file.path, crate::files::FileTarget::Local("compat".into()));
     }
 }
