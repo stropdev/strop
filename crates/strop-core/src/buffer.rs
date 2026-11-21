@@ -54,9 +54,8 @@ pub struct Buffer {
     /// String path makes the filesystem model a UI model). Display via
     /// to_string_lossy at the edge only.
     pub path: Option<std::path::PathBuf>,
-    /// Unsaved changes. Private so every writer goes through
-    /// [`Buffer::mark_clean`] / [`Buffer::mark_dirty`], which keep
-    /// `saved_at` honest.
+    /// Unsaved changes. Edits and modifying commands preserve `saved_at`;
+    /// saving or losing the disk baseline updates it explicitly.
     dirty: bool,
     /// The history node whose text is the saved (or loaded) state, when it
     /// is one: undo/redo landing there clears `dirty`, leaving it sets it
@@ -139,6 +138,13 @@ impl Buffer {
     pub fn mark_clean(&mut self) {
         self.dirty = false;
         self.saved_at = self.history.committed_position();
+    }
+
+    /// Flag a command as modifying even when its text is unchanged (Vim
+    /// shifts at the margin). Unlike detaching a file, this does not
+    /// invalidate the saved node that undo can return to.
+    pub fn mark_modified(&mut self) {
+        self.dirty = true;
     }
 
     /// The text matches no saved state any more (a detached file, a

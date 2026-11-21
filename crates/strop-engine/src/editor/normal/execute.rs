@@ -301,8 +301,9 @@ impl Editor {
                 }
             }
         }
-        // Neovim: a shift sets 'modified' even when no line changed
-        self.buf_mut().mark_dirty();
+        // A shift sets 'modified' even at the margin, but does not detach
+        // the saved history node: undoing a shift back to disk is clean.
+        self.buf_mut().mark_modified();
         self.set_head(self.buf().line_start(line));
         self.clamp_cursor();
     }
