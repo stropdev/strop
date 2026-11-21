@@ -1,7 +1,7 @@
 ---
 rfc: "2026-11-21-project-index"
 title: "Prepare project symbols and search without making the index authoritative"
-status: "draft"
+status: "accepted"
 implementation: "not-started"
 authors: ["Astra"]
 created: "2026-11-21"
@@ -10,7 +10,7 @@ issue: "https://github.com/stropdev/strop/issues/261"
 milestone: "v0.76.0"
 supersedes: []
 superseded_by: []
-blocked_on: ["Maintainer review of the workspace ownership and proof contracts"]
+blocked_on: []
 ---
 
 # RFC: Prepare project symbols and search without making the index authoritative
@@ -119,3 +119,5 @@ Warm-root selection [#243](https://github.com/stropdev/strop/issues/243) owns th
 2026-11-21 — Made a non-Git umbrella workspace with mixed-language siblings a required acceptance case; put the Lean foundation ahead of the benchmark and promoted the existing warm-root witness. Draft, not evidence that the scenario already passes.
 
 2026-11-21 — Proposed an optional, data-only workspace declaration and generalized the proofs and fixtures to arbitrary project/language IDs and provider capabilities. C++/Python remains a regression example, not the scope. No change to the proof-first release order.
+
+2026-11-21 — Maintainer accepted revision `5a87dd1`, including the workspace ownership and proof contracts. Acceptance authorizes #263; it is not evidence that the proof gate passed or that the manifest reader shipped.

@@ -62,6 +62,7 @@ Old citations such as `plan 0104 §4` or `plans/0104` in code, fixtures and past
 | <a id="legacy-0111"></a>0111 | [Keep incremental highlighting correct across edits and windows](2026-11-17-highlighting.md) | accepted | complete | [v0.71.0](https://github.com/stropdev/strop/releases/tag/v0.71.0) | [#207](https://github.com/stropdev/strop/issues/207) |
 | <a id="legacy-0112"></a>0112 | [Render searchable, keyboard-navigable help sections](2026-11-18-help-page.md) | accepted | complete | [v0.72.0](https://github.com/stropdev/strop/releases/tag/v0.72.0) | [#208](https://github.com/stropdev/strop/issues/208) |
 | <a id="legacy-0113"></a>0113 | [Add Vim tab pages over shared buffers](2026-11-18-tabs.md) | accepted | complete | [v0.72.0](https://github.com/stropdev/strop/releases/tag/v0.72.0) | [#209](https://github.com/stropdev/strop/issues/209) |
+| — | [Prepare project symbols and search without making the index authoritative](2026-11-21-project-index.md) | accepted | not-started | — | [#261](https://github.com/stropdev/strop/issues/261) |
 
 ## Proposals awaiting a decision
 
@@ -69,7 +70,6 @@ Old citations such as `plan 0104 §4` or `plans/0104` in code, fixtures and past
 |---|---|---|---|---|---|
 | <a id="legacy-0060"></a>0060 | [DAP debugger workflow and architecture](2026-09-13-debugger-workflow-and-architecture.md) | draft | not-started | — | [#155](https://github.com/stropdev/strop/issues/155) |
 | <a id="legacy-0084"></a>0084 | [Project policy for access-label indentation](2026-11-20-project-indentation-policy.md) | draft | not-started | — | [#180](https://github.com/stropdev/strop/issues/180) |
-| — | [Prepare project symbols and search without making the index authoritative](2026-11-21-project-index.md) | draft | not-started | — | [#261](https://github.com/stropdev/strop/issues/261) |
 
 ## Historical delivery
 
