@@ -150,12 +150,14 @@ impl Editor {
                     .get(retry.document)
                     .is_some_and(|document| matches!(&document.source, DocumentSource::Remote(_)));
                 if remote {
-                    self.request_remote_save(
+                    if let Err(reason) = self.request_remote_save(
                         retry.document,
                         retry.target,
                         retry.force,
                         retry.close,
-                    );
+                    ) {
+                        self.message = reason;
+                    }
                 } else {
                     self.request_save_document(
                         retry.document,
@@ -166,7 +168,9 @@ impl Editor {
                 }
             }
             TypedAction::VerifySave { document, .. } => {
-                self.request_store_verification(document);
+                if let Err(reason) = self.request_store_verification(document) {
+                    self.message = reason;
+                }
             }
             TypedAction::RetryRemote { operation, .. } => {
                 self.request_remote_control(operation);

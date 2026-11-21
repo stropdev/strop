@@ -71,22 +71,18 @@ impl Editor {
         target: Option<PathBuf>,
         force: bool,
         close: bool,
-    ) -> bool {
-        match self.start_remote_save(document, target.clone(), force, close) {
-            Ok(()) => true,
-            Err(error) => {
-                self.message = error.clone();
+    ) -> Result<WorkerId, String> {
+        self.start_remote_save(document, target.clone(), force, close)
+            .inspect_err(|error| {
                 let revision = self
                     .docs
                     .get(document)
                     .map(|document| document.buf.revision())
                     .unwrap_or_default();
                 self.note_save_failure(
-                    document, true, revision, target, force, close, false, error,
+                    document, true, revision, target, force, close, false, error.clone(),
                 );
-                false
-            }
-        }
+            })
     }
 
     fn start_remote_save(
@@ -95,7 +91,7 @@ impl Editor {
         target: Option<PathBuf>,
         force: bool,
         close: bool,
-    ) -> Result<(), String> {
+    ) -> Result<WorkerId, String> {
         if self.remote.writes.pending.contains_key(&document) {
             return Err("write already in progress".into());
         }
@@ -145,7 +141,7 @@ impl Editor {
         self.remote.writes.pending.insert(document, ticket.clone());
         self.message = "saving".into();
         match self.tape.request("remote.write", &(&ticket, bytes.len())) {
-            Ok(false) => return Ok(()),
+            Ok(false) => return Ok(request),
             Ok(true) => {}
             Err(error) => {
                 self.remote.writes.pending.remove(&document);
@@ -173,7 +169,7 @@ impl Editor {
             },
         );
         self.worker_handles.insert(request, handle);
-        Ok(())
+        Ok(request)
     }
 
     pub(in crate::editor::remote) fn remote_write_done(
@@ -187,10 +183,11 @@ impl Editor {
         }
         self.remote.writes.pending.remove(&document);
         self.worker_handles.remove(&completion.ticket.request);
-        match completion.outcome {
+        let result = match completion.outcome {
             Outcome::Success(_) if key.copy => {
                 self.resolve_save_feedback(document, true);
                 self.message = format!("written to {}", key.file);
+                Ok(())
             }
             Outcome::Success(stamp) => {
                 self.resolve_save_feedback(document, true);
@@ -221,9 +218,9 @@ impl Editor {
                 {
                     self.close_pane_or_buffer(false);
                 }
+                Ok(())
             }
             Outcome::Failed { failure, .. } => {
-                self.message = failure.message.clone();
                 self.note_save_failure(
                     document,
                     true,
@@ -232,16 +229,16 @@ impl Editor {
                     key.force,
                     key.close,
                     true,
-                    failure.message,
+                    failure.message.clone(),
                 );
+                Err(failure.message)
             }
-            Outcome::Cancelled(_) => {
-                self.message =
-                    "save cancelled; the file on the host may already be replaced — :e! shows it"
-                        .into();
-            }
-        }
-        self.finish_save_feedback(document);
+            Outcome::Cancelled(_) => Err(
+                "save cancelled; the file on the host may already be replaced — :e! shows it"
+                    .into(),
+            ),
+        };
+        self.finish_save_feedback(completion.ticket.request, document, result);
     }
 
     pub(crate) fn remote_write_blocks_refresh(&self, document: DocumentId) -> bool {
@@ -262,6 +259,7 @@ impl Editor {
             if let Some(handle) = self.worker_handles.remove(&ticket.request) {
                 handle.cancel(CancelReason::OwnerClosed);
             }
+            self.finish_batch_write(ticket.request, Some("save abandoned; source binding closed"));
         }
     }
 

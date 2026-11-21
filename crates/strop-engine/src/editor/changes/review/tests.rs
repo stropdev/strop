@@ -167,6 +167,93 @@ fn enter_applies_and_writes_and_u_reverts_buffers_and_files() {
     assert_eq!(disk(&dir, "b.txt"), "omega there\n");
 }
 
+/// Hold real receipts off the event loop and publish them in document order,
+/// regardless of which worker finished first.
+fn deliver_review_saves(e: &mut Editor, first: DocumentId, second: DocumentId) {
+    use crate::editor::io::IoEvent;
+    let mut receipts = std::collections::HashMap::new();
+    while receipts.len() < 2 {
+        let event = e
+            .io
+            .rx
+            .as_ref()
+            .unwrap()
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("both workers return their receipts");
+        if let IoEvent::Save(completion) = event {
+            assert!(receipts
+                .insert(completion.ticket.key.document, completion)
+                .is_none());
+        } else {
+            e.handle_io(event);
+        }
+    }
+    for document in [first, second] {
+        e.handle_io(IoEvent::Save(receipts.remove(&document).unwrap()));
+    }
+}
+
+#[test]
+fn batch_save_overlap_reports_the_refusal_only_to_the_collection() {
+    use strop_core::frontend_input::Key;
+    use strop_picker::{Item, Kind, Payload};
+    let (mut e, dir, a, b) = two_file_editor();
+    let review = e.current();
+    e.open_picker(Kind::Search);
+    e.picker_items_fixture(vec![Item {
+        badge: None,
+        text: "a.txt:1: alpha here".into(),
+        payload: Payload::Grep {
+            location: ResourceLocation::local(dir.path().join("a.txt")),
+            line: 1,
+            col: 1,
+            match_len: 5,
+            line_text: "alpha here".into(),
+        },
+        facts: Default::default(),
+    }]);
+    e.feed(Key::CtrlO);
+    let collection = e.current();
+    assert_eq!(e.collection_source_documents(collection), [a]);
+    e.switch_to(review);
+    e.feed(Key::Enter);
+    e.switch_to(collection);
+    e.feed_text(":w<cr>");
+    let collection_report = e.message.clone();
+    deliver_review_saves(&mut e, b, a);
+
+    assert_eq!(disk(&dir, "a.txt"), "omega here\n");
+    assert_eq!(disk(&dir, "b.txt"), "omega there\n");
+    assert!(!e.doc(a).buf.is_dirty());
+    assert!(!e.doc(b).buf.is_dirty());
+    let heading = text_of(&e, review);
+    assert_eq!(
+        collection_report, "collection: wrote 0 file(s); could not write a.txt (write already in progress)",
+        "after both completions: {}; review: {heading}", e.message
+    );
+    assert_eq!(e.message, "rename: wrote 2 file(s)");
+    assert!(heading.starts_with("rename: changed and wrote 2 file(s), 1 refused\nu reverts"));
+}
+
+#[test]
+fn batch_save_success_reports_the_snapshot_and_keeps_newer_edits_dirty() {
+    let (mut e, dir, a, b) = two_file_editor();
+    let review = e.current();
+    e.review_apply_pub();
+    e.switch_to(a);
+    e.feed_text("0rx");
+    deliver_review_saves(&mut e, b, a);
+
+    assert_eq!(disk(&dir, "a.txt"), "omega here\n");
+    assert_eq!(text_of(&e, a), "xmega here\n");
+    assert!(e.doc(a).buf.is_dirty());
+    assert_eq!(disk(&dir, "b.txt"), "omega there\n");
+    assert!(!e.doc(b).buf.is_dirty());
+    assert_eq!(e.message, "rename: wrote 2 file(s)");
+    assert!(text_of(&e, review)
+        .starts_with("rename: changed and wrote 2 file(s), 1 refused\nu reverts"));
+}
+
 #[test]
 fn u_names_the_files_it_could_not_revert() {
     let (mut e, dir, first, second) = two_file_editor();
@@ -350,7 +437,7 @@ fn editing_a_review_cannot_apply_the_hidden_original_plan() {
 }
 
 #[test]
-fn a_file_that_could_not_be_written_is_named_and_stays_dirty() {
+fn batch_save_failure_names_the_file_and_reason_and_keeps_it_dirty() {
     let (mut editor, dir, _first, second) = two_file_editor();
     let review = editor.current();
     // b.txt becomes unwritable between the review and the apply.
@@ -361,11 +448,12 @@ fn a_file_that_could_not_be_written_is_named_and_stays_dirty() {
     assert_eq!(disk(&dir, "a.txt"), "omega here\n");
     assert!(editor.docs.get(second).unwrap().buf.is_dirty());
     let after = text_of(&editor, review);
-    assert!(after.contains("could not write b.txt"), "{after}");
+    assert!(after.contains("could not write b.txt (write failed:"), "{after}");
+    assert!(after.contains("store replaces only regular files"), "{after}");
     assert!(
         editor
             .message
-            .contains("wrote 1 file(s); could not write b.txt"),
+            .contains("wrote 1 file(s); could not write b.txt (write failed:"),
         "{}",
         editor.message
     );

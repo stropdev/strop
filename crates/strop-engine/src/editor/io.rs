@@ -232,25 +232,27 @@ impl Editor {
                 let key = completion.ticket.key;
                 self.io.saves.remove(&key.document);
                 self.worker_handles.remove(&request);
-                match completion.outcome {
+                let result = match completion.outcome {
                     Outcome::Success(SaveOutcome::Written(receipt)) => {
                         self.accept_store_receipt(&key, receipt);
+                        Ok(())
                     }
                     Outcome::Success(SaveOutcome::Unconfirmed { detail, attempt }) => {
                         // Frozen evidence, dirty text preserved; the next
                         // :w verifies against fresh evidence (0058 WK09).
                         let revision = attempt.revision;
                         self.io.store_attempts.insert(key.document, *attempt);
-                        self.message = format!(
+                        let reason = format!(
                             "write outcome unconfirmed: {detail}; :w verifies before any rewrite"
                         );
-                        self.note_unconfirmed_save(key.document, revision, self.message.clone());
+                        self.note_unconfirmed_save(key.document, revision, reason.clone());
+                        Err(reason)
                     }
                     Outcome::Success(SaveOutcome::Verified { attempt, verified }) => {
-                        self.store_verified(&key, *attempt, verified);
+                        self.store_verified(&key, *attempt, verified)
                     }
                     Outcome::Failed { failure, .. } => {
-                        self.message = format!("write failed: {}", failure.message);
+                        let reason = format!("write failed: {}", failure.message);
                         if let Some(revision) = self
                             .io
                             .store_attempt(key.document)
@@ -271,15 +273,14 @@ impl Editor {
                                 key.force,
                                 key.close,
                                 true,
-                                self.message.clone(),
+                                reason.clone(),
                             );
                         }
+                        Err(reason)
                     }
-                    Outcome::Cancelled(_) => {
-                        self.message = "write cancelled".into();
-                    }
-                }
-                self.finish_save_feedback(key.document);
+                    Outcome::Cancelled(_) => Err("write cancelled".into()),
+                };
+                self.finish_save_feedback(request, key.document, result);
             }
             IoEvent::Recovery { request, outcome } => {
                 self.handle_recovery(request, outcome);

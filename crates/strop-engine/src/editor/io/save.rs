@@ -47,13 +47,30 @@ impl Editor {
         force: bool,
         close: bool,
     ) -> bool {
+        match self.admit_document_save(document, target, force, close) {
+            Ok(_) => true,
+            Err(reason) => {
+                self.message = reason;
+                false
+            }
+        }
+    }
+
+    /// An accepted file write returns its unique completion owner. A
+    /// filename draft opens a review instead and has no save receipt.
+    pub(crate) fn admit_document_save(
+        &mut self,
+        document: DocumentId,
+        target: Option<PathBuf>,
+        force: bool,
+        close: bool,
+    ) -> Result<Option<WorkerId>, String> {
         if self
             .docs
             .get(document)
             .is_some_and(|doc| matches!(doc.source, crate::editor::DocumentSource::Terminal(_)))
         {
-            self.message = "terminal buffers have no file write binding; yank text to an ordinary buffer to export it".into();
-            return false;
+            return Err("terminal buffers have no file write binding; yank text to an ordinary buffer to export it".into());
         }
         let blocked = if let Some(target) = target.as_ref() {
             self.filesystem
@@ -64,10 +81,10 @@ impl Editor {
             self.filesystem_blocks_document(document)
         };
         if blocked {
-            self.message =
+            return Err(
                 "filesystem operation pending or unconfirmed; verify before saving this binding"
-                    .into();
-            return false;
+                    .into(),
+            );
         }
         if self
             .docs
@@ -76,19 +93,11 @@ impl Editor {
         {
             if self.filename_draft(document).is_some() {
                 if target.is_some() || close {
-                    self.message = "use :w without a target to review filename changes; filesystem application is explicit".into();
-                    return false;
+                    return Err("use :w without a target to review filename changes; filesystem application is explicit".into());
                 }
-                return match self.prepare_filename_draft(document) {
-                    Ok(()) => true,
-                    Err(error) => {
-                        self.message = error;
-                        false
-                    }
-                };
+                return self.prepare_filename_draft(document).map(|()| None);
             }
-            self.message = crate::editor::filesystem::draft::OVER_LIMIT.into();
-            return false;
+            return Err(crate::editor::filesystem::draft::OVER_LIMIT.into());
         }
         if self.docs.get(document).is_some_and(|doc| {
             matches!(
@@ -96,36 +105,32 @@ impl Editor {
                 crate::editor::document::DocumentSource::Remote(_)
             )
         }) {
-            return self.request_remote_save(document, target, force, close);
+            return self.request_remote_save(document, target, force, close).map(Some);
         }
         if target
             .as_ref()
             .and_then(|path| path.to_str())
             .is_some_and(|path| path.starts_with("ssh://"))
         {
-            self.message = "remote save-as is unsupported; no local fallback".into();
-            return false;
+            return Err("remote save-as is unsupported; no local fallback".into());
         }
         if self
             .filesystem
             .blocks_namespace(&strop_workspace::Filesystem::Local)
         {
-            self.message = "local filesystem mutation is pending or unconfirmed; settle or verify its receipt before saving".into();
-            return false;
+            return Err("local filesystem mutation is pending or unconfirmed; settle or verify its receipt before saving".into());
         }
         if self.io.saves.contains_key(&document) {
-            self.message = "write already in progress".into();
-            return false;
+            return Err("write already in progress".into());
         }
         // An unconfirmed store blocks rewrites: `:w` now verifies the
         // frozen attempt against fresh evidence, never a blind rewrite
         // (0058 WK09 — the write may have committed).
         if self.io.store_attempts.contains_key(&document) {
-            return self.request_store_verification(document);
+            return self.request_store_verification(document).map(Some);
         }
         let Some(buffer) = self.docs.get(document).map(|doc| &doc.buf) else {
-            self.message = "write refused: source buffer closed".into();
-            return false;
+            return Err("write refused: source buffer closed".into());
         };
         let revision = buffer.revision();
         let target = target.map(|path| self.cwd.join(path));
@@ -133,17 +138,15 @@ impl Editor {
             Ok(work) => work,
             Err(error) => {
                 let detail = format!("write failed: {error}");
-                self.message = detail.clone();
                 self.note_save_failure(
-                    document, false, revision, target, force, close, true, detail,
+                    document, false, revision, target, force, close, true, detail.clone(),
                 );
-                return false;
+                return Err(detail);
             }
         };
         let request = match self.worker_ids.allocate() {
             Ok(request) => request,
             Err(error) => {
-                self.message = error.message.clone();
                 self.note_save_failure(
                     document,
                     false,
@@ -152,9 +155,9 @@ impl Editor {
                     force,
                     close,
                     true,
-                    error.message,
+                    error.message.clone(),
                 );
-                return false;
+                return Err(error.message);
             }
         };
         let focus = self.focus_epoch;
@@ -169,18 +172,9 @@ impl Editor {
                 force,
             },
         };
-        self.io.saves.insert(document, ticket.clone());
         self.message = "saving".into();
-        match self.tape.request("io.save", &ticket) {
-            Ok(false) => return true,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_io(IoEvent::Save(Box::new(Completion {
-                    ticket,
-                    outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
-                })));
-                return false;
-            }
+        if !self.register_save_ticket(&ticket)? {
+            return Ok(Some(request));
         }
         let tx = self.io.tx.clone();
         // The write is a Store intent through the checked kernel.
@@ -206,23 +200,16 @@ impl Editor {
             move |token| store_document(plan, &local, close, focus, &token),
         );
         self.worker_handles.insert(request, handle);
-        true
+        Ok(Some(request))
     }
 
     /// Verify a frozen unconfirmed store instead of rewriting: the next `:w` after an unconfirmed outcome reconciles
     /// first. Verification never writes; after `Unchanged` an explicit
     /// fresh `:w` is the user's retry.
-    pub(crate) fn request_store_verification(&mut self, document: DocumentId) -> bool {
-        let Some(attempt) = self.io.store_attempts.get(&document).cloned() else {
-            return false;
-        };
-        let request = match self.worker_ids.allocate() {
-            Ok(request) => request,
-            Err(error) => {
-                self.message = error.message;
-                return false;
-            }
-        };
+    pub(crate) fn request_store_verification(&mut self, document: DocumentId) -> Result<WorkerId, String> {
+        let attempt = self.io.store_attempts.get(&document).cloned()
+            .ok_or("no unconfirmed write to verify")?;
+        let request = self.worker_ids.allocate().map_err(|error| error.message)?;
         let ticket = Ticket {
             request,
             key: SaveKey {
@@ -234,18 +221,9 @@ impl Editor {
                 force: attempt.force,
             },
         };
-        self.io.saves.insert(document, ticket.clone());
         self.message = "verifying the unconfirmed write; nothing rewrites".into();
-        match self.tape.request("io.save", &ticket) {
-            Ok(false) => return true,
-            Ok(true) => {}
-            Err(error) => {
-                self.handle_io(IoEvent::Save(Box::new(Completion {
-                    ticket,
-                    outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
-                })));
-                return false;
-            }
+        if !self.register_save_ticket(&ticket)? {
+            return Ok(request);
         }
         let tx = self.io.tx.clone();
         let local = self.filesystem.local().clone();
@@ -268,7 +246,20 @@ impl Editor {
             },
         );
         self.worker_handles.insert(request, handle);
-        true
+        Ok(request)
+    }
+
+    /// Replay may suppress a launch or fail it synchronously. Only a
+    /// request that still has a future receipt is admitted to a batch.
+    fn register_save_ticket(&mut self, ticket: &Ticket<SaveKey>) -> Result<bool, String> {
+        self.io.saves.insert(ticket.key.document, ticket.clone());
+        self.tape.request("io.save", ticket).map_err(|error| {
+            self.handle_io(IoEvent::Save(Box::new(Completion {
+                ticket: ticket.clone(),
+                outcome: Outcome::failed(FailureKind::Protocol, error.to_string()),
+            })));
+            format!("write failed: {error}")
+        })
     }
 
     /// A committed store receipt — direct or proven by verification —
@@ -277,7 +268,6 @@ impl Editor {
         self.resolve_save_feedback(key.document, false);
         let Some(document) = self.docs.get_mut(key.document) else {
             self.message = "snapshot written; source buffer closed".into();
-            self.finish_save_feedback(key.document);
             return;
         };
         let previous_path = document.buf.path.clone();
@@ -326,7 +316,7 @@ impl Editor {
         key: &SaveKey,
         attempt: StoreAttempt,
         verified: strop_workspace::operation::VerifiedOutcome,
-    ) {
+    ) -> Result<(), String> {
         use strop_workspace::operation::VerifiedOutcome;
         match verified {
             VerifiedOutcome::Committed(change) => {
@@ -345,31 +335,39 @@ impl Editor {
                 );
                 self.io.store_attempts.remove(&key.document);
                 self.accept_store_receipt(key, receipt);
+                Ok(())
             }
             VerifiedOutcome::Unchanged => {
                 self.io.store_attempts.remove(&key.document);
                 self.resolve_save_feedback(key.document, false);
-                self.message = "the original is unchanged on disk; :w writes again".into();
+                Err("the original is unchanged on disk; :w writes again".into())
             }
             VerifiedOutcome::Unknown { detail } => {
-                self.message =
-                    format!("write outcome still unconfirmed: {detail}; :w verifies again");
-                self.note_unconfirmed_save(
-                    key.document,
-                    attempt.revision,
-                    format!("write outcome still unconfirmed: {detail}; :w verifies again"),
-                );
+                let reason = format!("write outcome still unconfirmed: {detail}; :w verifies again");
+                self.note_unconfirmed_save(key.document, attempt.revision, reason.clone());
+                Err(reason)
             }
         }
     }
 
     /// Preserve the formatting stage alongside the actual persistence outcome.
-    pub(crate) fn finish_save_feedback(&mut self, document: DocumentId) {
-        if let Some(warning) = self.io.format_warnings.remove(&document) {
+    pub(crate) fn finish_save_feedback(
+        &mut self,
+        request: WorkerId,
+        document: DocumentId,
+        result: Result<(), String>,
+    ) {
+        let warning = self.io.format_warnings.remove(&document);
+        if self.finish_batch_write(request, result.as_ref().err().map(String::as_str)) {
+            return;
+        }
+        if let Err(reason) = result {
+            self.message = reason;
+        }
+        if let Some(warning) = warning {
             self.message
                 .push_str(&format!(" — format warning: {warning}"));
         }
-        self.finish_batch_write(document);
     }
 }
 
