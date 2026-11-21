@@ -52,6 +52,12 @@ fn directory_busy(editor: &Editor) -> Option<&'static str> {
 /// Make `directory` (absolute, existing) the project root.
 pub(crate) fn change_directory(editor: &mut Editor, directory: PathBuf) {
     if directory == editor.cwd {
+        editor.retire_warm_discovery();
+        if let Some(source) = &editor.picker_source {
+            source.retire_root(&directory);
+            source.set_watching(&directory, editor.notify.push_coverage());
+        }
+        editor.reload_workspace_manifest();
         editor.message = editor.cwd.display().to_string();
         return;
     }
@@ -69,6 +75,7 @@ pub(crate) fn change_directory(editor: &mut Editor, directory: PathBuf) {
         return;
     }
     let old = editor.cwd.clone();
+    editor.retire_warm_discovery();
     // The old project keeps a current session and loses this
     // session's drafts; both paths are fixed while the root is old.
     editor.request_session_save();
@@ -88,7 +95,7 @@ pub(crate) fn change_directory(editor: &mut Editor, directory: PathBuf) {
     // The watcher covered the old root; hints from it would be read
     // against the new one.
     if let Some(source) = &editor.picker_source {
-        source.set_watching(&old, false);
+        source.retire_root(&old);
     }
     let watching = editor.notify.push_coverage();
     editor.notify.stop();
@@ -98,6 +105,10 @@ pub(crate) fn change_directory(editor: &mut Editor, directory: PathBuf) {
         .retire_root(ResourceLocation::local(old.clone()));
     editor.cwd = directory;
     editor.cmdline.ex.previous_directory = Some(old);
+    if let Some(source) = &editor.picker_source {
+        source.set_watching(&editor.cwd, false);
+    }
+    editor.reload_workspace_manifest();
     editor.request_session_save();
     editor.recovery_enter_project();
     if watching {

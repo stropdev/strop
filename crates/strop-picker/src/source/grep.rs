@@ -50,38 +50,61 @@ pub(super) fn run(
     }
     let cancelled = || {
         tx.heartbeat();
-        cancel.is_cancelled()
+        cancel.is_cancelled() || !tx.inventory_current()
     };
     let threads = disk::threads();
-    // Eligible paths come from the shared selection authority with
-    // bounded count and encoded path bytes, gathered on every core.
-    let mut paths = match super::selection::collect(&cwd, &plan, policy, &cancelled, threads) {
-        Ok(paths) => paths,
-        Err(super::selection::CollectError::Limit) => {
-            return Outcome::failed(
-                FailureKind::Unavailable,
-                "search selection exceeds 100000 paths or 16 MiB; narrow the scope",
+    // Only `repo:`/`kind:` wait for the complete per-query evidence build.
+    // Every other expression can start verifying during the authoritative walk.
+    if !content.needs_catalog() && !content.needs_symbols() {
+        return stream::search(
+            &disk::Scope {
+                cwd: &cwd,
+                content: &content,
+                catalog: None,
+                symbols: None,
+                tx: &tx,
+                cancel: &cancel,
+            },
+            &cache,
+            &plan,
+            policy,
+            &snapshots,
+            threads,
+        );
+    }
+    let (mut paths, catalog, mut symbols) = match super::cache::inventory(
+        &cache,
+        super::cache::ScanRequest {
+            root: &cwd,
+            query: &query,
+            plan: &plan,
+            policy,
+            need_symbols: content.needs_symbols(),
+        },
+        threads,
+        &cancel,
+        &|| tx.heartbeat(),
+    ) {
+        Ok(inventory) => {
+            if !tx.bind_inventory(inventory.epoch) {
+                return Outcome::Cancelled(CancelReason::Superseded);
+            }
+            (
+                std::sync::Arc::unwrap_or_clone(inventory.paths),
+                Some(inventory.catalog),
+                inventory.symbols.filter(|_| content.needs_symbols()),
             )
         }
-        Err(super::selection::CollectError::Walk(error)) => {
-            return Outcome::failed(FailureKind::Io, error)
-        }
+        Err(error) => return error.outcome("search"),
     };
     if cancelled() {
         return Outcome::Cancelled(CancelReason::OwnerClosed);
     }
-    // Only `repo:` and `kind:` atoms consult evidence beyond the line
-    // itself (0063 §2). A plain expression pays for neither scan.
-    let (catalog, mut symbols) = if content.needs_catalog() || content.needs_symbols() {
-        match evidence(&cwd, &content, &paths, &cache, &cancelled) {
-            Some((catalog, symbols)) => (Some(catalog), symbols),
-            None => return Outcome::Cancelled(CancelReason::OwnerClosed),
-        }
-    } else {
-        (None, None)
-    };
     // Dirty open source text is authoritative, never a hidden disk
     // save. Matching happens on this worker, under the same plan.
+    let dirty_symbols = (!snapshots.is_empty())
+        .then(|| symbols.as_mut().map(std::sync::Arc::make_mut))
+        .flatten();
     if let Err(error) = super::snapshots::emit_snapshots(
         &strop_workspace::ResourceLocation::local(cwd.clone()),
         &content,
@@ -90,15 +113,23 @@ pub(super) fn run(
         &tx,
         &cancel,
         super::snapshots::Sources {
-            catalog: catalog.as_ref(),
-            symbols: symbols.as_mut(),
+            catalog: catalog.as_deref(),
+            symbols: dirty_symbols,
         },
     ) {
-        return if cancel.is_cancelled() {
+        return if cancelled() {
             Outcome::Cancelled(CancelReason::Superseded)
         } else {
-            Outcome::failed(FailureKind::Protocol, error)
+            error.finish(&tx)
         };
+    }
+    if catalog.as_ref().is_some_and(|catalog| catalog.truncated)
+        || symbols.as_ref().is_some_and(|index| index.coverage_gap())
+    {
+        tx.mark_partial();
+        let _ = tx.control(PickerMsg::Warning(
+            "search filter evidence is incomplete; unknown candidates were not excluded".into(),
+        ));
     }
     // Tree order here is a courtesy, not the contract: files are claimed
     // front to back, so hits mostly arrive in the order the list shows
@@ -114,8 +145,8 @@ pub(super) fn run(
         &disk::Scope {
             cwd: &cwd,
             content: &content,
-            catalog: catalog.as_ref(),
-            symbols: symbols.as_ref(),
+            catalog: catalog.as_deref(),
+            symbols: symbols.as_deref(),
             tx: &tx,
             cancel: &cancel,
         },
@@ -124,70 +155,8 @@ pub(super) fn run(
     )
 }
 
-/// The retained baseline (0063 residual, 0058 S7) for queries that
-/// consult it: with push coverage the catalog/symbol scan reuses
-/// unchanged subtrees and rescans only hinted paths; without it, scan per
-/// search. The lock never spans filesystem I/O; a cancelled scan abandons
-/// (its invalidation snapshot is restored, never consumed) and reports
-/// `None`. The disk-pure baseline settles BEFORE any dirty overlay — the
-/// retained index never absorbs unsaved text.
-fn evidence(
-    cwd: &std::path::Path,
-    content: &crate::query::ContentPlan,
-    paths: &[std::path::PathBuf],
-    cache: &parking_lot::Mutex<super::cache::Caches>,
-    cancelled: &impl Fn() -> bool,
-) -> Option<(
-    crate::source::catalog::ProjectCatalog,
-    Option<crate::source::symbols::SymbolIndex>,
-)> {
-    let baseline = cache.lock().begin(cwd);
-    let invalidated = super::cache::Caches::invalidated(&baseline).to_vec();
-    let full =
-        baseline.catalog.is_none() || (content.needs_symbols() && baseline.symbols.is_none());
-    // One bounded discovery scan (0063 §2): the catalog decides `repo:`
-    // atoms exactly; a missed project only overfetches.
-    let (catalog, catalog_stats) = match baseline.catalog.as_deref() {
-        Some(prior) => {
-            crate::source::catalog::ProjectCatalog::refresh(prior, cwd, &invalidated, cancelled)
-        }
-        None => (
-            crate::source::catalog::ProjectCatalog::discover(cwd, cancelled),
-            crate::source::catalog::CatalogStats::default(),
-        ),
-    };
-    if cancelled() {
-        cache.lock().abandon(cwd, baseline);
-        return None;
-    }
-    // Syntax-fallback symbol index (0063 §2): built only when the
-    // query carries a `kind:` atom, from the selection's own eligible
-    // files. Absent or incomplete entries stay Unknown and admit.
-    let symbols = content.needs_symbols().then(|| {
-        crate::source::symbols::SymbolIndex::refresh(
-            baseline.symbols.as_deref(),
-            cwd,
-            paths,
-            &invalidated,
-            cancelled,
-        )
-    });
-    if cancelled() {
-        cache.lock().abandon(cwd, baseline);
-        return None;
-    }
-    cache.lock().settle(
-        cwd,
-        symbols
-            .as_ref()
-            .map(|(index, stats)| (std::sync::Arc::new(index.clone()), *stats)),
-        Some((std::sync::Arc::new(catalog.clone()), catalog_stats)),
-        full,
-    );
-    Some((catalog, symbols.map(|(index, _)| index)))
-}
-
 mod disk;
+mod stream;
 
 #[cfg(test)]
 mod tests {
@@ -244,17 +213,19 @@ mod tests {
             tx,
         );
         let mut truncated = false;
+        let mut partial = false;
         loop {
             match rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap() {
                 PickerMsg::Items(_) => {}
+                PickerMsg::PartialCoverage => partial = true,
                 PickerMsg::Warning(message) => {
                     assert!(message.contains("100,000"), "truncation note: {message}");
                     truncated = true;
                 }
                 PickerMsg::Finished(Outcome::Success(())) => {
                     assert!(
-                        truncated,
-                        "the retained prefix carries a truncation warning"
+                        truncated && partial,
+                        "the openable prefix must not authorize complete-only actions"
                     );
                     break;
                 }
@@ -511,7 +482,11 @@ mod tests {
                     Ok(PickerMsg::Items(batch)) => {
                         items.extend(batch.iter().map(|item| item.text.clone()))
                     }
-                    Ok(PickerMsg::Warning(_)) | Ok(PickerMsg::ScopeProjects(_)) => {}
+                    Ok(
+                        PickerMsg::Warning(_)
+                        | PickerMsg::ScopeProjects(_)
+                        | PickerMsg::PartialCoverage,
+                    ) => {}
                     Ok(PickerMsg::Finished(Outcome::Success(()))) => done = true,
                     Ok(other) => panic!("unexpected terminal: {other:?}"),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -570,3 +545,5 @@ mod tests {
 
 #[cfg(test)]
 mod e2e;
+#[cfg(test)]
+mod stream_tests;

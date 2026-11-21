@@ -1,7 +1,5 @@
-//! The disk pass of a local content search (0093 §4): the selected files
-//! are searched on several threads, each claiming the next few paths.
-//! Rows leave in whatever order files finish; the ranking pass puts them
-//! in tree order. The first failure or a cancellation stops every thread.
+//! Exact disk verification shared by streaming selection and the gathered
+//! evidence path. Both feed the same ContentPlan; ranking owns final order.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -38,19 +36,29 @@ pub(super) struct Scope<'a> {
     pub cancel: &'a CancelToken,
 }
 
-pub(super) fn search(scope: &Scope<'_>, paths: &[PathBuf], threads: usize) -> Outcome<()> {
-    let content = scope.content;
+pub(super) fn matcher(content: &ContentPlan) -> Result<RegexMatcher, Outcome<()>> {
     let mut matcher = RegexMatcherBuilder::new();
     matcher
         .case_smart(content.provider_case() == CaseMode::Smart)
         .case_insensitive(content.provider_case() == CaseMode::Ignore)
         .fixed_strings(content.is_literal());
-    let matcher = match matcher.build(content.provider_pattern()) {
+    matcher
+        .build(content.provider_pattern())
+        .map_err(|error| Outcome::failed(FailureKind::Protocol, format!("invalid regex: {error}")))
+}
+
+pub(super) fn search(scope: &Scope<'_>, paths: &[PathBuf], threads: usize) -> Outcome<()> {
+    let matcher = match matcher(scope.content) {
         Ok(matcher) => matcher,
-        Err(error) => {
-            return Outcome::failed(FailureKind::Protocol, format!("invalid regex: {error}"))
-        }
+        Err(outcome) => return outcome,
     };
+    let send = |items| {
+        scope
+            .tx
+            .batch(items, scope.cancel)
+            .map_err(|error| error.finish(scope.tx))
+    };
+    let first = AtomicBool::new(true);
     let next = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
     let failed = parking_lot::Mutex::new(None);
@@ -66,7 +74,9 @@ pub(super) fn search(scope: &Scope<'_>, paths: &[PathBuf], threads: usize) -> Ou
                 if stop.load(Ordering::Acquire) || scope.cancel.is_cancelled() {
                     return;
                 }
-                if let Err(outcome) = search_file(scope, &matcher, &mut searcher, path) {
+                if let Err(outcome) =
+                    search_file(scope, &matcher, &mut searcher, path, &first, &send)
+                {
                     stop.store(true, Ordering::Release);
                     failed.lock().get_or_insert(outcome);
                     return;
@@ -91,12 +101,14 @@ pub(super) fn search(scope: &Scope<'_>, paths: &[PathBuf], threads: usize) -> Ou
 
 /// One file's hits, delivered together. Every hit line goes through the
 /// exact plan: the provider pattern only prefilters (0063 §4).
-fn search_file(
+pub(super) fn search_file(
     scope: &Scope<'_>,
     matcher: &RegexMatcher,
     searcher: &mut Searcher,
     path: &Path,
-) -> Result<(), Outcome<()>> {
+    first: &AtomicBool,
+    send: &impl Fn(Vec<crate::Item>) -> Result<(), Outcome<()>>,
+) -> Result<bool, Outcome<()>> {
     let Scope {
         cwd,
         content,
@@ -106,25 +118,31 @@ fn search_file(
     } = *scope;
     let location = strop_workspace::ResourceLocation::local(cwd.join(path));
     let relative = path.to_string_lossy();
-    let display = strop_workspace::directory::display_path(path);
+    let label = std::cell::OnceCell::new();
+    let display = || label.get_or_init(|| strop_workspace::directory::display_path(path));
     let mut terminal = None;
     let mut items = Vec::new();
+    let mut matched = false;
     let mut sink = UTF8(|line, text| {
-        if cancel.is_cancelled() {
+        if cancel.is_cancelled() || !tx.inventory_current() {
             return Ok(false);
         }
         if text.len() > super::super::query::RECORD_LIMIT {
             terminal = Some(Outcome::failed(
                 FailureKind::Protocol,
-                format!("{display}:{line}: source line exceeds the 1 MiB search bound"),
+                format!(
+                    "{}:{line}: source line exceeds the 1 MiB search bound",
+                    display()
+                ),
             ));
             return Ok(false);
         }
-        let text: std::sync::Arc<str> = text.strip_suffix('\n').unwrap_or(text).into();
+        let text = text.strip_suffix('\n').unwrap_or(text);
         let row = RowFacts {
             path: Some(&relative),
+            native_path: Some(path),
             line: Some(line as usize),
-            text: &text,
+            text,
             ..RowFacts::default()
         };
         let evidence = Evidence {
@@ -134,11 +152,13 @@ fn search_file(
         if !content.admits(&row, &evidence) {
             return Ok(true);
         }
+        let text = std::sync::Arc::from(text);
+        let previous = items.len();
         if let Err(error) = super::super::query::append_matches(
             &mut items,
             content,
             &location,
-            &display,
+            display(),
             line as usize,
             &text,
             None,
@@ -146,15 +166,25 @@ fn search_file(
             terminal = Some(Outcome::failed(FailureKind::Protocol, error));
             return Ok(false);
         }
-        if items.len() >= BATCH {
-            if let Err(error) = tx.batch(std::mem::take(&mut items), cancel) {
-                terminal = Some(error.finish(tx));
+        matched |= items.len() > previous;
+        if items.len() >= BATCH
+            || (!items.is_empty()
+                && first.load(Ordering::Relaxed)
+                && first.swap(false, Ordering::Relaxed))
+        {
+            if let Err(error) = send(std::mem::take(&mut items)) {
+                terminal = Some(error);
                 return Ok(false);
             }
         }
         Ok(true)
     });
-    let searched = searcher.search_path(matcher, cwd.join(path), &mut sink);
+    // A kind decision and its match must see the same observation: the
+    // pathname could change between extraction and this worker's turn.
+    let searched = match scope.symbols.and_then(|index| index.disk_shard(path)) {
+        Some(shard) => searcher.search_slice(matcher, shard.source(), &mut sink),
+        None => searcher.search_path(matcher, &location.path, &mut sink),
+    };
     if let Some(outcome) = terminal {
         return Err(outcome);
     }
@@ -164,8 +194,11 @@ fn search_file(
     if let Err(error) = searched {
         return Err(Outcome::failed(
             FailureKind::Io,
-            format!("{display}: {error}"),
+            format!("{}: {error}", display()),
         ));
     }
-    tx.batch(items, cancel).map_err(|error| error.finish(tx))
+    if !items.is_empty() {
+        send(items)?;
+    }
+    Ok(matched)
 }

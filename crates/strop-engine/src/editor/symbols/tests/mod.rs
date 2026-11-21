@@ -82,6 +82,114 @@ fn the_outline_is_built_ahead_of_the_key_and_a_press_starts_nothing() {
 }
 
 #[test]
+fn repeated_presses_share_the_worker_prepared_listing() {
+    let mut e = editor("lib.rs", SOURCE);
+    warm(&mut e);
+    e.wait_analysis();
+    open(&mut e);
+    let prepared = |editor: &Editor| {
+        let picker = &editor.picker.as_ref().unwrap().picker;
+        let strop_picker::Rows::Prepared(list) = &picker.rows else {
+            panic!("not prepared")
+        };
+        std::sync::Arc::clone(list)
+    };
+    let first = prepared(&e);
+    assert!(e.picker.as_ref().unwrap().rank_pending.is_none());
+    e.close_picker();
+    open(&mut e);
+    assert!(std::sync::Arc::ptr_eq(&first, &prepared(&e)));
+}
+
+#[test]
+fn same_name_workspace_rebind_retires_prepared_document_rows() {
+    let mut e = editor("lib.rs", SOURCE);
+    warm(&mut e);
+    e.wait_analysis();
+    let root = strop_workspace::ResourceLocation::local(e.cwd.clone());
+    e.workspaces.retire_root(root.clone());
+    e.select_root(root).unwrap();
+    open(&mut e);
+    assert!(
+        rows(&e).is_none(),
+        "the old root's catalog was not installed"
+    );
+    e.wait_analysis();
+    assert!(row_of(&rows(&e).unwrap(), "alpha").contains(":1"));
+}
+
+#[test]
+fn an_outline_queued_before_a_server_becomes_ready_cannot_open() {
+    let (release, gate) = mpsc::channel();
+    let mut e = editor("lib.rs", SOURCE);
+    let mut extractors = HashMap::new();
+    e.analysis.symbols = SymbolState::with_extract(Box::new(move |work| {
+        gate.recv().unwrap();
+        super::outline::extract(&mut extractors, work)
+    }));
+    open(&mut e);
+    serve(&mut e);
+    release.send(()).unwrap();
+    e.wait_analysis();
+    assert_eq!(rows(&e), None);
+    assert!(!e
+        .analysis
+        .symbols
+        .store
+        .has(e.current(), Producer::Outline, e.buf().revision()));
+}
+
+#[test]
+fn a_retained_shard_requires_the_frozen_ropes_exact_bytes_and_grammar() {
+    use super::outline::{extract, OutlineKey, Work};
+    use strop_core::worker::{Ticket, WorkerId};
+    use strop_syntax::languages::LanguageId;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    let source = "fn\n  alpha() {}\n";
+    std::fs::write(&path, source).unwrap();
+    let mut e = Editor::new_in(Buffer::from_text(""), dir.path().to_owned());
+    e.open_picker(Kind::WorkspaceSymbols);
+    e.wait_picker();
+    let shard = e
+        .picker
+        .as_ref()
+        .unwrap()
+        .inventory
+        .workspace_witness("lib.rs".as_ref())
+        .unwrap();
+    let mut work = Work {
+        ticket: Ticket {
+            request: WorkerId::new(1),
+            key: OutlineKey {
+                document: e.current(),
+                revision: e.buf().revision(),
+                language: LanguageId::Rust,
+                workspace: super::display_root(&e, e.current()).1,
+            },
+        },
+        root: dir.path().to_owned(),
+        shard: Some(shard),
+        location: strop_workspace::ResourceLocation::local(path),
+        rope: ropey::Rope::from_str(source),
+        cancel: Default::default(),
+    };
+    let mut extractors = HashMap::new();
+    let rows = extract(&mut extractors, &work).unwrap();
+    assert!(extractors.is_empty(), "identical V2 bytes need no parser");
+    let ranges = rows[0].span.ranges.unwrap();
+    assert_eq!(ranges.selection, [(1, 2), (1, 7)]);
+    assert_eq!(ranges.enclosing, [(0, 0), (1, 12)]);
+    work.rope = ropey::Rope::from_str("fn\n  omega() {}\n");
+    let rows = extract(&mut extractors, &work).unwrap();
+    assert_eq!(rows[0].name, "omega", "same-size dirty rename must parse");
+    work.rope = ropey::Rope::from_str(source);
+    work.ticket.key.language = LanguageId::Python;
+    extract(&mut extractors, &work).unwrap();
+    assert!(extractors.contains_key(&LanguageId::Python));
+}
+
+#[test]
 fn a_stale_list_is_never_served_after_an_edit() {
     let mut e = editor("lib.rs", SOURCE);
     turn(&mut e, Key::Esc);
@@ -276,11 +384,13 @@ fn request(e: &mut Editor, id: u64, open: bool) -> ReplyContext {
         document: e.current(),
         revision: e.buf().revision(),
     };
+    let workspace = super::display_root(e, stamp.document).1;
     e.analysis.symbols.store.begin(Build {
         id: BuildId::Server(stamp),
         document: stamp.document,
         revision: stamp.revision,
         producer: Producer::Server(SERVER),
+        workspace,
         open,
     });
     ReplyContext {
@@ -308,6 +418,7 @@ fn symbol(name: &str, container: &str, kind: &str, line: usize, column: usize) -
 
 fn reply(e: &mut Editor, context: ReplyContext, symbols: Vec<ProtoSymbol>) {
     e.handle_lsp_event(LspEvent::Symbols { context, symbols });
+    e.wait_analysis();
 }
 
 #[test]
@@ -487,7 +598,7 @@ fn a_failed_background_build_of_a_huge_buffer_says_nothing_and_is_not_asked_agai
     warm(&mut e);
     let decided = e.analysis.symbols.settled;
     assert_eq!(
-        decided.map(|(_, _, source)| source),
+        decided.map(|current| current.producer),
         Some(Some(Producer::Server(SERVER))),
         "the server is the source, whatever the length"
     );

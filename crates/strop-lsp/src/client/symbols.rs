@@ -23,7 +23,15 @@ pub(super) fn line_span(range: lt::Range) -> LineSpan {
     LineSpan {
         first: LineIndex::new(first as usize),
         last: LineIndex::new(last as usize),
+        ranges: Some(SymbolRanges {
+            enclosing: points(range),
+            selection: points(range),
+        }),
     }
+}
+
+fn points(range: lt::Range) -> [(u32, u32); 2] {
+    [range.start, range.end].map(|point| (point.line, point.character))
 }
 
 /// A flat `SymbolInformation` row, decoded through the workspace.
@@ -173,7 +181,13 @@ fn flatten_symbols(
                     column: ServerColumn::new(start.character as usize),
                 },
             },
-            span: line_span(symbol.range),
+            span: LineSpan {
+                ranges: Some(SymbolRanges {
+                    enclosing: points(symbol.range),
+                    selection: points(symbol.selection_range),
+                }),
+                ..line_span(symbol.range)
+            },
         });
         if let Some(children) = symbol.children.as_deref() {
             let path = if ancestors.is_empty() {

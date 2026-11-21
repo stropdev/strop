@@ -13,6 +13,7 @@ strop-core = { path = "../strop-core" }
 strop-workspace = { path = "../strop-workspace" }
 serde = { version = "1", features = ["derive", "rc"] }
 thiserror = "2"
+toml = "0.8"
 ropey.workspace = true
 sha2 = "0.10"
 getrandom = "0.4"

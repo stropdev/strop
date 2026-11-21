@@ -3,8 +3,8 @@
 use super::PickerMsg;
 use crate::{Item, Payload};
 use parking_lot::{Condvar, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, OnceLock};
 use std::time::Duration;
 use strop_core::worker::CancelToken;
 
@@ -98,6 +98,7 @@ impl BatchError {
     pub(super) fn finish(self, tx: &StreamSender) -> strop_core::worker::Outcome<()> {
         match self {
             Self::Bound(message) => {
+                tx.mark_partial();
                 let _ = tx.control(crate::source::PickerMsg::Warning(message.into()));
                 strop_core::worker::Outcome::Success(())
             }
@@ -130,13 +131,66 @@ pub(super) fn row_bytes(item: &Item) -> usize {
         .saturating_add(path)
 }
 
+/// One request's worker and event loop share this latch. It holds no rows,
+/// channel or lock. Ordinary (including SSH) providers never bind an epoch.
+#[derive(Clone, Default)]
+pub struct InventoryGuard(Arc<Observation>);
+
+#[derive(Default)]
+struct Observation {
+    epoch: OnceLock<Arc<AtomicBool>>,
+    symbols: OnceLock<WorkspaceScope>,
+}
+
+struct WorkspaceScope {
+    paths: Arc<Vec<std::path::PathBuf>>,
+    order: Vec<usize>,
+    catalog: Arc<super::catalog::ProjectCatalog>,
+    index: Arc<super::symbols::SymbolIndex>,
+}
+
+impl InventoryGuard {
+    pub fn is_current(&self) -> bool {
+        self.0
+            .epoch
+            .get()
+            .is_none_or(|epoch| epoch.load(Ordering::Acquire))
+    }
+
+    pub fn workspace_witness(&self, relative: &std::path::Path) -> Option<Arc<crate::DiskShard>> {
+        self.0.symbols.get()?.index.disk_shard(relative).cloned()
+    }
+
+    /// A single action needs only the epoch, not a whole workspace index.
+    pub fn epoch(&self) -> Option<Arc<AtomicBool>> {
+        self.0.epoch.get().cloned()
+    }
+
+    /// A semantic producer must serve an admitted native path and its
+    /// deepest observed project. A truncated catalog cannot grant ownership.
+    pub fn symbol_owner(&self, relative: &std::path::Path) -> Option<&std::path::Path> {
+        if !self.is_current() {
+            return None;
+        }
+        let scope = self.0.symbols.get()?;
+        scope
+            .order
+            .binary_search_by(|at| scope.paths[*at].as_path().cmp(relative))
+            .ok()?;
+        Some(&scope.catalog.project_for(relative)?.root)
+    }
+}
+
 /// Delivery is supplied by the driver; live TUI sources post directly to its
 /// event queue instead of allocating a forwarding thread for every request.
 #[derive(Clone)]
-pub struct SourceSink(Arc<dyn Fn(PickerMsg) -> bool + Send + Sync>);
+pub struct SourceSink(Arc<dyn Fn(PickerMsg) -> bool + Send + Sync>, InventoryGuard);
 impl SourceSink {
     pub fn new(emit: impl Fn(PickerMsg) -> bool + Send + Sync + 'static) -> Self {
-        Self(Arc::new(emit))
+        Self(Arc::new(emit), InventoryGuard::default())
+    }
+    pub fn inventory_guard(&self) -> InventoryGuard {
+        self.1.clone()
     }
     pub fn send(&self, message: PickerMsg) -> bool {
         self.0(message)
@@ -199,7 +253,44 @@ impl StreamSender {
     }
 }
 impl StreamSender {
+    /// Process-local identity, valid only while this request or one of its
+    /// worker clones owns the progress allocation. Never persist this token.
+    pub(super) fn request_id(&self) -> u64 {
+        Arc::as_ptr(&self.progress) as usize as u64
+    }
+
+    pub(super) fn mark_partial(&self) {
+        let _ = self.control(crate::source::PickerMsg::PartialCoverage);
+    }
+
+    pub(super) fn bind_inventory(&self, epoch: Arc<AtomicBool>) -> bool {
+        self.sender.1 .0.epoch.set(epoch).is_ok() && self.inventory_current()
+    }
+
+    pub(super) fn workspace_scope(
+        &self,
+        paths: Arc<Vec<std::path::PathBuf>>,
+        catalog: Arc<super::catalog::ProjectCatalog>,
+        index: Arc<super::symbols::SymbolIndex>,
+    ) {
+        let mut order: Vec<_> = (0..paths.len()).collect();
+        order.sort_unstable_by(|a, b| paths[*a].cmp(&paths[*b]));
+        let _ = self.sender.1 .0.symbols.set(WorkspaceScope {
+            paths,
+            order,
+            catalog,
+            index,
+        });
+    }
+
+    pub(super) fn inventory_current(&self) -> bool {
+        self.sender.1.is_current()
+    }
+
     pub(super) fn batch(&self, items: Vec<Item>, cancel: &CancelToken) -> Result<(), BatchError> {
+        if !self.inventory_current() {
+            return Err(BatchError::Cancelled);
+        }
         if items.is_empty() {
             return Ok(());
         }
@@ -247,7 +338,7 @@ impl StreamSender {
 
         let _delivery_wait = self.progress.wait_for_delivery();
         loop {
-            if cancel.is_cancelled() {
+            if cancel.is_cancelled() || !self.inventory_current() {
                 return Err(BatchError::Cancelled);
             }
             let used = self.flow.used.load(Ordering::Acquire);
@@ -295,6 +386,14 @@ impl StreamSender {
     /// invoked by the cancellation handle on the editor thread.
     pub fn control(&self, message: PickerMsg) -> bool {
         debug_assert!(!matches!(message, PickerMsg::Items(_)));
+        if !self.inventory_current() {
+            return matches!(message, PickerMsg::Finished(_))
+                && self
+                    .sender
+                    .send(PickerMsg::Finished(strop_core::worker::Outcome::Cancelled(
+                        strop_core::worker::CancelReason::Superseded,
+                    )));
+        }
         self.sender.send(message)
     }
 }
@@ -310,6 +409,36 @@ mod tests {
             payload: Payload::File(std::path::PathBuf::from(name)),
             facts: Default::default(),
         }
+    }
+
+    #[test]
+    fn retired_inventory_revokes_queued_rows_warm_candidates_and_success() {
+        let (tx, rx) = mpsc::channel();
+        let sink: SourceSink = tx.into();
+        let queued_guard = sink.inventory_guard();
+        let stream = StreamSender::new(sink, Arc::default(), Arc::default());
+        let epoch = Arc::new(AtomicBool::new(true));
+        assert!(stream.bind_inventory(epoch.clone()));
+        let (token, _handle) = CancelToken::standalone();
+        stream.batch(vec![item("before".into())], &token).unwrap();
+        epoch.store(false, Ordering::Release);
+        assert!(matches!(rx.recv().unwrap(), PickerMsg::Items(_)));
+        assert!(
+            !queued_guard.is_current(),
+            "already queued rows are ineligible on the event loop"
+        );
+        assert!(matches!(
+            stream.batch(vec![item("late".into())], &token),
+            Err(BatchError::Cancelled)
+        ));
+        assert!(!stream.control(PickerMsg::ScopeProjects(Vec::new())));
+        assert!(stream.control(PickerMsg::Finished(
+            strop_core::worker::Outcome::Success(())
+        )));
+        assert!(matches!(
+            rx.recv().unwrap(),
+            PickerMsg::Finished(strop_core::worker::Outcome::Cancelled(_))
+        ));
     }
 
     /// The catalog bound is a truncation, not a failure: the source
@@ -351,6 +480,9 @@ mod tests {
             "a bound is a truncation, not a source failure"
         );
         let controls = controls.lock();
+        assert!(controls
+            .iter()
+            .any(|m| matches!(m, PickerMsg::PartialCoverage)));
         let warning = controls.iter().find_map(|message| match message {
             PickerMsg::Warning(message) => Some(message),
             _ => None,

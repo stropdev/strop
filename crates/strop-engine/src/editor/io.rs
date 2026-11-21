@@ -48,12 +48,16 @@ pub enum OpenIntent {
         line: LineIndex,
         column: ByteColumn,
     },
-    /// No document request owns a symbol-picker jump. Its original
-    /// server and encoding travel with the open, independent of focus.
-    ServerSymbol {
-        server: strop_lsp::ServerId,
-        encoding: strop_lsp::PositionEncoding,
-        position: strop_lsp::ServerPosition,
+    /// Coordinates remain in the original producer's units until the actual
+    /// target buffer is available. An unversioned semantic row is never
+    /// reusable declaration evidence.
+    Symbol {
+        query: Option<u64>,
+        buffer: Option<(DocumentId, strop_core::id::BufferRevision)>,
+        name: String,
+        location: strop_workspace::ResourceLocation,
+        line: LineIndex,
+        column: strop_picker::SymbolColumn,
     },
     SearchHit(super::picker::ReplacementHit),
     LspLocation {
@@ -74,7 +78,7 @@ impl OpenIntent {
                 | Self::Grep { .. }
                 | Self::SearchHit(_)
                 | Self::LspLocation { .. }
-                | Self::ServerSymbol { .. }
+                | Self::Symbol { .. }
         )
     }
 }
@@ -149,6 +153,10 @@ pub enum SaveOutcome {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum IoEvent {
+    WorkspaceDeclarations {
+        request: WorkerId,
+        outcome: Outcome<std::sync::Arc<[strop_picker::DeclaredBoundary]>>,
+    },
     Open(Box<Completion<OpenKey, Opened>>),
     Save(Box<Completion<SaveKey, SaveOutcome>>),
     Native(Box<Completion<native::NativeKey, native::NativeResult>>),
@@ -228,6 +236,9 @@ impl Editor {
     fn dispatch_io(&mut self, event: IoEvent) {
         super::trace::services::io(&event);
         match event {
+            IoEvent::WorkspaceDeclarations { request, outcome } => {
+                self.workspace_manifest_done(request, outcome)
+            }
             IoEvent::Native(completion) => self.handle_native(*completion),
             IoEvent::Remote(event) => self.handle_remote_event(event),
             IoEvent::Review(completion) => self.handle_review_prepared(*completion),

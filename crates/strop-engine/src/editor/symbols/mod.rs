@@ -25,7 +25,7 @@ use std::sync::{mpsc, Arc};
 
 use strop_core::id::{BufferRevision, DocumentId};
 use strop_core::worker::{CancelReason, Completion, FailureKind, Outcome, Ticket};
-use strop_lsp::{PositionEncoding, ProtoSymbol, ReplyContext, RequestKind, ServerId};
+use strop_lsp::{ProtoSymbol, ReplyContext, RequestKind, ServerId};
 use strop_syntax::languages::LanguageId;
 use strop_syntax::symbols::DeclExtractor;
 
@@ -35,14 +35,30 @@ use outline::{OutlineKey, Work};
 use scope::Scopes;
 use store::{Build, BuildId, Current, Delivery, Producer, SymbolList, SymbolStore};
 
+/// Native evidence kept off the trace. The action carries its query stamp;
+/// an old open cannot consume a new selection's witness.
+pub(crate) struct WorkspaceJump {
+    pub query: u64,
+    pub epoch: Option<Arc<AtomicBool>>,
+    pub disk: Option<Arc<strop_picker::DiskShard>>,
+    pub root: strop_workspace::ResourceLocation,
+    pub workspace: store::Workspace,
+}
+
 pub(crate) struct SymbolState {
     pub(crate) store: SymbolStore,
+    /// A ready server that explicitly lacks documentSymbol cannot own Space s.
+    pub(crate) incapable: std::collections::HashSet<ServerId>,
+    /// Distinct across picker instances too: closing and reopening Space S
+    /// must not resurrect a queued reply.
+    pub(crate) workspace_generation: u64,
+    pub(crate) jump: Option<WorkspaceJump>,
     worker: Option<outline::Worker>,
     /// The outline build's cancel flag, while one is in flight.
     cancel: Option<Arc<AtomicBool>>,
     /// The document, revision and source `warm` last decided for. An equal
     /// state needs no second decision: the after-event check is O(1).
-    settled: Option<(DocumentId, BufferRevision, Option<Producer>)>,
+    settled: Option<Current>,
     /// How the outline thread extracts; taken when the thread starts.
     extract: Option<outline::Extract>,
     /// The breadcrumb's index for the current document (0107 §6.2).
@@ -62,6 +78,9 @@ impl SymbolState {
     pub(crate) fn with_extract(extract: outline::Extract) -> Self {
         Self {
             store: SymbolStore::default(),
+            incapable: Default::default(),
+            workspace_generation: 0,
+            jump: None,
             worker: None,
             cancel: None,
             settled: None,
@@ -112,13 +131,14 @@ impl SymbolState {
         self.store.close(document);
         if self
             .settled
-            .is_some_and(|(settled, _, _)| settled == document)
+            .is_some_and(|settled| settled.document == document)
         {
             self.settled = None;
         }
     }
 
     pub(crate) fn server_gone(&mut self, server: ServerId) {
+        self.incapable.remove(&server);
         self.store.retire_server(server);
     }
 
@@ -150,8 +170,11 @@ impl SymbolState {
 /// The grammar an outline of `document` would use: a file-backed buffer
 /// whose language has a symbols query. A table lookup.
 fn outline_language(editor: &Editor, document: DocumentId) -> Option<LanguageId> {
-    editor.lsp_document_location(document)?;
-    let path = editor.docs.get(document)?.syntax_path()?;
+    let doc = editor.docs.get(document)?;
+    if doc.buf.path.is_none() && doc.remote_metadata().is_none() {
+        return None;
+    }
+    let path = doc.syntax_path()?;
     let spec = strop_syntax::languages::detect(path, None)?;
     DeclExtractor::supports(spec.id).then_some(spec.id)
 }
@@ -164,22 +187,124 @@ fn source(editor: &Editor, document: DocumentId) -> Option<Producer> {
             .lsp_servers
             .iter()
             .any(|server| server.id == binding.server && server.ready);
-        if ready {
+        if ready && !editor.analysis.symbols.incapable.contains(&binding.server) {
             return Some(Producer::Server(binding.server));
         }
     }
     outline_language(editor, document).map(|_| Producer::Outline)
 }
 
-fn current_of(editor: &Editor, document: DocumentId) -> Option<Current> {
+/// Check a literal symbol at the reported start (not a prefix of another
+/// identifier). Positions passed here have already been checked in the
+/// producing server's encoding against this target.
+pub(crate) fn token_at(text: &ropey::Rope, offset: usize, name: &str) -> bool {
+    let end = offset.saturating_add(name.len());
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    !name.is_empty()
+        && text
+            .get_byte_slice(offset..end)
+            .is_some_and(|slice| slice == name)
+        && !(name.chars().next().is_some_and(word)
+            && text
+                .byte_to_char(offset)
+                .checked_sub(1)
+                .and_then(|i| text.get_char(i))
+                .is_some_and(word))
+        && !(name.chars().next_back().is_some_and(word)
+            && text.get_char(text.byte_to_char(end)).is_some_and(word))
+}
+
+pub(crate) fn corroborates(
+    editor: &mut Editor,
+    document: DocumentId,
+    server: ServerId,
+    position: strop_lsp::ServerPosition,
+    offset: usize,
+    label: &str,
+) -> bool {
+    let producer = Producer::Server(server);
+    if source(editor, document) != Some(producer) {
+        return false;
+    }
+    let revision = editor.doc(document).buf.revision();
+    editor
+        .analysis
+        .symbols
+        .store
+        .lookup(document, producer, revision)
+        .is_some_and(|list| {
+            matches_display(editor, document, &list)
+                && list.rows.iter().any(|symbol| {
+                    symbol.location.position == position
+                        && label.ends_with(&symbol.name)
+                        && token_at(editor.doc(document).buf.text(), offset, &symbol.name)
+                })
+        })
+}
+
+/// Display paths are relative to the serving project, or to the pinned root.
+/// There is no native path clone on a cache probe.
+fn display_root(editor: &Editor, document: DocumentId) -> (&std::path::Path, store::Workspace) {
+    if let Some(binding) = editor.lsp_state.bindings.get(&document) {
+        let workspace = editor
+            .workspaces
+            .resolve_path(&binding.target, &binding.root);
+        return (
+            &binding.root,
+            workspace.map(|(id, ctx)| (id, ctx.incarnation)),
+        );
+    }
+    if let Some(remote) = editor
+        .docs
+        .get(document)
+        .and_then(|doc| doc.remote_metadata())
+    {
+        let path = remote.file.path();
+        let fs = strop_workspace::Filesystem::Remote(remote.file.endpoint().clone());
+        return match editor.workspaces.resolve_path(&fs, path) {
+            Some((id, ctx)) => (&ctx.root, Some((id, ctx.incarnation))),
+            None => (path.parent().unwrap_or(path), None),
+        };
+    }
+    let workspace = editor
+        .workspaces
+        .resolve_path(&strop_workspace::Filesystem::Local, &editor.cwd);
+    (
+        &editor.cwd,
+        workspace.map(|(id, ctx)| (id, ctx.incarnation)),
+    )
+}
+
+fn matches_display(editor: &Editor, document: DocumentId, list: &SymbolList) -> bool {
+    let (root, workspace) = display_root(editor, document);
+    root == list.root.path
+        && workspace == list.workspace
+        && matches_document(editor, document, list)
+}
+
+fn matches_document(editor: &Editor, document: DocumentId, list: &SymbolList) -> bool {
+    let Some(doc) = editor.docs.get(document) else {
+        return false;
+    };
+    if let Some(remote) = doc.remote_metadata() {
+        return matches!(&list.location.filesystem, strop_workspace::Filesystem::Remote(e) if e == remote.file.endpoint())
+            && remote.file.path() == list.location.path;
+    }
+    let Some(path) = doc.buf.path.as_deref() else {
+        return false;
+    };
+    list.location.local_path().is_some_and(|location| {
+        path == location || (path.is_relative() && location.strip_prefix(&editor.cwd) == Ok(path))
+    })
+}
+
+pub(crate) fn current_of(editor: &Editor, document: DocumentId) -> Option<Current> {
     let doc = editor.docs.get(document)?;
     Some(Current {
         revision: doc.buf.revision(),
-        server: editor
-            .lsp_state
-            .bindings
-            .get(&document)
-            .map(|binding| binding.server),
+        document,
+        producer: source(editor, document),
+        workspace: display_root(editor, document).1,
     })
 }
 
@@ -219,7 +344,12 @@ pub(crate) fn warm(editor: &mut Editor) {
     let document = editor.current();
     let revision = editor.buf().revision();
     let source = source(editor, document);
-    let state = (document, revision, source);
+    let state = Current {
+        document,
+        revision,
+        producer: source,
+        workspace: display_root(editor, document).1,
+    };
     if editor.analysis.symbols.settled == Some(state) {
         return;
     }
@@ -227,11 +357,14 @@ pub(crate) fn warm(editor: &mut Editor) {
     let Some(producer) = source else {
         return;
     };
-    if editor
+    let kept = editor
         .analysis
         .symbols
         .store
-        .has(document, producer, revision)
+        .lookup(document, producer, revision);
+    if kept
+        .as_ref()
+        .is_some_and(|list| matches_display(editor, document, list))
     {
         return;
     }
@@ -247,6 +380,14 @@ pub(crate) fn warm(editor: &mut Editor) {
 /// otherwise drop an index for another document or source, and build one
 /// when the store holds the list for the text as it is. Starts no job.
 pub(crate) fn follow(editor: &mut Editor) {
+    if let Some(owner) = editor.picker.as_ref().and_then(|g| g.document_symbols) {
+        if editor.docs.is_empty()
+            || editor.current() != owner.document
+            || current_of(editor, owner.document) != Some(owner)
+        {
+            editor.close_picker();
+        }
+    }
     if editor.docs.is_empty() {
         editor.analysis.symbols.scope = None;
         return;
@@ -298,7 +439,7 @@ pub(crate) fn open(editor: &mut Editor) {
             .symbols
             .store
             .lookup(document, producer, revision);
-        if let Some(symbols) = kept {
+        if let Some(symbols) = kept.filter(|list| matches_display(editor, document, list)) {
             record_finish("kept", symbols.rows.len());
             show(editor, producer, symbols);
             return;
@@ -306,8 +447,10 @@ pub(crate) fn open(editor: &mut Editor) {
         // Adopt the background build that is this very request. A build a
         // press is already waiting for is not adopted twice: pressing
         // again asks again, as it always did.
+        let workspace = display_root(editor, document).1;
         if let Some(build) = editor.analysis.symbols.store.building_mut() {
             if !build.open
+                && build.workspace == workspace
                 && (build.document, build.revision, build.producer)
                     == (document, revision, producer)
             {
@@ -348,6 +491,7 @@ fn start_server(editor: &mut Editor, open: bool) {
         document: stamp.document,
         revision: stamp.revision,
         producer: Producer::Server(server),
+        workspace: display_root(editor, stamp.document).1,
         open,
     };
     // Own the reply before the request leaves: a replayed reply is
@@ -381,15 +525,22 @@ fn start_outline(editor: &mut Editor, document: DocumentId, open: bool) {
             return;
         }
     };
+    let workspace = display_root(editor, document).1;
     let ticket = Ticket {
         request,
-        key: OutlineKey { document, revision },
+        key: OutlineKey {
+            document,
+            revision,
+            language,
+            workspace,
+        },
     };
     let build = Build {
         id: BuildId::Outline(request),
         document,
         revision,
         producer: Producer::Outline,
+        workspace,
         open,
     };
     let cancel = Arc::new(AtomicBool::new(false));
@@ -411,44 +562,108 @@ fn start_outline(editor: &mut Editor, document: DocumentId, open: bool) {
         Ok(false) => return,
         Err(error) => return failed(editor, ticket, FailureKind::Protocol, error.to_string()),
     }
+    let shard = location.local_path().and_then(|path| {
+        let worker = editor.picker_source.as_ref()?;
+        let root = worker.inventory_root(&editor.cwd)?;
+        worker.disk_shard(&root, path)
+    });
+    let root = display_root(editor, document).0.to_owned();
     let work = Work {
         ticket,
         rope,
-        language,
+        root,
+        shard,
         location,
         cancel,
     };
     let events = editor.analysis.tx.clone();
+    let ticket = work.ticket.clone();
     let submitted = match editor.analysis.symbols.worker(&events) {
-        Ok(worker) => worker.submit(work).map_err(|work| (work.ticket, None)),
-        Err(error) => Err((work.ticket, Some(error.to_string()))),
+        Ok(worker) => worker.submit(work).map_err(|()| None),
+        Err(error) => Err(Some(error.to_string())),
     };
-    if let Err((ticket, error)) = submitted {
+    if let Err(error) = submitted {
         let message = error.unwrap_or_else(|| "the outline thread stopped".into());
         failed(editor, ticket, FailureKind::Disconnected, message);
     }
 }
 
 /// An outline job ended.
-pub(crate) fn outline_done(
-    editor: &mut Editor,
-    completion: Completion<OutlineKey, Vec<ProtoSymbol>>,
-) {
+pub(crate) fn outline_done(editor: &mut Editor, completion: Completion<OutlineKey, SymbolList>) {
     let id = BuildId::Outline(completion.ticket.request);
-    let current = current_of(editor, completion.ticket.key.document);
+    use strop_kernel::admission as a;
+    let key = &completion.ticket.key;
+    // Native display root and frozen live document. Syntax extraction
+    // has no child binding, project declaration or scan generation.
+    let stamp = |workspace: store::Workspace,
+                 document: DocumentId,
+                 revision: BufferRevision,
+                 language: LanguageId,
+                 query| {
+        let (root, root_incarnation) = workspace.map_or((0, 0), |(id, incarnation)| {
+            (
+                ((id.index() as u64) << 32) | u64::from(id.generation()),
+                incarnation,
+            )
+        });
+        a::AnswerStamp {
+            resource: a::Resource {
+                root,
+                root_incarnation,
+                path: document.index() as u64,
+                path_incarnation: document.generation().into(),
+            },
+            content: revision.get(),
+            language: language as u64,
+            schema: 2, // DeclarationSchema::ByteRangesV2, converted to UTF-8 positions
+            query,
+            child: 0,
+            declaration: 0,
+            scan: 0,
+        }
+    };
+    let answer = a::Answer {
+        stamp: stamp(
+            key.workspace,
+            key.document,
+            key.revision,
+            key.language,
+            completion.ticket.request.get(),
+        ),
+        origin: a::Origin::Buffer,
+        producer: a::Producer::Syntax(key.language as u64),
+    };
+    let current = current_of(editor, key.document).filter(|current| {
+        let Some(build) = editor.analysis.symbols.store.building() else {
+            return false;
+        };
+        let BuildId::Outline(request) = build.id else {
+            return false;
+        };
+        let Some(language) = outline_language(editor, current.document) else {
+            return false;
+        };
+        let target = a::Target {
+            stamp: stamp(
+                current.workspace,
+                build.document,
+                current.revision,
+                language,
+                request.get(),
+            ),
+            surface: a::Surface::BufferPending,
+            designated: a::Designation::Syntax(language as u64),
+        };
+        key.workspace == current.workspace
+            && current.producer == Some(Producer::Outline)
+            && a::admit(Some(&target), &answer)
+    });
     let (symbols, failure) = match completion.outcome {
         Outcome::Success(symbols) => (Some(symbols), None),
         Outcome::Failed { failure, .. } => (None, Some(failure.message)),
         Outcome::Cancelled(_) => (None, None),
     };
-    settle(
-        editor,
-        id,
-        current,
-        symbols,
-        PositionEncoding::Utf8,
-        failure,
-    );
+    settle(editor, id, current, symbols, failure);
 }
 
 /// A server answered a `documentSymbol` request, with symbols or with a
@@ -459,14 +674,59 @@ pub(crate) fn server_reply(
     symbols: Option<Vec<ProtoSymbol>>,
     note: Option<String>,
 ) {
+    let stamp = context.stamp;
+    let id = BuildId::Server(stamp);
+    let current = current_of(editor, stamp.document);
+    let Some(rows) = symbols else {
+        settle(editor, id, current, None, note);
+        return;
+    };
+    if context.kind != RequestKind::DocumentSymbols
+        || editor.analysis.symbols.store.building().map(|b| b.id) != Some(id)
+    {
+        trace::services::rejected("symbols", "unowned server reply");
+        return;
+    }
+    if !current.is_some_and(|c| {
+        c.document == stamp.document
+            && c.revision == stamp.revision
+            && c.producer == Some(Producer::Server(stamp.server))
+    }) {
+        settle(editor, id, current, None, None);
+        return;
+    }
+    let Some(binding) = editor.lsp_state.bindings.get(&stamp.document) else {
+        return;
+    };
+    let root = binding.root.clone();
+    let location = strop_workspace::ResourceLocation {
+        filesystem: binding.target.clone(),
+        path: binding.path.clone(),
+    };
+    match editor.tape.request("symbols.prepare_server", context) {
+        Ok(false) => return,
+        Err(error) => return settle(editor, id, current, None, Some(error.to_string())),
+        Ok(true) => {}
+    }
+    let events = editor.analysis.tx.clone();
+    let result = editor.analysis.symbols.worker(&events).and_then(|worker| {
+        worker
+            .prepare_server(*context, root, location, rows)
+            .map_err(|()| std::io::Error::other("the symbol worker stopped"))
+    });
+    if let Err(error) = result {
+        settle(editor, id, current, None, Some(error.to_string()));
+    }
+}
+
+pub(crate) fn server_prepared(editor: &mut Editor, context: ReplyContext, list: SymbolList) {
     let current = current_of(editor, context.stamp.document);
     settle(
         editor,
         BuildId::Server(context.stamp),
         current,
-        symbols,
-        context.encoding,
-        note,
+        Some(list),
+        None,
     );
 }
 
@@ -475,16 +735,17 @@ fn settle(
     editor: &mut Editor,
     id: BuildId,
     current: Option<Current>,
-    symbols: Option<Vec<ProtoSymbol>>,
-    encoding: PositionEncoding,
+    symbols: Option<SymbolList>,
     failure: Option<String>,
 ) {
     let outline = matches!(id, BuildId::Outline(_));
-    let delivery = editor
-        .analysis
-        .symbols
-        .store
-        .deliver(id, current, symbols, encoding);
+    let current = current.filter(|c| {
+        symbols.as_ref().is_none_or(|list| {
+            let (root, _) = display_root(editor, c.document);
+            root == list.root.path && matches_document(editor, c.document, list)
+        })
+    });
+    let delivery = editor.analysis.symbols.store.deliver(id, current, symbols);
     if outline && !matches!(delivery, Delivery::Unowned) {
         editor.analysis.symbols.cancel = None;
     }
@@ -518,26 +779,13 @@ fn show(editor: &mut Editor, producer: Producer, symbols: SymbolList) {
         editor.message = "no symbols in this document".into();
         return;
     }
-    // The picker has no query yet: the first rows are the whole list.
-    // `documentSymbol` carries no query: the rows are built once and the
-    // ranking pass filters them as the field changes (0109 §3.2d).
-    let root = editor
-        .lsp_state
-        .bindings
-        .get(&editor.current())
-        .map(|binding| &binding.root)
-        .unwrap_or(&editor.cwd);
-    let server = match producer {
-        Producer::Server(id) => Some((id, symbols.encoding)),
-        Producer::Outline => None,
-    };
-    let items = super::lsp::document_symbol_items(&symbols.rows, root, server);
-    editor.open_picker(strop_picker::Kind::Symbols);
-    if let Some(glue) = editor.picker.as_mut() {
-        glue.picker.append(items);
-    }
-    // Items landed after the first (empty) ranking: rank again.
-    editor.request_picker_ranking();
+    let mut picker = strop_picker::Picker::new(strop_picker::Kind::Symbols, Vec::new(), false);
+    picker.items = symbols.catalog;
+    picker.rows = strop_picker::Rows::Prepared(symbols.listing);
+    let mut glue = super::PickerGlue::diagnostics(picker);
+    glue.document_symbols = current_of(editor, editor.current());
+    glue.ranked_query = Some(String::new());
+    editor.set_picker(glue);
     if producer == Producer::Outline {
         editor.message = "symbols from the syntax tree: no language server serves this file".into();
     }

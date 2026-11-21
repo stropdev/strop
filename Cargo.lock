@@ -1624,6 +1624,7 @@ dependencies = [
  "ratatui",
  "regex",
  "ropey",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
  "sha2",
@@ -1660,6 +1661,7 @@ dependencies = [
  "strop-workspace",
  "tempfile",
  "thiserror",
+ "toml",
  "unicode-normalization",
 ]
 
@@ -1721,6 +1723,7 @@ dependencies = [
  "grep",
  "ignore",
  "imbl",
+ "libc",
  "nucleo-matcher",
  "parking_lot",
  "regex",
@@ -1729,6 +1732,7 @@ dependencies = [
  "serde_json",
  "strop-core",
  "strop-fs",
+ "strop-kernel",
  "strop-lsp",
  "strop-remote",
  "strop-syntax",

@@ -4,19 +4,57 @@
 use super::super::*;
 
 impl Editor {
-    pub(super) fn lsp_spawn_discovery(
+    /// Capture the same logical owner live and replayed. Only a live tape
+    /// request may use the declaration's native witness.
+    pub(super) fn lsp_begin_discovery(
+        &mut self,
+        args: attach::AttachArgs,
+        document: Option<strop_core::id::DocumentId>,
+        ext: String,
+        language: &'static str,
+    ) {
+        let member = self.lsp_member_request(&args, document);
+        match self.tape.request("lsp.attach", &args) {
+            Ok(true) => {
+                let mut directory = args.path;
+                if document.is_some() {
+                    directory.pop();
+                }
+                self.lsp_spawn_discovery(
+                    args.ticket,
+                    args.target,
+                    directory,
+                    ext,
+                    language,
+                    member,
+                );
+            }
+            Ok(false) => {}
+            Err(error) => {
+                let key = super::args_key(&args);
+                self.lsp_state.attach.pending.remove(&key);
+                self.lsp_state.attach.warm_attempts.remove(&key);
+                self.lsp_state.attach.members.jobs.remove(&args.ticket);
+                self.message = format!("lsp attach diverged from trace: {error}");
+            }
+        }
+    }
+
+    fn lsp_spawn_discovery(
         &mut self,
         ticket: strop_core::worker::WorkerId,
         target: Filesystem,
         directory: PathBuf,
         ext: String,
         language: &'static str,
+        member: Option<attach::member::Request>,
     ) {
         let place = match &target {
             Filesystem::Local => attach::DiscoverPlace::Local {
                 directory: directory.clone(),
                 cwd: self.cwd.clone(),
                 git_workdir: self.git.as_ref().map(|g| g.workdir().to_path_buf()),
+                member,
             },
             // The remote client is a cheap clone routed to the owned
             // session actor; the document's lease keeps it connected.

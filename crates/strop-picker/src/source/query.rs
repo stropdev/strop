@@ -87,6 +87,7 @@ pub(super) fn parse_json_match_with(
     let relative_path = relative.to_string_lossy();
     let row = RowFacts {
         path: Some(&relative_path),
+        native_path: Some(relative),
         line: Some(line_no),
         text: &text,
         ..Default::default()

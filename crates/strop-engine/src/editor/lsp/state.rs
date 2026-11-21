@@ -232,6 +232,7 @@ impl Editor {
     }
 
     pub(crate) fn lsp_close_document(&mut self, document: DocumentId) {
+        self.lsp_state.attach.members.documents.remove(&document);
         self.cancel_lsp_open_from(document);
         if matches!(self.lsp_state.after_format.as_ref(), Some(AfterFormat::Save { document: owner, .. }) if *owner == document)
         {
@@ -246,6 +247,15 @@ impl Editor {
         // Model owner removal happens in both modes; only the native
         // didClose notification is gated.
         if let Some(binding) = self.lsp_state.bindings.remove(&document) {
+            self.analysis.symbols.closed(document);
+            if self
+                .picker
+                .as_ref()
+                .and_then(|glue| glue.document_symbols)
+                .is_some_and(|owner| owner.document == document)
+            {
+                self.close_picker();
+            }
             let args = CloseArgs {
                 server: binding.server,
                 document,
@@ -574,6 +584,17 @@ impl Editor {
     }
 
     pub(in crate::editor) fn lsp_failed(&mut self, server: ServerId) {
+        self.lsp_state.attach.members.servers.remove(&server);
+        self.lsp_state
+            .attach
+            .members
+            .declaration_servers
+            .remove(&server);
+        self.lsp_state
+            .attach
+            .members
+            .documents
+            .retain(|_, (_, owner)| *owner != server);
         self.analysis.symbols.server_gone(server);
         let mut docs: Vec<_> = self
             .lsp_state
@@ -602,5 +623,6 @@ impl Editor {
                 });
             }
         }
+        self.retire_workspace_symbol_source(server);
     }
 }

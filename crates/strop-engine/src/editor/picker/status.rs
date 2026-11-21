@@ -33,7 +33,7 @@ impl ProjectStatusKind {
     pub(crate) fn from_decision(decision: &super::super::lsp::attach::AttachDecision) -> Self {
         use super::super::lsp::attach::AttachDecision as D;
         match decision {
-            D::Attached => Self::Attached,
+            D::Attached | D::Discovered | D::Reused(_) => Self::Attached,
             D::NoServer => Self::NoServer,
             D::Cancelled => Self::Cancelled,
             D::TrustRequired { .. } => Self::TrustRequired,
@@ -71,6 +71,9 @@ impl ProjectStatusKind {
 pub(crate) struct ProjectStatus {
     pub kind: ProjectStatusKind,
     pub reason: String,
+    /// Distinct producers in one multilingual project do not clear each
+    /// other's refusal or unavailable coverage. None is an ambiguous marker.
+    pub language: Option<String>,
 }
 
 impl ProjectStatus {
@@ -87,6 +90,7 @@ impl ProjectStatus {
             other => super::super::explain::explain_decision(other),
         };
         Self {
+            language: Some(name.to_owned()),
             kind: ProjectStatusKind::from_decision(decision),
             reason,
         }
@@ -96,6 +100,7 @@ impl ProjectStatus {
     /// the language — the only outcome discovery never reports.
     pub(crate) fn ambiguous(marker: &str) -> Self {
         Self {
+            language: None,
             kind: ProjectStatusKind::Ambiguous,
             reason: format!(
                 "{marker} is ambiguous — open a file in this project to attach its server"
@@ -104,8 +109,9 @@ impl ProjectStatus {
     }
 
     /// Attached, already live, or in flight: clears a stale row.
-    pub(crate) fn healthy() -> Self {
+    pub(crate) fn healthy(language: &str) -> Self {
         Self {
+            language: Some(language.to_owned()),
             kind: ProjectStatusKind::Attached,
             reason: String::new(),
         }
@@ -114,7 +120,7 @@ impl ProjectStatus {
 
 impl Editor {
     /// Record one scope project's warm-attach outcome (0063 §2) and
-    /// re-publish the status rows: the latest outcome per project wins,
+    /// re-publish the status rows: the latest outcome per project/language wins,
     /// only non-healthy outcomes earn a row. Rows are the picker's
     /// pinned tail — filtering never hides them, later source appends
     /// never bury them, and nothing consumes them as symbol candidates.
@@ -129,7 +135,7 @@ impl Editor {
             match glue
                 .project_statuses
                 .iter_mut()
-                .find(|(path, _)| *path == root)
+                .find(|(path, previous)| *path == root && previous.language == status.language)
             {
                 Some((_, existing)) => *existing = status,
                 None => glue.project_statuses.push((root, status)),

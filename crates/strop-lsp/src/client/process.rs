@@ -126,6 +126,7 @@ impl Launch {
 pub(super) async fn run(
     launch: Launch,
     command: std::process::Command,
+    check: impl FnOnce() -> std::io::Result<()>,
     mainloop: async_lsp::MainLoop<Router<ClientState>>,
     stopping: tokio::sync::oneshot::Receiver<()>,
 ) {
@@ -135,7 +136,7 @@ pub(super) async fn run(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let mut child = match command.spawn() {
+    let mut child = match check().and_then(|()| command.spawn()) {
         Ok(child) => child,
         Err(error) => {
             launch.close();

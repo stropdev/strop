@@ -58,27 +58,8 @@ impl Editor {
                     self.view_mut().view_top = 0;
                 }
             }
-            Payload::Symbol {
-                location,
-                line,
-                column,
-            } => {
-                use super::super::io::OpenIntent;
-                use strop_picker::SymbolColumn;
-                let intent = match column {
-                    SymbolColumn::Byte(column) => OpenIntent::Grep { line, column },
-                    SymbolColumn::Server {
-                        server,
-                        encoding,
-                        column,
-                    } => OpenIntent::ServerSymbol {
-                        server,
-                        encoding,
-                        position: strop_lsp::ServerPosition { line, column },
-                    },
-                };
-                self.push_jump();
-                self.request_navigation_target(location, intent);
+            Payload::Symbol { .. } => {
+                self.message = "symbol choice requires its original list".into();
             }
             Payload::Grep {
                 location,

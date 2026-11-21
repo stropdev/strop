@@ -19,8 +19,13 @@ pub use workset::WorksetSnapshot;
 pub use line_edit::LineEdit;
 
 pub use score::fuzzy_score;
+pub use source::catalog::{
+    read_workspace_declarations, DeclaredBoundary, ProjectCatalog, WarmHint, WarmProject,
+};
+pub use source::symbols::DiskShard;
 pub use source::{
-    display_path, PickerMsg, SearchHost, SelectionPolicy, SourceSink, SourceSnapshot, SourceWorker,
+    display_path, InventoryGuard, InventoryRoot, PickerMsg, SearchHost, SelectionPolicy,
+    SourceSink, SourceSnapshot, SourceWorker,
 };
 
 use std::path::PathBuf;
@@ -196,6 +201,24 @@ pub enum Field {
     Replace,
 }
 
+/// A ranking normally transfers its vector to the picker. An unchanged
+/// document outline instead borrows its precomputed empty-query listing.
+#[derive(Debug)]
+pub enum Rows {
+    Ranked(Vec<Row>),
+    Prepared(std::sync::Arc<Vec<Row>>),
+}
+
+impl std::ops::Deref for Rows {
+    type Target = [Row];
+    fn deref(&self) -> &[Row] {
+        match self {
+            Self::Ranked(rows) => rows,
+            Self::Prepared(rows) => rows,
+        }
+    }
+}
+
 /// Picker input and immutable catalog ownership. Scoring is worker work; the UI
 /// installs a checked ranking and renders only its visible rows.
 pub struct Picker {
@@ -207,7 +230,7 @@ pub struct Picker {
     pub field: Field,
     workset: workset::Workset,
     pub items: Catalog,
-    pub rows: Vec<Row>,
+    pub rows: Rows,
     match_columns: Vec<u32>,
     pub selected: usize,
     /// True once the user has moved the bar for the current query. Until
@@ -260,7 +283,7 @@ impl Picker {
             field: Field::Search,
             workset: workset::Workset::default(),
             items: Catalog::default(),
-            rows: Vec::new(),
+            rows: Rows::Ranked(Vec::new()),
             match_columns: Vec::new(),
             selected: 0,
             selection_moved: false,
@@ -445,7 +468,7 @@ impl Picker {
             };
             self.scroll_top = 0;
         }
-        self.rows = rows;
+        self.rows = Rows::Ranked(rows);
         self.match_columns = ranking.columns;
         true
     }
@@ -462,7 +485,7 @@ impl Picker {
     }
 
     pub fn clear_results(&mut self) {
-        self.rows.clear();
+        self.rows = Rows::Ranked(Vec::new());
         self.match_columns.clear();
         self.selected = 0;
         self.selection_moved = false;
@@ -513,6 +536,15 @@ impl Picker {
             self.workset.observe(&item.payload);
         }
         self.items.append(items);
+        if !self.pinned.is_empty() {
+            self.items.append(self.pinned.clone());
+        }
+    }
+
+    /// Remove the previous semantic tier, retaining syntax rows and chrome.
+    pub fn truncate_results(&mut self, len: usize) {
+        self.clear_results();
+        self.items.truncate(len);
         if !self.pinned.is_empty() {
             self.items.append(self.pinned.clone());
         }

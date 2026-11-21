@@ -65,6 +65,12 @@ pub fn git(job: &GitJob) {
 pub fn io(event: &crate::editor::io::IoEvent) {
     use crate::editor::io::IoEvent;
     record_with(EventKind::JobFinished, || match event {
+        IoEvent::WorkspaceDeclarations {
+            request,
+            outcome: value,
+        } => {
+            json!({"service":"io","result":"workspace-declarations","request":request,"outcome":outcome(value)})
+        }
         IoEvent::Open(value) => completion("io", "open", value),
         IoEvent::Save(value) => completion("io", "save", value),
         IoEvent::NotifyReload(value) => completion("io", "notify-reload", value),
@@ -255,6 +261,7 @@ pub fn picker(event: &crate::editor::picker::PickerEvent) {
     record_with(EventKind::JobFinished, || {
         let outcome = match &event.msg {
             PickerMsg::Items(items) => json!({"result":"items","count":items.len()}),
+            PickerMsg::PartialCoverage => json!({"result":"partial-coverage"}),
             PickerMsg::Warning(warning) => json!({"result":"warning","bytes":warning.len()}),
             PickerMsg::ScopeProjects(projects) => {
                 json!({"result":"scope-projects","count":projects.len()})

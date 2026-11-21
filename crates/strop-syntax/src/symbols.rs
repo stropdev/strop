@@ -19,12 +19,29 @@ use tree_sitter::{Parser, Query, QueryCursor};
 pub struct Declaration {
     pub kind: SymbolKind,
     pub name: String,
-    /// 1-based first line of the declaration's span.
-    pub line: usize,
-    /// 1-based last line of the span (inclusive).
-    pub end_line: usize,
-    /// 1-based byte column of the name (jump target, rg convention).
-    pub col: usize,
+    /// Half-open (zero-based line, byte column) ranges from the grammar.
+    pub enclosing: [(u32, u32); 2],
+    pub selection: [(u32, u32); 2],
+}
+
+impl Declaration {
+    /// Inclusive one-based lines for `kind:` and the whole-line breadcrumb.
+    pub fn lines(&self) -> (usize, usize) {
+        let [(first, _), (end, column)] = self.enclosing;
+        let last = if column == 0 && end > first {
+            end - 1
+        } else {
+            end
+        };
+        (first as usize + 1, last as usize + 1)
+    }
+}
+
+/// Producer identity for this binary's linked symbols grammar and query.
+/// Both selection and enclosing ranges, half-open in UTF-8 byte columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclarationSchema {
+    ByteRangesV2(LanguageId),
 }
 
 /// One language's extraction state: parser and compiled query are
@@ -36,6 +53,10 @@ pub struct DeclExtractor {
 }
 
 impl DeclExtractor {
+    pub fn schema(&self) -> DeclarationSchema {
+        DeclarationSchema::ByteRangesV2(self.language)
+    }
+
     /// Whether this build can extract `language`: a table lookup, no
     /// parser or query is built (0099: asked on the event loop).
     pub fn supports(language: LanguageId) -> bool {
@@ -176,7 +197,7 @@ impl DeclExtractor {
                     .get(node.byte_range())
                     .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
             };
-            let (text, name_col) = if kind == SymbolKind::Impl {
+            let (text, selection) = if kind == SymbolKind::Impl {
                 // named as rust-analyzer names it: `impl Type`,
                 // `impl Trait for Type`, one line
                 let target = text_of(name).map(|text| one_line(&text));
@@ -186,30 +207,26 @@ impl DeclExtractor {
                     }
                     _ => target.map(|target| format!("impl {target}")),
                 };
-                (text, decl.start_position().column)
+                // The "impl" keyword is the jump token, not the type name.
+                (text, decl.child(0).unwrap_or(decl))
             } else {
-                (text_of(name), name.start_position().column)
+                (text_of(name), name)
             };
-            let (Some(name), start, end) = (text, decl.start_position(), decl.end_position())
-            else {
+            let Some(name) = text else {
                 continue;
             };
-            // The span ends on the closing token's line; a node ending
-            // at column 0 does not cover that line's content.
-            let end_row = if end.column == 0 {
-                end.row.saturating_sub(1)
-            } else {
-                end.row
+            let range = |node: tree_sitter::Node<'_>| {
+                [node.start_position(), node.end_position()]
+                    .map(|p| (p.row as u32, p.column as u32))
             };
             found.push(Declaration {
                 kind,
                 name,
-                line: start.row + 1,
-                end_line: end_row + 1,
-                col: name_col.saturating_add(1),
+                enclosing: range(decl),
+                selection: range(selection),
             });
         }
-        found.sort_by_key(|declaration| (declaration.line, declaration.end_line));
+        found.sort_by_key(Declaration::lines);
         Some(found)
     }
 

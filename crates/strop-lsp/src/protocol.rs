@@ -291,6 +291,16 @@ pub struct ProtoSymbol {
 pub struct LineSpan {
     pub first: LineIndex,
     pub last: LineIndex,
+    /// Exact half-open `(line, column)` pairs in the producer's encoding.
+    /// Old trace rows carried only their inclusive lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ranges: Option<SymbolRanges>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SymbolRanges {
+    pub enclosing: [(u32, u32); 2],
+    pub selection: [(u32, u32); 2],
 }
 
 impl LineSpan {
@@ -299,6 +309,7 @@ impl LineSpan {
         Self {
             first: line,
             last: line,
+            ranges: None,
         }
     }
 }

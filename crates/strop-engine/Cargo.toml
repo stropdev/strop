@@ -38,6 +38,7 @@ tempfile = "3"
 thiserror = "2"
 sha2 = "0.10"
 parking_lot = "0.12"
+rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
 strop-trace = { path = "../strop-trace", features = ["test-support"] }

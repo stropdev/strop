@@ -212,6 +212,7 @@ fn fixture(rng: &mut Rng) -> (String, Vec<ProtoSymbol>) {
             span: LineSpan {
                 first: LineIndex::new(first),
                 last: LineIndex::new(last),
+                ranges: None,
             },
             ..symbol(format!("s{at}"), first)
         })
@@ -330,10 +331,13 @@ fn outline(text: &str) -> Arc<Vec<ProtoSymbol>> {
             key: OutlineKey {
                 document: document(0),
                 revision: BufferRevision::new(0),
+                language: LanguageId::Rust,
+                workspace: None,
             },
         },
         rope: Rope::from_str(text),
-        language: LanguageId::Rust,
+        root: "/w".into(),
+        shard: None,
         location: strop_workspace::ResourceLocation::local("/w/a.rs".into()),
         cancel: Arc::new(AtomicBool::new(false)),
     };

@@ -162,8 +162,21 @@ fn doc_symbol(
 
 fn symbols_picker(e: &mut Editor, symbols: Vec<strop_lsp::protocol::ProtoSymbol>) {
     let context = arm(e, 0, RequestKind::DocumentSymbols, PositionEncoding::Utf8);
+    e.lsp_servers.push(LspServer {
+        id: context.stamp.server,
+        name: "fixture".into(),
+        language: "rust".into(),
+        root: PathBuf::from("/workspace"),
+        target: strop_workspace::Filesystem::Local,
+        client: None,
+        rx: std::sync::mpsc::channel().1,
+        ready: true,
+    });
     // a symbols request is a build owned by the symbols component (0099)
     e.lsp_state.navigation = None;
+    let workspace = crate::editor::symbols::current_of(e, context.stamp.document)
+        .unwrap()
+        .workspace;
     e.analysis
         .symbols
         .store
@@ -172,9 +185,11 @@ fn symbols_picker(e: &mut Editor, symbols: Vec<strop_lsp::protocol::ProtoSymbol>
             document: context.stamp.document,
             revision: context.stamp.revision,
             producer: crate::editor::symbols::store::Producer::Server(context.stamp.server),
+            workspace,
             open: true,
         });
     e.handle_lsp_event(LspEvent::Symbols { context, symbols });
+    e.wait_analysis();
     e.wait_picker();
 }
 
@@ -254,6 +269,7 @@ fn document_symbols_flat_qualifiers_narrow_like_file_find() {
     // 0063 §3 consistency: a lone flat filter — no operators, no
     // content — narrows the kept rows exactly as file find narrows.
     let mut e = editor("struct Foo;\n");
+    e.buf_mut().path = Some("/workspace/origin.rs".into());
     let at = |path: &str, name: &str, kind: &str, line: usize| strop_lsp::protocol::ProtoSymbol {
         name: name.into(),
         container: String::new(),
@@ -273,6 +289,11 @@ fn document_symbols_flat_qualifiers_narrow_like_file_find() {
             at("/workspace/origin.rs", "rust_struct", "Struct", 0),
             at("/workspace/origin.py", "py_class", "Class", 0),
         ],
+    );
+    assert_eq!(
+        e.picker.as_ref().unwrap().picker.items.len(),
+        1,
+        "an unrelated URI in a flat documentSymbol response is not this document"
     );
     e.paste_bracketed("language:rust");
     e.wait_picker();

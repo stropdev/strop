@@ -24,6 +24,7 @@
 //!   edits (StaleReloadNeverClears). Loss/overflow/exclusions invalidate
 //!   the baseline and reobserve before freshness is claimed again.
 
+mod manifest;
 mod queue;
 mod reconcile;
 mod subscribe;

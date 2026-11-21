@@ -24,6 +24,7 @@ fn spanning(symbol: ProtoSymbol, first: usize, last: usize) -> ProtoSymbol {
         span: LineSpan {
             first: LineIndex::new(first),
             last: LineIndex::new(last),
+            ranges: None,
         },
         ..symbol
     }

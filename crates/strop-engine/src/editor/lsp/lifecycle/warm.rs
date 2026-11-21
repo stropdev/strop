@@ -4,7 +4,7 @@
 //! warm attaches are in flight; the rest wait for a completion.
 use super::super::super::picker::ProjectStatus;
 use super::super::*;
-use super::args_key;
+use strop_picker::{WarmHint, WarmProject};
 
 impl Editor {
     /// Bounded warm-up of eligible unopened projects (0063 §2): the
@@ -12,8 +12,8 @@ impl Editor {
     /// start its language's server without opening any document. Warm
     /// servers are reused by the merge tier; servers serving active
     /// documents are never touched (attachments dedup by root).
-    pub(crate) fn lsp_warm_scope_projects(&mut self, projects: Vec<(PathBuf, String)>) {
-        if !self.lsp_state.attach.enabled {
+    pub(crate) fn lsp_warm_scope_projects(&mut self, projects: Vec<WarmProject>) {
+        if !self.lsp_state.attach.enabled || self.manifest_loading() {
             return;
         }
         if self
@@ -23,11 +23,9 @@ impl Editor {
         {
             return;
         }
-        for project in projects {
-            if !self.lsp_state.attach.warm_queue.contains(&project) {
-                self.lsp_state.attach.warm_queue.push_back(project);
-            }
-        }
+        // The delivery is the bounded list for this observation. Replacing
+        // instead of appending retires any queued proposals it superseded.
+        self.lsp_state.attach.warm_queue = projects.into();
         self.lsp_drain_warm_queue();
     }
 
@@ -40,7 +38,7 @@ impl Editor {
             self.lsp_state.attach.pending.len(),
             WARM_ATTACH_LIMIT,
         ) {
-            let Some((root, marker)) = self.lsp_state.attach.warm_queue.pop_front() else {
+            let Some(project) = self.lsp_state.attach.warm_queue.pop_front() else {
                 break;
             };
             // A closed picker stops the queue — warm-up is on demand.
@@ -52,18 +50,26 @@ impl Editor {
                 self.lsp_state.attach.warm_queue.clear();
                 return;
             }
-            self.lsp_warm_attach(root, marker);
+            self.lsp_warm_attach(project);
         }
     }
 
-    /// One unopened project: map its marker to a language, reuse a
-    /// live placement, respect refusals, then discover exactly like a
-    /// document attach — the same trust and executability gates.
-    fn lsp_warm_attach(&mut self, root: PathBuf, marker: String) {
-        let Some((language, ext)) = warm_language(&marker) else {
-            // The only outcome discovery never reports: the marker
-            // pins no language, so the project stays cold (0063 §2).
-            self.record_project_status(root, ProjectStatus::ambiguous(&marker));
+    /// Discovery and declarations only suggest registry IDs. Unknown hints
+    /// cannot launch a process or prevent a supported sibling from warming.
+    fn lsp_warm_attach(&mut self, WarmProject { root, hint }: WarmProject) {
+        let WarmHint::Language(id) = hint else {
+            self.record_project_status(root, ProjectStatus::ambiguous("package.json"));
+            return;
+        };
+        let Some((language, ext)) = strop_core::languages::LANGUAGES
+            .iter()
+            .find(|language| language.name == id)
+            .and_then(|language| Some((language.name, *language.extensions.first()?)))
+        else {
+            self.record_project_status(
+                root,
+                ProjectStatus::from_decision(&attach::AttachDecision::NoServer, &id),
+            );
             return;
         };
         let target = Filesystem::Local;
@@ -76,10 +82,17 @@ impl Editor {
             attachment.language == language
                 && attachment.root == root
                 && attachment.target == target
+                && (self.lsp_declared_member(&target, &root).is_none()
+                    || self
+                        .lsp_state
+                        .attach
+                        .members
+                        .servers
+                        .contains_key(&attachment.server))
         }) || self.lsp_state.attach.pending.contains_key(&key)
         {
             // Served or in flight: healthy — clears any stale row.
-            self.record_project_status(root, ProjectStatus::healthy());
+            self.record_project_status(root, ProjectStatus::healthy(language));
             return;
         }
         let refusal = self.lsp_state.attach.refused.get(&key).cloned();
@@ -114,39 +127,13 @@ impl Editor {
             language: language.to_string(),
             target,
         };
-        match self.tape.request("lsp.attach", &args) {
-            Ok(true) => {
-                self.lsp_spawn_discovery(ticket, args.target, root, ext.to_string(), language)
-            }
-            Ok(false) => {}
-            Err(error) => {
-                self.lsp_state.attach.pending.remove(&args_key(&args));
-                self.lsp_state.attach.warm_attempts.remove(&args_key(&args));
-                self.message = format!("lsp attach diverged from trace: {error}");
-            }
-        }
+        self.lsp_begin_discovery(args, None, format!(".{ext}"), language);
     }
 
-    /// A superseded discovery may already have published a live
-    /// transport for its server: retire it so the attempt leaves no
-    /// orphan process and no undrained event stream.
     /// One warm slot freed by an attach completion (0063 §2).
-    pub(super) fn lsp_warm_progress(&mut self) {
+    pub(crate) fn lsp_warm_progress(&mut self) {
         if !self.lsp_state.attach.warm_queue.is_empty() {
             self.lsp_drain_warm_queue();
         }
-    }
-}
-
-/// Marker file → registry language + probe extension for warm-up
-/// (0063 §2). `package.json` stays unmapped: JavaScript vs TypeScript
-/// needs configuration evidence a marker alone does not carry.
-pub(crate) fn warm_language(marker: &str) -> Option<(&'static str, &'static str)> {
-    match marker {
-        "Cargo.toml" => Some(("rust", ".rs")),
-        "pyproject.toml" | "setup.py" => Some(("python", ".py")),
-        "CMakeLists.txt" => Some(("cpp", ".cpp")),
-        "go.mod" => Some(("go", ".go")),
-        _ => None,
     }
 }

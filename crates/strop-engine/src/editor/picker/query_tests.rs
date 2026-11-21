@@ -26,7 +26,7 @@ fn filter_only_files_and_literal_content_share_scope() {
             "{kind:?}: {:?}",
             picker.error
         );
-        for row in &picker.rows {
+        for row in picker.rows.iter() {
             match &picker.items.get(row.item).unwrap().payload {
                 Payload::File(path) => {
                     assert_eq!(path, &PathBuf::from("a.rs"))
@@ -267,6 +267,115 @@ fn workspace_symbols_lists_and_jump_lands_on_the_declaration() {
     assert!(!editor.buf().is_dirty());
 }
 
+/// Arm the deterministic reply seam just as a successful workspace/symbol
+/// wire admission would. A current generation alone no longer owns a reply.
+pub(super) fn arm_workspace_reply(editor: &mut Editor, root: &std::path::Path) {
+    let server = strop_lsp::ServerId::new(9);
+    if !editor
+        .lsp_state
+        .attach
+        .attached
+        .iter()
+        .any(|a| a.server == server)
+    {
+        editor
+            .lsp_state
+            .attach
+            .attached
+            .push(crate::editor::lsp::attach::Attachment {
+                root: root.to_owned(),
+                language: "rust".into(),
+                server,
+                target: strop_workspace::Filesystem::Local,
+            });
+    }
+    editor
+        .picker
+        .as_mut()
+        .unwrap()
+        .wsources
+        .insert(server, (strop_lsp::PositionEncoding::Utf16, true));
+}
+
+#[test]
+fn workspace_reply_cannot_claim_a_nested_or_same_basename_sibling_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for child in ["team-a/service", "team-a/service/nested", "team-b/service"] {
+        let child = root.join(child);
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(child.join("Cargo.toml"), "").unwrap();
+        std::fs::write(child.join("lib.rs"), "fn render() {}\n").unwrap();
+    }
+    let mut editor = Editor::new_in(Buffer::from_text(""), root.to_owned());
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    arm_workspace_reply(&mut editor, &root.join("team-a/service"));
+    let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
+    let symbols = ["team-a/service", "team-a/service/nested", "team-b/service"].map(|child| {
+        strop_lsp::ProtoSymbol {
+            name: "semantic_render".into(),
+            kind: strop_core::symbol_kind::SymbolKind::Function,
+            container: String::new(),
+            span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(0)),
+            location: strop_lsp::ServerLocation {
+                doc: strop_workspace::ResourceLocation::local(root.join(child).join("lib.rs")),
+                position: strop_lsp::ServerPosition {
+                    line: strop_core::id::LineIndex::new(0),
+                    column: strop_lsp::ServerColumn::new(3),
+                },
+            },
+        }
+    });
+    editor.handle_lsp_event(strop_lsp::LspEvent::WorkspaceSymbols {
+        server: strop_lsp::ServerId::new(9),
+        generation,
+        encoding: strop_lsp::PositionEncoding::Utf16,
+        symbols: symbols.into(),
+    });
+    editor.wait_picker();
+    let items = &editor.picker.as_ref().unwrap().picker.items;
+    assert_eq!(
+        items
+            .iter()
+            .filter(|row| row.facts().text == "render")
+            .count(),
+        3
+    );
+    let semantic: Vec<_> = items
+        .iter()
+        .filter(|row| row.facts().text == "semantic_render")
+        .collect();
+    assert_eq!(semantic.len(), 1);
+    assert!(
+        matches!(&semantic[0].payload, Payload::Symbol { location, .. }
+        if location.path == root.join("team-a/service/lib.rs"))
+    );
+}
+
+#[test]
+fn changed_disk_witness_refuses_a_same_coordinate_jump_before_focus_moves() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    std::fs::write(&path, "fn alpha() {}\n").unwrap();
+    let mut editor = Editor::new_in(Buffer::from_text("origin"), dir.path().to_owned());
+    let origin = editor.current();
+    editor.open_picker(Kind::WorkspaceSymbols);
+    editor.wait_picker();
+    let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+    std::fs::write(&path, "fn omega() {}\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(stamp)
+        .unwrap();
+    editor.feed(Key::Enter);
+    editor.wait_io().unwrap();
+    assert_eq!(editor.current(), origin);
+    assert!(editor.message.contains("changed"), "{}", editor.message);
+}
+
 #[test]
 fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
     use strop_lsp::protocol::{
@@ -284,6 +393,7 @@ fn warm_server_workspace_symbols_merge_dedup_and_supersede() {
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
     editor.open_picker(Kind::WorkspaceSymbols);
     editor.wait_picker();
+    arm_workspace_reply(&mut editor, dir.path());
     // The syntax tier listed both declarations; the live generation is 1.
     let generation = editor.picker.as_ref().unwrap().wsymbols_generation;
     assert_eq!(generation, 1);
@@ -393,6 +503,7 @@ fn workspace_symbols_server_rows_are_filtered_like_syntax_rows() {
         "struct St;\nfn parse_config() {}\nfn wrap() {}\n",
     )
     .unwrap();
+    std::fs::write(dir.path().join("semantic.rs"), "").unwrap();
     let mut editor = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
     editor.open_picker(Kind::WorkspaceSymbols);
     editor.wait_picker();
@@ -431,6 +542,7 @@ fn workspace_symbols_server_rows_are_filtered_like_syntax_rows() {
         },
         span: strop_lsp::LineSpan::line(strop_core::id::LineIndex::new(line)),
     };
+    arm_workspace_reply(&mut editor, dir.path());
     editor.handle_lsp_event(LspEvent::WorkspaceSymbols {
         server: ServerId::new(9),
         encoding: strop_lsp::PositionEncoding::Utf16,

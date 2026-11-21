@@ -64,10 +64,17 @@ impl Editor {
     /// A list that is still being worked out is collected when it is ready.
     /// Unopened sources load in their captured filesystem namespace.
     pub(crate) fn open_collection_from_picker(&mut self) {
+        if self.picker_inventory_retired() {
+            return;
+        }
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
         glue.deferred = None;
+        if glue.partial_coverage {
+            self.message = "nothing collected — project coverage is partial".into();
+            return;
+        }
         if let Some(error) = &glue.picker.error {
             self.message = format!("nothing collected — {error}");
             return;

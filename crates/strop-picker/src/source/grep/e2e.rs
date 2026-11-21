@@ -104,7 +104,9 @@ fn collect_items(rx: &Receiver<PickerMsg>, query: &str) -> Vec<crate::Item> {
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(PickerMsg::Items(batch)) => items.extend(batch.iter().cloned()),
-            Ok(PickerMsg::Warning(_)) | Ok(PickerMsg::ScopeProjects(_)) => {}
+            Ok(
+                PickerMsg::Warning(_) | PickerMsg::ScopeProjects(_) | PickerMsg::PartialCoverage,
+            ) => {}
             Ok(PickerMsg::Finished(Outcome::Success(()))) => return items,
             Ok(other) => panic!("unexpected terminal for {query}: {other:?}"),
             Err(RecvTimeoutError::Timeout) => {
@@ -180,6 +182,34 @@ fn a_worktree_narrows_repo_to_its_basename_not_the_parent() {
     );
 }
 
+#[test]
+fn repo_filters_use_the_same_native_boundary_for_disk_and_dirty_hits() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let native = root.join(OsStr::from_bytes(b"\xff\n")).join("member");
+    let lookalike = root.join("�\n").join("member");
+    assert_eq!(native.to_string_lossy(), lookalike.to_string_lossy());
+    for dir in [&native, &lookalike] {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("n.txt"), "needle\n").unwrap();
+    }
+    std::fs::write(native.join("go.mod"), "").unwrap();
+    let wanted = native.join("n.txt");
+    for snapshots in [
+        vec![],
+        vec![SourceSnapshot {
+            path: wanted.clone(),
+            text: ropey::Rope::from_str("dirty needle\n"),
+        }],
+    ] {
+        let items = run_items(root, "repo:member AND needle", snapshots);
+        assert!(
+            matches!(&items[..], [crate::Item {payload: crate::Payload::Grep {location,..},..}] if location.path == wanted)
+        );
+    }
+}
+
 /// §6.8 dirty sources: the open buffer's unsaved text is authoritative
 /// over disk for content hits AND for `kind:` evidence — the symbol
 /// overlay replaces whatever the disk pass extracted (snapshots.rs,
@@ -228,6 +258,68 @@ fn dirty_source_text_is_authoritative_for_content_and_kind_evidence() {
         disk,
         vec!["loose/dirty.rs:2 · let disk_marker = 1;".to_string()]
     );
+}
+
+/// The rendered spelling collides. The opened resource, extracted kind
+/// evidence and authoritative dirty rope must still identify one native file.
+#[cfg(unix)]
+#[test]
+fn non_utf8_symbol_jumps_and_dirty_kind_search_keep_distinct_native_targets() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let function = root.join(OsStr::from_bytes(b"\xff.rs"));
+    let structure = root.join(OsStr::from_bytes(b"\xfe.rs"));
+    assert_eq!(function.to_string_lossy(), structure.to_string_lossy());
+    std::fs::write(&function, "fn needle() {}\n").unwrap();
+    std::fs::write(&structure, "struct needle;\n").unwrap();
+
+    let worker = SourceWorker::new().unwrap();
+    let (tx, rx) = channel();
+    let _request = worker.workspace_symbols(
+        root.to_owned(),
+        std::sync::Arc::new(crate::query::SearchQuery::default()),
+        SelectionPolicy {
+            hidden: true,
+            respect_ignore: true,
+        },
+        Vec::new(),
+        tx,
+    );
+    let mut targets = Vec::new();
+    for item in collect_items(&rx, "workspace symbols") {
+        assert_eq!(item.facts().text, "needle");
+        let crate::Payload::Symbol {
+            location,
+            line,
+            column,
+        } = item.payload
+        else {
+            panic!("expected a native symbol jump");
+        };
+        let expected_column = if location.path == function { 3 } else { 7 };
+        assert_eq!(line.get(), 0);
+        assert_eq!(
+            column,
+            crate::SymbolColumn::Byte(strop_core::id::ByteColumn::new(expected_column))
+        );
+        targets.push(location.path);
+    }
+    targets.sort();
+    assert_eq!(targets, [structure.clone(), function.clone()]);
+
+    let query = "kind:function AND needle";
+    let hits = run_items(root, query, vec![]);
+    assert!(
+        matches!(&hits[..], [crate::Item { payload: crate::Payload::Grep { location, .. }, .. }] if location.path == function)
+    );
+    let snapshots = vec![SourceSnapshot {
+        path: function,
+        text: ropey::Rope::from_str("struct needle;\n"),
+    }];
+    assert!(run_items(root, query, snapshots).is_empty());
 }
 
 #[test]
@@ -513,6 +605,7 @@ fn workspace_symbol_texts(
             hidden: true,
             respect_ignore: true,
         },
+        Vec::new(),
         tx,
     );
     let mut texts: Vec<String> = collect_items(&rx, query)
@@ -523,9 +616,7 @@ fn workspace_symbol_texts(
     texts
 }
 
-/// 0063 residual (0058 S7): with push coverage, an idle second search
-/// reuses every unchanged file and every unchanged catalog subtree —
-/// no full rescan — and publishes the identical rows.
+/// A repeat request can reuse verified extraction work, not file membership.
 #[test]
 fn unchanged_scope_is_reused_not_rescanned() {
     let fixture = mixed_fixture();
@@ -549,8 +640,8 @@ fn unchanged_scope_is_reused_not_rescanned() {
     );
     assert!(stats.symbols.reused > 0);
     assert!(
-        stats.catalog.reused > 0,
-        "unchanged catalog subtrees are reused: {stats:?}"
+        stats.catalog.visited > 0,
+        "unchanged catalog directories are observed afresh: {stats:?}"
     );
 }
 
@@ -597,8 +688,8 @@ fn a_hinted_write_rescans_only_the_invalidated_file() {
     );
     assert!(stats.symbols.reused > 0, "the rest is reused: {stats:?}");
     assert!(
-        stats.catalog.reused > 0 && stats.catalog.visited < 5,
-        "the catalog prunes untouched subtrees: {stats:?}"
+        stats.catalog.visited > 0,
+        "catalog observations are independent of the one hinted path: {stats:?}"
     );
 }
 

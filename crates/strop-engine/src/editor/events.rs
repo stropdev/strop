@@ -293,10 +293,14 @@ impl Editor {
             || self.terminals.pending()
             || !self.shell_requests.is_empty()
             || self.clip_paste_pending.is_some()
-            || self
-                .picker
-                .as_ref()
-                .is_some_and(|glue| glue.picker.streaming || glue.rank_pending.is_some())
+            || self.picker.as_ref().is_some_and(|glue| {
+                glue.picker.streaming
+                    || glue.rank_pending.is_some()
+                    || (!self.finishing
+                        && glue.wsources.iter().any(|(id, (_, pending))| {
+                            *pending && self.lsp_servers.iter().any(|s| s.id == *id && s.ready)
+                        }))
+            })
             || !self.picker_ranking.retiring.is_empty()
             || self
                 .picker_source

@@ -1,10 +1,8 @@
 //! Attachment admission, publication, trust and server lifetime ownership.
 mod attach_outcomes;
+mod member;
 mod spawn;
 mod warm;
-
-#[cfg(test)]
-pub(crate) use warm::warm_language;
 
 use super::attach::AttachKey;
 use super::*;
@@ -31,6 +29,9 @@ impl Editor {
         let Some(doc) = self.lsp_document_location(document) else {
             return;
         };
+        if doc.filesystem == Filesystem::Local && self.manifest_loading() {
+            return;
+        }
         // Extensionless/ambiguous headers keep a navigation-bound
         // context (0049 §4.4); without one there is nothing to attach.
         let Some(language) = self.lsp_doc_language(document, &doc.path) else {
@@ -89,20 +90,7 @@ impl Editor {
             language: language.to_string(),
             target: doc.filesystem.clone(),
         };
-        // Replay gate: no native config/trust/executability before this
-        // registration (R11).
-        match self.tape.request("lsp.attach", &args) {
-            Ok(true) => {
-                let mut directory = doc.path;
-                directory.pop();
-                self.lsp_spawn_discovery(ticket, doc.filesystem, directory, ext, language);
-            }
-            Ok(false) => {}
-            Err(error) => {
-                self.lsp_state.attach.pending.remove(&args_key(&args));
-                self.message = format!("lsp attach diverged from trace: {error}");
-            }
-        }
+        self.lsp_begin_discovery(args, Some(document), ext, language);
     }
 
     /// The server placement for a buffer, if one is attached: exact
@@ -120,6 +108,27 @@ impl Editor {
         language: &str,
         target: &Filesystem,
     ) -> Option<(ServerId, PathBuf)> {
+        if *target == Filesystem::Local && self.manifest_loading() {
+            // Existing independent bindings keep serving; no new local open
+            // can take the lexical-prefix shortcut while ownership is loading.
+            let binding = self.lsp_state.bindings.get(&document)?;
+            return (binding.target == *target
+                && binding.path == path
+                && binding.language == language)
+                .then(|| (binding.server, binding.root.clone()));
+        }
+        // A boundary prefix doesn't authorize every file inside it. The cold
+        // worker observes the file and resolves markers, config and trust.
+        if let Some((observed, server)) = self.lsp_state.attach.members.documents.get(&document) {
+            let placement =
+                self.lsp_state.attach.attached.iter().find(|a| {
+                    a.server == *server && a.language == language && &a.target == target
+                })?;
+            return (observed == path).then(|| (*server, placement.root.clone()));
+        }
+        if self.lsp_declared_member(target, path).is_some() {
+            return None;
+        }
         // The maps are the authority: `lsp_failed` drops a dead
         // server's bindings and carried contexts, so a present entry is
         // a live context. Replay resolves identically without a client.
@@ -137,6 +146,7 @@ impl Editor {
         let covering = attach
             .attached
             .iter()
+            .filter(|a| !attach.members.servers.contains_key(&a.server))
             .filter(|a| a.language == language && &a.target == target && path.starts_with(&a.root))
             .max_by_key(|a| a.root.as_os_str().len());
         if let Some(best) = covering {
@@ -209,6 +219,20 @@ impl Editor {
     /// graceful shutdown that never blocks the input thread.
     fn lsp_retire_server(&mut self, server: ServerId, reason: &str) {
         self.analysis.symbols.server_gone(server);
+        self.lsp_state.attach.members.servers.remove(&server);
+        self.lsp_state
+            .attach
+            .members
+            .declaration_servers
+            .remove(&server);
+        self.lsp_state
+            .attach
+            .members
+            .documents
+            .retain(|_, (_, owner)| *owner != server);
+        self.lsp_state
+            .jump_contexts
+            .retain(|_, c| c.server != server);
         // Remove the placements first: the closes below re-enter the
         // retirement scan, and this server must already be gone from
         // the tables so the recursion is empty.
@@ -240,6 +264,7 @@ impl Editor {
                 });
             }
         }
+        self.retire_workspace_symbol_source(server);
         trace::services::rejected("lsp", reason);
     }
 }

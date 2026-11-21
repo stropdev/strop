@@ -10,7 +10,10 @@ fn extract(language: languages::LanguageId, src: &str) -> Vec<(SymbolKind, Strin
         .extract(src.as_bytes(), &|| false)
         .expect("evidence")
         .into_iter()
-        .map(|d| (d.kind, d.name, d.line, d.end_line))
+        .map(|d| {
+            let (first, last) = d.lines();
+            (d.kind, d.name, first, last)
+        })
         .collect()
 }
 
@@ -98,7 +101,7 @@ fn multiline_spans_cover_bodies() {
     // The name's byte column is the jump target (rg convention).
     let mut extractor = DeclExtractor::for_language(languages::LanguageId::Rust).unwrap();
     let found = extractor.extract(src.as_bytes(), &|| false).unwrap();
-    assert_eq!(found[0].col, 4, "fn wrapped: name starts at byte 3, col 4");
+    assert_eq!(found[0].selection, [(0, 3), (0, 10)]);
 }
 
 #[test]

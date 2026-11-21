@@ -63,7 +63,7 @@ impl Editor {
     /// headless drain both land here. Only the owning ticket may touch
     /// the model; everything else is a trace-level rejection.
     pub(crate) fn handle_picker_event(&mut self, event: PickerEvent) {
-        trace::services::picker(&event);
+        let mut event = event;
         let Some(glue) = self.picker.as_mut() else {
             return;
         };
@@ -82,11 +82,31 @@ impl Editor {
             trace::services::rejected("picker", "picker request superseded or completed");
             return;
         }
+        let current =
+            match self
+                .tape
+                .observe_owned("picker.delivery_inventory", &event.ticket, || {
+                    glue.inventory.is_current()
+                }) {
+                Ok(current) => current,
+                Err(error) => {
+                    self.message = error.to_string();
+                    return;
+                }
+            };
+        if !current {
+            if !matches!(event.msg, PickerMsg::Finished(_)) {
+                trace::services::rejected("picker", "project inventory retired");
+                return;
+            }
+            event.msg = PickerMsg::Finished(Outcome::Cancelled(
+                strop_core::worker::CancelReason::Superseded,
+            ));
+        }
+        trace::services::picker(&event);
         let appended = matches!(&event.msg, PickerMsg::Items(_));
-        let warm_scope = match &event.msg {
-            PickerMsg::ScopeProjects(projects) => Some(projects.clone()),
-            _ => None,
-        };
+        let workspace_finished = glue.picker.kind == strop_picker::Kind::WorkspaceSymbols
+            && matches!(&event.msg, PickerMsg::Finished(Outcome::Success(())));
         match event.msg {
             PickerMsg::Items(items) => {
                 let items = items.into_items();
@@ -95,8 +115,9 @@ impl Editor {
                     glue.picker.append(items);
                 }
             }
+            PickerMsg::PartialCoverage => glue.partial_coverage = true,
             PickerMsg::Warning(message) => glue.picker.warning = Some(message),
-            PickerMsg::ScopeProjects(_) => {} // handled after the match
+            PickerMsg::ScopeProjects(projects) => self.lsp_warm_scope_projects(projects),
             PickerMsg::QueryError(diagnostic) => {
                 let range = match (&glue.query, &glue.file_scope) {
                     (Some(current), Some(previous)) => {
@@ -137,8 +158,8 @@ impl Editor {
                 }
             }
         }
-        if let Some(projects) = warm_scope {
-            self.lsp_warm_scope_projects(projects);
+        if workspace_finished {
+            self.finish_workspace_symbols();
         }
         if appended {
             self.request_picker_ranking();

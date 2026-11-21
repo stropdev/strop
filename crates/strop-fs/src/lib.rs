@@ -21,6 +21,7 @@ mod stage;
 #[cfg(test)]
 mod tests;
 mod trash;
+pub mod workspace_manifest;
 
 pub use guard::reserved as is_protocol_path;
 pub use listing::{assemble, list, parent, ListedDirectory, ObservedEntry};

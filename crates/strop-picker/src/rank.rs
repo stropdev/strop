@@ -19,6 +19,17 @@ pub struct Row {
     pub(crate) matches: Range<usize>,
 }
 
+impl Row {
+    /// Unfiltered document symbols are displayed in producer order.
+    pub fn listing(item: usize) -> Self {
+        Self {
+            item,
+            score: 0,
+            matches: 0..0,
+        }
+    }
+}
+
 /// Rows contain only indices and scores. Discarding a stale result never frees
 /// thousands of per-row strings or highlight allocations on the editor thread.
 #[derive(Debug, Clone, Default, serde::Serialize)]

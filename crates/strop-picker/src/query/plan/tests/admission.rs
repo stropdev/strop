@@ -20,6 +20,7 @@ fn compile(input: &str, on: &schema::Schema) -> Option<Admission> {
 fn symbol<'a>(kind: SymbolKind, name: &'a str, container: Option<&'a str>) -> RowFacts<'a> {
     RowFacts {
         path: Some("src/lib.rs"),
+        native_path: None,
         line: Some(1),
         kind: Some(kind),
         text: name,

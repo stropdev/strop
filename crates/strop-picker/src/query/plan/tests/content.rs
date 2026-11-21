@@ -199,6 +199,7 @@ fn repo_atoms_decide_with_a_catalog_and_admit_without() {
     std::fs::create_dir(scope.join("engine/.git")).unwrap();
     std::fs::create_dir_all(scope.join("tools")).unwrap();
     std::fs::create_dir(scope.join("tools/.git")).unwrap();
+    std::fs::create_dir(scope.join("other")).unwrap();
     let catalog = crate::source::catalog::ProjectCatalog::discover(scope, &|| false);
     let with_catalog = Evidence {
         catalog: Some(&catalog),

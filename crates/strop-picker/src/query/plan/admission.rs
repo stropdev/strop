@@ -287,10 +287,15 @@ impl Test {
             // from the declaration around it, when an index was built.
             return match row.kind {
                 Some(kind) => Some(spec.admits(kind)),
-                None => evidence
-                    .symbols?
-                    .kind_decides(row.path?, row.line, spec.includes),
+                None => {
+                    evidence
+                        .symbols?
+                        .kind_decides(row.evidence_path()?, row.line, spec.includes)
+                }
             };
+        }
+        if let Test::Repo(name) = self {
+            return evidence.catalog?.repo_matches(row.evidence_path()?, name);
         }
         let path = row.path?;
         Some(match self {
@@ -302,8 +307,7 @@ impl Test {
                 crate::score::fuzzy_score_with_case(needle, path, *case).is_some()
             }
             Test::Glob(matcher) => matcher.is_match(path),
-            Test::Repo(name) => return evidence.catalog.map(|c| c.repo_matches(path, name)),
-            Test::Kind(_) => return None,
+            Test::Repo(_) | Test::Kind(_) => return None,
         })
     }
 }

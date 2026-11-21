@@ -48,7 +48,9 @@ impl Editor {
         glue.rank_alive = true;
         match self.tape.request("picker.ranker", &id) {
             Ok(false) => {
-                self.request_picker_ranking();
+                if glue.ranked_query.is_none() {
+                    self.request_picker_ranking();
+                }
                 return;
             }
             Err(error) => {
@@ -67,7 +69,9 @@ impl Editor {
                 return;
             }
         }
-        self.request_picker_ranking();
+        if glue.ranked_query.is_none() {
+            self.request_picker_ranking();
+        }
     }
 
     pub(crate) fn request_picker_ranking(&mut self) {

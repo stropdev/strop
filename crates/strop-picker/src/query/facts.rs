@@ -3,6 +3,7 @@
 //! pass. Filtering never formats a row, clones a path or splits text.
 
 use std::ops::Range;
+use std::path::Path;
 use std::sync::Arc;
 
 use strop_core::symbol_kind::SymbolKind;
@@ -14,6 +15,9 @@ use crate::{Item, Payload};
 pub struct RowFacts<'a> {
     /// Workspace-relative path.
     pub path: Option<&'a str>,
+    /// Native identity when the worker has a path in hand. The spelling
+    /// above remains suitable for textual patterns even for non-UTF-8 names.
+    pub native_path: Option<&'a Path>,
     /// 1-based line.
     pub line: Option<usize>,
     pub kind: Option<SymbolKind>,
@@ -21,6 +25,12 @@ pub struct RowFacts<'a> {
     pub text: &'a str,
     /// A second text content atoms may match: a symbol's container.
     pub container: Option<&'a str>,
+}
+
+impl<'a> RowFacts<'a> {
+    pub(crate) fn evidence_path(&self) -> Option<&'a Path> {
+        self.native_path
+    }
 }
 
 /// The facts an [`Item`] carries beyond its text and payload. Rows that
@@ -49,6 +59,10 @@ impl Item {
         };
         RowFacts {
             path: self.facts.path.as_deref().or(path),
+            native_path: match &self.payload {
+                Payload::File(path) => Some(path),
+                _ => None,
+            },
             line,
             kind: self.facts.kind,
             text: self

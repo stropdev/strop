@@ -4,9 +4,9 @@ use std::sync::Arc;
 use strop_picker::query::SearchQuery;
 
 impl Editor {
-    fn source_worker(
+    pub(crate) fn source_worker(
         &mut self,
-    ) -> Result<&strop_picker::SourceWorker, strop_core::worker::Failure> {
+    ) -> Result<&mut strop_picker::SourceWorker, strop_core::worker::Failure> {
         let watching = self.notify.push_coverage();
         let cwd = self.cwd.clone();
         match &mut self.picker_source {
@@ -23,6 +23,20 @@ impl Editor {
 
     fn query_policy(&self) -> strop_picker::SelectionPolicy {
         modes::policy(&self.config, self.picker_ranking.modes)
+    }
+
+    pub(crate) fn warm_project_inventory(&mut self) {
+        if self.finishing || self.tape.is_replay() {
+            return;
+        }
+        let policy = self.query_policy();
+        let root = self.cwd.clone();
+        if let Err(failure) = self
+            .source_worker()
+            .and_then(|source| source.warm_inventory(root, policy))
+        {
+            self.message = format!("project preparation unavailable: {}", failure.message);
+        }
     }
     /// Parse the field for its surface (0109): one parse per revision,
     /// against what the surface declares. A Ready query sets the ranked
@@ -155,6 +169,7 @@ impl Editor {
         };
         if let Some(glue) = self.picker.as_mut() {
             glue.active = Some(ticket.clone());
+            glue.partial_coverage = false;
             glue.picker.streaming = true;
         }
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
@@ -202,7 +217,11 @@ impl Editor {
     /// the walk and the symbol index consume the parsed query; the row
     /// filters apply in the ranking pass. Replay registers like files.
     pub(super) fn launch_workspace_symbols_request(&mut self, parsed: Arc<SearchQuery>) {
-        let Some(picker) = self.picker.as_ref().map(|glue| glue.id) else {
+        let Some((picker, scope)) = self
+            .picker
+            .as_ref()
+            .and_then(|g| Some((g.id, g.file_root.clone()?)))
+        else {
             return;
         };
         let request = match self.worker_ids.allocate() {
@@ -216,11 +235,12 @@ impl Editor {
             request,
             key: PickerKey {
                 picker,
-                cwd: self.cwd.clone(),
+                cwd: scope.path.clone(),
             },
         };
         if let Some(glue) = self.picker.as_mut() {
             glue.active = Some(ticket.clone());
+            glue.partial_coverage = false;
             glue.picker.streaming = true;
         }
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {
@@ -229,6 +249,39 @@ impl Editor {
                 "request":request.get(),"cwd":self.cwd.to_string_lossy(),
             })
         });
+        let mut buffers = std::collections::HashMap::new();
+        let snapshots = self
+            .docs
+            .iter()
+            .filter_map(|(id, doc)| {
+                let location = doc.file_target(&self.cwd)?.resource_location()?;
+                if location.filesystem != scope.filesystem
+                    || !location.path.starts_with(&scope.path)
+                {
+                    return None;
+                }
+                buffers.insert(location.path.clone(), (id, doc.buf.revision()));
+                doc.buf.is_dirty().then(|| strop_picker::SourceSnapshot {
+                    path: location.path,
+                    text: doc.buf.snapshot(),
+                })
+            })
+            .collect();
+        if let Some(glue) = self.picker.as_mut() {
+            glue.ws_buffers = buffers;
+            glue.ws_syntax_len = None;
+            if scope.filesystem != strop_workspace::Filesystem::Local {
+                glue.active = None;
+                glue.picker.streaming = false;
+                glue.partial_coverage = true;
+                glue.picker.warning = Some(
+                    "remote workspace symbols: semantic servers only; syntax coverage unavailable"
+                        .into(),
+                );
+                glue.ws_syntax_len = Some(0);
+                return;
+            }
+        }
         match self.tape.request(
             "picker-workspace-symbols",
             &serde_json::json!({"ticket":ticket}),
@@ -248,9 +301,9 @@ impl Editor {
         }
         let policy = self.query_policy();
         let tx = self.picker_source_sink(ticket.clone());
-        let root = self.cwd.clone();
+        let root = scope.path;
         let worker = match self.source_worker() {
-            Ok(source) => source.workspace_symbols(root, parsed, policy, tx),
+            Ok(source) => source.workspace_symbols(root, parsed, policy, snapshots, tx),
             Err(failure) => {
                 let _ = tx.send(PickerMsg::Finished(strop_core::worker::Outcome::Failed {
                     failure,
@@ -338,9 +391,7 @@ impl Editor {
             // retire in-flight LSP replies — they answered a query the
             // input has left behind (0063 §4: no retired-query
             // publication).
-            if let Some(glue) = self.picker.as_mut() {
-                glue.wsymbols_generation += 1;
-            }
+            self.query_workspace_symbols();
             return;
         };
         // The syntax tier re-walks only when the walk's scope moved;
@@ -359,6 +410,54 @@ impl Editor {
         // generation; only bare content text crosses the wire.
         self.query_workspace_symbols();
         self.request_picker_ranking();
+    }
+
+    pub(crate) fn invalidate_manifest_picker(&mut self) {
+        let Some(glue) = self.picker.as_mut() else {
+            return;
+        };
+        if glue.picker.kind != Kind::WorkspaceSymbols
+            || !glue.file_root.as_ref().is_some_and(|root| {
+                root.filesystem == strop_workspace::Filesystem::Local && root.path == self.cwd
+            })
+        {
+            return;
+        }
+        glue.revoke(CancelReason::Superseded);
+        glue.query = None;
+        glue.deferred = None;
+        glue.rank_pending = None;
+        glue.ranked_query = None;
+        glue.project_statuses.clear();
+        glue.picker.clear_items();
+        glue.picker.streaming = true;
+        // Retire already-issued semantic replies as well as syntax batches.
+        glue.wsources.clear();
+    }
+
+    pub(crate) fn refresh_manifest_picker(&mut self) {
+        let Some(glue) = self.picker.as_mut() else {
+            return;
+        };
+        match glue.picker.kind {
+            Kind::WorkspaceSymbols
+                if glue.file_root.as_ref().is_some_and(|root| {
+                    root.filesystem == strop_workspace::Filesystem::Local && root.path == self.cwd
+                }) =>
+            {
+                glue.query = None;
+                glue.project_statuses.clear();
+                self.workspace_symbols_query_changed();
+            }
+            Kind::Search
+                if glue.search.as_ref().is_some_and(|s| {
+                    s.scope.root.filesystem == strop_workspace::Filesystem::Local
+                }) =>
+            {
+                self.restart_search_query()
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn filesystem_picker_changed(&mut self) {
@@ -466,6 +565,7 @@ impl Editor {
         // registration precedes launch (replay stops here)
         if let Some(glue) = self.picker.as_mut() {
             glue.active = Some(ticket.clone());
+            glue.partial_coverage = false;
             glue.picker.streaming = true;
         }
         strop_trace::record_with(strop_trace::EventKind::JobStarted, || {

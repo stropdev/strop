@@ -86,18 +86,24 @@ impl World {
     fn current(&self) -> Current {
         Current {
             revision: BufferRevision::new(self.revision),
-            server: Some(ServerId::new(self.server)),
+            document: self.document(),
+            workspace: None,
+            producer: Some(Producer::Server(ServerId::new(self.server))),
         }
     }
 }
 
 fn honest(store: &mut SymbolStore, world: &World, id: BuildId, symbols: Vec<ProtoSymbol>) {
-    store.deliver(
-        id,
-        Some(world.current()),
-        Some(symbols),
-        strop_lsp::PositionEncoding::Utf8,
-    );
+    let mut current = world.current();
+    if store
+        .building()
+        .is_some_and(|build| build.producer == Producer::Outline)
+    {
+        current.producer = Some(Producer::Outline);
+    }
+    let location = symbols[0].location.doc.clone();
+    let list = super::store::SymbolList::prepare(symbols, "/w".as_ref(), &location, None);
+    store.deliver(id, Some(current), Some(list));
 }
 
 /// Wrong: the result is filed under the revision current when it arrives.
@@ -163,6 +169,7 @@ fn run(sequence: &[Step], accept: Accept) -> Result<(), String> {
                         document: world.document(),
                         revision: BufferRevision::new(world.revision),
                         producer,
+                        workspace: None,
                         open: false,
                     });
                     // the build reads the text as it is now

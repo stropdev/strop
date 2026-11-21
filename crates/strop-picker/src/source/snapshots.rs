@@ -1,5 +1,8 @@
 //! Dirty-source matching shared by local and SSH providers in the captured scope.
-use super::{flow::StreamSender, query::RECORD_LIMIT};
+use super::{
+    flow::{BatchError, StreamSender},
+    query::RECORD_LIMIT,
+};
 use crate::query::{ContentPlan, Evidence, RowFacts};
 use std::{path::PathBuf, sync::Arc};
 use strop_core::worker::CancelToken;
@@ -24,12 +27,13 @@ pub(super) fn emit_snapshots(
     paths: &mut Vec<PathBuf>,
     tx: &StreamSender,
     token: &CancelToken,
-    mut sources: Sources<'_>,
-) -> Result<(), String> {
+    sources: Sources<'_>,
+) -> Result<(), SnapshotError> {
     let Sources {
         catalog,
-        ref mut symbols,
+        mut symbols,
     } = sources;
+    let mut extractors = super::symbols::Extractors::default();
     for snapshot in snapshots {
         let Ok(relative) = snapshot.path.strip_prefix(&root.path) else {
             continue;
@@ -42,50 +46,107 @@ pub(super) fn emit_snapshots(
             filesystem: root.filesystem.clone(),
             path: snapshot.path.clone(),
         };
-        let label = strop_workspace::directory::display_path(relative);
-        let relative = relative.to_string_lossy().into_owned();
         // Dirty text is authoritative for `kind:` evidence too: the
         // overlay replaces whatever the disk pass extracted (0063 §2).
         if let Some(index) = symbols.as_deref_mut() {
-            index.overlay(&relative, &snapshot.text.to_string(), &|| {
+            index.overlay(relative, &snapshot.text, &mut extractors, &|| {
                 token.is_cancelled()
             });
         }
-        for (line, text) in snapshot.text.lines().enumerate() {
-            if token.is_cancelled() {
-                return Err("search cancelled".into());
-            }
-            if text.len_bytes() > RECORD_LIMIT {
-                return Err("open source line exceeds the 1 MiB search bound".into());
-            }
-            let text = text.to_string();
-            let text: Arc<str> = text.strip_suffix('\n').unwrap_or(&text).into();
-            let row = RowFacts {
-                path: Some(&relative),
-                line: Some(line + 1),
-                text: &text,
-                ..RowFacts::default()
-            };
-            let evidence = Evidence {
+        emit_rope(
+            &snapshot.text,
+            relative,
+            &location,
+            content,
+            Evidence {
                 catalog,
                 symbols: symbols.as_deref(),
-            };
-            if !content.admits(&row, &evidence) {
-                continue;
-            }
-            let mut items = Vec::new();
-            super::query::append_matches(
-                &mut items,
-                content,
-                &location,
-                &label,
-                line + 1,
-                &text,
-                Some("buffer"),
-            )?;
-            tx.batch(items, token)
-                .map_err(|error| error.message().to_string())?;
-        }
+            },
+            tx,
+            token,
+        )?;
     }
     Ok(())
+}
+
+pub(super) enum SnapshotError {
+    Match(String),
+    Delivery(BatchError),
+}
+
+impl SnapshotError {
+    pub(super) fn finish(self, tx: &StreamSender) -> strop_core::worker::Outcome<()> {
+        match self {
+            Self::Delivery(error) => error.finish(tx),
+            Self::Match(message) => strop_core::worker::Outcome::failed(
+                strop_core::worker::FailureKind::Protocol,
+                message,
+            ),
+        }
+    }
+}
+
+impl From<SnapshotError> for String {
+    fn from(error: SnapshotError) -> Self {
+        match error {
+            SnapshotError::Match(message) => message,
+            SnapshotError::Delivery(error) => error.message().to_owned(),
+        }
+    }
+}
+
+/// The caller has just verified membership of this native path. The rope is
+/// the sole source even when it has no matches; the bool only schedules hints.
+pub(super) fn emit_rope(
+    rope: &ropey::Rope,
+    relative: &std::path::Path,
+    location: &ResourceLocation,
+    content: &ContentPlan,
+    evidence: Evidence<'_>,
+    tx: &StreamSender,
+    token: &CancelToken,
+) -> Result<bool, SnapshotError> {
+    let label = strop_workspace::directory::display_path(relative);
+    let spelling = relative.to_string_lossy();
+    let mut hit = false;
+    for (line, text) in rope.lines().enumerate() {
+        if line % 256 == 0 {
+            tx.heartbeat();
+        }
+        if token.is_cancelled() || !tx.inventory_current() {
+            return Err(SnapshotError::Delivery(BatchError::Cancelled));
+        }
+        if text.len_bytes() > RECORD_LIMIT {
+            return Err(SnapshotError::Match(
+                "open source line exceeds the 1 MiB search bound".into(),
+            ));
+        }
+        let line_text: std::borrow::Cow<'_, str> = text.into();
+        let text = line_text.strip_suffix('\n').unwrap_or(&line_text);
+        let row = RowFacts {
+            path: Some(&spelling),
+            native_path: Some(relative),
+            line: Some(line + 1),
+            text,
+            ..RowFacts::default()
+        };
+        if !content.admits(&row, &evidence) {
+            continue;
+        }
+        let text = Arc::from(text);
+        let mut items = Vec::new();
+        super::query::append_matches(
+            &mut items,
+            content,
+            location,
+            &label,
+            line + 1,
+            &text,
+            Some("buffer"),
+        )
+        .map_err(SnapshotError::Match)?;
+        hit |= !items.is_empty();
+        tx.batch(items, token).map_err(SnapshotError::Delivery)?;
+    }
+    Ok(hit)
 }
