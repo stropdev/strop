@@ -12,7 +12,10 @@
 
 extern crate alloc;
 
+pub mod admission;
+pub mod boundary;
 pub mod cache;
+pub mod coverage;
 pub mod editmap;
 pub mod excerpt;
 pub mod generation;

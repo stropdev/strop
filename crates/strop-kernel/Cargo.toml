@@ -14,4 +14,14 @@ publish = false
 # Read by Charon when the `proofs` gate translates this crate
 # (proofs/extract.sh): translation starts from the proved modules.
 [package.metadata.charon]
-start_from = ["strop_kernel::cache", "strop_kernel::editmap", "strop_kernel::excerpt", "strop_kernel::generation", "strop_kernel::intervals", "strop_kernel::layout"]
+start_from = [
+    "strop_kernel::admission",
+    "strop_kernel::boundary",
+    "strop_kernel::cache",
+    "strop_kernel::coverage",
+    "strop_kernel::editmap",
+    "strop_kernel::excerpt",
+    "strop_kernel::generation",
+    "strop_kernel::intervals",
+    "strop_kernel::layout",
+]
