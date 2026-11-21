@@ -68,6 +68,7 @@ python3 "$ROOT/.github/scripts/release-catalog.py" catalog \
     --published-at "2026-01-01T00:00:00Z" \
     --out "$LATEST/catalog.json" >/dev/null
 
+# Run the system shell so it resolves the fixture utilities through PATH.
 run_install() { # installdir logfile [extra env as NAME=VALUE ...]
     dir="$1"
     log="$2"
@@ -75,7 +76,7 @@ run_install() { # installdir logfile [extra env as NAME=VALUE ...]
     env STROP_INSTALL_YES=1 STROP_INSTALL_DIR="$dir" \
         STROP_CATALOG_URL="file://$LATEST/catalog.json" \
         STROP_BASE_URL="file://$SRV" \
-        "$@" sh "$ROOT/install.sh" >"$log" 2>&1
+        "$@" /bin/sh "$ROOT/install.sh" >"$log" 2>&1
 }
 
 # --- 1. catalog-driven fresh install -------------------------------------
@@ -134,6 +135,7 @@ run_install "$WORK/bin4" "$WORK/out4b.log" \
     || fail "catalog install over pinned: $(cat "$WORK/out4b.log")"
 [ "$(cat "$WORK/bin4/strop")" = "fake strop binary $NEW_VERSION" ] \
     || fail "catalog install over pinned got the wrong artifact"
+[ -x "$WORK/bin4/strop" ] || fail "replacement binary is not executable"
 RECEIPT4="$WORK/bin4/.strop-install.json"
 grep -q "\"version\": \"$NEW_VERSION\"" "$RECEIPT4" || fail "receipt not refreshed"
 grep -q "\"previous_version\": \"$OLD_VERSION\"" "$RECEIPT4" \
@@ -191,7 +193,7 @@ for machine in x86_64 amd64; do
     [ ! -e "$WORK/intel-$machine" ] || fail "non-Linux x86_64 created an install directory"
     if env PATH="$WORK/shim-intel:$PATH" STROP_TEST_MACHINE="$machine" \
         STROP_TEST_FETCHED="$WORK/fetched-zig-$machine" \
-        sh "$ROOT/.github/scripts/install-zig.sh" "$WORK/zig-$machine" \
+        /bin/sh "$ROOT/.github/scripts/install-zig.sh" "$WORK/zig-$machine" \
         >"$WORK/zig-$machine.log" 2>&1; then
         fail "non-Linux x86_64 unexpectedly provisioned a compiler"
     fi
@@ -212,5 +214,21 @@ for fixture in Darwin:arm64 Linux:aarch64 Linux:arm64; do
     [ ! -e "$WORK/unsupported-$system-$machine" ] || fail "$system/$machine created an install directory"
 done
 ok "all non-Linux-x86_64 targets refuse before fetching or writing"
+
+# --- 8. A directory at the binary path is not a publication target --------
+DEST="$WORK/bin8/strop"
+mkdir -p "$DEST"
+printf 'keep me\n' > "$DEST/existing"
+if run_install "$WORK/bin8" "$WORK/out8.log" STROP_VERSION="$NEW_VERSION"; then
+    fail "install over a directory unexpectedly succeeded"
+fi
+grep '^Error:' "$WORK/out8.log" | grep -Fq "$DEST" || fail "error did not name $DEST"
+if grep -Fq "strop $NEW_VERSION installed" "$WORK/out8.log"; then
+    fail "reported success for a directory destination"
+fi
+[ "$(ls -A "$WORK/bin8")" = strop ] || fail "failed install left staging files or a receipt"
+[ "$(ls -A "$DEST")" = existing ] || fail "failed install changed directory entries"
+[ "$(cat "$DEST/existing")" = 'keep me' ] || fail "failed install changed existing contents"
+ok "directory destination refuses publication without leftovers"
 
 echo "install.sh fixtures: all passed"

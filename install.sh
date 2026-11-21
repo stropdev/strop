@@ -174,7 +174,8 @@ STAGED=$(mktemp "$INSTALL_DIR/.strop-stage.XXXXXX") || err "cannot stage in $INS
 cat "$SRC" > "$STAGED" || err "failed to stage $BIN"
 chmod 0755 "$STAGED" || err "failed to mark staged $BIN executable"
 cmp -s "$SRC" "$STAGED" || err "staged bytes diverged — aborting"
-mv -f "$STAGED" "$INSTALL_DIR/$BIN" || err "failed to publish $INSTALL_DIR/$BIN"
+# Treat the destination as the final filename, never as a container.
+mv -fT "$STAGED" "$INSTALL_DIR/$BIN" || err "failed to publish $INSTALL_DIR/$BIN"
 STAGED=""
 
 # Installation receipt (0056 AR11): channel/version/root/method facts the
