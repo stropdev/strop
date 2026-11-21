@@ -49,6 +49,7 @@ pub(crate) async fn workspace_symbols(env: WireEnv, generation: u64, query: Stri
         work_done_progress_params: Default::default(),
         query,
     };
+    let encoding = env.caps.encoding();
     let response = env
         .socket
         .request::<lt::request::WorkspaceSymbolRequest>(params)
@@ -62,6 +63,7 @@ pub(crate) async fn workspace_symbols(env: WireEnv, generation: u64, query: Stri
                 .collect::<Vec<_>>();
             let _ = env.tx.send(LspEvent::WorkspaceSymbols {
                 server,
+                encoding,
                 generation,
                 symbols,
             });
@@ -87,6 +89,7 @@ pub(crate) async fn workspace_symbols(env: WireEnv, generation: u64, query: Stri
                 .collect::<Vec<_>>();
             let _ = env.tx.send(LspEvent::WorkspaceSymbols {
                 server,
+                encoding,
                 generation,
                 symbols,
             });
@@ -94,6 +97,7 @@ pub(crate) async fn workspace_symbols(env: WireEnv, generation: u64, query: Stri
         Ok(None) => {
             let _ = env.tx.send(LspEvent::WorkspaceSymbols {
                 server,
+                encoding,
                 generation,
                 symbols: Vec::new(),
             });

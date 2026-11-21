@@ -1,4 +1,7 @@
+import Kernel.Admission
+import Kernel.Boundary
 import Kernel.Cache
+import Kernel.Coverage
 import Kernel.EditMap
 import Kernel.EditSpan
 import Kernel.Excerpt

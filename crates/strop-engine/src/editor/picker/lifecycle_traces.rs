@@ -206,6 +206,7 @@ mod tests {
         // ProviderPartial(g): the live generation merges.
         e.handle_lsp_event(LspEvent::WorkspaceSymbols {
             server: ServerId::new(9),
+            encoding: strop_lsp::PositionEncoding::Utf16,
             generation: g,
             symbols: vec![symbol("semantic_hit")],
         });
@@ -225,6 +226,7 @@ mod tests {
         // ProviderPartial(retired) landing late: the model rejects it.
         e.handle_lsp_event(LspEvent::WorkspaceSymbols {
             server: ServerId::new(9),
+            encoding: strop_lsp::PositionEncoding::Utf16,
             generation: retired,
             symbols: vec![symbol("retired_hit")],
         });
@@ -238,6 +240,7 @@ mod tests {
         // ProviderPartial(g) for the new live generation: merges.
         e.handle_lsp_event(LspEvent::WorkspaceSymbols {
             server: ServerId::new(9),
+            encoding: strop_lsp::PositionEncoding::Utf16,
             generation: g,
             symbols: vec![symbol("wrap_semantic")],
         });

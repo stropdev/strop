@@ -92,7 +92,11 @@ impl Editor {
         // Replay gate: no native config/trust/executability before this
         // registration (R11).
         match self.tape.request("lsp.attach", &args) {
-            Ok(true) => self.lsp_spawn_discovery(ticket, doc, ext, language),
+            Ok(true) => {
+                let mut directory = doc.path;
+                directory.pop();
+                self.lsp_spawn_discovery(ticket, doc.filesystem, directory, ext, language);
+            }
             Ok(false) => {}
             Err(error) => {
                 self.lsp_state.attach.pending.remove(&args_key(&args));

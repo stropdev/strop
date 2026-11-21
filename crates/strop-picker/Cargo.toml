@@ -15,6 +15,7 @@ parking_lot = "0.12"
 strop-core = { path = "../strop-core" }
 strop-workspace = { path = "../strop-workspace" }
 strop-fs = { path = "../strop-fs" }
+strop-lsp = { path = "../strop-lsp" }
 strop-remote = { path = "../strop-remote" }
 strop-syntax = { path = "../strop-syntax" }
 serde = { version = "1", features = ["derive", "rc"] }

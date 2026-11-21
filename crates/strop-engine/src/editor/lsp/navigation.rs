@@ -17,15 +17,28 @@ impl Editor {
             context,
             position: location.position,
         };
-        match location.doc.filesystem {
-            Filesystem::Local => self.request_open(location.doc.path, intent),
+        self.request_navigation_target(location.doc, intent);
+    }
+
+    /// Navigate in the producer's namespace. Remote rows require a live
+    /// endpoint seed; a picker must never reopen an analogous local file.
+    pub(crate) fn request_navigation_target(
+        &mut self,
+        location: ResourceLocation,
+        intent: crate::editor::io::OpenIntent,
+    ) {
+        match location.filesystem {
+            Filesystem::Local if !location.path.is_absolute() => {
+                self.message = strop_workspace::AddressError::RelativePath.to_string();
+            }
+            Filesystem::Local => self.request_open(location.path, intent),
             Filesystem::Remote(endpoint) => {
                 // The target is a file on the replying server's host:
                 // resolve it through an open document's canonical seed
                 // (`with_path` keeps endpoint + native bytes) — the
                 // analogous local path is never opened or probed.
                 match self.remote_file_for(&endpoint) {
-                    Some(seed) => match seed.with_path(location.doc.path.clone()) {
+                    Some(seed) => match seed.with_path(location.path) {
                         Ok(file) => self
                             .request_target(crate::files::FileTarget::Remote(file.into()), intent),
                         Err(error) => {
@@ -72,18 +85,9 @@ impl Editor {
                 .as_ref()
                 .is_some_and(|path| !self.cwd.join(path).starts_with(&binding.root)),
         };
-        let line = position
-            .line
-            .get()
-            .min(target_doc.buf.len_lines().saturating_sub(1));
-        let text = target_doc
-            .buf
-            .text()
-            .byte_slice(target_doc.buf.line_start(line)..target_doc.buf.line_end(line));
-        let col = strop_lsp::to_byte_col_slice(text, position.column, context.encoding).get();
-        let head = target_doc
-            .buf
-            .clamp_boundary(target_doc.buf.line_start(line).saturating_add(col));
+        let head = position
+            .navigation_offset(&target_doc.buf, context.encoding)
+            .get();
         self.push_jump();
         self.lsp_state.navigation = None;
         self.switch_to(target);
@@ -195,7 +199,7 @@ impl Editor {
                 context,
             );
         } else if let Some(seed) = self.remote_file_for(endpoint) {
-            // Context-free remote hits (symbol rows) record too —
+            // Context-free remote hits record too —
             // ctrl-o after the jump returns (0047 §1).
             self.push_jump();
             match seed.with_path(path.to_owned()) {

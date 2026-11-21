@@ -2,6 +2,17 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## Unreleased
+
+### Fixed
+
+- **Symbol jumps:** selecting a document or workspace symbol lands on its token even when non-ASCII text comes before it. Each language server's rows retain its negotiated column encoding; syntax outlines keep byte columns.
+- **Workspace symbols:** warming a project starts root and configuration discovery in the marker's directory, not its parent. A project-specific command still requires trust for that project.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 12. Replay a 0.75 recording with 0.75, or record it again.
+
 ## 0.75.0 — 2026-11-21
 
 ### Added

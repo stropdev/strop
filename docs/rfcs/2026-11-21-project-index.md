@@ -2,7 +2,7 @@
 rfc: "2026-11-21-project-index"
 title: "Prepare project symbols and search without making the index authoritative"
 status: "accepted"
-implementation: "not-started"
+implementation: "in-progress"
 authors: ["Astra"]
 created: "2026-11-21"
 updated: "2026-11-21"
@@ -121,3 +121,5 @@ Warm-root selection [#243](https://github.com/stropdev/strop/issues/243) owns th
 2026-11-21 — Proposed an optional, data-only workspace declaration and generalized the proofs and fixtures to arbitrary project/language IDs and provider capabilities. C++/Python remains a regression example, not the scope. No change to the proof-first release order.
 
 2026-11-21 — Maintainer accepted revision `5a87dd1`, including the workspace ownership and proof contracts. Acceptance authorizes #263; it is not evidence that the proof gate passed or that the manifest reader shipped.
+
+The first implementation slice is confined to `strop-kernel`: `boundary::deepest` selects a native-component prefix, `admission` checks answer ownership and refresh obligations, and `coverage` issues and checks completion certificates. Host bindings, measurements and the manifest reader are separate from these decisions.

@@ -20,6 +20,500 @@ set_option maxRecDepth 2048
 
 namespace strop_kernel
 
+/-- [strop_kernel::admission::Resource]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 9:0-14:1
+    Visibility: public -/
+structure admission.Resource where
+  root : Std.U64
+  root_incarnation : Std.U64
+  path : Std.U64
+  path_incarnation : Std.U64
+
+/-- [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Resource}::clone]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 8:9-8:14
+    Visibility: public -/
+def admission.Resource.Insts.CoreCloneClone.clone
+  (self : admission.Resource) : Result admission.Resource := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Resource}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 8:9-8:14 -/
+@[reducible]
+def admission.Resource.Insts.CoreCloneClone : core.clone.Clone
+  admission.Resource := {
+  clone := admission.Resource.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::marker::Copy for strop_kernel::admission::Resource}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 8:16-8:20 -/
+@[reducible]
+def admission.Resource.Insts.CoreMarkerCopy : core.marker.Copy
+  admission.Resource := {
+  cloneInst := admission.Resource.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::admission::same_resource]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 16:0-21:1 -/
+def admission.same_resource
+  (a : admission.Resource) (b : admission.Resource) : Result Bool := do
+  if a.root = b.root
+  then
+    if a.root_incarnation = b.root_incarnation
+    then
+      if a.path = b.path
+      then ok (a.path_incarnation = b.path_incarnation)
+      else ok false
+    else ok false
+  else ok false
+
+/-- [strop_kernel::admission::AnswerStamp]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 25:0-34:1
+    Visibility: public -/
+structure admission.AnswerStamp where
+  resource : admission.Resource
+  content : Std.U64
+  child : Std.U64
+  language : Std.U64
+  schema : Std.U64
+  query : Std.U64
+  declaration : Std.U64
+  scan : Std.U64
+
+/-- [strop_kernel::admission::same_answer]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 36:0-45:1 -/
+def admission.same_answer
+  (a : admission.AnswerStamp) (b : admission.AnswerStamp) : Result Bool := do
+  let b1 ← admission.same_resource a.resource b.resource
+  if b1
+  then
+    if a.content = b.content
+    then
+      if a.child = b.child
+      then
+        if a.language = b.language
+        then
+          if a.schema = b.schema
+          then
+            if a.query = b.query
+            then
+              if a.declaration = b.declaration
+              then ok (a.scan = b.scan)
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- [strop_kernel::admission::Surface]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 49:0-54:1
+    Visibility: public -/
+@[discriminant isize]
+inductive admission.Surface where
+| Disk : admission.Surface
+| BufferPending : admission.Surface
+| BufferEmpty : admission.Surface
+| BufferRows : admission.Surface
+
+/-- [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Surface}::clone]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 48:9-48:14
+    Visibility: public -/
+def admission.Surface.Insts.CoreCloneClone.clone
+  (self : admission.Surface) : Result admission.Surface := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Surface}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 48:9-48:14 -/
+@[reducible]
+def admission.Surface.Insts.CoreCloneClone : core.clone.Clone admission.Surface
+  := {
+  clone := admission.Surface.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::marker::Copy for strop_kernel::admission::Surface}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 48:16-48:20 -/
+@[reducible]
+def admission.Surface.Insts.CoreMarkerCopy : core.marker.Copy admission.Surface
+  := {
+  cloneInst := admission.Surface.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::admission::Origin]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 57:0-60:1
+    Visibility: public -/
+@[discriminant isize]
+inductive admission.Origin where
+| Disk : admission.Origin
+| Buffer : admission.Origin
+
+/-- [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Origin}::clone]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 56:9-56:14
+    Visibility: public -/
+def admission.Origin.Insts.CoreCloneClone.clone
+  (self : admission.Origin) : Result admission.Origin := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Origin}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 56:9-56:14 -/
+@[reducible]
+def admission.Origin.Insts.CoreCloneClone : core.clone.Clone admission.Origin
+  := {
+  clone := admission.Origin.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::marker::Copy for strop_kernel::admission::Origin}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 56:16-56:20 -/
+@[reducible]
+def admission.Origin.Insts.CoreMarkerCopy : core.marker.Copy admission.Origin
+  := {
+  cloneInst := admission.Origin.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::admission::admits_origin]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 65:0-73:1
+    Visibility: public -/
+def admission.admits_origin
+  (surface : admission.Surface) (origin : admission.Origin) : Result Bool := do
+  match origin with
+  | admission.Origin.Disk =>
+    match surface with
+    | admission.Surface.Disk => ok true
+    | admission.Surface.BufferPending => ok false
+    | admission.Surface.BufferEmpty => ok false
+    | admission.Surface.BufferRows => ok false
+  | admission.Origin.Buffer =>
+    match surface with
+    | admission.Surface.Disk => ok false
+    | admission.Surface.BufferPending => ok true
+    | admission.Surface.BufferEmpty => ok true
+    | admission.Surface.BufferRows => ok true
+
+/-- [strop_kernel::admission::Attachment]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 77:0-86:1
+    Visibility: public -/
+structure admission.Attachment where
+  root : Std.U64
+  root_incarnation : Std.U64
+  child : Std.U64
+  language : Std.U64
+  server : Std.U64
+  attachment : Std.U64
+  trusted : Bool
+  capable : Bool
+
+/-- [strop_kernel::admission::Binding]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 88:0-92:1
+    Visibility: public -/
+@[discriminant isize]
+inductive admission.Binding where
+| Unresolved : admission.Binding
+| LanguageHint : Std.U64 → admission.Binding
+| Live : admission.Attachment → admission.Binding
+
+/-- [strop_kernel::admission::Designation]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 96:0-100:1
+    Visibility: public -/
+@[discriminant isize]
+inductive admission.Designation where
+| Text : Std.U64 → admission.Designation
+| Syntax : Std.U64 → admission.Designation
+| Semantic : admission.Binding → admission.Designation
+
+/-- [strop_kernel::admission::Producer]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 102:0-106:1
+    Visibility: public -/
+@[discriminant isize]
+inductive admission.Producer where
+| Text : Std.U64 → admission.Producer
+| Syntax : Std.U64 → admission.Producer
+| Semantic : Std.U64 → Std.U64 → admission.Producer
+
+/-- [strop_kernel::admission::admits_producer]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 108:0-130:1 -/
+def admission.admits_producer
+  (target : admission.AnswerStamp) (want : admission.Designation)
+  (used : admission.Producer) :
+  Result Bool
+  := do
+  match want with
+  | admission.Designation.Text a =>
+    match used with
+    | admission.Producer.Text b => lift (core.cmp.impls.PartialEqU64.eq a b)
+    | admission.Producer.Syntax _ => ok false
+    | admission.Producer.Semantic _ _ => ok false
+  | admission.Designation.Syntax a =>
+    match used with
+    | admission.Producer.Text _ => ok false
+    | admission.Producer.Syntax b => lift (core.cmp.impls.PartialEqU64.eq a b)
+    | admission.Producer.Semantic _ _ => ok false
+  | admission.Designation.Semantic binding =>
+    match used with
+    | admission.Producer.Text _ => ok false
+    | admission.Producer.Syntax _ => ok false
+    | admission.Producer.Semantic server attachment =>
+      match binding with
+      | admission.Binding.Unresolved => ok false
+      | admission.Binding.LanguageHint _ => ok false
+      | admission.Binding.Live live =>
+        if live.trusted
+        then
+          if live.capable
+          then
+            if live.root = target.resource.root
+            then
+              if live.root_incarnation = target.resource.root_incarnation
+              then
+                if live.child = target.child
+                then
+                  if live.language = target.language
+                  then
+                    if live.server = server
+                    then ok (live.attachment = attachment)
+                    else ok false
+                  else ok false
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+
+/-- [strop_kernel::admission::Target]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 132:0-136:1
+    Visibility: public -/
+structure admission.Target where
+  stamp : admission.AnswerStamp
+  surface : admission.Surface
+  designated : admission.Designation
+
+/-- [strop_kernel::admission::Answer]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 138:0-142:1
+    Visibility: public -/
+structure admission.Answer where
+  stamp : admission.AnswerStamp
+  origin : admission.Origin
+  producer : admission.Producer
+
+/-- [strop_kernel::admission::admit]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 146:0-155:1
+    Visibility: public -/
+def admission.admit
+  (current : Option admission.Target) (answer : admission.Answer) :
+  Result Bool
+  := do
+  match current with
+  | none => ok false
+  | some t =>
+    let b ← admission.same_answer t.stamp answer.stamp
+    if b
+    then
+      let b1 ← admission.admits_origin t.surface answer.origin
+      if b1
+      then admission.admits_producer t.stamp t.designated answer.producer
+      else ok false
+    else ok false
+
+/-- [strop_kernel::admission::Scan]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 161:0-167:1
+    Visibility: public -/
+structure admission.Scan where
+  resource : admission.Resource
+  declaration : Std.U64
+  scan : Std.U64
+  invalidation : Std.U64
+  watch : Std.U64
+
+/-- [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Scan}::clone]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 160:9-160:14
+    Visibility: public -/
+def admission.Scan.Insts.CoreCloneClone.clone
+  (self : admission.Scan) : Result admission.Scan := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Scan}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 160:9-160:14 -/
+@[reducible]
+def admission.Scan.Insts.CoreCloneClone : core.clone.Clone admission.Scan := {
+  clone := admission.Scan.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::marker::Copy for strop_kernel::admission::Scan}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 160:16-160:20 -/
+@[reducible]
+def admission.Scan.Insts.CoreMarkerCopy : core.marker.Copy admission.Scan := {
+  cloneInst := admission.Scan.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::admission::Refresh]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 170:0-175:1
+    Visibility: public -/
+@[discriminant isize]
+inductive admission.Refresh where
+| Retired : admission.Refresh
+| Unwatched : admission.Refresh
+| Pending : admission.Scan → admission.Refresh
+| Clean : admission.Scan → admission.Refresh
+
+/-- [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Refresh}::clone]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 169:9-169:14
+    Visibility: public -/
+def admission.Refresh.Insts.CoreCloneClone.clone
+  (self : admission.Refresh) : Result admission.Refresh := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::clone::Clone for strop_kernel::admission::Refresh}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 169:9-169:14 -/
+@[reducible]
+def admission.Refresh.Insts.CoreCloneClone : core.clone.Clone admission.Refresh
+  := {
+  clone := admission.Refresh.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::admission::{impl core::marker::Copy for strop_kernel::admission::Refresh}]
+    Source: 'crates/strop-kernel/src/admission.rs', lines 169:16-169:20 -/
+@[reducible]
+def admission.Refresh.Insts.CoreMarkerCopy : core.marker.Copy admission.Refresh
+  := {
+  cloneInst := admission.Refresh.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::admission::settle]:
+    Source: 'crates/strop-kernel/src/admission.rs', lines 179:0-192:1
+    Visibility: public -/
+def admission.settle
+  (current : admission.Refresh) (started : admission.Scan) (success : Bool) :
+  Result admission.Refresh
+  := do
+  match current with
+  | admission.Refresh.Retired => ok admission.Refresh.Retired
+  | admission.Refresh.Unwatched => ok admission.Refresh.Unwatched
+  | admission.Refresh.Pending now =>
+    if success
+    then
+      let b ← admission.same_resource now.resource started.resource
+      if b
+      then
+        if now.declaration = started.declaration
+        then
+          if now.scan = started.scan
+          then
+            if now.invalidation = started.invalidation
+            then
+              if now.watch = started.watch
+              then ok (admission.Refresh.Clean now)
+              else ok current
+            else ok current
+          else ok current
+        else ok current
+      else ok current
+    else ok current
+  | admission.Refresh.Clean _ => ok current
+
+/-- [strop_kernel::boundary::encloses]: loop body 0:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 13:4-20:1 -/
+@[rust_loop_body]
+def boundary.encloses_loop.body
+  (root : Slice Std.U64) (path : Slice Std.U64) (i : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  let i1 := Slice.len root
+  if i < i1
+  then
+    let i2 ← Slice.index_usize root i
+    let i3 ← Slice.index_usize path i
+    if i2 != i3
+    then ok (done false)
+    else let i4 ← i + 1#usize
+         ok (cont i4)
+  else ok (done true)
+
+/-- [strop_kernel::boundary::encloses]: loop 0:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 13:4-20:1 -/
+@[rust_loop]
+def boundary.encloses_loop
+  (root : Slice Std.U64) (path : Slice Std.U64) (i : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun i1 => boundary.encloses_loop.body root path i1)
+    i
+
+/-- [strop_kernel::boundary::encloses]:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 8:0-20:1 -/
+def boundary.encloses
+  (root : Slice Std.U64) (path : Slice Std.U64) : Result Bool := do
+  let i := Slice.len root
+  let i1 := Slice.len path
+  if i > i1
+  then ok false
+  else boundary.encloses_loop root path 0#usize
+
+/-- [strop_kernel::boundary::consider]:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 22:0-32:1 -/
+def boundary.consider
+  (path : Slice Std.U64) (root : Slice Std.U64) (best : Option Std.Usize) :
+  Result (Option Std.Usize)
+  := do
+  match best with
+  | none =>
+    let b ← boundary.encloses root path
+    if b
+    then let i := Slice.len root
+         ok (some i)
+    else ok none
+  | some depth =>
+    let i := Slice.len root
+    if i <= depth
+    then ok best
+    else
+      let b ← boundary.encloses root path
+      if b
+      then let i1 := Slice.len root
+           ok (some i1)
+      else ok best
+
+/-- [strop_kernel::boundary::deepest]: loop body 0:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 42:4-45:5
+    Visibility: public -/
+@[rust_loop_body]
+def boundary.deepest_loop.body
+  (path : Slice Std.U64) (roots : Slice (alloc.vec.Vec Std.U64))
+  (best : Option Std.Usize) (i : Std.Usize) :
+  Result (ControlFlow ((Option Std.Usize) × Std.Usize) (Option Std.Usize))
+  := do
+  let i1 := Slice.len roots
+  if i < i1
+  then
+    let v ← Slice.index_usize roots i
+    let s := alloc.vec.Vec.deref v
+    let best1 ← boundary.consider path s best
+    let i2 ← i + 1#usize
+    ok (cont (best1, i2))
+  else ok (done best)
+
+/-- [strop_kernel::boundary::deepest]: loop 0:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 42:4-45:5
+    Visibility: public -/
+@[rust_loop]
+def boundary.deepest_loop
+  (path : Slice Std.U64) (roots : Slice (alloc.vec.Vec Std.U64))
+  (best : Option Std.Usize) (i : Std.Usize) :
+  Result (Option Std.Usize)
+  := do
+  loop
+    (fun (best1, i1) => boundary.deepest_loop.body path roots best1 i1)
+    (best, i)
+
+/-- [strop_kernel::boundary::deepest]:
+    Source: 'crates/strop-kernel/src/boundary.rs', lines 39:0-47:1
+    Visibility: public -/
+@[reducible]
+def boundary.deepest
+  (path : Slice Std.U64) (roots : Slice (alloc.vec.Vec Std.U64)) :
+  Result (Option Std.Usize)
+  := do
+  boundary.deepest_loop path roots none 0#usize
+
 /-- [strop_kernel::cache::Slot]
     Source: 'crates/strop-kernel/src/cache.rs', lines 30:0-37:1
     Visibility: public -/
@@ -330,6 +824,376 @@ def cache.place
           ({ live := true, subject, producer, version, cost, used := now } :
           cache.Slot)
       ok (some «at», slots2)
+
+/-- [strop_kernel::coverage::Evidence]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 9:0-13:1
+    Visibility: public -/
+@[discriminant isize]
+inductive coverage.Evidence where
+| Unknown : coverage.Evidence
+| Eligible : coverage.Evidence
+| Excluded : coverage.Evidence
+
+/-- [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Evidence}::clone]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 8:9-8:14
+    Visibility: public -/
+def coverage.Evidence.Insts.CoreCloneClone.clone
+  (self : coverage.Evidence) : Result coverage.Evidence := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Evidence}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 8:9-8:14 -/
+@[reducible]
+def coverage.Evidence.Insts.CoreCloneClone : core.clone.Clone coverage.Evidence
+  := {
+  clone := coverage.Evidence.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::marker::Copy for strop_kernel::coverage::Evidence}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 8:16-8:20 -/
+@[reducible]
+def coverage.Evidence.Insts.CoreMarkerCopy : core.marker.Copy coverage.Evidence
+  := {
+  cloneInst := coverage.Evidence.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::coverage::Hint]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 17:0-21:1
+    Visibility: public -/
+@[discriminant isize]
+inductive coverage.Hint where
+| None : coverage.Hint
+| LikelyHit : coverage.Hint
+| Declared : Std.U64 → Option Std.U64 → coverage.Hint
+
+/-- [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Hint}::clone]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 16:9-16:14
+    Visibility: public -/
+def coverage.Hint.Insts.CoreCloneClone.clone
+  (self : coverage.Hint) : Result coverage.Hint := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Hint}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 16:9-16:14 -/
+@[reducible]
+def coverage.Hint.Insts.CoreCloneClone : core.clone.Clone coverage.Hint := {
+  clone := coverage.Hint.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::marker::Copy for strop_kernel::coverage::Hint}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 16:16-16:20 -/
+@[reducible]
+def coverage.Hint.Insts.CoreMarkerCopy : core.marker.Copy coverage.Hint := {
+  cloneInst := coverage.Hint.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::coverage::Schedule]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 24:0-28:1
+    Visibility: public -/
+@[discriminant isize]
+inductive coverage.Schedule where
+| Skip : coverage.Schedule
+| Examine : coverage.Schedule
+| ExamineFirst : coverage.Schedule
+
+/-- [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Schedule}::clone]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 23:9-23:14
+    Visibility: public -/
+def coverage.Schedule.Insts.CoreCloneClone.clone
+  (self : coverage.Schedule) : Result coverage.Schedule := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Schedule}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 23:9-23:14 -/
+@[reducible]
+def coverage.Schedule.Insts.CoreCloneClone : core.clone.Clone coverage.Schedule
+  := {
+  clone := coverage.Schedule.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::marker::Copy for strop_kernel::coverage::Schedule}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 23:16-23:20 -/
+@[reducible]
+def coverage.Schedule.Insts.CoreMarkerCopy : core.marker.Copy coverage.Schedule
+  := {
+  cloneInst := coverage.Schedule.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::coverage::schedule]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 30:0-38:1
+    Visibility: public -/
+def coverage.schedule
+  (evidence : coverage.Evidence) (hint : coverage.Hint) :
+  Result coverage.Schedule
+  := do
+  match evidence with
+  | coverage.Evidence.Unknown =>
+    match hint with
+    | coverage.Hint.None => ok coverage.Schedule.Examine
+    | coverage.Hint.LikelyHit => ok coverage.Schedule.ExamineFirst
+    | coverage.Hint.Declared _ _ => ok coverage.Schedule.ExamineFirst
+  | coverage.Evidence.Eligible =>
+    match hint with
+    | coverage.Hint.None => ok coverage.Schedule.Examine
+    | coverage.Hint.LikelyHit => ok coverage.Schedule.ExamineFirst
+    | coverage.Hint.Declared _ _ => ok coverage.Schedule.ExamineFirst
+  | coverage.Evidence.Excluded => ok coverage.Schedule.Skip
+
+/-- [strop_kernel::coverage::Query]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 43:0-47:1
+    Visibility: public -/
+structure coverage.Query where
+  scope : Std.U64
+  policy : Std.U64
+  generation : Std.U64
+
+/-- [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Query}::clone]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 42:9-42:14
+    Visibility: public -/
+def coverage.Query.Insts.CoreCloneClone.clone
+  (self : coverage.Query) : Result coverage.Query := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Query}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 42:9-42:14 -/
+@[reducible]
+def coverage.Query.Insts.CoreCloneClone : core.clone.Clone coverage.Query := {
+  clone := coverage.Query.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::marker::Copy for strop_kernel::coverage::Query}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 42:16-42:20 -/
+@[reducible]
+def coverage.Query.Insts.CoreMarkerCopy : core.marker.Copy coverage.Query := {
+  cloneInst := coverage.Query.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::coverage::Terminal]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 50:0-56:1
+    Visibility: public -/
+@[discriminant isize]
+inductive coverage.Terminal where
+| Running : coverage.Terminal
+| Success : coverage.Terminal
+| Truncated : coverage.Terminal
+| Failed : coverage.Terminal
+| Unsupported : coverage.Terminal
+
+/-- [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Terminal}::clone]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 49:9-49:14
+    Visibility: public -/
+def coverage.Terminal.Insts.CoreCloneClone.clone
+  (self : coverage.Terminal) : Result coverage.Terminal := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::Terminal}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 49:9-49:14 -/
+@[reducible]
+def coverage.Terminal.Insts.CoreCloneClone : core.clone.Clone coverage.Terminal
+  := {
+  clone := coverage.Terminal.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::marker::Copy for strop_kernel::coverage::Terminal}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 49:16-49:20 -/
+@[reducible]
+def coverage.Terminal.Insts.CoreMarkerCopy : core.marker.Copy coverage.Terminal
+  := {
+  cloneInst := coverage.Terminal.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::coverage::PathWork]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 61:0-65:1
+    Visibility: public -/
+@[discriminant isize]
+inductive coverage.PathWork where
+| Queued : coverage.PathWork
+| Verifying : coverage.PathWork
+| Verified : coverage.PathWork
+
+/-- [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::PathWork}::clone]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 60:9-60:14
+    Visibility: public -/
+def coverage.PathWork.Insts.CoreCloneClone.clone
+  (self : coverage.PathWork) : Result coverage.PathWork := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::clone::Clone for strop_kernel::coverage::PathWork}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 60:9-60:14 -/
+@[reducible]
+def coverage.PathWork.Insts.CoreCloneClone : core.clone.Clone coverage.PathWork
+  := {
+  clone := coverage.PathWork.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::coverage::{impl core::marker::Copy for strop_kernel::coverage::PathWork}]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 60:16-60:20 -/
+@[reducible]
+def coverage.PathWork.Insts.CoreMarkerCopy : core.marker.Copy coverage.PathWork
+  := {
+  cloneInst := coverage.PathWork.Insts.CoreCloneClone
+}
+
+/-- [strop_kernel::coverage::Certificate]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 68:0-71:1
+    Visibility: public -/
+structure coverage.Certificate where
+  query : coverage.Query
+  project : Option Std.U64
+
+/-- [strop_kernel::coverage::Settlement]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 74:0-77:1
+    Visibility: public -/
+@[discriminant isize]
+inductive coverage.Settlement where
+| Partial : coverage.Terminal → coverage.Settlement
+| Complete : coverage.Certificate → coverage.Settlement
+
+/-- [strop_kernel::coverage::Child]
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 80:0-83:1
+    Visibility: public -/
+structure coverage.Child where
+  project : Std.U64
+  scan : coverage.Settlement
+
+/-- [strop_kernel::coverage::all_verified]: loop body 0:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 87:4-94:1 -/
+@[rust_loop_body]
+def coverage.all_verified_loop.body
+  (paths : Slice coverage.PathWork) (k : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  let i := Slice.len paths
+  if k < i
+  then
+    let pw ← Slice.index_usize paths k
+    let b ←
+      match pw with
+      | coverage.PathWork.Queued => ok false
+      | coverage.PathWork.Verifying => ok false
+      | coverage.PathWork.Verified => ok true
+    if b
+    then let k1 ← k + 1#usize
+         ok (cont k1)
+    else ok (done false)
+  else ok (done true)
+
+/-- [strop_kernel::coverage::all_verified]: loop 0:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 87:4-94:1 -/
+@[rust_loop]
+def coverage.all_verified_loop
+  (paths : Slice coverage.PathWork) (k : Std.Usize) : Result Bool := do
+  loop
+    (fun k1 => coverage.all_verified_loop.body paths k1)
+    k
+
+/-- [strop_kernel::coverage::all_verified]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 85:0-94:1 -/
+@[reducible]
+def coverage.all_verified (paths : Slice coverage.PathWork) : Result Bool := do
+  coverage.all_verified_loop paths 0#usize
+
+/-- [strop_kernel::coverage::settle]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 96:0-108:1
+    Visibility: public -/
+def coverage.settle
+  (query : coverage.Query) (project : Option Std.U64) (exhausted : Bool)
+  (terminal : coverage.Terminal) (paths : Slice coverage.PathWork) :
+  Result coverage.Settlement
+  := do
+  let b ←
+    match terminal with
+    | coverage.Terminal.Running => ok false
+    | coverage.Terminal.Success => ok true
+    | coverage.Terminal.Truncated => ok false
+    | coverage.Terminal.Failed => ok false
+    | coverage.Terminal.Unsupported => ok false
+  if b
+  then
+    if exhausted
+    then
+      let b1 ← coverage.all_verified paths
+      if b1
+      then ok (coverage.Settlement.Complete { query, project })
+      else ok (coverage.Settlement.Partial terminal)
+    else ok (coverage.Settlement.Partial terminal)
+  else ok (coverage.Settlement.Partial terminal)
+
+/-- [strop_kernel::coverage::same_project]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 110:0-116:1 -/
+def coverage.same_project
+  (required : Option Std.U64) (observed : Option Std.U64) : Result Bool := do
+  match required with
+  | none => match observed with
+            | none => ok true
+            | some _ => ok false
+  | some a => match observed with
+              | none => ok false
+              | some b => ok (a = b)
+
+/-- [strop_kernel::coverage::current]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 118:0-126:1 -/
+def coverage.current
+  (query : coverage.Query) (project : Option Std.U64)
+  (report : coverage.Settlement) :
+  Result Bool
+  := do
+  match report with
+  | coverage.Settlement.Partial _ => ok false
+  | coverage.Settlement.Complete scan =>
+    if query.scope = scan.query.scope
+    then
+      if query.policy = scan.query.policy
+      then
+        if query.generation = scan.query.generation
+        then coverage.same_project project scan.project
+        else ok false
+      else ok false
+    else ok false
+
+/-- [strop_kernel::coverage::workspace_complete]: loop body 0:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 136:4-144:1
+    Visibility: public -/
+@[rust_loop_body]
+def coverage.workspace_complete_loop.body
+  (query : coverage.Query) (children : Slice coverage.Child) (k : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  let i := Slice.len children
+  if k < i
+  then
+    let child ← Slice.index_usize children k
+    let b ← coverage.current query (some child.project) child.scan
+    if b
+    then let k1 ← k + 1#usize
+         ok (cont k1)
+    else ok (done false)
+  else ok (done true)
+
+/-- [strop_kernel::coverage::workspace_complete]: loop 0:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 136:4-144:1
+    Visibility: public -/
+@[rust_loop]
+def coverage.workspace_complete_loop
+  (query : coverage.Query) (children : Slice coverage.Child) (k : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun k1 => coverage.workspace_complete_loop.body query children k1)
+    k
+
+/-- [strop_kernel::coverage::workspace_complete]:
+    Source: 'crates/strop-kernel/src/coverage.rs', lines 131:0-144:1
+    Visibility: public -/
+def coverage.workspace_complete
+  (query : coverage.Query) (loose : coverage.Settlement)
+  (children : Slice coverage.Child) :
+  Result Bool
+  := do
+  let b ← coverage.current query none loose
+  if b
+  then coverage.workspace_complete_loop query children 0#usize
+  else ok false
 
 /-- [strop_kernel::editmap::map_position]:
     Source: 'crates/strop-kernel/src/editmap.rs', lines 32:0-40:1
