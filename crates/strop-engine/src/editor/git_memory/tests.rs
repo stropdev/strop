@@ -344,17 +344,15 @@ fn blame_gutter_toggles_and_dives() {
         .blame_gutter_for(e.first_doc())
         .expect("gutter data loaded");
     assert_eq!(gutter.lines.len(), 2, "one blame per file line");
-    assert_eq!(
-        gutter.lines[0].sha,
-        git_out(&root, &["rev-parse", "HEAD~1"])
-    );
+    let target = git_out(&root, &["rev-parse", "HEAD~1"]);
+    assert_eq!(gutter.lines[0].sha, target);
     assert_eq!(gutter.lines[1].sha, git_out(&root, &["rev-parse", "HEAD"]));
 
     // cursor on line 1 → Enter dives into "first", landing on its row
     e.feed(Key::Enter);
     pump_ready(&mut e, |e| {
         e.surface()
-            .is_some_and(|s| matches!(s, Surface::CommitLog { rows, .. } if !rows.is_empty()))
+            .is_some_and(|s| matches!(s, Surface::CommitLog { rows, .. } if rows.iter().any(|row| row.sha() == Some(target.as_str()))))
     });
     assert!(
         matches!(e.surface(), Some(Surface::CommitLog { .. })),
