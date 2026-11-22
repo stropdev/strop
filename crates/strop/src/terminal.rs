@@ -11,6 +11,7 @@ use crossterm::terminal::{
 use std::io::{self, Write};
 use std::time::Duration;
 mod decode;
+mod present;
 mod reader;
 
 /// Terminal restoration runs exactly once across the normal drop and
@@ -47,7 +48,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     }));
     enable_raw_mode()?;
     let _lease = TerminalLease;
-    let mut output = io::stdout();
+    let mut output = present::output(io::stdout());
     crossterm::execute!(
         output,
         EnterAlternateScreen,
@@ -80,6 +81,7 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
     let mut redraw = true;
     let mut painted_flash = false;
     let mut painted_fade = false;
+    let mut sent_shape = None;
     let mut animation_due = std::time::Instant::now();
     while !editor.should_quit() {
         let started = std::time::Instant::now();
@@ -159,11 +161,10 @@ pub fn run(mut editor: Editor) -> io::Result<()> {
             } else {
                 SetCursorStyle::SteadyBlock
             };
-            crossterm::execute!(terminal.backend_mut(), shape)?;
-            if editor.take_repaint_request() {
-                terminal.clear()?;
-            }
-            terminal.draw(|frame| crate::render::frame_capture::draw(&mut editor, frame, true))?;
+            let repaint = editor.take_repaint_request();
+            present::present(&mut terminal, shape, &mut sent_shape, repaint, |frame| {
+                crate::render::frame_capture::draw(&mut editor, frame, true)
+            })?;
             redraw = false;
             painted_flash = flashing;
             painted_fade = fading;
