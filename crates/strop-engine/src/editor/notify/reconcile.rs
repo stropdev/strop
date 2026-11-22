@@ -133,7 +133,7 @@ impl Editor {
         if let Some(source) = self.picker_source.as_ref() {
             source.set_watching(&self.cwd, self.notify.push_coverage());
         }
-        if self.notify.push_coverage() {
+        if self.notify.push_coverage() || self.notify.manifest.awaiting_registration() {
             self.reload_workspace_manifest();
         }
     }
