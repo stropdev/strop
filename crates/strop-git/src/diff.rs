@@ -49,6 +49,21 @@ impl DiffLine {
     }
 }
 
+/// The signs of one change run: the new-side lines `start..end` it
+/// added (empty for a pure deletion, whose sign goes on `end`, the line
+/// after the gap) and the number of lines it deleted.
+fn push_run(out: &mut Vec<(usize, Sign)>, start: usize, end: usize, deleted: usize) {
+    let sign = match (start == end, deleted == 0) {
+        (true, true) => return,
+        (true, false) => return out.push((end, Sign::DeleteAfter)),
+        (false, true) => Sign::Add,
+        (false, false) => Sign::Change,
+    };
+    for line in start..end {
+        out.push((line, sign));
+    }
+}
+
 /// One diff hunk between two versions of a file, in 1-based lines.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Hunk {
@@ -97,31 +112,45 @@ impl FileDiff {
 }
 
 /// One changed line, for gutter signs. Hunk headers include context
-/// lines, so signs track the +/- lines, not the header range.
+/// lines, so signs track the +/- lines, not the header range; and a
+/// hunk may hold several change runs (libgit2 merges nearby changes),
+/// so the kind is decided per run, never per hunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sign {
-    /// Buffer line was added or changed.
-    AddOrChange,
-    /// Buffer line sits right below a deletion (the line number may be
-    /// one past the buffer end for an EOF deletion — clamp on render).
+    /// Buffer line was added (its run has no deletions).
+    Add,
+    /// Buffer line replaces deleted lines (its run has both).
+    Change,
+    /// Buffer line sits right below a deletion. Git's line number may
+    /// be `0` (everything deleted) or one past the last row (deletion
+    /// at the end) — the gutter clamps it onto a content row.
     DeleteAfter,
 }
 
 impl Hunk {
-    /// Signs this hunk produces, derived from its line origins.
+    /// Signs this hunk produces, per change run (a maximal stretch of
+    /// non-context lines): additions only → [`Sign::Add`] on each added
+    /// line; deletions only → one [`Sign::DeleteAfter`] on the line after
+    /// the gap; both → [`Sign::Change`] on each added line, no separate
+    /// deletion sign.
     pub fn signs(&self) -> Vec<(usize, Sign)> {
         let mut out = Vec::new();
         let mut nl = self.new_start;
+        let mut run_start = nl;
+        let mut deleted = 0;
         for line in &self.lines {
             match line.origin {
-                LineOrigin::Addition => {
-                    out.push((nl, Sign::AddOrChange));
+                LineOrigin::Addition => nl += 1,
+                LineOrigin::Deletion => deleted += 1,
+                LineOrigin::Context => {
+                    push_run(&mut out, run_start, nl, deleted);
+                    deleted = 0;
                     nl += 1;
+                    run_start = nl;
                 }
-                LineOrigin::Deletion => out.push((nl, Sign::DeleteAfter)),
-                LineOrigin::Context => nl += 1,
             }
         }
+        push_run(&mut out, run_start, nl, deleted);
         out
     }
 
@@ -153,15 +182,6 @@ impl Hunk {
         let new_first = new_lines.first().copied().unwrap_or(nl);
         let old_first = old_lines.first().copied().unwrap_or(ol);
         (new_first, new_lines.len(), old_first, old_lines.len())
-    }
-
-    /// Buffer lines covered (signs render on these); `total_lines`
-    /// clamps an EOF deletion onto the last line.
-    pub fn covers(&self, line_1based: usize, total_lines: usize) -> bool {
-        self.signs().iter().any(|&(l, kind)| match kind {
-            Sign::AddOrChange => l == line_1based,
-            Sign::DeleteAfter => l.min(total_lines) == line_1based,
-        })
     }
 
     /// The `@@ -a,b +c,d @@` header row as the diff surface shows it.
@@ -199,3 +219,6 @@ impl Hunk {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

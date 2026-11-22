@@ -3,15 +3,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
-use strop_git::{Hunk, HunkKind, LineOrigin, Sign};
+use strop_git::{Hunk, LineOrigin, Sign};
 
 #[derive(Debug, Clone)]
 pub struct HunkSet(Arc<HunkIndex>);
 #[derive(Debug, Default)]
 struct HunkIndex {
     hunks: Vec<Arc<Hunk>>,
-    total_lines: usize,
-    signs: BTreeMap<usize, (usize, char)>,
+    rows: usize,
+    /// 1-based row → (hunk index, sign); every key is in `1..=rows`.
+    signs: BTreeMap<usize, (usize, Sign)>,
     additions: BTreeSet<usize>,
 }
 impl Default for HunkSet {
@@ -27,21 +28,24 @@ impl HunkSet {
     }
 
     /// Public fixture construction (the worker path stays
-    /// crate-private by design): parsed hunks over a known line count.
-    pub fn from_parts(hunks: Vec<Hunk>, total_lines: usize) -> Self {
-        Self::new(hunks, total_lines)
+    /// crate-private by design): parsed hunks over a known row count.
+    pub fn from_parts(hunks: Vec<Hunk>, rows: usize) -> Self {
+        Self::new(hunks, rows)
     }
 
-    pub(crate) fn new(hunks: Vec<Hunk>, total_lines: usize) -> Self {
+    /// Index `hunks` over a buffer of `rows` reachable rows
+    /// (`last_content_line() + 1`: an empty buffer has one). Git's
+    /// coordinates may sit outside them — `0` for an emptied file, one
+    /// past the end for a deletion at the end — so every sign is clamped
+    /// onto a row the caret can reach: sign and action share one key.
+    pub(crate) fn new(hunks: Vec<Hunk>, rows: usize) -> Self {
+        debug_assert!(rows >= 1, "a buffer always has a first row");
+        let last = rows.max(1);
         let mut signs = BTreeMap::new();
         let mut additions = BTreeSet::new();
         for (index, hunk) in hunks.iter().enumerate() {
-            for (line, kind) in hunk.signs() {
-                let (line, symbol) = match kind {
-                    Sign::DeleteAfter => (line.min(total_lines), '-'),
-                    Sign::AddOrChange => (line, if hunk.kind == HunkKind::Add { '+' } else { '~' }),
-                };
-                signs.entry(line).or_insert((index, symbol));
+            for (line, sign) in hunk.signs() {
+                signs.entry(line.clamp(1, last)).or_insert((index, sign));
             }
             additions.extend(
                 hunk.lines
@@ -52,7 +56,7 @@ impl HunkSet {
         }
         Self(Arc::new(HunkIndex {
             hunks: hunks.into_iter().map(Arc::new).collect(),
-            total_lines,
+            rows,
             signs,
             additions,
         }))
@@ -65,11 +69,11 @@ impl HunkSet {
     }
     /// Sparse changed-line iteration for the scrollbar overview
     /// (0064 §1): one item per signed line, never a full-file scan.
-    pub(crate) fn sign_lines(&self) -> impl Iterator<Item = (usize, char)> + '_ {
+    pub(crate) fn sign_lines(&self) -> impl Iterator<Item = (usize, Sign)> + '_ {
         self.0.signs.iter().map(|(&line, &(_, sign))| (line, sign))
     }
 
-    pub(crate) fn sign(&self, line: usize) -> Option<char> {
+    pub(crate) fn sign(&self, line: usize) -> Option<Sign> {
         self.0.signs.get(&line).map(|(_, sign)| *sign)
     }
     pub(crate) fn addition(&self, line: usize) -> bool {
@@ -103,12 +107,12 @@ impl Deref for HunkSet {
 }
 impl Serialize for HunkSet {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        (&self.0.hunks, self.0.total_lines).serialize(serializer)
+        (&self.0.hunks, self.0.rows).serialize(serializer)
     }
 }
 impl<'de> Deserialize<'de> for HunkSet {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (hunks, total_lines) = Deserialize::deserialize(deserializer)?;
-        Ok(Self::new(hunks, total_lines))
+        let (hunks, rows) = Deserialize::deserialize(deserializer)?;
+        Ok(Self::new(hunks, rows))
     }
 }

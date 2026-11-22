@@ -69,7 +69,7 @@ fn gutter_tracks_live_edits() {
     e.feed_text("ofn c() {}");
     e.feed_text("<esc>");
     pump_hunks(&mut e);
-    assert_eq!(e.sign_at(3), Some('+'), "added line signs +");
+    assert_eq!(e.sign_at(3), Some(Sign::Add), "an added line signs add");
     assert_eq!(e.sign_at(1), None);
 }
 
@@ -239,7 +239,7 @@ fn stage_and_unstage_name_their_edges() {
     assert!(staged.stdout.is_empty(), "index back to HEAD");
     // and now the same line reads as unstaged again
     pump_hunks(&mut e);
-    assert_eq!(e.sign_at(3), Some('+'));
+    assert_eq!(e.sign_at(3), Some(Sign::Add));
 }
 
 #[test]
@@ -315,4 +315,122 @@ fn directory_alias_and_physical_path_stage_the_same_native_hunk() {
         assert_eq!(repo.index_bytes(rel).unwrap(), old);
         assert!(git(&["diff", "--cached", "--name-only", "-z"]).is_empty());
     }
+}
+
+const NOTE: &str = "one\ntwo\nthree\n";
+
+/// #240: `note` committed as [`NOTE`], then rewritten on disk as
+/// `worktree` before the editor opens it (a clean buffer, so staging
+/// needs no save).
+fn note_fixture(worktree: &str) -> (tempfile::TempDir, Editor, strop_git::Repo) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .current_dir(root)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    std::fs::write(root.join("note"), NOTE).unwrap();
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t.t",
+        "commit",
+        "-qm",
+        "base",
+    ]);
+    std::fs::write(root.join("note"), worktree).unwrap();
+    let mut e = Editor::new(Buffer::open(root.join("note").to_str().unwrap()).unwrap());
+    e.discover_git();
+    pump_hunks(&mut e);
+    let repo = strop_git::Repo::discover(root).unwrap();
+    (dir, e, repo)
+}
+
+fn index_note(repo: &strop_git::Repo) -> Vec<u8> {
+    repo.index_bytes(std::path::Path::new("note")).unwrap()
+}
+
+fn caret_row(e: &Editor) -> usize {
+    e.buf().line_of(e.head()) + 1
+}
+
+/// Feed `keys`, settle the Git mutation, and take its message.
+fn mutate(e: &mut Editor, keys: &str) -> String {
+    e.feed_text(keys);
+    settle(e, |e| e.git_work.mutation.is_none());
+    std::mem::take(&mut e.message)
+}
+
+#[test]
+fn emptied_file_is_marked_and_stageable_from_its_only_row() {
+    let (d, mut e, repo) = note_fixture("");
+    assert_eq!(e.sign_lines().collect::<Vec<_>>(), [(1, Sign::DeleteAfter)]);
+    assert_eq!(mutate(&mut e, " gs"), "hunk staged");
+    assert_eq!(index_note(&repo), b"", "the index holds the empty file");
+    let listed = Command::new("git")
+        .args(["ls-files", "note"])
+        .current_dir(d.path())
+        .output()
+        .unwrap();
+    assert_eq!(listed.stdout, b"note\n", "the path stays tracked");
+    pump_hunks(&mut e);
+    assert_eq!(mutate(&mut e, " gu"), "hunk unstaged");
+    assert_eq!(index_note(&repo), NOTE.as_bytes());
+}
+
+#[test]
+fn emptied_file_discards_and_bounds_hunk_jumps() {
+    let (_d, mut e, _repo) = note_fixture("");
+    for keys in ["]c", "[c"] {
+        e.feed_text(keys);
+        assert_eq!(e.message, "no more hunks", "{keys}");
+        assert_eq!(caret_row(&e), 1, "{keys}");
+        e.message.clear();
+    }
+    e.feed_text(" gX");
+    assert_eq!(e.buf().text().to_string(), NOTE);
+    assert_eq!(caret_row(&e), 1);
+}
+
+#[test]
+fn eof_deletion_marks_the_last_content_row() {
+    let (_d, mut e, repo) = note_fixture("one\ntwo\n");
+    assert_eq!(e.sign_lines().collect::<Vec<_>>(), [(2, Sign::DeleteAfter)]);
+    e.feed_text("]c");
+    assert_eq!(caret_row(&e), 2, "]c stops on the last content row");
+    assert_eq!(e.buf().line_of(e.head()), e.buf().last_content_line());
+    e.feed_text("ggG");
+    assert_eq!(mutate(&mut e, " gs"), "hunk staged");
+    assert_eq!(index_note(&repo), b"one\ntwo\n");
+    pump_hunks(&mut e);
+    assert_eq!(mutate(&mut e, " gu"), "hunk unstaged");
+    assert_eq!(index_note(&repo), NOTE.as_bytes());
+    pump_hunks(&mut e);
+    e.feed_text(" gX");
+    assert_eq!(e.buf().text().to_string(), NOTE);
+}
+
+#[test]
+fn replacement_shows_change_and_stages() {
+    let (_d, mut e, repo) = note_fixture("one\nTWO\nthree\n");
+    assert_eq!(e.sign_lines().collect::<Vec<_>>(), [(2, Sign::Change)]);
+    e.feed_text("]c");
+    assert_eq!(caret_row(&e), 2);
+    e.feed_text("]c");
+    assert_eq!(caret_row(&e), 2, "nothing past the only hunk");
+    assert_eq!(mutate(&mut e, " gs"), "hunk staged");
+    assert_eq!(index_note(&repo), b"one\nTWO\nthree\n");
 }

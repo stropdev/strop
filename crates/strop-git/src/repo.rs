@@ -507,7 +507,7 @@ pub(crate) fn gutter_from_contents(
 
 /// Typed hunks between two content strings (libgit2 diffs buffers in
 /// memory; no repository handle needed).
-fn hunks_from_strings(old: &str, new: &str, rel: &Path) -> Result<Vec<Hunk>, GitError> {
+pub(crate) fn hunks_from_strings(old: &str, new: &str, rel: &Path) -> Result<Vec<Hunk>, GitError> {
     let mut opts = git2::DiffOptions::new();
     opts.context_lines(3);
     let patch = git2::Patch::from_buffers(
