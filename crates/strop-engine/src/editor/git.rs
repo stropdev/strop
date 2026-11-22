@@ -7,7 +7,7 @@ mod context;
 
 use std::sync::Arc;
 use strop_core::worker::{CancelReason, Load, Outcome};
-use strop_git::Hunk;
+use strop_git::{Hunk, Sign};
 
 use crate::files::FileTarget;
 
@@ -99,6 +99,9 @@ impl Editor {
             return; // running for this key, or a settled snapshot for it
         }
         let snapshot = document.buf.snapshot();
+        // the reachable rows the signs land on (#240), read here on the
+        // input path: O(log n), no rope materialization
+        let rows = document.buf.last_content_line() + 1;
         // a different key supersedes the old owner synchronously; its
         // late result is rejected by ticket
         self.cancel_hunk_owner();
@@ -164,8 +167,8 @@ impl Editor {
                     ) {
                         Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
                             rel,
-                            unstaged: HunkSet::new(unstaged, snapshot.len_lines()),
-                            staged: HunkSet::new(staged, snapshot.len_lines()),
+                            unstaged: HunkSet::new(unstaged, rows),
+                            staged: HunkSet::new(staged, rows),
                             untracked,
                         }),
                         Err(error) => Outcome::Failed {
@@ -216,8 +219,8 @@ impl Editor {
                 };
                 Outcome::Success(HunkData {
                     rel: gutter.rel,
-                    unstaged: HunkSet::new(gutter.unstaged, snapshot.len_lines()),
-                    staged: HunkSet::new(gutter.staged, snapshot.len_lines()),
+                    unstaged: HunkSet::new(gutter.unstaged, rows),
+                    staged: HunkSet::new(gutter.staged, rows),
                     untracked: gutter.untracked,
                 })
             },
@@ -247,16 +250,16 @@ impl Editor {
         self.hunk_load = Load::Idle;
     }
 
-    /// Gutter sign for a 1-based buffer line: `+` add, `~` change,
-    /// `-` deletion below (0001 pillar 3.1).
     /// Sparse iteration of the live document's changed lines with
     /// their gutter signs — the scrollbar's Git overview source
     /// (0064 §1). Empty when no diff is live.
-    pub fn sign_lines(&self) -> impl Iterator<Item = (usize, char)> + '_ {
+    pub fn sign_lines(&self) -> impl Iterator<Item = (usize, Sign)> + '_ {
         self.hunks().sign_lines()
     }
 
-    pub fn sign_at(&self, line_1based: usize) -> Option<char> {
+    /// Gutter sign for a 1-based buffer line: add, change, or deletion
+    /// after (0001 pillar 3.1). Always on a reachable row (#240).
+    pub fn sign_at(&self, line_1based: usize) -> Option<Sign> {
         self.hunks().sign(line_1based)
     }
 
@@ -277,7 +280,8 @@ impl Editor {
         let target = self.hunks().next_line(cur, forward);
         match target {
             Some(l) => {
-                self.set_head(self.buf().line_start(l - 1));
+                debug_assert!(l >= 1, "hunk rows are 1-based");
+                self.set_head(self.buf().line_start(l.saturating_sub(1)));
                 self.clamp_cursor();
             }
             None => self.message = "no more hunks".into(),
@@ -370,11 +374,9 @@ impl Editor {
             return false;
         }
         // cursor placement: the target's own pane moves to the
-        // restored region
-        let land = self
-            .doc(idx)
-            .buf
-            .line_start((new_first - 1).min(self.doc(idx).buf.len_lines().saturating_sub(1)));
+        // restored region (Git's `+0,0` for an emptied file lands on
+        // row 1; `line_start` clamps past the end)
+        let land = self.doc(idx).buf.line_start(new_first.saturating_sub(1));
         if self.current() == idx {
             self.set_head(land);
             self.clamp_cursor();

@@ -50,11 +50,7 @@ pub(super) fn render(
     if view.doc == editor.current() {
         for (line, sign) in editor.sign_lines() {
             let row = line_to_row(line.saturating_sub(1), total, track_h);
-            let color = match sign {
-                '+' => t.diff_add,
-                '~' => t.diff_change,
-                _ => t.diff_del,
-            };
+            let color = t.git_sign(sign);
             let cell = &mut output.buffer_mut()[(track_x, rect.y + row as u16)];
             cell.set_symbol("▎");
             cell.set_fg(color);

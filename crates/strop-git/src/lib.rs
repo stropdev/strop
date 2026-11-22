@@ -76,9 +76,8 @@ mod tests {
         let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Change);
-        assert!(hunks[0].covers(2, 4));
-        assert!(hunks[0].covers(4, 4));
-        assert!(!hunks[0].covers(1, 4));
+        // one hunk, two runs: b -> b2 is a change, d is an addition
+        assert_eq!(hunks[0].signs(), [(2, Sign::Change), (4, Sign::Add)]);
         assert!(hunks[0]
             .lines
             .iter()
@@ -125,7 +124,7 @@ mod tests {
         let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Delete);
-        assert!(hunks[0].covers(2, 4)); // sign on the line after the gap
+        assert_eq!(hunks[0].signs(), [(2, Sign::DeleteAfter)]); // the line after the gap
     }
 
     #[test]

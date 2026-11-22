@@ -151,6 +151,17 @@ impl Tokens {
         }
     }
 
+    /// Git gutter sign → ink; one source for the gutter column and the
+    /// scrollbar overview.
+    pub(crate) fn git_sign(&self, sign: strop_git::Sign) -> Color {
+        use strop_git::Sign;
+        match sign {
+            Sign::Add => self.diff_add,
+            Sign::Change => self.diff_change,
+            Sign::DeleteAfter => self.diff_del,
+        }
+    }
+
     /// Syntax class → ink (one projection; `:theme` swaps the palette).
     pub(crate) fn class(&self, class: strop_syntax::Class) -> Color {
         use strop_syntax::Class as C;

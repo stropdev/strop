@@ -294,19 +294,16 @@ fn mark(editor: &Editor, t: &Tokens, view: &PaneView, line_idx: usize) -> (&'sta
         // letters) — the cursor line's EOL note carries the words
         return ("●", t.severity(sev));
     }
-    // git signs: + add, ~ change, - deletion below (only for the
-    // working buffer — surfaces have no path, so no leak)
+    // git signs: add, change, deletion after (only for the working
+    // buffer — surfaces have no path, so no leak)
     if view.doc == editor.current() {
         // the four states in one column: unstaged sign wins; staged-only
         // lines get the committed-adjacent tint (0014 wave 4)
-        if editor.sign_at(line_idx + 1).is_none() && editor.sign_at_staged(line_idx + 1) {
-            return ("▎", t.dim(t.diff_add));
+        if let Some(sign) = editor.sign_at(line_idx + 1) {
+            return ("▎", t.git_sign(sign));
         }
-        match editor.sign_at(line_idx + 1) {
-            Some('+') => return ("▎", t.diff_add),
-            Some('~') => return ("▎", t.diff_change),
-            Some('-') => return ("▎", t.diff_del),
-            _ => {}
+        if editor.sign_at_staged(line_idx + 1) {
+            return ("▎", t.dim(t.diff_add));
         }
     }
     (" ", t.muted)

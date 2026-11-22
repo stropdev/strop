@@ -24,7 +24,8 @@ use crate::editor::{Document, Editor, Pane};
 // Version 10: counted replace, buffer picker jumps and disk blame on unsaved text.
 // Version 11: counted Visual shifts, collection positions and uncommitted blame.
 // Version 12: symbol jumps use the producing server's negotiated encoding.
-const SEMANTIC_VERSION: u32 = 12;
+// Version 13: Git hunk signs and hunk jumps stay on reachable rows (#240).
+const SEMANTIC_VERSION: u32 = 13;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.

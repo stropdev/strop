@@ -2,6 +2,16 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## Unreleased
+
+### Fixed
+
+- **Git gutter:** deleting the last lines of a file, or all of its text, marks the last remaining line; `<space>gs`, `<space>gu` and `<space>gX` work from that line, and an emptied file stages as an empty file, not a deletion. `]c` and `[c` never move past the last line. A replaced line shows the change colour, and a line added next to a replacement shows the add colour.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 13. Replay a 0.76 recording with 0.76, or record it again.
+
 ## 0.76.0 — 2026-11-21
 
 ### Added
