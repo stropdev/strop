@@ -532,11 +532,11 @@ impl Editor {
                 return;
             }
             AnalysisEvent::Outlined(completion) => {
-                crate::editor::symbols::outline_done(self, *completion);
+                crate::editor::symbols::build::outline_done(self, *completion);
                 return;
             }
             AnalysisEvent::ServerOutline(context, list) => {
-                crate::editor::symbols::server_prepared(self, context, *list);
+                crate::editor::symbols::build::server_prepared(self, context, *list);
                 return;
             }
             AnalysisEvent::Completed(completion) => completion,
