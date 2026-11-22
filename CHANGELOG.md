@@ -6,7 +6,10 @@ Earlier releases cite designs by number; find the original decision and its deli
 
 ### Fixed
 
+- **Scrolling:** each frame reaches the terminal as one update with the cursor hidden until it is placed, so nothing flickers at the end of a line while you scroll.
 - **Git gutter:** deleting the last lines of a file, or all of its text, marks the last remaining line; `<space>gs`, `<space>gu` and `<space>gX` work from that line, and an emptied file stages as an empty file, not a deletion. `]c` and `[c` never move past the last line. A replaced line shows the change colour, and a line added next to a replacement shows the add colour.
+- **Updates:** `strop update` and `install.sh` stop if the release catalog is not a strop catalog in a format they understand, instead of guessing at it. The message links to the [releases page](https://github.com/stropdev/strop/releases) so you can install by hand.
+- **Release verification:** the public catalog matches a local build only when both name product `strop` with the expected schema and agree on everything except publication time. A different product, schema, size, URL or an extra field fails the check.
 
 ### Compatibility
 

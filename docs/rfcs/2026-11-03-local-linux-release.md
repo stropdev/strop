@@ -90,7 +90,11 @@ Keep the path and contents together if archiving a qualified bundle.
    contents and the release body to the local bundle before marking the draft
    public and latest. Neither promotion step rebuilds or replaces assets.
 4. `verify` compares the public catalog to the local artifact facts and installs
-   the public tarball into a fresh directory.
+   the public tarball into a fresh directory. Both catalogs must name product
+   `strop` and the schema number the verifier knows; every other field must
+   match except `published_at` — same version, tag and artifacts, no extra
+   keys. Publication time is not an artifact fact
+   ([#257](https://github.com/stropdev/strop/issues/257)).
 5. Vendor `CHANGELOG.md` and `install.sh` into `stropdev/stropdev.github.io`,
    rebuild its changelog, push, and dispatch `rebuild` when needed. Fetch
    strop.dev and confirm the new version, changelog and installer.

@@ -8,6 +8,8 @@
 #     is carried forward as previous_version
 #   - a digest that does not match the downloaded bytes refuses to install
 #   - a catalog without an artifact for this target refuses to install
+#   - a catalog of another product or schema refuses, pointing at the
+#     releases page for a manual install
 # Hermetic: everything is served from file:// fixtures, no network.
 # Run: sh tests/install.sh
 set -eu
@@ -165,6 +167,26 @@ if run_install "$WORK/bin6" "$WORK/out6.log" \
 fi
 [ ! -e "$WORK/bin6/strop" ] || fail "installed from a foreign-target catalog"
 ok "catalog without a matching artifact refuses to install"
+
+# --- 6b. a catalog of another product or schema refuses ------------------
+for fixture in 'product:s/^  "product": "strop",$/  "product": "other",/' \
+    'schema:s/^  "schema": 1,$/  "schema": 2,/' \
+    'no-schema:/^  "schema": 1,$/d'; do
+    name=${fixture%%:*}
+    sed "${fixture#*:}" "$LATEST/catalog.json" > "$WORK/$name-catalog.json"
+    if cmp -s "$LATEST/catalog.json" "$WORK/$name-catalog.json"; then
+        fail "$name fixture edit did not apply"
+    fi
+    if run_install "$WORK/bin-$name" "$WORK/out-$name.log" \
+        STROP_CATALOG_URL="file://$WORK/$name-catalog.json"; then
+        fail "$name catalog unexpectedly installed"
+    fi
+    [ ! -e "$WORK/bin-$name" ] || fail "$name catalog created an install directory"
+    grep '^Error:' "$WORK/out-$name.log" \
+        | grep -Fq "https://github.com/stropdev/strop/releases" \
+        || fail "$name refusal does not point at the releases page: $(cat "$WORK/out-$name.log")"
+done
+ok "catalog of another product or schema refuses to install"
 
 # --- 7. A non-Linux x86_64 host refuses before any fetch or installation --------------
 mkdir -p "$WORK/shim-intel"

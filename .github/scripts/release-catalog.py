@@ -13,6 +13,11 @@ on rebuild. Each artifact records its digest and byte size.
 Subcommands:
   catalog   build a versioned release catalog from the verified build outputs
   verify    compare the locally built catalog against the publicly served one
+
+Verification rule: both catalogs must carry this script's PRODUCT and SCHEMA,
+and every other field must be equal except `published_at`: the same version,
+tag and artifacts (target, name, digest, byte size, url), and no extra keys on
+either side. Publication time is not an artifact fact.
 """
 import argparse
 import hashlib
@@ -85,19 +90,6 @@ def build_catalog(tag: str, dist: Path, base_url: str, published_at: str) -> dic
     }
 
 
-def facts(catalog: dict) -> dict:
-    """The promotion-relevant facts: version, tag and artifact identities."""
-    return {
-        "version": catalog["version"],
-        "tag": catalog["tag"],
-        "artifacts": [
-            {"target": a["target"], "name": a["name"], "sha256": a["sha256"],
-             "bytes": a["bytes"], "url": a["url"]}
-            for a in catalog["artifacts"]
-        ],
-    }
-
-
 def cmd_catalog(args: argparse.Namespace) -> None:
     catalog = build_catalog(args.tag, args.dist, args.base_url,
                             args.published_at or utcnow())
@@ -106,11 +98,26 @@ def cmd_catalog(args: argparse.Namespace) -> None:
     print(f"catalog: {len(catalog['artifacts'])} artifacts for {catalog['tag']}")
 
 
+def load_catalog(path: Path, side: str) -> dict:
+    """Read a catalog and require this verifier's product and schema."""
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(catalog, dict):
+        raise ValueError(f"{side} catalog {path} is not a JSON object")
+    for field, expected in (("schema", SCHEMA), ("product", PRODUCT)):
+        if catalog.get(field) != expected:
+            raise ValueError(f"{side} catalog {path} has {field} "
+                             f"{json.dumps(catalog.get(field))}, "
+                             f"expected {json.dumps(expected)}")
+    return catalog
+
+
 def cmd_verify(args: argparse.Namespace) -> None:
-    local = facts(json.loads(args.local.read_text(encoding="utf-8")))
-    public = facts(json.loads(args.public.read_text(encoding="utf-8")))
+    local = load_catalog(args.local, "local")
+    public = load_catalog(args.public, "public")
+    local.pop("published_at", None)
+    public.pop("published_at", None)
     if local != public:
-        sys.exit("public catalog facts diverge from the build outputs:\n"
+        sys.exit("public catalog diverges from the build outputs:\n"
                  f"  local:  {json.dumps(local, sort_keys=True)}\n"
                  f"  public: {json.dumps(public, sort_keys=True)}")
     print(f"public catalog matches build outputs for {local['tag']}")
