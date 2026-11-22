@@ -12,6 +12,8 @@ Earlier releases cite designs by number; find the original decision and its deli
 - **Release verification:** the public catalog matches a local build only when both name product `strop` with the expected schema and agree on everything except publication time. A different product, schema, size, URL or an extra field fails the check.
 - **Tab pages:** closing another tab page, `:tabonly` and `:tabmove` no longer abandon a file that is still loading on the current page.
 - **Language servers:** a server that declares implementation, declaration or type definition as `false` is no longer asked for them; `gI`, `gD` and `gy` say the server does not support them, as they do when it declares nothing.
+- **Repeating Visual commands:** `.` after a Visual command repeats it on the same amount of text from the cursor, as Vim does: the same number of lines, and the same width, or the same end column on a later line. Visual `r`, `Ctrl-A` and `Ctrl-X` now repeat; a selection over several lines no longer comes up one character short; a named register is kept; a count on `.` is ignored. After a Visual put, `.` deletes that amount of text and puts nothing, as in Vim, instead of repeating the change before it.
+- **Repeating puts:** `.` after `p`, `P`, `gp`, `gP`, `]p` or `[p` puts from the same register with the same count, instead of the unnamed register once. A count on `.` replaces the count, and `"1p..` puts registers 1, 2 and 3 in turn, as in Vim.
 
 ### Compatibility
 

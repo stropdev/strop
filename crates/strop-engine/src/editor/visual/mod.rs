@@ -12,6 +12,7 @@ use super::{Editor, Mode};
 use crate::keymap::Handler;
 use strop_core::frontend_input::Key;
 
+pub(crate) mod repeat;
 pub(crate) mod verbs;
 
 /// The Visual selection last left: `gv` restores it, `'<` and `'>` are
@@ -216,7 +217,6 @@ impl Editor {
         self.set_head(head);
         self.clamp_cursor();
         self.flash(Range::charwise(lines.start, lines.start));
-        self.last_insert = None;
     }
 
     /// One typed visual action: motions extend, objects select, the
@@ -285,10 +285,10 @@ impl Editor {
         }
     }
 
-    /// `S<c>`: wrap the selection in a pair.
-    fn visual_surround(&mut self, c: char) {
+    /// `S<c>`: wrap the selection in a pair. False when it did not.
+    fn visual_surround(&mut self, c: char) -> bool {
         let Some(range) = self.visual_range() else {
-            return;
+            return false;
         };
         let pair = match c {
             'b' | '(' | ')' => ('(', ')'),
@@ -315,15 +315,14 @@ impl Editor {
         };
         if let Err(error) = self.apply(self.current(), self.buf().revision(), changes) {
             self.message = error.to_string();
-            return;
+            return false;
         }
         self.mode = Mode::Normal;
         self.flash(Range::charwise(
             range.start,
             range.end.get() + pair.0.len_utf8() + pair.1.len_utf8(),
         ));
-        self.last_cmd_keys = format!("vS{c}"); // replay is visual-mode replay; approximated
-        self.last_insert = None;
+        true
     }
 
     pub fn visual_range(&self) -> Option<Range> {
@@ -365,51 +364,5 @@ impl Editor {
             self.buf().line_start(b + 1)
         };
         Range::linewise(start, end)
-    }
-
-    /// The keys that redo a Visual operator over a selection spanning
-    /// lines: the same line and column deltas from the cursor.
-    fn visual_replay_keys(&self, op: Op) -> String {
-        let anchor = self.anchor();
-        let head = self.head();
-        let buffer = self.buf();
-        let rope = buffer.text();
-        let anchor_line = buffer.line_of(anchor);
-        let head_line = buffer.line_of(head);
-        let column = |position| {
-            let line_start = buffer.line_start(buffer.line_of(position));
-            rope.byte_to_char(position) - rope.byte_to_char(line_start)
-        };
-        let anchor_column = column(anchor);
-        let head_column = column(head);
-
-        let mut keys = String::from("v");
-        Self::push_counted_motion(
-            &mut keys,
-            anchor_line.abs_diff(head_line),
-            if head_line < anchor_line { 'k' } else { 'j' },
-        );
-        Self::push_counted_motion(
-            &mut keys,
-            anchor_column.abs_diff(head_column),
-            if head_column < anchor_column {
-                'h'
-            } else {
-                'l'
-            },
-        );
-        // the Visual key of the operator: `gU`, not Normal's `U`
-        keys.push_str(op.key());
-        keys
-    }
-
-    fn push_counted_motion(keys: &mut String, count: usize, motion: char) {
-        if count == 0 {
-            return;
-        }
-        if count > 1 {
-            keys.push_str(&count.to_string());
-        }
-        keys.push(motion);
     }
 }

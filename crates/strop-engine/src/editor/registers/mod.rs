@@ -134,7 +134,7 @@ impl Editor {
         match name {
             Some('+' | '*') => Ok(RegisterRead::Clipboard),
             // vim's read-only registers are views of editor state
-            Some('.') => computed(self.last_insert.clone()),
+            Some('.') => computed(self.dot.insert.clone()),
             Some(':') => computed(self.cmdline.last_command_line().map(str::to_owned)),
             Some('/') => computed(
                 self.last_search

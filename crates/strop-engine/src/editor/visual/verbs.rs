@@ -5,6 +5,8 @@
 use strop_core::Range;
 use strop_grammar::{self as grammar, Op};
 
+use super::repeat::VisualRepeat;
+use crate::editor::dot::Change;
 use crate::editor::normal::operators::{Operand, Operation};
 use crate::editor::registers::RegisterShape;
 use crate::editor::{Editor, LastSearch, Mode, Register};
@@ -16,6 +18,33 @@ pub(crate) fn visual_verb(
     count: Option<usize>,
     register: Option<char>,
     arg: char,
+) {
+    let repeat = VisualRepeat::capture(editor, verb, count, register, arg);
+    perform(editor, verb, count, register, arg, repeat);
+}
+
+/// `.` after a Visual verb: the verb again, on the selection the replay
+/// built, keeping the repeat it came from.
+pub(super) fn run_verb(editor: &mut Editor, repeat: VisualRepeat) {
+    perform(
+        editor,
+        repeat.verb,
+        repeat.count,
+        repeat.register,
+        repeat.arg,
+        Some(repeat),
+    );
+}
+
+/// Run a verb on the selection; once it has applied, `repeat` is what
+/// `.` does next — recorded here, so no verb can forget it.
+fn perform(
+    editor: &mut Editor,
+    verb: VisualVerb,
+    count: Option<usize>,
+    register: Option<char>,
+    arg: char,
+    repeat: Option<VisualRepeat>,
 ) {
     let reads_only = matches!(
         verb,
@@ -29,31 +58,59 @@ pub(crate) fn visual_verb(
         editor.mode = Mode::Normal;
         return;
     }
-    match verb {
-        VisualVerb::Operator(op) => visual_operate(editor, op, register, false, count.unwrap_or(1)),
-        VisualVerb::Lines(op) => visual_operate(editor, op, register, true, count.unwrap_or(1)),
+    let writes_register = matches!(verb, VisualVerb::Operator(_) | VisualVerb::Lines(_));
+    if writes_register && !editor.register_writable(register) {
+        return;
+    }
+    let applied = match verb {
+        VisualVerb::Operator(op) => {
+            visual_operate(editor, op, register, false, count.unwrap_or(1));
+            true
+        }
+        VisualVerb::Lines(op) => {
+            visual_operate(editor, op, register, true, count.unwrap_or(1));
+            true
+        }
         VisualVerb::Put { keep } => visual_put(editor, register, count.unwrap_or(1), keep),
         VisualVerb::Join { spaces } => {
             let (first, last) = selected_lines(editor);
             editor.mode = Mode::Normal;
             editor.set_head(editor.buf().line_start(first));
             crate::editor::normal::edits::join_lines(editor, Some(last - first + 1), spaces);
+            true
         }
-        VisualVerb::Replace => visual_replace(editor, arg),
+        VisualVerb::Replace => {
+            visual_replace(editor, arg);
+            true
+        }
         VisualVerb::Surround => editor.visual_surround(arg),
-        VisualVerb::Insert { append } => visual_insert(editor, append),
+        VisualVerb::Insert { append } => {
+            visual_insert(editor, append);
+            true
+        }
         VisualVerb::SwapEnds => {
             let selection = editor.sels().primary();
             editor
                 .sels_mut()
                 .stretch_primary(selection.head, selection.anchor);
+            true
         }
-        VisualVerb::Search { backward } => visual_search(editor, backward),
-        VisualVerb::Comment => editor.toggle_visual_comments(),
+        VisualVerb::Search { backward } => {
+            visual_search(editor, backward);
+            true
+        }
+        VisualVerb::Comment => {
+            editor.toggle_visual_comments();
+            true
+        }
         VisualVerb::Add { negative } => {
             let amount = count.unwrap_or(1) as i64;
             visual_add(editor, if negative { -amount } else { amount });
+            true
         }
+    };
+    if let (true, Some(repeat)) = (applied, repeat) {
+        editor.dot.record(Change::Visual(repeat));
     }
 }
 
@@ -98,9 +155,6 @@ fn visual_operate(
     whole_lines: bool,
     count: usize,
 ) {
-    if !editor.register_writable(register) {
-        return;
-    }
     if op == Op::Comment {
         editor.toggle_visual_comments();
         return;
@@ -147,8 +201,6 @@ fn visual_operate(
         .collect();
     let column = crate::editor::normal::operators::kept_column(editor, op, &operands[0]);
     let linewise = first.is_linewise();
-    let repeat =
-        (op != Op::Yank && ranges.len() == 1).then(|| visual_repeat(editor, op, first, count));
     editor.mode = Mode::Normal;
     editor.sels_mut().collapse_extras();
     crate::editor::normal::operators::apply_operator(
@@ -163,79 +215,21 @@ fn visual_operate(
             column,
         },
     );
-    // (after the operator: entering Insert resets the record)
-    match repeat {
-        Some(Ok(command)) => {
-            editor.last_change = Some(command);
-            editor.last_cmd_keys.clear();
-        }
-        Some(Err(keys)) => {
-            editor.last_change = None;
-            editor.last_cmd_keys = keys;
-        }
-        None => {}
-    }
-}
-
-/// Dot-repeat after a Visual operator: the same operator over the
-/// same extent from the cursor — N lines or N characters of one line
-/// as a command, otherwise the keys for the selection's line and
-/// column deltas.
-fn visual_repeat(
-    editor: &Editor,
-    op: Op,
-    range: Range,
-    count: usize,
-) -> Result<grammar::Command, String> {
-    let (first, last) = selected_lines(editor);
-    if matches!(op, Op::Indent | Op::Dedent) && count > 1 {
-        // A Normal shift's count is its height. Replay a Visual shift to
-        // preserve both the selected height and the number of indent levels.
-        let key = op.key();
-        return Err(match last - first {
-            0 => format!("V{count}{key}"),
-            down => format!("V{down}j{count}{key}"),
-        });
-    }
-    let command = |count: usize, target: grammar::Target, keys: String| grammar::Command {
-        op: Some(op),
-        register: None,
-        count: Some(count),
-        target,
-        force: None,
-        keys,
-    };
-    if range.is_linewise() {
-        let lines = last - first + 1;
-        Ok(command(
-            lines,
-            grammar::Target::Linewise,
-            format!("{lines}{0}{0}", op.key()),
-        ))
-    } else if first == last {
-        let chars = editor.buf().slice_string(range).chars().count().max(1);
-        Ok(command(
-            chars,
-            grammar::Target::Motion(grammar::Motion::Right),
-            format!("{}{chars}l", op.key()),
-        ))
-    } else {
-        Err(editor.visual_replay_keys(op))
-    }
 }
 
 /// `p` / `P`: the register takes the selection's place. The replaced
-/// text becomes the unnamed register unless `keep`.
-fn visual_put(editor: &mut Editor, name: Option<char>, count: usize, keep: bool) {
+/// text becomes the unnamed register unless `keep`. False when it
+/// refused.
+fn visual_put(editor: &mut Editor, name: Option<char>, count: usize, keep: bool) -> bool {
     let register = editor.register(name);
     if matches!(register.shape, RegisterShape::Blockwise { .. }) || editor.mode == Mode::VisualBlock
     {
         editor.message = "put over a selection: block text is not supported".into();
-        return;
+        return false;
     }
     let linewise = editor.mode == Mode::VisualLine;
     let Some(range) = editor.visual_range() else {
-        return;
+        return false;
     };
     let replaced = editor.buf().slice_string(range);
     let newline = editor.newline_str();
@@ -278,7 +272,7 @@ fn visual_put(editor: &mut Editor, name: Option<char>, count: usize, keep: bool)
     }
     editor.clamp_cursor();
     editor.flash(Range::charwise(editor.head(), editor.head()));
-    editor.last_insert = None;
+    true
 }
 
 /// `r<c>`: every selected character becomes `c`; line breaks stay.
@@ -304,7 +298,6 @@ fn visual_replace(editor: &mut Editor, c: char) {
     editor.set_head(first.start.get());
     editor.clamp_cursor();
     editor.flash(Range::charwise(editor.head(), editor.head()));
-    editor.last_insert = None;
 }
 
 /// `I` / `A`. A block inserts on every row: at its left edge, or

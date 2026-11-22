@@ -1,6 +1,6 @@
 //! Normal-mode commands that are not operators: `J` `gJ`, `~`, `Ctrl-A`
-//! `Ctrl-X`, `gp` `gP`, `]p` `[p`. Each takes its count as a parameter —
-//! `3J` joins three lines, it does not join three times.
+//! `Ctrl-X`, the puts `p` `P` `gp` `gP` `]p` `[p`. Each takes its count as
+//! a parameter — `3J` joins three lines, it does not join three times.
 
 use strop_core::Range;
 
@@ -293,12 +293,66 @@ pub(crate) fn add_to_number(editor: &mut Editor, delta: i64) {
     );
 }
 
+/// Which put: `p`/`P`, `gp`/`gP` or `]p`/`[p`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PutKind {
+    Plain,
+    /// The cursor passes the new text.
+    Pass,
+    /// Lines take the current line's indent.
+    Indented,
+}
+
+/// A Normal put, as `.` repeats it: with its register and its count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Put {
+    pub(crate) kind: PutKind,
+    pub(crate) before: bool,
+    pub(crate) register: Option<char>,
+    pub(crate) count: usize,
+}
+
+impl Put {
+    /// Put, then record the put for `.`.
+    pub(crate) fn run(self, editor: &mut Editor) {
+        let (name, count, before) = (self.register, self.count, self.before);
+        let put = match self.kind {
+            PutKind::Plain => {
+                editor.paste(name, count, before);
+                true
+            }
+            PutKind::Pass => {
+                paste_and_pass(editor, name, count, before);
+                true
+            }
+            PutKind::Indented => paste_indented(editor, name, count, before),
+        };
+        if put {
+            editor.dot.record(crate::editor::dot::Change::Put(self));
+        }
+    }
+
+    /// The put `.` makes: a count replaces the count, and a numbered
+    /// register gives way to the next one (Vim's `"1p...`).
+    pub(crate) fn again(self, count: Option<usize>) -> Self {
+        let register = match self.register {
+            Some(digit @ '1'..='8') => Some(char::from(digit as u8 + 1)),
+            register => register,
+        };
+        Self {
+            register,
+            count: count.unwrap_or(self.count),
+            ..self
+        }
+    }
+}
+
 /// `gp` / `gP`: put, and leave the cursor just after the new text.
-pub(crate) fn paste_and_pass(editor: &mut Editor, name: Option<char>, count: usize, before: bool) {
+fn paste_and_pass(editor: &mut Editor, name: Option<char>, count: usize, before: bool) {
     let register = editor.register(name);
     let lines = editor.buf().len_lines();
     let bytes = editor.buf().len_bytes();
-    editor.paste_named(name, count, before);
+    editor.paste(name, count, before);
     if editor.buf().len_bytes() == bytes {
         return;
     }
@@ -317,12 +371,12 @@ pub(crate) fn paste_and_pass(editor: &mut Editor, name: Option<char>, count: usi
     };
     editor.set_head(after);
     editor.clamp_cursor();
-    record_keys(editor, if before { "gP" } else { "gp" }.into());
 }
 
 /// `]p` / `[p`: put a linewise register with its first line's indent
 /// changed to the current line's, the other lines by the same amount.
-pub(crate) fn paste_indented(editor: &mut Editor, name: Option<char>, count: usize, before: bool) {
+/// False when there was nothing to put.
+fn paste_indented(editor: &mut Editor, name: Option<char>, count: usize, before: bool) -> bool {
     let mut register = editor.register(name);
     if register.shape == RegisterShape::Linewise {
         let indent_of = |text: &str| text.len() - text.trim_start_matches([' ', '\t']).len();
@@ -341,15 +395,13 @@ pub(crate) fn paste_indented(editor: &mut Editor, name: Option<char>, count: usi
             .collect();
     }
     if register.is_empty() || editor.buf().readonly {
-        return;
+        return false;
     }
     editor.paste_register(&register, count, before);
-    record_keys(editor, if before { "[p" } else { "]p" }.into());
+    true
 }
 
 /// A direct (non-grammar) command's dot-repeat record.
 pub(crate) fn record_keys(editor: &mut Editor, keys: String) {
-    editor.last_cmd_keys = keys;
-    editor.last_change = None;
-    editor.last_insert = None;
+    editor.dot.record(crate::editor::dot::Change::Keys(keys));
 }

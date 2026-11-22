@@ -42,15 +42,10 @@ impl Editor {
         self.insert_keys.replaced = None;
         self.recording_insert = Some(String::new());
         self.insert_replay = Some(Vec::new());
-        if self.last_cmd_keys.is_empty()
-            || !matches!(keys.chars().next(), Some('c') if keys.len() > 1)
-        {
-            // plain entries remember their own key; change ops already set
-            // last_cmd_keys in execute()
-            if matches!(keys, "i" | "a" | "A" | "o" | "O" | "v..." | "V...") {
-                self.last_cmd_keys = keys.trim_end_matches("...").into();
-                self.last_change = None;
-            }
+        // plain entries remember their own key; a change recorded itself
+        // before it opened Insert
+        if matches!(keys, "i" | "a" | "A" | "o" | "O") {
+            self.dot.enter(super::dot::Change::Keys(keys.into()));
         }
     }
 
@@ -207,7 +202,7 @@ impl Editor {
                     if self.block_insert_state.is_some() {
                         self.block_replicate(&rec);
                     }
-                    self.last_insert = Some(rec);
+                    self.dot.insert = Some(rec);
                 } else {
                     self.insert_open = None;
                 }
