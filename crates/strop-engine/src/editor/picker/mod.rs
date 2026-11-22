@@ -618,7 +618,7 @@ impl Editor {
                     .local_path()
                     .and_then(|path| path.strip_prefix(&root.path).ok())
                     .and_then(|relative| glue.inventory.workspace_witness(relative));
-                self.analysis.symbols.jump = Some(super::symbols::WorkspaceJump {
+                self.analysis.symbols.jump = Some(super::symbols::jump::WorkspaceJump {
                     query: scope,
                     epoch: glue.inventory.epoch(),
                     disk,

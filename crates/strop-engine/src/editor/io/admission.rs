@@ -325,11 +325,11 @@ impl Editor {
                 // corroborate a qualified label with this server's exact
                 // documentSymbol selection. Never search for a nearby token.
                 if query.is_some()
-                    && !super::super::symbols::token_at(text, offset.get(), &name)
+                    && !super::super::symbols::jump::token_at(text, offset.get(), &name)
                     && match source {
                         strop_picker::SymbolColumn::Byte(_) => !disk_verified,
                         strop_picker::SymbolColumn::Server { server, .. } => {
-                            !super::super::symbols::corroborates(
+                            !super::super::symbols::jump::corroborates(
                                 self,
                                 document,
                                 server,
