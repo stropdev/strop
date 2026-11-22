@@ -30,6 +30,7 @@ pub mod resolution;
 pub use diagnostics::DocumentDiagnostics;
 mod dive;
 mod document;
+mod dot;
 pub mod events;
 pub(crate) mod ex;
 mod explain;
@@ -337,11 +338,8 @@ pub struct Editor {
     /// bytes in private state storage — a different product from session.
     pub(crate) recovery: recovery::RecoveryState,
 
-    /// The last grammar-level change (dot-repeat's semantic form).
-    pub(crate) last_change: Option<strop_grammar::Command>,
-    /// Direct non-grammar commands (x, p, J…) replay their key string.
-    pub(crate) last_cmd_keys: String,
-    pub(crate) last_insert: Option<String>,
+    /// What `.` repeats: the last change and its Insert's text.
+    pub(crate) dot: dot::Dot,
     /// Insert Ctrl-R waits for one register name; the resulting text is
     /// replayed verbatim, not as document keys.
     /// What the Insert keys beyond typing remember (`insert/keys.rs`).
@@ -484,9 +482,7 @@ impl Editor {
             last_macro: None,
             block_insert_state: None,
             macro_depth: 0,
-            last_change: None,
-            last_cmd_keys: String::new(),
-            last_insert: None,
+            dot: dot::Dot::default(),
             recording_insert: None,
             insert_keys: insert::keys::InsertKeys::default(),
             insert_replay: None,

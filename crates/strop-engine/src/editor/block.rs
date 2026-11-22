@@ -81,14 +81,20 @@ impl Editor {
     /// a TAB's last cell, any other character's first (a wide character
     /// shows the cursor on its left half).
     pub(crate) fn wanted_cell(&self) -> DisplayColumn {
-        self.view().desired_column.unwrap_or_else(|| {
-            let (start, end) = self.cluster_cells(self.head());
-            if self.buf().byte_at(self.head()) == Some(b'\t') {
-                end - 1
-            } else {
-                start
-            }
-        })
+        self.view()
+            .desired_column
+            .unwrap_or_else(|| self.shown_cell())
+    }
+
+    /// The cell the cursor shows on: a TAB's last cell, any other
+    /// character's first (Vim's `w_virtcol`).
+    pub(crate) fn shown_cell(&self) -> DisplayColumn {
+        let (start, end) = self.cluster_cells(self.head());
+        if self.buf().byte_at(self.head()) == Some(b'\t') {
+            end - 1
+        } else {
+            start
+        }
     }
 
     pub(crate) fn cluster_cells(&self, byte: usize) -> (DisplayColumn, DisplayColumn) {

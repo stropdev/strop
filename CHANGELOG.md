@@ -2,6 +2,16 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## Unreleased
+
+### Fixed
+
+- **Repeating Visual commands:** `.` after a Visual command repeats it on the same amount of text from the cursor, as Vim does: the same number of lines, and the same width, or the same end column on a later line. Visual `r`, `Ctrl-A` and `Ctrl-X` now repeat; a selection over several lines no longer comes up one character short; a named register is kept; a count on `.` is ignored. After a Visual put, `.` deletes that amount of text and puts nothing, as in Vim, instead of repeating the change before it.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 13. Replay a 0.76 recording with 0.76, or record it again.
+
 ## 0.76.0 — 2026-11-21
 
 ### Added

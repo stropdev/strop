@@ -215,7 +215,7 @@ impl Editor {
                     }
                     "join" => crate::editor::normal::edits::join_lines(self, count, true),
                     "join-raw" => crate::editor::normal::edits::join_lines(self, count, false),
-                    "repeat" => self.dot_repeat(count),
+                    "repeat" => super::dot::repeat(self, count),
                     "toggle-case" => crate::editor::normal::edits::toggle_case(self, n),
                     "number-add" => crate::editor::normal::edits::add_to_number(self, n as i64),
                     "number-subtract" => {

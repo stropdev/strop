@@ -1,8 +1,9 @@
 //! The generated corpus (0095 §3): each operator × each motion or text
-//! object × {no count, count} × {Normal, Visual, dot-repeat}, from fixed
-//! starting positions in two fixtures; `d` over every target also runs on
-//! multibyte, CRLF and unterminated text (plan 0108 D2). A case's name
-//! is its own reproduction: `gen/prose@2:7/normal/d2aw`.
+//! object × {no count, count} × {Normal, Visual, dot-repeat, Visual then
+//! dot-repeat}, from fixed starting positions in two fixtures; `d` over
+//! every target also runs on multibyte, CRLF and unterminated text (plan
+//! 0108 D2). A case's name is its own reproduction:
+//! `gen/prose@2:7/normal/d2aw`.
 
 use super::Run;
 
@@ -283,6 +284,10 @@ pub fn cases() -> Vec<Run> {
                     _ => one_fixture && index == (op_index + 3) % 6,
                 };
                 let dot = *op != "y" && one_fixture && index == (op_index + 1) % 6;
+                // Visual then `.` repeats the extent (#272): the same
+                // sample, and `d` from the first position of the fixtures
+                // where a cell is not a byte (multibyte, CRLF, no last break)
+                let visual_dot = dot || (op_index == 0 && fixture_index >= 2 && index == 0);
                 for target in TARGETS {
                     let keys = target.keys;
                     if *op == "g?" && keys.starts_with('?') {
@@ -310,6 +315,10 @@ pub fn cases() -> Vec<Run> {
                     if dot && !matches!(keys, "'a" | "`a") {
                         let label = format!("{}{}", name_of(op), name_of(keys));
                         push("dot", label, format!("{op}{keys}{after}j."));
+                    }
+                    if visual_dot && !matches!(keys, "'a" | "`a") {
+                        let label = format!("v{}{}", name_of(keys), name_of(visual_op));
+                        push("vdot", label, format!("v{keys}{visual_op}{after}j."));
                     }
                 }
             }

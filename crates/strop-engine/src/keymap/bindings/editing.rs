@@ -196,7 +196,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: ".",
-        desc: "repeat the last change (a count replaces its count)",
+        desc: "repeat the last change (a count replaces its count; Visual: same extent from the cursor)",
         sections: &["editing"],
         live: true,
         id: "repeat",

@@ -349,7 +349,5 @@ pub(crate) fn paste_indented(editor: &mut Editor, name: Option<char>, count: usi
 
 /// A direct (non-grammar) command's dot-repeat record.
 pub(crate) fn record_keys(editor: &mut Editor, keys: String) {
-    editor.last_cmd_keys = keys;
-    editor.last_change = None;
-    editor.last_insert = None;
+    editor.dot.record(crate::editor::dot::Change::Keys(keys));
 }
