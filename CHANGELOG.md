@@ -7,6 +7,7 @@ Earlier releases cite designs by number; find the original decision and its deli
 ### Fixed
 
 - **Tab pages:** closing another tab page, `:tabonly` and `:tabmove` no longer abandon a file that is still loading on the current page.
+- **Language servers:** a server that declares implementation, declaration or type definition as `false` is no longer asked for them; `gI`, `gD` and `gy` say the server does not support them, as they do when it declares nothing.
 
 ## 0.76.0 — 2026-11-21
 

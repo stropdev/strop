@@ -3,97 +3,60 @@
 
 use std::sync::{Arc, Mutex};
 
+use async_lsp::lsp_types::{
+    CodeActionProviderCapability, DeclarationCapability, HoverProviderCapability,
+    ImplementationProviderCapability, OneOf, ServerCapabilities, TypeDefinitionProviderCapability,
+};
+
 use crate::protocol::PositionEncoding;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Default)]
-pub struct ServerCaps(Arc<Mutex<Option<async_lsp::lsp_types::ServerCapabilities>>>);
+pub struct ServerCaps(Arc<Mutex<Option<ServerCapabilities>>>);
 
 impl ServerCaps {
-    pub(crate) fn set(&self, caps: async_lsp::lsp_types::ServerCapabilities) {
+    pub(crate) fn set(&self, caps: ServerCapabilities) {
         let Ok(mut guard) = self.0.lock() else { return };
         *guard = Some(caps);
     }
 
-    /// Hover supported? Capabilities not yet arrived (or a poisoned
-    /// lock) count as no — requests never race server startup.
-    pub fn hover(&self) -> bool {
-        use async_lsp::lsp_types::HoverProviderCapability;
-        let Ok(guard) = self.0.lock() else {
-            return false;
-        };
-        matches!(
-            guard.as_ref().and_then(|c| c.hover_provider.as_ref()),
-            Some(HoverProviderCapability::Simple(true)) | Some(HoverProviderCapability::Options(_))
-        )
-    }
-
-    /// Goto-definition supported? (same unknown-is-no rule as hover)
-    pub fn goto_definition(&self) -> bool {
-        use async_lsp::lsp_types::OneOf;
-        let Ok(guard) = self.0.lock() else {
-            return false;
-        };
-        matches!(
-            guard.as_ref().and_then(|c| c.definition_provider.as_ref()),
-            Some(OneOf::Left(true)) | Some(OneOf::Right(_))
-        )
-    }
-
-    fn flag(&self, f: impl Fn(&async_lsp::lsp_types::ServerCapabilities) -> bool) -> bool {
+    /// Capabilities not yet arrived (or a poisoned lock) count as no —
+    /// requests never race server startup.
+    fn flag(&self, f: impl Fn(&ServerCapabilities) -> bool) -> bool {
         let Ok(guard) = self.0.lock() else {
             return false;
         };
         guard.as_ref().is_some_and(f)
     }
 
+    pub fn hover(&self) -> bool {
+        self.flag(|c| enabled(&c.hover_provider))
+    }
+    pub fn goto_definition(&self) -> bool {
+        self.flag(|c| enabled(&c.definition_provider))
+    }
     pub fn references(&self) -> bool {
-        self.flag(|c| {
-            matches!(
-                c.references_provider,
-                Some(async_lsp::lsp_types::OneOf::Left(true))
-                    | Some(async_lsp::lsp_types::OneOf::Right(_))
-            )
-        })
+        self.flag(|c| enabled(&c.references_provider))
     }
     pub fn implementation(&self) -> bool {
-        self.flag(|c| c.implementation_provider.is_some())
+        self.flag(|c| enabled(&c.implementation_provider))
     }
     pub fn type_definition(&self) -> bool {
-        self.flag(|c| c.type_definition_provider.is_some())
+        self.flag(|c| enabled(&c.type_definition_provider))
     }
     pub fn declaration(&self) -> bool {
-        self.flag(|c| c.declaration_provider.is_some())
+        self.flag(|c| enabled(&c.declaration_provider))
     }
-    /// Workspace-symbol provider advertised? (unknown-is-no)
     pub fn workspace_symbols(&self) -> bool {
-        self.flag(|c| {
-            matches!(
-                c.workspace_symbol_provider,
-                Some(async_lsp::lsp_types::OneOf::Left(true))
-                    | Some(async_lsp::lsp_types::OneOf::Right(_))
-            )
-        })
+        self.flag(|c| enabled(&c.workspace_symbol_provider))
     }
-
     pub fn document_symbols(&self) -> bool {
-        self.flag(|c| {
-            matches!(
-                c.document_symbol_provider,
-                Some(async_lsp::lsp_types::OneOf::Left(true))
-                    | Some(async_lsp::lsp_types::OneOf::Right(_))
-            )
-        })
+        self.flag(|c| enabled(&c.document_symbol_provider))
     }
-
-    /// Document formatting supported? (same unknown-is-no rule as hover)
     pub fn formatting(&self) -> bool {
-        use async_lsp::lsp_types::OneOf;
-        self.flag(|c| {
-            matches!(
-                c.document_formatting_provider,
-                Some(OneOf::Left(true)) | Some(OneOf::Right(_))
-            )
-        })
+        self.flag(|c| enabled(&c.document_formatting_provider))
     }
     /// `workspace/willRenameFiles` advertised
     /// (`workspace.fileOperations.willRename`).
@@ -106,23 +69,10 @@ impl ServerCaps {
         })
     }
     pub fn rename(&self) -> bool {
-        use async_lsp::lsp_types::OneOf;
-        self.flag(|c| {
-            matches!(
-                c.rename_provider,
-                Some(OneOf::Left(true)) | Some(OneOf::Right(_))
-            )
-        })
+        self.flag(|c| enabled(&c.rename_provider))
     }
     pub fn code_action(&self) -> bool {
-        use async_lsp::lsp_types::CodeActionProviderCapability;
-        self.flag(|c| {
-            matches!(
-                c.code_action_provider,
-                Some(CodeActionProviderCapability::Simple(true))
-                    | Some(CodeActionProviderCapability::Options(_))
-            )
-        })
+        self.flag(|c| enabled(&c.code_action_provider))
     }
 
     /// The negotiated column encoding (spec default UTF-16 until the
@@ -186,5 +136,56 @@ impl ServerCaps {
             RequestKind::Completion => self.completion(),
             RequestKind::CompletionResolve => self.completion_resolve(),
         }
+    }
+}
+
+/// A provider the protocol lets a server answer with a boolean or an options
+/// object: `true` or any options object enables it, `false` does not.
+trait Provider {
+    fn enabled(&self) -> bool;
+}
+
+/// Every boolean-or-options predicate goes through here, so a provider
+/// present as `false` is never mistaken for one that is enabled.
+fn enabled(provider: &Option<impl Provider>) -> bool {
+    provider.as_ref().is_some_and(Provider::enabled)
+}
+
+impl<T> Provider for OneOf<bool, T> {
+    fn enabled(&self) -> bool {
+        matches!(self, OneOf::Left(true) | OneOf::Right(_))
+    }
+}
+
+impl Provider for HoverProviderCapability {
+    fn enabled(&self) -> bool {
+        matches!(self, Self::Simple(true) | Self::Options(_))
+    }
+}
+
+impl Provider for CodeActionProviderCapability {
+    fn enabled(&self) -> bool {
+        matches!(self, Self::Simple(true) | Self::Options(_))
+    }
+}
+
+impl Provider for ImplementationProviderCapability {
+    fn enabled(&self) -> bool {
+        matches!(self, Self::Simple(true) | Self::Options(_))
+    }
+}
+
+impl Provider for TypeDefinitionProviderCapability {
+    fn enabled(&self) -> bool {
+        matches!(self, Self::Simple(true) | Self::Options(_))
+    }
+}
+
+impl Provider for DeclarationCapability {
+    fn enabled(&self) -> bool {
+        matches!(
+            self,
+            Self::Simple(true) | Self::RegistrationOptions(_) | Self::Options(_)
+        )
     }
 }

@@ -24,49 +24,8 @@ pub use protocol::*;
 pub use target::Workspace;
 #[cfg(test)]
 mod tests {
-    use super::{to_byte_col, to_server_col, PositionEncoding, ServerCaps, ServerColumn};
-    use async_lsp::lsp_types::{
-        DefinitionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
-    };
+    use super::{to_byte_col, to_server_col, PositionEncoding, ServerColumn};
     use strop_core::id::ByteColumn;
-
-    #[test]
-    fn capabilities_gate_hover_and_goto() {
-        let caps = ServerCaps::default();
-        // Pre-initialize: capabilities unknown, requests must not race startup.
-        assert!(!caps.hover());
-        assert!(!caps.goto_definition());
-        caps.set(ServerCapabilities::default());
-        assert!(!caps.hover());
-        assert!(!caps.goto_definition());
-        caps.set(ServerCapabilities {
-            definition_provider: Some(OneOf::Left(true)),
-            ..Default::default()
-        });
-        assert!(!caps.hover());
-        assert!(caps.goto_definition());
-        caps.set(ServerCapabilities {
-            hover_provider: Some(HoverProviderCapability::Simple(true)),
-            definition_provider: Some(OneOf::Left(false)),
-            ..Default::default()
-        });
-        assert!(caps.hover());
-        assert!(!caps.goto_definition());
-    }
-
-    #[test]
-    fn option_shaped_providers_count_as_enabled() {
-        let caps = ServerCaps::default();
-        caps.set(ServerCapabilities {
-            hover_provider: Some(HoverProviderCapability::Options(Default::default())),
-            definition_provider: Some(OneOf::Right(DefinitionOptions {
-                work_done_progress_options: Default::default(),
-            })),
-            ..Default::default()
-        });
-        assert!(caps.hover());
-        assert!(caps.goto_definition());
-    }
 
     #[test]
     fn column_encoding_roundtrips_unicode() {
