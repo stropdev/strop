@@ -206,6 +206,18 @@ pub const CASES: &[Case] = &[
     ("gp then dot", FIVE, "yiwgp."),
     ("gP then dot", FIVE, "yiwjgP."),
     ("]p then dot", FIVE, "yyj]p."),
+    // a put's `.` keeps its register and count (#275)
+    ("named put then dot keeps the register", FIVE, "\"ayiwjyiw\"apj0."),
+    ("named P then dot keeps the register", FIVE, "\"ayiwjyiw\"aPj0."),
+    ("named gp then dot keeps the register", FIVE, "\"ayiwjyiw\"agpj0."),
+    ("named ]p then dot keeps the register", "    deep\nshallow\nother\n", "\"ayyjyy\"a]pj."),
+    ("named [p then dot keeps the register", "    deep\nshallow\nother\n", "\"ayyjyy\"a[pj."),
+    ("counted put then dot keeps the count", FIVE, "yiw3pj0."),
+    ("counted gp then dot keeps the count", FIVE, "yiw2gpj0."),
+    ("a count on a put's dot replaces it", FIVE, "yiwp3."),
+    ("a count on a put's dot sticks", FIVE, "yiwp3.."),
+    ("a numbered put's dot takes the next register", "a\nb\nc\nd\ne\n", "dddddd\"1p.."),
+    ("a numbered P's dot takes the next register", "a\nb\nc\nd\ne\n", "dddddd\"1P.."),
     // puts
     ("gp leaves the cursor after the text", WORDS, "yiwwgp"),
     ("gP", WORDS, "yiwwgP"),

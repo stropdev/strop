@@ -4,6 +4,7 @@
 
 use strop_grammar::{Command, Op};
 
+use super::normal::edits::Put;
 use super::visual::repeat::VisualRepeat;
 use super::{Editor, Mode};
 use crate::keymap::VisualVerb;
@@ -19,6 +20,8 @@ pub(crate) enum Change {
     Keys(String),
     /// A Visual verb over the same extent from the cursor.
     Visual(VisualRepeat),
+    /// A Normal put, with its register and count.
+    Put(Put),
 }
 
 impl Change {
@@ -31,7 +34,7 @@ impl Change {
                 repeat.verb,
                 VisualVerb::Operator(Op::Change) | VisualVerb::Lines(Op::Change)
             ),
-            Change::Keys(_) => false,
+            Change::Keys(_) | Change::Put(_) => false,
         }
     }
 }
@@ -60,7 +63,8 @@ impl Dot {
 
 /// `.`: the last change again. A count replaces the count a Normal
 /// change was made with, and sticks for later repeats; a Visual repeat
-/// keeps its own count and extent, as Vim's does.
+/// keeps its own count and extent, and a numbered put takes the next
+/// register, as Vim's do.
 pub(crate) fn repeat(editor: &mut Editor, count: Option<usize>) {
     let insert = editor.dot.insert.clone();
     let change = editor.dot.change.clone();
@@ -98,6 +102,7 @@ pub(crate) fn repeat(editor: &mut Editor, count: Option<usize>) {
             editor.feed_text(&keys);
         }
         Some(Change::Visual(repeat)) => super::visual::repeat::replay(editor, repeat),
+        Some(Change::Put(put)) => put.again(count).run(editor),
         None => {}
     }
     if change.as_ref().is_some_and(Change::opens_insert) && editor.mode != Mode::Insert {

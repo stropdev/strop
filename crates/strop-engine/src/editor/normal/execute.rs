@@ -243,12 +243,6 @@ impl Editor {
         self.clamp_cursor();
     }
 
-    /// `p` / `P` (dot-repeatable): paste the register after/before
-    /// (vim `2p` lands it count times — a block repeats horizontally).
-    pub(crate) fn paste_named(&mut self, name: Option<char>, count: usize, before: bool) {
-        self.paste(name, count, before);
-        super::edits::record_keys(self, if before { "P" } else { "p" }.into());
-    }
     /// `a`: append after the char under the cursor (multibyte-honest).
     pub(crate) fn append(&mut self) {
         self.set_head(

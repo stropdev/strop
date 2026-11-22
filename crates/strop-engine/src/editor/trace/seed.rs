@@ -24,7 +24,8 @@ use crate::editor::{Document, Editor, Pane};
 // Version 10: counted replace, buffer picker jumps and disk blame on unsaved text.
 // Version 11: counted Visual shifts, collection positions and uncommitted blame.
 // Version 12: symbol jumps use the producing server's negotiated encoding.
-// Version 13: `.` after a Visual verb repeats it over the same extent.
+// Version 13: `.` after a Visual verb repeats it over the same extent; after a
+// put, with its register and count.
 const SEMANTIC_VERSION: u32 = 13;
 
 /// One seeded document: its buffer plus whether it came from a file.

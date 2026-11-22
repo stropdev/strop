@@ -76,7 +76,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ r<c>` — replace char
 - `✓ J` — join lines
 - `✓ gJ` — join lines as they are, without a space
-- `✓ .` — repeat the last change (a count replaces its count; Visual: same extent from the cursor)
+- `✓ .` — repeat the last change (a count replaces its count; Visual: same extent; put: same register)
 - `✓ ~` — toggle case and advance
 - `✓ R` — replace mode: type over the text
 - `✓ ctrl-a` — add to the number at or after the cursor
