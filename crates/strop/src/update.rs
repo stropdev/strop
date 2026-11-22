@@ -28,6 +28,14 @@ pub const RECEIPT_NAME: &str = ".strop-install.json";
 /// of the latest release.
 const CATALOG_URL: &str = "https://github.com/stropdev/strop/releases/latest/download/catalog.json";
 
+/// Where to install by hand when the catalog is not one this client reads.
+const RELEASES_URL: &str = "https://github.com/stropdev/strop/releases";
+
+/// The catalog identity this client understands; anything else is refused
+/// rather than misread.
+const CATALOG_PRODUCT: &str = "strop";
+const CATALOG_SCHEMA: u64 = 1;
+
 /// How this binary was installed — decides the upgrade path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {
@@ -142,6 +150,27 @@ impl Catalog {
     fn parse(body: &[u8]) -> Result<Catalog, String> {
         let json: serde_json::Value =
             serde_json::from_slice(body).map_err(|e| format!("release catalog JSON: {e}"))?;
+        let identity = [
+            (
+                "product",
+                json["product"].as_str() == Some(CATALOG_PRODUCT),
+                CATALOG_PRODUCT.to_string(),
+            ),
+            (
+                "schema",
+                json["schema"].as_u64() == Some(CATALOG_SCHEMA),
+                CATALOG_SCHEMA.to_string(),
+            ),
+        ];
+        for (key, understood, expected) in identity {
+            if !understood {
+                return Err(format!(
+                    "release catalog {key} is {}, but this strop understands only {expected} \
+                     — install manually from {RELEASES_URL}",
+                    json[key]
+                ));
+            }
+        }
         let field = |entry: &serde_json::Value, key: &str| -> Result<String, String> {
             entry
                 .get(key)
@@ -566,6 +595,26 @@ fn catalog_resolves_artifacts_by_target() {
 fn malformed_catalog_is_rejected() {
     assert!(Catalog::parse(b"{}").is_err());
     assert!(Catalog::parse(b"not json").is_err());
+}
+
+#[cfg(test)]
+#[test]
+fn foreign_product_or_schema_catalog_is_refused() {
+    for (from, to, field) in [
+        (r#""product": "strop""#, r#""product": "other""#, "product"),
+        (r#""schema": 1"#, r#""schema": 2"#, "schema"),
+        (r#""schema": 1,"#, "", "schema"),
+        (r#""product": "strop","#, "", "product"),
+    ] {
+        let body = CATALOG_FIXTURE.replacen(from, to, 1);
+        assert_ne!(body, CATALOG_FIXTURE, "fixture edit {from:?} applied");
+        let error = Catalog::parse(body.as_bytes()).expect_err("foreign catalog refused");
+        assert!(error.contains(field), "{field} named: {error}");
+        assert!(
+            error.contains(RELEASES_URL),
+            "manual install pointer: {error}"
+        );
+    }
 }
 
 #[cfg(test)]

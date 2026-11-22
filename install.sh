@@ -88,6 +88,12 @@ if [ -z "$VERSION" ]; then
     info "Resolving latest release..."
     CATALOG=$(fetch "$CATALOG_URL") || err "could not fetch release catalog at $CATALOG_URL"
     [ -n "$CATALOG" ] || err "empty release catalog at $CATALOG_URL"
+    # Refuse a catalog this installer does not understand rather than
+    # misread it: product "strop", schema 1.
+    PRODUCT=$(printf '%s\n' "$CATALOG" | sed -n 's/^  "product": "\([^"]*\)".*$/\1/p' | head -1)
+    SCHEMA=$(printf '%s\n' "$CATALOG" | sed -n 's/^  "schema": \([0-9][0-9]*\),*$/\1/p' | head -1)
+    { [ "$PRODUCT" = "strop" ] && [ "$SCHEMA" = "1" ]; } \
+        || err "release catalog at $CATALOG_URL is not one this installer understands (product '${PRODUCT:-missing}', schema '${SCHEMA:-missing}'; expected strop, 1) — install manually from https://github.com/$REPO/releases"
     VERSION=$(printf '%s\n' "$CATALOG" | sed -n 's/^  "version": "\([^"]*\)".*$/\1/p' | head -1)
     [ -n "$VERSION" ] || err "no version in release catalog at $CATALOG_URL"
     # The catalog pretty-prints one object per artifact, one field per
