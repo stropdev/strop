@@ -2,6 +2,12 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## Unreleased
+
+### Fixed
+
+- **Tab pages:** closing another tab page, `:tabonly` and `:tabmove` no longer abandon a file that is still loading on the current page.
+
 ## 0.76.0 — 2026-11-21
 
 ### Added
