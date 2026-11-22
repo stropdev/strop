@@ -2,6 +2,12 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## Unreleased
+
+### Fixed
+
+- **Release verification:** the public catalog matches a local build only when both name product `strop` with the expected schema and agree on everything except publication time. A different product, schema, size, URL or an extra field fails the check.
+
 ## 0.76.0 — 2026-11-21
 
 ### Added

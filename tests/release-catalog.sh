@@ -4,7 +4,8 @@
 #   - the wire shape is pinned: version facts + per-artifact byte sizes
 #   - a tampered checksum sidecar fails generation
 #   - non-Linux-x86_64 artifact targets are rejected
-#   - verify accepts matching local/public catalogs and rejects divergence
+#   - verify requires this verifier's product and schema on both catalogs and
+#     compares every other field except published_at
 # Run: sh tests/release-catalog.sh
 set -eu
 
@@ -98,17 +99,54 @@ SIDECAR
 done
 ok "retired artifact targets refused"
 
-# --- verify: match passes, divergence fails ---------------------------------
+# --- verify: same product, schema and facts; only published_at may differ ---
 gen "$WORK/local.json"
 cp "$WORK/local.json" "$WORK/public.json"
 python3 "$SCRIPT" verify --local "$WORK/local.json" --public "$WORK/public.json" \
     >/dev/null || fail "verify rejected identical catalogs"
-sed 's/"sha256": "[0-9a-f]*"/"sha256": "deadbeef"/' "$WORK/local.json" \
-    > "$WORK/public-diverged.json"
-if python3 "$SCRIPT" verify --local "$WORK/local.json" \
-    --public "$WORK/public-diverged.json" 2>/dev/null; then
-    fail "verify accepted a diverged public catalog"
+
+variant() { # name python-expression-mutating-`c`
+    python3 - "$WORK/local.json" "$WORK/public-$1.json" "$2" <<'VARIANT'
+import json, sys
+c = json.load(open(sys.argv[1], encoding="utf-8"))
+exec(sys.argv[3])
+open(sys.argv[2], "w", encoding="utf-8").write(json.dumps(c, indent=2) + "\n")
+VARIANT
+}
+verify_public() { # name
+    python3 "$SCRIPT" verify --local "$WORK/local.json" \
+        --public "$WORK/public-$1.json" >"$WORK/verify-$1.log" 2>&1
+}
+
+variant published_at 'c["published_at"] = "2027-06-30T12:00:00Z"'
+verify_public published_at \
+    || fail "verify rejected a publication-time-only difference: $(cat "$WORK/verify-published_at.log")"
+ok "publication time is not an artifact fact"
+
+variant product 'c["product"] = "another-product"'
+variant schema 'c["schema"] = 99'
+variant extra 'c["channel"] = "nightly"'
+variant sha256 'c["artifacts"][0]["sha256"] = "deadbeef"'
+variant bytes 'c["artifacts"][0]["bytes"] += 1'
+variant url 'c["artifacts"][0]["url"] += ".moved"'
+for name in product schema extra sha256 bytes url; do
+    if verify_public "$name"; then
+        fail "verify accepted a public catalog with a different $name"
+    fi
+done
+grep -q 'public.*product' "$WORK/verify-product.log" \
+    || fail "product refusal does not name the file and field: $(cat "$WORK/verify-product.log")"
+grep -q 'public.*schema' "$WORK/verify-schema.log" \
+    || fail "schema refusal does not name the file and field: $(cat "$WORK/verify-schema.log")"
+
+# Both sides carry this verifier's identity: matching foreign catalogs fail.
+cp "$WORK/public-schema.json" "$WORK/local-schema.json"
+if python3 "$SCRIPT" verify --local "$WORK/local-schema.json" \
+    --public "$WORK/public-schema.json" >"$WORK/verify-both.log" 2>&1; then
+    fail "verify accepted two catalogs of an unknown schema"
 fi
-ok "public catalog verification"
+grep -q 'local.*schema' "$WORK/verify-both.log" \
+    || fail "local schema refusal does not name the file: $(cat "$WORK/verify-both.log")"
+ok "public catalog verification refuses identity, extra-key and artifact divergence"
 
 echo "release-catalog fixtures: all passed"
