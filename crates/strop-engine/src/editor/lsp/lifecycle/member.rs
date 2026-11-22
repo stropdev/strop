@@ -11,7 +11,7 @@ impl Editor {
     /// Check only the bounded declaration list; never stat an event path.
     pub(crate) fn manifest_binding_hint(&self, relative: &Path, namespace_changed: bool) -> bool {
         let declarations = self.workspace_declarations();
-        if declarations.is_empty() {
+        if declarations.is_empty() || strop_fs::is_protocol_path(relative) {
             return false;
         }
         let name = relative.file_name().unwrap_or_default();
