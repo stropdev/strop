@@ -2,7 +2,7 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
-## Unreleased
+## 0.77.0 — 2026-11-23
 
 ### Fixed
 
