@@ -113,7 +113,7 @@ impl Editor {
             LspEvent::Note { context, text } => {
                 if context.kind == strop_lsp::RequestKind::DocumentSymbols {
                     // an error or "no symbols": the build's owner words it
-                    crate::editor::symbols::server_reply(self, &context, None, Some(text));
+                    crate::editor::symbols::build::server_reply(self, &context, None, Some(text));
                     return;
                 }
                 self.continue_after_format(&context, Some(text.clone()));
@@ -196,7 +196,7 @@ impl Editor {
                 self.present_change_plan(plan);
             }
             LspEvent::Symbols { context, symbols } => {
-                crate::editor::symbols::server_reply(self, &context, Some(symbols), None);
+                crate::editor::symbols::build::server_reply(self, &context, Some(symbols), None);
             }
 
             LspEvent::WorkspaceSymbols {

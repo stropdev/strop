@@ -3,8 +3,7 @@
 use strop_core::Range;
 use strop_grammar::{self as grammar, Command, Op};
 
-use crate::editor::{Editor, Mode};
-use strop_core::frontend_input::Key;
+use crate::editor::Editor;
 
 use super::operators::{Operand, Operation};
 
@@ -73,15 +72,14 @@ impl Editor {
         self.tx_commit();
         self.clamp_cursor();
         self.flash(Range::charwise(self.head(), self.head()));
-        self.last_cmd_keys = cmd.keys.clone();
-        self.last_insert = None;
+        super::edits::record_keys(self, cmd.keys.clone());
         Some(())
     }
 
     /// Run an operator command. `typed` is the command as the keys spelled
     /// it: dot-repeat keeps that form, so `.` binds marks and the last
     /// search afresh.
-    pub(super) fn execute(&mut self, typed: &Command) {
+    pub(crate) fn execute(&mut self, typed: &Command) {
         let bound = match crate::editor::normal::bind::bind_command(self, typed) {
             Ok(bound) => bound.into_owned(),
             Err(message) => {
@@ -140,9 +138,8 @@ impl Editor {
         // the new position — it never replays a stale key string through
         // a changed keymap. Only a command that found its target is kept.
         if !matches!(op, Op::Yank | Op::Filter) && !op.missing() {
-            self.last_change = Some(typed.clone());
-            self.last_cmd_keys.clear();
-            self.last_insert = None;
+            self.dot
+                .record(crate::editor::dot::Change::Command(typed.clone()));
         }
         let operands: Vec<Operand> = plan
             .targets
@@ -179,68 +176,6 @@ impl Editor {
                 column,
             },
         );
-    }
-
-    /// `.`: the last change again. A count replaces the count the change
-    /// was made with, and sticks for later repeats.
-    pub(crate) fn dot_repeat(&mut self, count: Option<usize>) {
-        if self.last_change.is_none() && self.last_cmd_keys.is_empty() && self.last_insert.is_none()
-        {
-            return;
-        }
-        if let (Some(count), Some(change)) = (count, self.last_change.as_mut()) {
-            change.count = Some(count);
-        }
-        if let Some(command) = self.last_change.clone() {
-            if self.defer_resolution(
-                &command,
-                self.all_cursors(),
-                super::super::resolution::ResolutionPurpose::DotRepeat,
-            ) {
-                return;
-            }
-        }
-        let insert = self.last_insert.clone();
-        let replay = self.last_insert_replay.clone();
-        if let Some(cmd) = self.last_change.clone() {
-            // the same change, resolved fresh from here (0014 §input)
-            self.execute(&cmd);
-            if cmd.op == Some(Op::Change) && self.mode != Mode::Insert && insert.is_some() {
-                // the change found no target here: there is no Insert
-                // to type the text into
-                return;
-            }
-        } else if !self.last_cmd_keys.is_empty() {
-            // Replay the requested count without recording it first. A
-            // refused direct command must leave the previous repeat intact.
-            let keys = match count {
-                Some(count) => {
-                    let cmd = self
-                        .last_cmd_keys
-                        .trim_start_matches(|c: char| c.is_ascii_digit());
-                    format!("{count}{cmd}")
-                }
-                None => self.last_cmd_keys.clone(),
-            };
-            self.feed_text(&keys);
-        }
-        if let Some(text) = insert {
-            let was_insert = self.mode == Mode::Insert;
-            if !was_insert && !self.resolution.blocked() {
-                self.enter_insert_from("i");
-            }
-            if replay.is_empty() {
-                for character in text.chars() {
-                    self.replay_insert_key(Key::Char(character));
-                }
-            } else {
-                for step in replay {
-                    self.replay_insert_step(step);
-                }
-            }
-            self.replay_insert_key(Key::Esc);
-            self.message = "repeated".into();
-        }
     }
 
     /// `[count]r<c>` replaces exactly that many characters on this line.
@@ -308,14 +243,6 @@ impl Editor {
         self.clamp_cursor();
     }
 
-    /// `p` / `P` (dot-repeatable): paste the register after/before
-    /// (vim `2p` lands it count times — a block repeats horizontally).
-    pub(crate) fn paste_named(&mut self, name: Option<char>, count: usize, before: bool) {
-        self.paste(name, count, before);
-        self.last_cmd_keys = if before { "P" } else { "p" }.into();
-        self.last_change = None;
-        self.last_insert = None;
-    }
     /// `a`: append after the char under the cursor (multibyte-honest).
     pub(crate) fn append(&mut self) {
         self.set_head(

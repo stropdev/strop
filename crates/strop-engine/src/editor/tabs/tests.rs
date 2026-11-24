@@ -4,6 +4,7 @@
 //! `tab/` corpus of the differential harness.
 
 use super::*;
+use crate::editor::io::OpenIntent;
 use crate::editor::panes::Closing;
 use crate::editor::Document;
 use strop_core::Buffer;
@@ -11,7 +12,11 @@ use strop_core::Buffer;
 /// `n` tab pages, the k-th (1-based) showing a buffer whose text is `tk`;
 /// tab page `at` (0-based) is current.
 fn tabs(n: usize, at: usize) -> Editor {
-    let mut e = Editor::new(Buffer::from_text("t1"));
+    tabs_from(Editor::new(Buffer::from_text("t1")), n, at)
+}
+
+/// `tabs` grown from `e`, whose buffer is the first tab page's.
+fn tabs_from(mut e: Editor, n: usize, at: usize) -> Editor {
     for k in 2..=n {
         let id = e
             .docs
@@ -309,6 +314,69 @@ fn a_random_walk_keeps_every_tab_page_well_formed() {
             assert_eq!(every_pane(&e), expected);
         }
     }
+}
+
+// --- the current tab page's pending work -------------------------------
+
+/// `tabs(n, at)` in a directory holding `file.txt`, with an open of it in
+/// flight on the current tab page. Its completion lands only when the test
+/// pumps, so whatever runs before `wait_io` runs while it is pending.
+fn pending_open(n: usize, at: usize) -> (tempfile::TempDir, Editor) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file.txt");
+    std::fs::write(&path, "opened\n").unwrap();
+    let e = Editor::new_in(Buffer::from_text("t1"), dir.path().to_owned());
+    let mut e = tabs_from(e, n, at);
+    e.request_open(path, OpenIntent::Switch { readonly: false });
+    assert!(e.io_pending());
+    (dir, e)
+}
+
+/// Closing, dropping or moving tab pages the user is not looking at leaves
+/// the current page's open in flight and its focus where it was.
+#[test]
+fn an_open_in_flight_survives_changes_to_the_other_tab_pages() {
+    /// What is done, the change, and the tab order after the open lands.
+    type Case = (&'static str, fn(&mut Editor), &'static [&'static str]);
+    let cases: [Case; 4] = [
+        (
+            "close an earlier one",
+            |e| assert!(close(e, 0)),
+            &["opened\n", "t3"],
+        ),
+        (
+            "close a later one",
+            |e| assert!(close(e, 2)),
+            &["t1", "opened\n"],
+        ),
+        ("tabonly", only, &["opened\n"]),
+        ("tabmove", |e| move_to(e, 0), &["opened\n", "t1", "t3"]),
+    ];
+    for (what, change, expected) in cases {
+        let (_dir, mut e) = pending_open(3, 1);
+        let epoch = e.focus_epoch;
+        change(&mut e);
+        assert_eq!(e.focus_epoch, epoch, "{what}: the focus did not move");
+        e.wait_io().unwrap();
+        assert_eq!(e.buf().text(), "opened\n", "{what}: {}", e.message);
+        assert_eq!(order(&e), expected, "{what}");
+        assert!(well_formed(&e));
+    }
+}
+
+/// Leaving the page that asked, by switching away or closing it, still
+/// abandons the open: it would land on a page the user is not looking at.
+#[test]
+fn leaving_the_tab_page_still_abandons_its_open() {
+    let (_dir, mut e) = pending_open(3, 1);
+    go(&mut e, 0);
+    e.wait_io().unwrap();
+    assert_eq!(order(&e), names(3), "no page shows it");
+
+    let (_dir, mut e) = pending_open(3, 1);
+    assert!(close_current(&mut e));
+    e.wait_io().unwrap();
+    assert_eq!(order(&e), ["t1", "t3"], "no page shows it");
 }
 
 // --- §8.2: parked panes follow their documents ---------------------------

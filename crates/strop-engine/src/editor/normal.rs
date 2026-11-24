@@ -13,6 +13,7 @@ mod search;
 
 use strop_grammar::{self as grammar, Parse};
 
+use super::normal::edits::{Put, PutKind};
 use super::Editor;
 use strop_core::frontend_input::Key;
 
@@ -203,19 +204,24 @@ impl Editor {
                         self.insert_count = n;
                         f(self, last);
                     }
-                    "paste" => self.paste_named(register, n, last == 'P'),
-                    "paste-after" => {
-                        crate::editor::normal::edits::paste_and_pass(self, register, n, last == 'P')
-                    }
-                    "paste-indent-after" => {
-                        crate::editor::normal::edits::paste_indented(self, register, n, false)
-                    }
-                    "paste-indent-before" => {
-                        crate::editor::normal::edits::paste_indented(self, register, n, true)
+                    "paste" | "paste-after" | "paste-indent-after" | "paste-indent-before" => {
+                        let (kind, before) = match row.id {
+                            "paste" => (PutKind::Plain, last == 'P'),
+                            "paste-after" => (PutKind::Pass, last == 'P'),
+                            "paste-indent-after" => (PutKind::Indented, false),
+                            _ => (PutKind::Indented, true),
+                        };
+                        Put {
+                            kind,
+                            before,
+                            register,
+                            count: n,
+                        }
+                        .run(self)
                     }
                     "join" => crate::editor::normal::edits::join_lines(self, count, true),
                     "join-raw" => crate::editor::normal::edits::join_lines(self, count, false),
-                    "repeat" => self.dot_repeat(count),
+                    "repeat" => super::dot::repeat(self, count),
                     "toggle-case" => crate::editor::normal::edits::toggle_case(self, n),
                     "number-add" => crate::editor::normal::edits::add_to_number(self, n as i64),
                     "number-subtract" => {
@@ -295,7 +301,13 @@ impl Editor {
     }
     /// "p P" row: the completing key picks before/after.
     pub(crate) fn paste_named_pub(&mut self, name: Option<char>, count: usize, before: bool) {
-        self.paste_named(name, count, before);
+        Put {
+            kind: PutKind::Plain,
+            before,
+            register: name,
+            count,
+        }
+        .run(self);
     }
     /// "i a A o O I" row: insert entries by key.
     pub(crate) fn insert_entry_pub(&mut self, key: char) {

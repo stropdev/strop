@@ -4,6 +4,7 @@ use strop_core::Buffer;
 mod collection;
 mod diagnostics;
 mod documentation;
+mod git_signs;
 mod identity;
 mod junctions;
 #[path = "../matching_tests.rs"]

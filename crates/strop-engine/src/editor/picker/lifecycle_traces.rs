@@ -189,7 +189,7 @@ mod tests {
         let mut e = Editor::new_in(Buffer::from_text(""), dir.path().to_path_buf());
         e.open_picker(Kind::WorkspaceSymbols);
         e.wait_picker();
-        super::super::query_tests::arm_workspace_reply(&mut e, dir.path());
+        super::super::query_tests::workspace_symbols::arm_workspace_reply(&mut e, dir.path());
         let g = e.picker.as_ref().unwrap().wsymbols_generation;
         let symbol = |name: &str| ProtoSymbol {
             name: name.into(),
@@ -221,7 +221,7 @@ mod tests {
         // TypeQuery: typing retires generation g.
         e.paste_bracketed("wrap");
         e.wait_picker();
-        super::super::query_tests::arm_workspace_reply(&mut e, dir.path());
+        super::super::query_tests::workspace_symbols::arm_workspace_reply(&mut e, dir.path());
         let retired = g;
         let g = e.picker.as_ref().unwrap().wsymbols_generation;
         assert_eq!(g, retired + 1, "the query change bumped the generation");
@@ -258,7 +258,7 @@ mod tests {
         e.close_picker();
         e.open_picker(Kind::WorkspaceSymbols);
         e.wait_picker();
-        super::super::query_tests::arm_workspace_reply(&mut e, dir.path());
+        super::super::query_tests::workspace_symbols::arm_workspace_reply(&mut e, dir.path());
         e.handle_lsp_event(LspEvent::WorkspaceSymbols {
             server: ServerId::new(9),
             generation: g,

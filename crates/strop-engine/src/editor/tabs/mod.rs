@@ -261,7 +261,9 @@ pub(crate) fn close_current(editor: &mut Editor) -> bool {
     true
 }
 
-/// Close tab page `index` (0-based); `false` when there is no other.
+/// Close tab page `index` (0-based); `false` when there is no other. Closing
+/// another page is bookkeeping: the current page, its pending work and the
+/// focus epoch they are keyed on stay as they are.
 pub(crate) fn close(editor: &mut Editor, index: usize) -> bool {
     let current = editor.tabs.current;
     if index == current {
@@ -271,7 +273,6 @@ pub(crate) fn close(editor: &mut Editor, index: usize) -> bool {
     if at >= editor.tabs.parked.len() {
         return false;
     }
-    leave(editor);
     let page = editor.tabs.parked.remove(at);
     if editor.tabs.previous == Some(page.left) {
         editor.tabs.previous = None;
@@ -279,32 +280,32 @@ pub(crate) fn close(editor: &mut Editor, index: usize) -> bool {
     if index < current {
         editor.tabs.current -= 1;
     }
-    arrive(editor);
+    debug_assert!(well_formed(editor));
     true
 }
 
-/// `:tabonly`: every other tab page goes.
+/// `:tabonly`: every other tab page goes; the current one, and its pending
+/// work, stays.
 pub(crate) fn only(editor: &mut Editor) {
     if editor.tabs.parked.is_empty() {
         return;
     }
-    leave(editor);
     editor.tabs.parked.clear();
     editor.tabs.current = 0;
     editor.tabs.previous = None;
-    arrive(editor);
+    debug_assert!(well_formed(editor));
 }
 
 /// `:tabmove`: the current tab page moves to tab-order `index`; the parked
-/// order is already the order of the others.
+/// order is already the order of the others. The page on screen does not
+/// change, so neither does its pending work.
 pub(crate) fn move_to(editor: &mut Editor, index: usize) {
     debug_assert!(index < editor.tabs.count());
     if index == editor.tabs.current {
         return;
     }
-    leave(editor);
     editor.tabs.current = index;
-    arrive(editor);
+    debug_assert!(well_formed(editor));
 }
 
 /// `g<Tab>`: the tab page that was current before this one; nothing when
