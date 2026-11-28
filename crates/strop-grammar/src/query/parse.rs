@@ -8,8 +8,10 @@ use super::QueryError;
 mod atoms;
 mod classes;
 mod emitter;
+mod literal;
 mod quantifier;
 use emitter::Emitter;
+pub(crate) use literal::{is_word, Literal};
 
 /// Hard ceiling on repeated-atom expansion (vim allows 32767; we keep
 /// the program small enough that a bounded engine stays honest).
@@ -106,10 +108,10 @@ pub(crate) struct Program {
     pub(crate) n_loops: usize,
     pub(crate) fold: bool,
     pub(crate) whole_word: bool,
-    /// The whole program is one case-sensitive literal run — the
-    /// chunk-streaming fast path may take it (identical semantics,
-    /// faster walk; never a fallback for anything the dialect rejects).
-    pub(crate) literal: Option<Vec<u8>>,
+    /// The whole program is one literal run the streaming scanner runs
+    /// with identical answers (never a fallback for anything the dialect
+    /// rejects).
+    pub(crate) literal: Option<Literal>,
 }
 
 // -------------------------------------------------------------------- AST
@@ -236,15 +238,7 @@ pub(super) fn compile(pattern: &str, whole_word: bool) -> Result<Program, QueryE
     };
     e.node(&node)?;
     e.insts.push(Inst::Match);
-    // literal fast-path detection: one plain, case-sensitive run
-    let literal = if whole_word || fold || e.insts.len() != 2 {
-        None
-    } else {
-        match (&e.insts[0], &e.insts[1]) {
-            (Inst::Consume(Class::Str { bytes, fold: false }), Inst::Match) => Some(bytes.clone()),
-            _ => None,
-        }
-    };
+    let literal = Literal::of(&e.insts, whole_word);
     Ok(Program {
         insts: e.insts,
         n_slots: e.n_slots,

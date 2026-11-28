@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 strop-core = { path = "../strop-core" }
 strop-kernel = { path = "../strop-kernel" }
+memchr = "2"
 ropey.workspace = true
 serde = { version = "1", features = ["derive"] }
 unicode-normalization = "0.1"
