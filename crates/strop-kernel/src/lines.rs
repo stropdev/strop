@@ -1,7 +1,9 @@
 //! Line geometry across a diff (plans 2026-11-28 line-geometry kernel): the
-//! change regions a hunk body denotes and whether a region list describes a
-//! diff. `strop-git`'s `Hunk::regions` feeds every hunk body through `runs`;
-//! `strop-engine`'s hunk set checks the concatenated list with `coherent`.
+//! rows a selection covers, the change regions a hunk body denotes, whether a
+//! region list describes a diff, and where a line is on the other side of
+//! one. `strop-git`'s `Hunk::regions` feeds every hunk body through `runs`;
+//! `strop-engine`'s hunk set checks the concatenated list with `coherent` and
+//! maps buffer, index and HEAD lines through it.
 //!
 //! Lines are 0-based. A region says old lines `old..old + old_len` became new
 //! lines `new..new + new_len`; a pure insertion has `old_len == 0`, a pure
@@ -16,7 +18,14 @@
 //!   produces for one hunk is always a diff `coherent` accepts;
 //! - `coherent` accepts exactly the region lists where every region starts
 //!   at or after the previous one's end on both sides, at the same distance
-//!   on both, is non-empty, and ends inside `usize`.
+//!   on both, is non-empty, and ends inside `usize`;
+//! - `span` orders a selection's two ends;
+//! - over a coherent list, `old_line` and `new_line` answer exactly the
+//!   kept lines (lines no region added, deleted or replaced), paired at the
+//!   same offset into matching gaps, and `old_span` answers a range exactly
+//!   when every line of it is kept and they stay consecutive on the old
+//!   side; a kept line is never a deleted or an added line and the pairing
+//!   keeps order. None of the four fails on any input.
 
 use alloc::vec::Vec;
 
@@ -103,6 +112,96 @@ pub fn coherent(regions: &[Region]) -> bool {
     true
 }
 
+/// The ordered inclusive rows a selection covers, whichever end is the anchor.
+pub fn span(anchor: usize, head: usize) -> (usize, usize) {
+    if anchor <= head {
+        (anchor, head)
+    } else {
+        (head, anchor)
+    }
+}
+
+/// `to + (line - from)` when it fits a `usize`; callers pass `from <= line`.
+fn shift(line: usize, from: usize, to: usize) -> Option<usize> {
+    let delta = line - from;
+    if delta > usize::MAX - to {
+        None
+    } else {
+        Some(to + delta)
+    }
+}
+
+/// Where new-side line `line` is on the old side; `None` when a region
+/// added or replaced it.
+pub fn old_line(line: usize, regions: &[Region]) -> Option<usize> {
+    let mut old_base = 0;
+    let mut new_base = 0;
+    let mut k = 0;
+    while k < regions.len() {
+        let r = regions[k];
+        if line < r.new {
+            break;
+        }
+        if line < r.new.saturating_add(r.new_len) {
+            return None;
+        }
+        old_base = r.old.saturating_add(r.old_len);
+        new_base = r.new.saturating_add(r.new_len);
+        k += 1;
+    }
+    shift(line, new_base, old_base)
+}
+
+/// Where old-side line `line` is on the new side; `None` when a region
+/// deleted or replaced it.
+pub fn new_line(line: usize, regions: &[Region]) -> Option<usize> {
+    let mut old_base = 0;
+    let mut new_base = 0;
+    let mut k = 0;
+    while k < regions.len() {
+        let r = regions[k];
+        if line < r.old {
+            break;
+        }
+        if line < r.old.saturating_add(r.old_len) {
+            return None;
+        }
+        old_base = r.old.saturating_add(r.old_len);
+        new_base = r.new.saturating_add(r.new_len);
+        k += 1;
+    }
+    shift(line, old_base, new_base)
+}
+
+/// The old-side lines of new-side lines `first..=last` when all of them are
+/// kept and no deletion falls between them; `None` otherwise.
+pub fn old_span(first: usize, last: usize, regions: &[Region]) -> Option<(usize, usize)> {
+    if last < first {
+        return None;
+    }
+    let mut old_base = 0;
+    let mut new_base = 0;
+    let mut k = 0;
+    while k < regions.len() {
+        let r = regions[k];
+        if last < r.new {
+            break;
+        }
+        if first < r.new.saturating_add(r.new_len) {
+            return None;
+        }
+        old_base = r.old.saturating_add(r.old_len);
+        new_base = r.new.saturating_add(r.new_len);
+        k += 1;
+    }
+    let delta = last - new_base;
+    if delta > usize::MAX - old_base {
+        return None;
+    }
+    let end = old_base + delta;
+    Some((end - (last - first), end))
+}
+
 #[cfg(test)]
 mod tests {
     use super::Origin::{Addition as A, Context as C, Deletion as D};
@@ -169,5 +268,81 @@ mod tests {
         assert!(!coherent(&[region(1, 0, 1, 0)]));
         // ending past usize
         assert!(!coherent(&[region(usize::MAX, 1, usize::MAX, 0)]));
+    }
+
+    #[test]
+    fn span_orders_either_direction() {
+        assert_eq!(span(3, 7), (3, 7));
+        assert_eq!(span(7, 3), (3, 7));
+        assert_eq!(span(4, 4), (4, 4));
+    }
+
+    #[test]
+    fn no_regions_map_every_line_to_itself() {
+        assert_eq!(old_line(9, &[]), Some(9));
+        assert_eq!(new_line(9, &[]), Some(9));
+        assert_eq!(old_span(2, 5, &[]), Some((2, 5)));
+    }
+
+    #[test]
+    fn lines_around_an_insertion() {
+        // two lines inserted before old line 2
+        let rs = [region(2, 0, 2, 2)];
+        assert_eq!(old_line(1, &rs), Some(1));
+        assert_eq!(old_line(2, &rs), None);
+        assert_eq!(old_line(3, &rs), None);
+        assert_eq!(old_line(4, &rs), Some(2));
+        assert_eq!(new_line(1, &rs), Some(1));
+        assert_eq!(new_line(2, &rs), Some(4));
+    }
+
+    #[test]
+    fn lines_around_a_deletion() {
+        // old lines 2 and 3 deleted
+        let rs = [region(2, 2, 2, 0)];
+        assert_eq!(old_line(1, &rs), Some(1));
+        assert_eq!(old_line(2, &rs), Some(4));
+        assert_eq!(new_line(1, &rs), Some(1));
+        assert_eq!(new_line(2, &rs), None);
+        assert_eq!(new_line(3, &rs), None);
+        assert_eq!(new_line(4, &rs), Some(2));
+    }
+
+    #[test]
+    fn lines_around_a_replacement() {
+        // old line 2 became new lines 2..5
+        let rs = [region(2, 1, 2, 3)];
+        assert_eq!(old_line(1, &rs), Some(1));
+        assert_eq!(old_line(2, &rs), None);
+        assert_eq!(old_line(4, &rs), None);
+        assert_eq!(old_line(5, &rs), Some(3));
+        assert_eq!(new_line(2, &rs), None);
+        assert_eq!(new_line(3, &rs), Some(5));
+    }
+
+    #[test]
+    fn old_span_answers_kept_consecutive_ranges_only() {
+        let deletion = [region(4, 2, 4, 0)];
+        // a deletion exactly at `first` and exactly after `last`
+        assert_eq!(old_span(4, 6, &deletion), Some((6, 8)));
+        assert_eq!(old_span(1, 3, &deletion), Some((1, 3)));
+        // a deletion strictly inside the range
+        assert_eq!(old_span(3, 4, &deletion), None);
+        // an equal-length replacement inside the range
+        let replaced = [region(4, 1, 4, 1)];
+        assert_eq!(old_span(3, 5, &replaced), None);
+        // an added line in the range
+        let inserted = [region(4, 0, 4, 1)];
+        assert_eq!(old_span(4, 4, &inserted), None);
+        assert_eq!(old_span(5, 7, &inserted), Some((4, 6)));
+        // an empty range
+        assert_eq!(old_span(5, 4, &[]), None);
+    }
+
+    #[test]
+    fn answers_past_usize_are_refused() {
+        let rs = [region(0, 0, 0, 1)];
+        assert_eq!(new_line(usize::MAX, &rs), None);
+        assert_eq!(old_line(usize::MAX, &[region(0, 1, 0, 0)]), None);
     }
 }

@@ -15,6 +15,15 @@ lines `new..new + new_len`.
   maximal stretch of non-context lines, its lengths counting that stretch's
   deletions and additions, its starts the lines before it on each side.
 - `runs_coherent`: what `runs` produces for one hunk is always a diff.
+- `span_spec`: `span` orders a selection's two ends.
+- `old_line_spec`, `new_line_spec`: over a coherent list, the line maps answer
+  exactly the kept lines (`Kept`): new line `n` was old line `o` when `n` lies
+  in a gap between regions and `o` at the same offset into the matching old
+  gap. `old_span_spec`: a range is answered exactly when every line of it is
+  kept and they stay consecutive on the old side. None of them fails on any
+  input (the coherence premise sits inside the postcondition).
+- `kept_respects_regions`: a kept line is never a deleted or an added line,
+  and the pairing keeps order.
 -/
 
 open Aeneas Aeneas.Std Result
@@ -266,5 +275,562 @@ theorem runs_coherent (os ns : Nat) (body : List lines.Origin)
     (hos : os + body.length ≤ Usize.max) (hns : ns + body.length ≤ Usize.max) :
     Coherent os ns (RunsOf os ns body) :=
   runsFrom_coherent body os ns os 0 ns 0 le_rfl le_rfl (by simp) (by omega) (by omega)
+
+/-! ## Selections -/
+
+/-- `span` orders a selection's two ends, for every input. -/
+theorem span_spec (a h : Usize) :
+    lines.span a h ⦃ r => r.1.val = min a.val h.val ∧ r.2.val = max a.val h.val ⦄ := by
+  unfold lines.span
+  split_ifs with hle
+  · simp only [WP.spec_ok]; constructor <;> scalar_tac
+  · simp only [WP.spec_ok]; constructor <;> scalar_tac
+
+/-! ## Line maps -/
+
+/-- New line `n` is a kept line and was old line `o`: `n` lies in a gap
+between regions and `o` sits at the same offset in the matching old gap.
+`ob`/`nb` are the first lines after the regions already passed. -/
+def Kept (ob nb : Nat) : List Quad → Nat → Nat → Prop
+  | [], o, n => nb ≤ n ∧ o = ob + (n - nb)
+  | (ro, rol, rn, rnl) :: rest, o, n =>
+      (nb ≤ n ∧ n < rn ∧ o = ob + (n - nb)) ∨ Kept (ro + rol) (rn + rnl) rest o n
+
+theorem kept_new_ge : ∀ (qs : List Quad) (ob nb o n : Nat),
+    Coherent ob nb qs → Kept ob nb qs o n → nb ≤ n
+  | [], _, _, _, _, _, h => h.1
+  | (ro, rol, rn, rnl) :: rest, ob, nb, o, n, hc, h => by
+    simp only [Coherent] at hc
+    simp only [Kept] at h
+    rcases h with h | h
+    · exact h.1
+    · have := kept_new_ge rest _ _ o n hc.2.2.2.2.2.2 h; omega
+
+theorem kept_old_ge : ∀ (qs : List Quad) (ob nb o n : Nat),
+    Coherent ob nb qs → Kept ob nb qs o n → ob ≤ o
+  | [], _, _, _, _, _, h => by simp only [Kept] at h; omega
+  | (ro, rol, rn, rnl) :: rest, ob, nb, o, n, hc, h => by
+    simp only [Coherent] at hc
+    simp only [Kept] at h
+    rcases h with h | h
+    · omega
+    · have := kept_old_ge rest _ _ o n hc.2.2.2.2.2.2 h; omega
+
+/-- Every region of a coherent list starts at or after the bases. -/
+theorem coherent_starts : ∀ (qs : List Quad) (ob nb : Nat), Coherent ob nb qs →
+    ∀ q ∈ qs, ob ≤ q.1 ∧ nb ≤ q.2.2.1
+  | [], _, _, _, q, hq => by simp at hq
+  | (ro, rol, rn, rnl) :: rest, ob, nb, hc, q, hq => by
+    simp only [Coherent] at hc
+    rcases List.mem_cons.mp hq with rfl | hq
+    · exact ⟨ hc.1, hc.2.1 ⟩
+    · have := coherent_starts rest _ _ hc.2.2.2.2.2.2 q hq; omega
+
+/-- A new line before the next region is kept, at its offset into the gap. -/
+theorem kept_stop_new (ob nb ro rol rn rnl o n : Nat) (rest : List Quad)
+    (hc : Coherent ob nb ((ro, rol, rn, rnl) :: rest)) (hn : nb ≤ n) (hlt : n < rn) :
+    Kept ob nb ((ro, rol, rn, rnl) :: rest) o n ↔ o = ob + (n - nb) := by
+  simp only [Coherent] at hc
+  simp only [Kept]
+  constructor
+  · rintro (h | h)
+    · exact h.2.2
+    · have := kept_new_ge rest _ _ o n hc.2.2.2.2.2.2 h; omega
+  · intro h; exact Or.inl ⟨ hn, hlt, h ⟩
+
+/-- A new line a region added is not kept. -/
+theorem kept_inside_new (ob nb ro rol rn rnl o n : Nat) (rest : List Quad)
+    (hc : Coherent ob nb ((ro, rol, rn, rnl) :: rest)) (h1 : rn ≤ n) (h2 : n < rn + rnl) :
+    ¬ Kept ob nb ((ro, rol, rn, rnl) :: rest) o n := by
+  simp only [Coherent] at hc
+  simp only [Kept]
+  rintro (h | h)
+  · omega
+  · have := kept_new_ge rest _ _ o n hc.2.2.2.2.2.2 h; omega
+
+/-- Past a region on the new side, only the rest of the list can keep `n`. -/
+theorem kept_skip_new (ob nb ro rol rn rnl o n : Nat) (rest : List Quad) (h : rn ≤ n) :
+    Kept ob nb ((ro, rol, rn, rnl) :: rest) o n ↔ Kept (ro + rol) (rn + rnl) rest o n := by
+  simp only [Kept]
+  constructor
+  · rintro (h' | h')
+    · omega
+    · exact h'
+  · exact Or.inr
+
+/-- An old line before the next region is kept, at its offset into the gap. -/
+theorem kept_stop_old (ob nb ro rol rn rnl o n : Nat) (rest : List Quad)
+    (hc : Coherent ob nb ((ro, rol, rn, rnl) :: rest)) (ho : ob ≤ o) (hlt : o < ro) :
+    Kept ob nb ((ro, rol, rn, rnl) :: rest) o n ↔ n = nb + (o - ob) := by
+  simp only [Coherent] at hc
+  simp only [Kept]
+  constructor
+  · rintro (h | h)
+    · omega
+    · have := kept_old_ge rest _ _ o n hc.2.2.2.2.2.2 h; omega
+  · intro h; exact Or.inl ⟨ by omega, by omega, by omega ⟩
+
+/-- An old line a region deleted is not kept. -/
+theorem kept_inside_old (ob nb ro rol rn rnl o n : Nat) (rest : List Quad)
+    (hc : Coherent ob nb ((ro, rol, rn, rnl) :: rest)) (h1 : ro ≤ o) (h2 : o < ro + rol) :
+    ¬ Kept ob nb ((ro, rol, rn, rnl) :: rest) o n := by
+  simp only [Coherent] at hc
+  simp only [Kept]
+  rintro (h | h)
+  · omega
+  · have := kept_old_ge rest _ _ o n hc.2.2.2.2.2.2 h; omega
+
+/-- Past a region on the old side, only the rest of the list can keep `o`. -/
+theorem kept_skip_old (ob nb ro rol rn rnl o n : Nat) (rest : List Quad)
+    (hc : Coherent ob nb ((ro, rol, rn, rnl) :: rest)) (h : ro ≤ o) :
+    Kept ob nb ((ro, rol, rn, rnl) :: rest) o n ↔ Kept (ro + rol) (rn + rnl) rest o n := by
+  simp only [Coherent] at hc
+  simp only [Kept]
+  constructor
+  · rintro (h' | h')
+    · omega
+    · exact h'
+  · exact Or.inr
+
+theorem shift_spec (line a b : Usize) (h : a.val ≤ line.val) :
+    lines.shift line a b ⦃ r =>
+      (∀ u, r = some u → u.val = b.val + (line.val - a.val)) ∧
+      (r = none ↔ Usize.max < b.val + (line.val - a.val)) ⦄ := by
+  unfold lines.shift
+  step as ⟨ d, hd ⟩
+  step as ⟨ room, hroom ⟩
+  split_ifs with hgt
+  · simp only [WP.spec_ok, reduceCtorEq, false_implies, implies_true, true_iff, true_and]
+    scalar_tac
+  · step as ⟨ x, hx ⟩
+    simp only [Option.some.injEq, reduceCtorEq, false_iff, not_lt]
+    exact ⟨ fun u hu => by rw [← hu, hx, hd], by scalar_tac ⟩
+
+theorem drop_quad_cons (rs : Slice lines.Region) (j : Nat) (h : j < rs.val.length) :
+    (rs.val.map quad).drop j = quad rs.val[j] :: (rs.val.map quad).drop (j + 1) := by
+  rw [List.drop_eq_getElem_cons (by simp [h])]; simp
+
+/-- What `old_line` answers for new line `n`, over a coherent list. -/
+def OldLineOk (qs : List Quad) (n : Nat) (r : Option Usize) : Prop :=
+  Coherent 0 0 qs → ∀ o, (∃ u, r = some u ∧ u.val = o) ↔ Kept 0 0 qs o n ∧ o ≤ Usize.max
+
+theorem shift_answers (line a b : Usize) (r : Option Usize)
+    (h1 : ∀ u, r = some u → u.val = b.val + (line.val - a.val))
+    (h2 : r = none ↔ Usize.max < b.val + (line.val - a.val)) (x : Nat) :
+    (∃ u, r = some u ∧ u.val = x) ↔ x = b.val + (line.val - a.val) ∧ x ≤ Usize.max := by
+  constructor
+  · rintro ⟨ u, rfl, rfl ⟩
+    have := h1 u rfl
+    have : u.val ≤ Usize.max := by scalar_tac
+    omega
+  · rintro ⟨ hx, hle ⟩
+    cases r with
+    | none => have := h2.mp rfl; omega
+    | some u => exact ⟨ u, rfl, by rw [h1 u rfl, hx] ⟩
+
+theorem old_line_loop_spec (n : Usize) (rs : Slice lines.Region) (ob nb k : Usize)
+    (hk : k.val ≤ rs.val.length) (hn : nb.val ≤ n.val)
+    (hinv : Coherent 0 0 (rs.val.map quad) →
+      Coherent ob.val nb.val ((rs.val.map quad).drop k.val) ∧
+      ∀ o, (Kept 0 0 (rs.val.map quad) o n.val ↔
+        Kept ob.val nb.val ((rs.val.map quad).drop k.val) o n.val)) :
+    lines.old_line_loop n rs ob nb k ⦃ r => OldLineOk (rs.val.map quad) n.val r ⦄ := by
+  unfold lines.old_line_loop
+  apply loop.spec_decr_nat (fun s : Usize × Usize × Usize => rs.val.length - s.2.2.val)
+    (fun s : Usize × Usize × Usize => s.2.2.val ≤ rs.val.length ∧ s.2.1.val ≤ n.val ∧
+      (Coherent 0 0 (rs.val.map quad) →
+        Coherent s.1.val s.2.1.val ((rs.val.map quad).drop s.2.2.val) ∧
+        ∀ o, (Kept 0 0 (rs.val.map quad) o n.val ↔
+          Kept s.1.val s.2.1.val ((rs.val.map quad).drop s.2.2.val) o n.val)))
+  · intro ⟨ ob, nb, j ⟩ ⟨ hj, hn, hinv ⟩
+    simp only at hj hn hinv
+    unfold lines.old_line_loop.body
+    try dsimp only
+    split
+    next hlt =>
+      have hlt' : j.val < rs.val.length := by scalar_tac
+      rw [drop_quad_cons rs j.val hlt'] at hinv
+      step as ⟨ r, hr ⟩
+      have hr' : rs.val[j.val] = r := by rw [hr]
+      rw [hr'] at hinv
+      simp only [quad] at hinv
+      split
+      next hstop =>
+        step with shift_spec as ⟨ x, hx1, hx2 ⟩
+        intro hc o
+        obtain ⟨ hc', hk ⟩ := hinv hc
+        rw [shift_answers _ _ _ _ hx1 hx2, hk o,
+          kept_stop_new _ _ _ _ _ _ _ _ _ hc' hn (by scalar_tac)]
+      next hpast =>
+        simp only [lift, bind_ok]
+        split
+        next hin =>
+          have hin' : n.val < min (r.new.val + r.new_len.val) Usize.max := by
+            rw [← saturating_add_val]; scalar_tac
+          simp only [WP.spec_ok]
+          intro hc o
+          obtain ⟨ hc', hk ⟩ := hinv hc
+          have hfit := hc'.2.2.2.2.2.1
+          constructor
+          · rintro ⟨ u, hu, _ ⟩; cases hu
+          · rintro ⟨ hkept, _ ⟩
+            exact absurd ((hk o).mp hkept)
+              (kept_inside_new _ _ _ _ _ _ _ _ _ hc' (by scalar_tac) (by omega))
+        next hout =>
+          have hout' : min (r.new.val + r.new_len.val) Usize.max ≤ n.val := by
+            rw [← saturating_add_val]; scalar_tac
+          step as ⟨ j1, hj1 ⟩
+          refine ⟨ by scalar_tac, by rw [saturating_add_val]; omega, ?_, by scalar_tac ⟩
+          intro hc
+          obtain ⟨ hc', hk ⟩ := hinv hc
+          simp only [Coherent] at hc'
+          simp only [saturating_add_val, hj1]
+          have e1 : min (r.old.val + r.old_len.val) Usize.max = r.old.val + r.old_len.val := by
+            omega
+          have e2 : min (r.new.val + r.new_len.val) Usize.max = r.new.val + r.new_len.val := by
+            omega
+          rw [e1, e2]
+          refine ⟨ hc'.2.2.2.2.2.2, fun o => ?_ ⟩
+          rw [hk o, kept_skip_new _ _ _ _ _ _ _ _ _ (by scalar_tac)]
+    next hge =>
+      have hend : j.val = rs.val.length := by scalar_tac
+      step with shift_spec as ⟨ x, hx1, hx2 ⟩
+      intro hc o
+      obtain ⟨ _, hk ⟩ := hinv hc
+      rw [shift_answers _ _ _ _ hx1 hx2, hk o, hend]
+      rw [List.drop_eq_nil_of_le (by simp)]
+      simp only [Kept]
+      omega
+  · exact ⟨ hk, hn, hinv ⟩
+
+/-- `old_line` never fails, and over a coherent region list it answers a new
+line's old line exactly when the line is kept (and the answer fits a
+`usize`). -/
+theorem old_line_spec (n : Usize) (rs : Slice lines.Region) :
+    lines.old_line n rs ⦃ r => Coherent 0 0 (rs.val.map quad) →
+      ∀ o : Nat, (∃ u, r = some u ∧ u.val = o) ↔
+        Kept 0 0 (rs.val.map quad) o n.val ∧ o ≤ Usize.max ⦄ := by
+  unfold lines.old_line
+  exact old_line_loop_spec n rs 0#usize 0#usize 0#usize (by simp) (by simp)
+    (fun hc => ⟨ by simpa using hc, fun o => by simp ⟩)
+
+/-- What `new_line` answers for old line `o`, over a coherent list. -/
+def NewLineOk (qs : List Quad) (o : Nat) (r : Option Usize) : Prop :=
+  Coherent 0 0 qs → ∀ n, (∃ u, r = some u ∧ u.val = n) ↔ Kept 0 0 qs o n ∧ n ≤ Usize.max
+
+theorem new_line_loop_spec (o : Usize) (rs : Slice lines.Region) (ob nb k : Usize)
+    (hk : k.val ≤ rs.val.length) (ho : ob.val ≤ o.val)
+    (hinv : Coherent 0 0 (rs.val.map quad) →
+      Coherent ob.val nb.val ((rs.val.map quad).drop k.val) ∧
+      ∀ n, (Kept 0 0 (rs.val.map quad) o.val n ↔
+        Kept ob.val nb.val ((rs.val.map quad).drop k.val) o.val n)) :
+    lines.new_line_loop o rs ob nb k ⦃ r => NewLineOk (rs.val.map quad) o.val r ⦄ := by
+  unfold lines.new_line_loop
+  apply loop.spec_decr_nat (fun s : Usize × Usize × Usize => rs.val.length - s.2.2.val)
+    (fun s : Usize × Usize × Usize => s.2.2.val ≤ rs.val.length ∧ s.1.val ≤ o.val ∧
+      (Coherent 0 0 (rs.val.map quad) →
+        Coherent s.1.val s.2.1.val ((rs.val.map quad).drop s.2.2.val) ∧
+        ∀ n, (Kept 0 0 (rs.val.map quad) o.val n ↔
+          Kept s.1.val s.2.1.val ((rs.val.map quad).drop s.2.2.val) o.val n)))
+  · intro ⟨ ob, nb, j ⟩ ⟨ hj, ho, hinv ⟩
+    simp only at hj ho hinv
+    unfold lines.new_line_loop.body
+    try dsimp only
+    split
+    next hlt =>
+      have hlt' : j.val < rs.val.length := by scalar_tac
+      rw [drop_quad_cons rs j.val hlt'] at hinv
+      step as ⟨ r, hr ⟩
+      have hr' : rs.val[j.val] = r := by rw [hr]
+      rw [hr'] at hinv
+      simp only [quad] at hinv
+      split
+      next hstop =>
+        step with shift_spec as ⟨ x, hx1, hx2 ⟩
+        intro hc n
+        obtain ⟨ hc', hk ⟩ := hinv hc
+        rw [shift_answers _ _ _ _ hx1 hx2, hk n,
+          kept_stop_old _ _ _ _ _ _ _ _ _ hc' ho (by scalar_tac)]
+      next hpast =>
+        simp only [lift, bind_ok]
+        split
+        next hin =>
+          have hin' : o.val < min (r.old.val + r.old_len.val) Usize.max := by
+            rw [← saturating_add_val]; scalar_tac
+          simp only [WP.spec_ok]
+          intro hc n
+          obtain ⟨ hc', hk ⟩ := hinv hc
+          have hfit := hc'.2.2.2.2.1
+          constructor
+          · rintro ⟨ u, hu, _ ⟩; cases hu
+          · rintro ⟨ hkept, _ ⟩
+            exact absurd ((hk n).mp hkept)
+              (kept_inside_old _ _ _ _ _ _ _ _ _ hc' (by scalar_tac) (by omega))
+        next hout =>
+          have hout' : min (r.old.val + r.old_len.val) Usize.max ≤ o.val := by
+            rw [← saturating_add_val]; scalar_tac
+          step as ⟨ j1, hj1 ⟩
+          refine ⟨ by scalar_tac, by rw [saturating_add_val]; omega, ?_, by scalar_tac ⟩
+          intro hc
+          obtain ⟨ hc', hk ⟩ := hinv hc
+          have hc'' := hc'
+          simp only [Coherent] at hc'
+          simp only [saturating_add_val, hj1]
+          have e1 : min (r.old.val + r.old_len.val) Usize.max = r.old.val + r.old_len.val := by
+            omega
+          have e2 : min (r.new.val + r.new_len.val) Usize.max = r.new.val + r.new_len.val := by
+            omega
+          rw [e1, e2]
+          refine ⟨ hc'.2.2.2.2.2.2, fun n => ?_ ⟩
+          rw [hk n, kept_skip_old _ _ _ _ _ _ _ _ _ hc'' (by scalar_tac)]
+    next hge =>
+      have hend : j.val = rs.val.length := by scalar_tac
+      step with shift_spec as ⟨ x, hx1, hx2 ⟩
+      intro hc n
+      obtain ⟨ _, hk ⟩ := hinv hc
+      rw [shift_answers _ _ _ _ hx1 hx2, hk n, hend]
+      rw [List.drop_eq_nil_of_le (by simp)]
+      simp only [Kept]
+      omega
+  · exact ⟨ hk, ho, hinv ⟩
+
+/-- `new_line` never fails, and over a coherent region list it answers an old
+line's new line exactly when the line is kept (and the answer fits a
+`usize`). -/
+theorem new_line_spec (o : Usize) (rs : Slice lines.Region) :
+    lines.new_line o rs ⦃ r => Coherent 0 0 (rs.val.map quad) →
+      ∀ n : Nat, (∃ u, r = some u ∧ u.val = n) ↔
+        Kept 0 0 (rs.val.map quad) o.val n ∧ n ≤ Usize.max ⦄ := by
+  unfold lines.new_line
+  exact new_line_loop_spec o rs 0#usize 0#usize 0#usize (by simp) (by simp)
+    (fun hc => ⟨ by simpa using hc, fun n => by simp ⟩)
+
+/-- New lines `f..=l` are kept and consecutive on the old side from `a`. -/
+def KeptRun (qs : List Quad) (f l a : Nat) : Prop :=
+  ∀ i, f ≤ i → i ≤ l → Kept 0 0 qs (a + (i - f)) i
+
+/-- What `old_span` answers for new lines `f..=l`, over a coherent list: a
+range only when every line is kept and consecutive on the old side, and
+`none` only when no such old range exists (inside `usize`). -/
+def OldSpanOk (qs : List Quad) (f l : Nat) (r : Option (Usize × Usize)) : Prop :=
+  Coherent 0 0 qs →
+    (∀ a b, r = some (a, b) → b.val - a.val = l - f ∧ a.val ≤ b.val ∧ KeptRun qs f l a.val) ∧
+    (r = none → l < f ∨ ¬ ∃ a, a + (l - f) ≤ Usize.max ∧ KeptRun qs f l a)
+
+/-- Once the walk stops (`l` before the next region, or no region left), the
+range maps at its offset into the gap. -/
+theorem old_span_some (qs rest : List Quad) (ob nb f l : Nat) (a b : Usize)
+    (hfl : f ≤ l) (hnb : nb ≤ f)
+    (hk : ∀ o i, nb ≤ i → (Kept 0 0 qs o i ↔ Kept ob nb rest o i))
+    (hgap : ∀ o i, nb ≤ i → i ≤ l → (Kept ob nb rest o i ↔ o = ob + (i - nb)))
+    (hb : b.val = ob + (l - nb)) (ha : a.val = b.val - (l - f)) :
+    OldSpanOk qs f l (some (a, b)) := by
+  intro _
+  constructor
+  · intro a' b' h
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨ rfl, rfl ⟩ := h
+    refine ⟨ by omega, by omega, fun i hfi hil => ?_ ⟩
+    rw [hk _ i (by omega), hgap _ i (by omega) hil]
+    omega
+  · intro h; simp at h
+
+/-- ... and when the old range would pass `usize`, no old range exists. -/
+theorem old_span_overflow (qs rest : List Quad) (ob nb f l : Nat)
+    (hfl : f ≤ l) (hnb : nb ≤ f)
+    (hk : ∀ o i, nb ≤ i → (Kept 0 0 qs o i ↔ Kept ob nb rest o i))
+    (hgap : ∀ o i, nb ≤ i → i ≤ l → (Kept ob nb rest o i ↔ o = ob + (i - nb)))
+    (hover : Usize.max < ob + (l - nb)) :
+    OldSpanOk qs f l none := by
+  intro _
+  refine ⟨ fun a b h => by simp at h, fun _ => Or.inr ?_ ⟩
+  rintro ⟨ a, hfit, hrun ⟩
+  have := (hgap _ f hnb hfl).mp ((hk _ f hnb).mp (hrun f le_rfl hfl))
+  omega
+
+/-- The walk refuses at a region the range touches: no old range exists. -/
+theorem old_span_refused (qs rest : List Quad) (ob nb ro rol rn rnl f l : Nat)
+    (hc : Coherent ob nb ((ro, rol, rn, rnl) :: rest)) (hnb : nb ≤ f) (hfl : f ≤ l)
+    (hk : ∀ o i, nb ≤ i → (Kept 0 0 qs o i ↔ Kept ob nb ((ro, rol, rn, rnl) :: rest) o i))
+    (hl : rn ≤ l) (hf : f < rn + rnl) :
+    ¬ ∃ a, a + (l - f) ≤ Usize.max ∧ KeptRun qs f l a := by
+  rintro ⟨ a, _, hrun ⟩
+  by_cases hadd : 0 < rnl
+  · -- the range holds a line the region added
+    by_cases hfr : f ≤ rn
+    · exact kept_inside_new _ _ _ _ _ _ _ _ _ hc le_rfl (by omega)
+        ((hk _ _ (by omega)).mp (hrun rn hfr hl))
+    · exact kept_inside_new _ _ _ _ _ _ _ _ _ hc (by omega) hf
+        ((hk _ _ hnb).mp (hrun f le_rfl hfl))
+  · -- a pure deletion falls between two lines of the range
+    have hc' := hc
+    simp only [Coherent] at hc'
+    have h1 := (kept_stop_new _ _ _ _ _ _ _ _ _ hc (by omega) (by omega)).mp
+      ((hk _ (rn - 1) (by omega)).mp (hrun (rn - 1) (by omega) (by omega)))
+    have h2 := (kept_skip_new _ _ _ _ _ _ _ _ _ (le_refl rn)).mp
+      ((hk _ rn (by omega)).mp (hrun rn (by omega) hl))
+    have := kept_old_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h2
+    omega
+
+theorem old_span_loop_spec (f l : Usize) (rs : Slice lines.Region) (ob nb k : Usize)
+    (hfl : f.val ≤ l.val) (hk : k.val ≤ rs.val.length) (hnb : nb.val ≤ f.val)
+    (hinv : Coherent 0 0 (rs.val.map quad) →
+      Coherent ob.val nb.val ((rs.val.map quad).drop k.val) ∧
+      ∀ o i, nb.val ≤ i → (Kept 0 0 (rs.val.map quad) o i ↔
+        Kept ob.val nb.val ((rs.val.map quad).drop k.val) o i)) :
+    lines.old_span_loop f l rs ob nb k ⦃ r => OldSpanOk (rs.val.map quad) f.val l.val r ⦄ := by
+  unfold lines.old_span_loop
+  apply loop.spec_decr_nat (fun s : Usize × Usize × Usize => rs.val.length - s.2.2.val)
+    (fun s : Usize × Usize × Usize => s.2.2.val ≤ rs.val.length ∧ s.2.1.val ≤ f.val ∧
+      (Coherent 0 0 (rs.val.map quad) →
+        Coherent s.1.val s.2.1.val ((rs.val.map quad).drop s.2.2.val) ∧
+        ∀ o i, s.2.1.val ≤ i → (Kept 0 0 (rs.val.map quad) o i ↔
+          Kept s.1.val s.2.1.val ((rs.val.map quad).drop s.2.2.val) o i)))
+  · intro ⟨ ob, nb, j ⟩ ⟨ hj, hnb, hinv ⟩
+    simp only at hj hnb hinv
+    unfold lines.old_span_loop.body
+    try dsimp only
+    split
+    next hlt =>
+      have hlt' : j.val < rs.val.length := by scalar_tac
+      rw [drop_quad_cons rs j.val hlt'] at hinv
+      step as ⟨ r, hr ⟩
+      have hr' : rs.val[j.val] = r := by rw [hr]
+      rw [hr'] at hinv
+      simp only [quad] at hinv
+      split
+      next hstop =>
+        have hk' := fun hc => (hinv hc).2
+        have hgap : Coherent 0 0 (rs.val.map quad) → ∀ o i, nb.val ≤ i → i ≤ l.val →
+            (Kept ob.val nb.val ((r.old.val, r.old_len.val, r.new.val, r.new_len.val) :: (rs.val.map quad).drop (j.val + 1)) o i ↔ o = ob.val + (i - nb.val)) := fun hc o i hi hil =>
+              kept_stop_new _ _ _ _ _ _ _ _ _ (hinv hc).1 hi (by scalar_tac)
+        step as ⟨ d, hd ⟩
+        step as ⟨ room, hroom ⟩
+        split_ifs with hover
+        · simp only [WP.spec_ok]
+          intro hc
+          exact old_span_overflow _ _ ob.val nb.val f.val l.val hfl hnb (hk' hc) (hgap hc)
+            (by scalar_tac) hc
+        · step as ⟨ e, he ⟩
+          step as ⟨ i1, hi1 ⟩
+          step as ⟨ i2, hi2 ⟩
+          intro hc
+          exact old_span_some _ _ ob.val nb.val f.val l.val i2 e hfl hnb (hk' hc) (hgap hc)
+            (by rw [he, hd]) (by rw [hi2, hi1]) hc
+      next hpast =>
+        simp only [lift, bind_ok]
+        split
+        next hin =>
+          have hin' : f.val < min (r.new.val + r.new_len.val) Usize.max := by
+            rw [← saturating_add_val]; scalar_tac
+          simp only [WP.spec_ok]
+          intro hc
+          obtain ⟨ hc', hk ⟩ := hinv hc
+          have hfit := hc'.2.2.2.2.2.1
+          refine ⟨ fun a b h => by simp at h, fun _ => Or.inr ?_ ⟩
+          exact old_span_refused _ _ _ _ _ _ _ _ f.val l.val hc' hnb hfl hk (by scalar_tac)
+            (by omega)
+        next hout =>
+          have hout' : min (r.new.val + r.new_len.val) Usize.max ≤ f.val := by
+            rw [← saturating_add_val]; scalar_tac
+          step as ⟨ j1, hj1 ⟩
+          refine ⟨ by scalar_tac, by rw [saturating_add_val]; omega, ?_, by scalar_tac ⟩
+          intro hc
+          obtain ⟨ hc', hk ⟩ := hinv hc
+          simp only [Coherent] at hc'
+          simp only [saturating_add_val, hj1]
+          have e1 : min (r.old.val + r.old_len.val) Usize.max = r.old.val + r.old_len.val := by
+            omega
+          have e2 : min (r.new.val + r.new_len.val) Usize.max = r.new.val + r.new_len.val := by
+            omega
+          rw [e1, e2]
+          refine ⟨ hc'.2.2.2.2.2.2, fun o i hi => ?_ ⟩
+          rw [hk o i (by omega), kept_skip_new _ _ _ _ _ _ _ _ _ (by omega)]
+    next hge =>
+      have hend : j.val = rs.val.length := by scalar_tac
+      have hnil : (rs.val.map quad).drop j.val = [] := List.drop_eq_nil_of_le (by simp; omega)
+      rw [hnil] at hinv
+      have hk' := fun hc => (hinv hc).2
+      have hgap : Coherent 0 0 (rs.val.map quad) → ∀ o i, nb.val ≤ i → i ≤ l.val →
+          (Kept ob.val nb.val [] o i ↔ o = ob.val + (i - nb.val)) := fun _ o i hi _ => by simp only [Kept]; omega
+      step as ⟨ d, hd ⟩
+      step as ⟨ room, hroom ⟩
+      split_ifs with hover
+      · simp only [WP.spec_ok]
+        intro hc
+        exact old_span_overflow _ _ ob.val nb.val f.val l.val hfl hnb (hk' hc) (hgap hc)
+          (by scalar_tac) hc
+      · step as ⟨ e, he ⟩
+        step as ⟨ i1, hi1 ⟩
+        step as ⟨ i2, hi2 ⟩
+        intro hc
+        exact old_span_some _ _ ob.val nb.val f.val l.val i2 e hfl hnb (hk' hc) (hgap hc)
+          (by rw [he, hd]) (by rw [hi2, hi1]) hc
+  · exact ⟨ hk, hnb, hinv ⟩
+
+/-- `old_span` never fails, and over a coherent region list it answers new
+lines `f..=l` with an old range exactly when every line of it is kept and
+they are consecutive on the old side (inside `usize`). -/
+theorem old_span_spec (f l : Usize) (rs : Slice lines.Region) :
+    lines.old_span f l rs ⦃ r => Coherent 0 0 (rs.val.map quad) →
+      (∀ a b, r = some (a, b) → b.val - a.val = l.val - f.val ∧ a.val ≤ b.val ∧
+        ∀ i, f.val ≤ i → i ≤ l.val → Kept 0 0 (rs.val.map quad) (a.val + (i - f.val)) i) ∧
+      (r = none → l.val < f.val ∨ ¬ ∃ a, a + (l.val - f.val) ≤ Usize.max ∧
+        ∀ i, f.val ≤ i → i ≤ l.val → Kept 0 0 (rs.val.map quad) (a + (i - f.val)) i) ⦄ := by
+  unfold lines.old_span
+  split_ifs with hlf
+  · simp only [WP.spec_ok]
+    intro _
+    exact ⟨ fun a b h => by simp at h, fun _ => Or.inl (by scalar_tac) ⟩
+  · exact old_span_loop_spec f l rs 0#usize 0#usize 0#usize (by scalar_tac) (by simp)
+      (by simp) (fun hc => ⟨ by simpa using hc, fun o i _ => by simp ⟩)
+
+/-! ## Kept lines -/
+
+theorem kept_outside : ∀ (qs : List Quad) (ob nb o n : Nat), Coherent ob nb qs →
+    Kept ob nb qs o n → ∀ q ∈ qs,
+      ¬ (q.1 ≤ o ∧ o < q.1 + q.2.1) ∧ ¬ (q.2.2.1 ≤ n ∧ n < q.2.2.1 + q.2.2.2)
+  | [], _, _, _, _, _, _, q, hq => by simp at hq
+  | (ro, rol, rn, rnl) :: rest, ob, nb, o, n, hc, h, q, hq => by
+    have hc' := hc
+    simp only [Coherent] at hc'
+    have hstarts := coherent_starts rest _ _ hc'.2.2.2.2.2.2
+    simp only [Kept] at h
+    rcases h with h | h
+    · -- in the gap before this region: below it, and below every later one
+      rcases List.mem_cons.mp hq with rfl | hq
+      · simp only; omega
+      · have := hstarts q hq; omega
+    · rcases List.mem_cons.mp hq with rfl | hq
+      · have := kept_old_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
+        have := kept_new_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
+        simp only; omega
+      · exact kept_outside rest _ _ o n hc'.2.2.2.2.2.2 h q hq
+
+theorem kept_order : ∀ (qs : List Quad) (ob nb o n o' n' : Nat), Coherent ob nb qs →
+    Kept ob nb qs o n → Kept ob nb qs o' n' → (n < n' ↔ o < o')
+  | [], _, _, _, _, _, _, _, h, h' => by simp only [Kept] at h h'; omega
+  | (ro, rol, rn, rnl) :: rest, ob, nb, o, n, o', n', hc, h, h' => by
+    have hc' := hc
+    simp only [Coherent] at hc'
+    simp only [Kept] at h h'
+    rcases h with h | h <;> rcases h' with h' | h'
+    · omega
+    · have := kept_old_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h'
+      have := kept_new_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h'
+      omega
+    · have := kept_old_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
+      have := kept_new_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
+      omega
+    · exact kept_order rest _ _ o n o' n' hc'.2.2.2.2.2.2 h h'
+
+/-- Over a coherent region list a kept line is never a deleted or an added
+line, and the pairing keeps order on both sides. -/
+theorem kept_respects_regions (ob nb : Nat) (qs : List Quad) (hc : Coherent ob nb qs) :
+    (∀ o n, Kept ob nb qs o n → ∀ q ∈ qs,
+      ¬ (q.1 ≤ o ∧ o < q.1 + q.2.1) ∧ ¬ (q.2.2.1 ≤ n ∧ n < q.2.2.1 + q.2.2.2)) ∧
+    (∀ o n o' n', Kept ob nb qs o n → Kept ob nb qs o' n' → (n < n' ↔ o < o')) :=
+  ⟨ fun o n h => kept_outside qs ob nb o n hc h,
+    fun o n o' n' h h' => kept_order qs ob nb o n o' n' hc h h' ⟩
 
 end Strop.Kernel

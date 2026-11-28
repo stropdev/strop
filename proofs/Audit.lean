@@ -83,6 +83,11 @@ def claims : List Name := [
   ``Strop.Kernel.runs_spec,
   ``Strop.Kernel.runs_coherent,
   ``Strop.Kernel.coherent_spec,
+  ``Strop.Kernel.span_spec,
+  ``Strop.Kernel.old_line_spec,
+  ``Strop.Kernel.new_line_spec,
+  ``Strop.Kernel.old_span_spec,
+  ``Strop.Kernel.kept_respects_regions,
 ]
 
 /-- The public kernel functions no theorem proves total (plans/0108 #282):

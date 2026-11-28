@@ -154,8 +154,7 @@ impl Editor {
         } else {
             head_row
         };
-        let first = anchor_row.min(head_row);
-        let last = anchor_row.max(head_row);
+        let (first, last) = strop_kernel::lines::span(anchor_row, head_row);
         let (a, b) = if let Some(surface @ Surface::Diff { .. }) = self.surface() {
             let source_line = |row| match surface.diff_row(row) {
                 Some(super::DiffRow::Line(line)) => line
@@ -186,7 +185,7 @@ impl Editor {
         };
         Ok(match selected {
             strop_git::permalink::SelectedRemote::Web(web) => PermalinkOutcome::Url(
-                strop_git::permalink::permalink(&web, &sha, &rel, (a.min(b), a.max(b))),
+                strop_git::permalink::permalink(&web, &sha, &rel, strop_kernel::lines::span(a, b)),
             ),
             strop_git::permalink::SelectedRemote::Alias(alias) => {
                 PermalinkOutcome::Alias(PendingPermalink {
@@ -196,7 +195,7 @@ impl Editor {
                     remotes: context.remotes.clone(),
                     sha,
                     path: rel,
-                    lines: (a.min(b), a.max(b)),
+                    lines: strop_kernel::lines::span(a, b),
                 })
             }
         })

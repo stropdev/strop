@@ -273,6 +273,40 @@ MUTANTS = (
            "        if r.old - old_base != r.new - new_base {\n            return false;\n        }\n",
            "",
            ("Strop.Kernel.coherent_loop_spec",)),
+    # a selection made upwards keeps its anchor first
+    Mutant("lines-span-keeps-direction", "lines.rs",
+           "        (head, anchor)\n", "        (anchor, head)\n",
+           ("Strop.Kernel.span_spec",)),
+    # a line a region added is mapped as if it were kept
+    Mutant("lines-old-line-admits-added", "lines.rs",
+           "        if line < r.new.saturating_add(r.new_len) {\n            return None;\n        }\n", "",
+           ("Strop.Kernel.old_line_loop_spec",)),
+    # the old base skips only the region's start, not the lines it deleted
+    Mutant("lines-old-line-forgets-deletions", "lines.rs",
+           "        if line < r.new.saturating_add(r.new_len) {\n            return None;\n        }\n        old_base = r.old.saturating_add(r.old_len);\n",
+           "        if line < r.new.saturating_add(r.new_len) {\n            return None;\n        }\n        old_base = r.old;\n",
+           ("Strop.Kernel.old_line_loop_spec",)),
+    # a line a region deleted is mapped as if it were kept
+    Mutant("lines-new-line-admits-deleted", "lines.rs",
+           "        if line < r.old.saturating_add(r.old_len) {\n            return None;\n        }\n", "",
+           ("Strop.Kernel.new_line_loop_spec",)),
+    # the new base skips only the region's start, not the lines it added
+    Mutant("lines-new-line-forgets-additions", "lines.rs",
+           "        if line < r.old.saturating_add(r.old_len) {\n            return None;\n        }\n        old_base = r.old.saturating_add(r.old_len);\n"
+           "        new_base = r.new.saturating_add(r.new_len);\n",
+           "        if line < r.old.saturating_add(r.old_len) {\n            return None;\n        }\n        old_base = r.old.saturating_add(r.old_len);\n"
+           "        new_base = r.new;\n",
+           ("Strop.Kernel.new_line_loop_spec",)),
+    # a range across a replaced block maps its two ends
+    Mutant("lines-old-span-straddles-region", "lines.rs",
+           "        if first < r.new.saturating_add(r.new_len) {\n",
+           "        if first >= r.new && first < r.new.saturating_add(r.new_len) {\n",
+           ("Strop.Kernel.old_span_loop_spec",)),
+    # an unchecked end of region: the line map fails on a region past usize
+    Mutant("lines-old-line-raw-add", "lines.rs",
+           "        if line < r.new.saturating_add(r.new_len) {\n",
+           "        if line < r.new + r.new_len {\n",
+           ("Strop.Kernel.old_line_loop_spec",)),
     Mutant("layout-gap-dropped", "layout.rs",
            "        at = least(at + len + gap, cells);\n",
            "        at = least(at + len, cells);\n",
@@ -465,6 +499,21 @@ PAIRED = (
            lean=(Patch("Kernel/Lines.lean",
                        "  if q.2.1 = 0 ∧ q.2.2.2 = 0 then [] else [q]",
                        "  if q.2.1 = 0 ∧ q.2.2.2 = 0 then [] else [(q.1, q.2.1, q.2.2.1 + q.2.2.2, q.2.2.2)]"),)),
+    # coherence forgets the old-side order, with the model updated to match: a
+    # region may start inside an earlier deletion, so a kept line can be a
+    # deleted one and the pairing stops keeping order
+    Mutant("lines-coherent-forgets-old-order", "lines.rs",
+           "        if r.old < old_base || r.new < new_base {\n            return false;\n        }\n"
+           "        if r.old - old_base != r.new - new_base {\n",
+           "        if r.new < new_base {\n            return false;\n        }\n"
+           "        if r.old.saturating_sub(old_base) != r.new - new_base {\n",
+           # the bridge and the runs-are-coherent construction follow the old
+           # predicate, so they break too
+           ("Strop.Kernel.kept_old_ge", "Strop.Kernel.coherent_starts",
+            "Strop.Kernel.coherent_loop_spec", "Strop.Kernel.coherent_closeRun_append"),
+           lean=(Patch("Kernel/Lines.lean",
+                       "      ob ≤ ro ∧ nb ≤ rn ∧ ro - ob = rn - nb ∧ 0 < rol + rnl ∧",
+                       "      True ∧ nb ≤ rn ∧ ro - ob = rn - nb ∧ 0 < rol + rnl ∧"),)),
     # T1 with the model updated to match: an unclamped span passes the frame
     Mutant("layout-overrun-paired", "layout.rs",
            "            least(minimum(tracks[k], unit, gap) + extra, left)\n",
