@@ -76,7 +76,8 @@ pub(super) fn run() -> io::Result<()> {
     let mut below = Op::new("o");
     let mut enter = Op::new("enter");
     let admitted = drive.editor.admission_probe().resolutions;
-    key(&mut drive, &format!(":{}\r", targets[0]))?;
+    // the first `o` after the open, far from the top: no lexical shortcut
+    key(&mut drive, &format!(":{}\r", targets[1]))?;
     drive.settle(SETTLE)?;
     open_line(&mut drive, Key::Char('o'), &mut first)?;
     let deferred = drive.editor.admission_probe().resolutions - admitted;
@@ -96,7 +97,9 @@ pub(super) fn run() -> io::Result<()> {
         }
     }
     if *drive.editor.buf().text() != text {
-        return Err(io::Error::other("the indent scenario left the buffer edited"));
+        return Err(io::Error::other(
+            "the indent scenario left the buffer edited",
+        ));
     }
     println!(
         "indent ({} lines, {:.1} MB, tree warm)",

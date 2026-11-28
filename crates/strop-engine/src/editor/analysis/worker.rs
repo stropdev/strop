@@ -26,31 +26,82 @@ pub(crate) struct MatchWork {
 pub struct Slot {
     highlighter: Option<Highlighter>,
     language: Option<LanguageId>,
+    /// Structure for indentation when it reads another grammar than the
+    /// display (a scratch indents as Rust and shows plain); same journal.
+    indentation: Option<Highlighter>,
     guides: Option<(strop_core::id::BufferRevision, usize, IndentGuides)>,
     layouts: super::layouts::LayoutCache,
 }
+/// Work that reads a document's syntax tree on its owner: a deferred
+/// indentation (#309). It reports through its own channel.
+pub(crate) type SyntaxJob = Box<dyn FnOnce(&mut Trees<'_>) + Send>;
+
+/// The owner's trees, lent to a [`SyntaxJob`].
+pub(crate) struct Trees<'a> {
+    slots: &'a mut HashMap<AnalysisTarget, Slot>,
+}
+impl Trees<'_> {
+    /// Indent contexts on the document's kept tree, reparsed incrementally
+    /// up to `revision`.
+    pub(crate) fn indentation_contexts(
+        &mut self,
+        document: strop_core::id::DocumentId,
+        language: LanguageId,
+        rope: &ropey::Rope,
+        revision: strop_core::id::BufferRevision,
+        positions: &[strop_core::id::ByteOffset],
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<Vec<strop_syntax::IndentContext>, HighlightError> {
+        let slot = slot_for(
+            self.slots,
+            &AnalysisTarget::Document(document),
+            Some(language),
+            false,
+        );
+        let highlighter = if slot.language == Some(language) {
+            slot.highlighter.as_mut()
+        } else {
+            if slot
+                .indentation
+                .as_ref()
+                .is_none_or(|highlighter| highlighter.language() != language)
+            {
+                slot.indentation = Highlighter::for_language(language);
+            }
+            slot.indentation.as_mut()
+        };
+        highlighter
+            .ok_or(HighlightError::Parse)?
+            .indentation_contexts(rope, revision, positions, cancelled)
+    }
+}
+
 enum Message {
     Analyze(Work),
     Match(MatchWork),
+    Syntax(SyntaxJob),
     Edits(AnalysisTarget, Vec<strop_core::Change>),
     Forget(AnalysisTarget),
 }
 
 /// The target's parser slot, created on first use and rebound when the
-/// syntax identity changes. Guides/layouts survive a rebind: they key
-/// on revision, not on the language.
+/// display's syntax identity changes. Guides/layouts survive a rebind: they
+/// key on revision, not on the language. An indentation lookup creates the
+/// slot but never rebinds the display's parser (`display: false`).
 fn slot_for<'a>(
     slots: &'a mut HashMap<AnalysisTarget, Slot>,
     target: &AnalysisTarget,
     language: Option<LanguageId>,
+    display: bool,
 ) -> &'a mut Slot {
     let slot = slots.entry(target.clone()).or_insert_with(|| Slot {
         highlighter: language.and_then(Highlighter::for_language),
         language,
+        indentation: None,
         guides: None,
         layouts: super::layouts::LayoutCache::default(),
     });
-    if slot.language != language {
+    if display && slot.language != language {
         slot.highlighter = language.and_then(Highlighter::for_language);
         slot.language = language;
     }
@@ -71,7 +122,11 @@ impl Worker {
                         Message::Edits(target, edits) => {
                             if let Some(slot) = slots.get_mut(&target) {
                                 for change in edits {
-                                    if let Some(highlighter) = slot.highlighter.as_mut() {
+                                    for highlighter in slot
+                                        .highlighter
+                                        .iter_mut()
+                                        .chain(slot.indentation.iter_mut())
+                                    {
                                         highlighter.apply_edits(&[change.edit], change.revision);
                                     }
                                     if let Some((revision, _, _)) = slot
@@ -89,6 +144,7 @@ impl Worker {
                         Message::Forget(target) => {
                             slots.remove(&target);
                         }
+                        Message::Syntax(job) => job(&mut Trees { slots: &mut slots }),
                         Message::Analyze(work) => {
                             let key = &work.ticket.key;
                             let cancelled = || work.cancel.load(Ordering::Acquire);
@@ -97,7 +153,8 @@ impl Worker {
                                     if cancelled() {
                                         return Err(HighlightError::Cancelled);
                                     }
-                                    let slot = slot_for(&mut slots, &key.target, key.language);
+                                    let slot =
+                                        slot_for(&mut slots, &key.target, key.language, true);
                                     let spans = match slot.highlighter.as_mut() {
                                         Some(highlighter) => highlighter.highlight_while(
                                             &work.rope,
@@ -177,6 +234,10 @@ impl Worker {
                                         guides,
                                         search,
                                         layouts,
+                                        tree: slot
+                                            .highlighter
+                                            .as_ref()
+                                            .and_then(Highlighter::syntax_tree),
                                     })
                                 }));
                             let outcome = match result {
@@ -264,6 +325,14 @@ impl Worker {
             .map_err(|error| match error.0 {
                 Message::Match(work) => Box::new(work),
                 _ => unreachable!("sent a match request"),
+            })
+    }
+    pub fn syntax(&self, job: SyntaxJob) -> Result<(), SyntaxJob> {
+        self.sender
+            .send(Message::Syntax(job))
+            .map_err(|error| match error.0 {
+                Message::Syntax(job) => job,
+                _ => unreachable!("sent a syntax job"),
             })
     }
     pub fn edits(&self, target: AnalysisTarget, edits: Vec<strop_core::Change>) -> bool {

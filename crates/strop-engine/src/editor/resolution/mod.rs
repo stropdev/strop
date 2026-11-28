@@ -144,11 +144,6 @@ impl Default for ResolutionState {
     }
 }
 impl ResolutionState {
-    pub(crate) fn edits(&self, document: DocumentId, changes: &[strop_core::Change]) {
-        if let Some(worker) = &self.worker {
-            worker.edits(document, changes);
-        }
-    }
     pub fn blocked(&self) -> bool {
         self.pending
             .as_ref()
@@ -198,15 +193,7 @@ impl Editor {
             let buffer = &self.docs.get(source.document)?.buf;
             let cursors = source.cursors();
             let positions = structural_indent::probes(buffer, &cursors, trigger);
-            let contexts = if cursors
-                .iter()
-                .any(|&at| buffer.line_end(buffer.line_of(at)) > 4096)
-            {
-                None
-            } else {
-                structural_indent::inline_contexts(buffer, &source.request, &positions)
-            };
-            let Some(contexts) = contexts else {
+            let Some(contexts) = self.inline_indentation(source, &positions) else {
                 self.defer_operation(
                     operation,
                     self.all_cursors(),
@@ -214,6 +201,7 @@ impl Editor {
                 );
                 return None;
             };
+            let buffer = &self.docs.get(source.document)?.buf;
             match source.project(structural_indent::plan(
                 buffer,
                 &cursors,
@@ -232,6 +220,59 @@ impl Editor {
             return None;
         }
         Some(edits)
+    }
+
+    /// Indent contexts the input path can answer under a fixed bound: no
+    /// grammar, a tiny unambiguous prefix, the published tree at this
+    /// revision (#309), or a file too large to parse. `None` defers to the
+    /// tree's owner.
+    fn inline_indentation(
+        &mut self,
+        source: &structural_indent::Source,
+        positions: &[strop_core::id::ByteOffset],
+    ) -> Option<Vec<strop_syntax::IndentContext>> {
+        let buffer = &self.docs.get(source.document)?.buf;
+        let language = match source.request.language {
+            Some(language) if structural_indent::structural(&source.request) => language,
+            _ => return Some(structural_indent::previous_line(positions)),
+        };
+        let small = positions
+            .iter()
+            .all(|at| buffer.line_end(buffer.line_of(at.get())) <= 4096);
+        if let Some(contexts) = small
+            .then(|| structural_indent::inline_contexts(buffer, positions))
+            .flatten()
+        {
+            return Some(contexts);
+        }
+        if buffer.len_bytes() > strop_syntax::PARSE_LIMIT {
+            if self.analysis.large_notice(source.document) {
+                self.message = "file too large to parse: indenting from the previous line".into();
+            }
+            return Some(structural_indent::previous_line(positions));
+        }
+        // The tree is native state; the tape records the answer.
+        let revision = buffer.revision();
+        let tree = self
+            .analysis
+            .tree(source.document, revision)
+            .filter(|tree| tree.language() == language);
+        let looked = self.tape.call(
+            "indent.contexts",
+            &(source.document, revision, positions),
+            || {
+                tree.and_then(|tree| {
+                    tree.indentation_contexts(buffer.text(), positions, strop_syntax::INPUT_BUDGET)
+                })
+            },
+        );
+        match looked {
+            Ok(contexts) => contexts,
+            Err(error) => {
+                self.message = format!("indentation: {error}");
+                None
+            }
+        }
     }
 
     fn finish_indentation(&mut self, trigger: Trigger) {
@@ -429,7 +470,15 @@ impl Editor {
             }
         }
         self.resolution.cancel();
-        if !self.resolution.started {
+        let indentation = matches!(operation, Operation::Indentation(_));
+        if indentation {
+            // the tree's owner runs it (launch_indentation); started before
+            // the request, so a replay meets the same tape records
+            if let Err(error) = self.analysis.start(&self.tape) {
+                self.message = format!("analysis: {error}");
+                return true;
+            }
+        } else if !self.resolution.started {
             let started: Result<(), String> = match self.tape.call("grammar.start", &(), || {
                 worker::ResolutionWorker::start(self.resolution.tx.clone())
                     .map(|worker| self.resolution.worker = Some(worker))
@@ -480,19 +529,14 @@ impl Editor {
                 return true;
             }
         }
-        let source_ropes = match &ticket.key.operation {
-            Operation::Indentation(request) => request
-                .sources
-                .iter()
-                .filter_map(|source| self.docs.get(source.document).map(|doc| doc.buf.snapshot()))
-                .collect(),
-            Operation::Grammar(_) | Operation::Substitute(_) => Vec::new(),
-        };
+        if let Operation::Indentation(batch) = &ticket.key.operation {
+            self.launch_indentation(ticket.clone(), batch.clone(), cancel);
+            return true;
+        }
         let work = worker::Work {
             ticket,
             rope: self.buf().snapshot(),
             cancel,
-            source_ropes,
         };
         let failed = match &self.resolution.worker {
             Some(worker) => worker.resolve(work).err(),
@@ -505,6 +549,47 @@ impl Editor {
             })));
         }
         true
+    }
+
+    /// A deferred indentation runs on the analysis actor, the owner of
+    /// the documents' syntax trees (#309), and reports here.
+    fn launch_indentation(
+        &mut self,
+        ticket: Ticket<ResolutionKey>,
+        batch: IndentRequest,
+        cancel: Arc<AtomicBool>,
+    ) {
+        let ropes = batch
+            .sources
+            .iter()
+            .filter_map(|source| {
+                // the actor's tree follows a document's journal only once
+                // the document is registered
+                self.analysis
+                    .register(super::analysis::AnalysisTarget::Document(source.document));
+                self.docs.get(source.document).map(|doc| doc.buf.snapshot())
+            })
+            .collect();
+        let job = indentation::Job {
+            ticket: ticket.clone(),
+            batch,
+            ropes,
+            cancel,
+            events: self.resolution.tx.clone(),
+        };
+        let sent = match self.analysis.worker() {
+            Some(worker) => worker.syntax(Box::new(move |trees| job.run(trees))).is_ok(),
+            None => false,
+        };
+        if !sent {
+            self.handle_resolution(ResolutionEvent::Completed(Box::new(Completion {
+                ticket,
+                outcome: Outcome::failed(
+                    FailureKind::Disconnected,
+                    "display analysis worker stopped",
+                ),
+            })));
+        }
     }
 
     pub(crate) fn handle_resolution(&mut self, event: ResolutionEvent) {

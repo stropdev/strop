@@ -4,7 +4,7 @@ use super::Editor;
 use strop_core::{id::ByteOffset, Buffer};
 use strop_syntax::{DelimiterKind, IndentContext, OpeningDelimiter};
 mod source;
-pub(crate) use source::Batch;
+pub(crate) use source::{Batch, Source};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Trigger {
@@ -18,7 +18,9 @@ pub(crate) enum Trigger {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Request {
     pub trigger: Trigger,
-    pub syntax_path: Option<std::path::PathBuf>,
+    /// The grammar that decides structure; `None` indents from the
+    /// previous line.
+    pub language: Option<strop_syntax::languages::LanguageId>,
     /// Trailing-colon policy from the language registry (0072): one
     /// punctuation rule for Python blocks and C-family labels.
     pub colons: strop_syntax::ColonPolicy,
@@ -166,30 +168,36 @@ fn scope_indent(buffer: &Buffer, line_start: usize, open: OpeningDelimiter, unit
     indent
 }
 
+/// Whether structure decides this request; otherwise every position indents
+/// from its own line ([`previous_line`]).
+pub(crate) fn structural(request: &Request) -> bool {
+    request.language.is_some() && request.trigger != Trigger::Above
+}
+
+/// Contexts that copy the line's indentation and deepen nothing: no grammar,
+/// `O`, or a file too large to parse.
+pub(crate) fn previous_line(positions: &[ByteOffset]) -> Vec<IndentContext> {
+    positions
+        .iter()
+        .map(|&cursor| IndentContext {
+            cursor,
+            code: false,
+            opener: None,
+        })
+        .collect()
+}
+
 /// Tiny fast path: only lexically unambiguous prefixes. Quotes, comments,
-/// escapes, raw/regex/template/markup syntax all go to the parser owner. This
+/// escapes, raw/regex/template/markup syntax all go to the syntax tree. This
 /// deliberately does not attempt to be a second language lexer.
 pub(crate) fn inline_contexts(
     buffer: &Buffer,
-    request: &Request,
     positions: &[ByteOffset],
 ) -> Option<Vec<IndentContext>> {
     const INLINE_BYTES: usize = 4096;
     let limit = positions.last().map_or(0, |at| at.get());
     if limit > INLINE_BYTES || positions.len() > 32 {
         return None;
-    }
-    if request.syntax_path.is_none() || request.trigger == Trigger::Above {
-        return Some(
-            positions
-                .iter()
-                .map(|&cursor| IndentContext {
-                    cursor,
-                    code: false,
-                    opener: None,
-                })
-                .collect(),
-        );
     }
     let mut contexts = Vec::with_capacity(positions.len());
     let mut stack = Vec::new();
