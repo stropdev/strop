@@ -2,6 +2,31 @@
 
 Earlier releases cite designs by number; find the original decision and its delivery issue in the [RFC registry](https://github.com/stropdev/strop/blob/main/docs/rfcs/README.md).
 
+## 0.78.0 — UNRELEASED
+
+### Performance
+
+- **Typing:** the Linux binary now uses mimalloc as its memory allocator. A key shows in about 1 ms instead of 2–3 ms, the file finder lists the Linux kernel tree about three times faster, and most built-in speed tests run 1.25× faster or more. It uses 13–50 MB more memory.
+- **Search:** a lower-case `/` search no longer drops to the slow engine. The last line of a 500 MB file is found in about a tenth of a second instead of nearly a minute, and `*`, `#`, `\<word\>` and case-folded searches take the same fast path.
+- **Large files:** opening a file no longer holds a second copy of it in memory. A 500 MB log peaks at about half the memory it did, and opens faster.
+
+### Fixed
+
+- **Remote links from a selection:** in Visual mode, `<space>gy` and `<space>go` copy or open a link to the selected lines (`#L10-L20`) instead of refusing. `<space>gh` opens the selected lines' history in Normal mode, so `Enter` and `q` work there. The Visual which-key card lists these commands, and a leader key Visual does not bind says so.
+- **Remote links name the right lines:** a link names the committed line, even with unsaved or uncommitted edits above it. A selection that includes uncommitted lines is refused with the reason, and a request made before the file's diff is ready waits for it. A file that is not in the last commit (untracked, or renamed in the worktree) is refused instead of producing a link that 404s.
+- **Line history:** `<space>gh` on a selection looks up the committed lines it covers, and refuses lines that are not in the last commit.
+- **Staged changes:** the staged gutter mark and `<space>gu` follow a staged change that sits below unstaged insertions.
+- **Discarding a deletion:** `<space>gX` on deleted lines puts the cursor on the first restored line.
+- **Search counts:** search counts and `:s///g` no longer count overlapping matches of a case-sensitive pattern separately: `aa` in `aaaa` is two matches, as in Vim.
+
+### Proofs
+
+- The line arithmetic behind the git gutter, remote links and line history (a change's regions, a selection's lines, and mapping a line across a diff) now lives in the proved kernel, with machine-checked theorems about the shipped code. The proof audit also states which kernel functions are proved never to fail.
+
+### Compatibility
+
+- Full session replay uses editor semantics version 14. Replay a 0.77 recording with 0.77, or record it again.
+
 ## 0.77.0 — 2026-11-23
 
 ### Fixed

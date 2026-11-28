@@ -27,7 +27,7 @@ use crate::editor::{Document, Editor, Pane};
 // Version 13: Git hunk signs and hunk jumps stay on reachable rows (#240);
 // `.` after a Visual verb repeats it over the same extent; after a put, with
 // its register and count.
-const SEMANTIC_VERSION: u32 = 13;
+const SEMANTIC_VERSION: u32 = 14;
 
 /// One seeded document: its buffer plus whether it came from a file.
 /// Surfaces (diff/log/output) are job-owned content, never startup state.
