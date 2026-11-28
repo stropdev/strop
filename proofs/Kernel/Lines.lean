@@ -787,11 +787,16 @@ theorem old_span_spec (f l : Usize) (rs : Slice lines.Region) :
 
 /-! ## Kept lines -/
 
-theorem kept_outside : ∀ (qs : List Quad) (ob nb o n : Nat), Coherent ob nb qs →
+-- Both proofs use the `induction` tactic, not structural recursion, so the
+-- audit sees the lemmas they rest on (`kept_old_ge`, `coherent_starts`).
+theorem kept_outside (qs : List Quad) : ∀ (ob nb o n : Nat), Coherent ob nb qs →
     Kept ob nb qs o n → ∀ q ∈ qs,
-      ¬ (q.1 ≤ o ∧ o < q.1 + q.2.1) ∧ ¬ (q.2.2.1 ≤ n ∧ n < q.2.2.1 + q.2.2.2)
-  | [], _, _, _, _, _, _, q, hq => by simp at hq
-  | (ro, rol, rn, rnl) :: rest, ob, nb, o, n, hc, h, q, hq => by
+      ¬ (q.1 ≤ o ∧ o < q.1 + q.2.1) ∧ ¬ (q.2.2.1 ≤ n ∧ n < q.2.2.1 + q.2.2.2) := by
+  induction qs with
+  | nil => intro _ _ _ _ _ _ q hq; simp at hq
+  | cons head rest ih =>
+    obtain ⟨ ro, rol, rn, rnl ⟩ := head
+    intro ob nb o n hc h q hq
     have hc' := hc
     simp only [Coherent] at hc'
     have hstarts := coherent_starts rest _ _ hc'.2.2.2.2.2.2
@@ -805,12 +810,15 @@ theorem kept_outside : ∀ (qs : List Quad) (ob nb o n : Nat), Coherent ob nb qs
       · have := kept_old_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
         have := kept_new_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
         simp only; omega
-      · exact kept_outside rest _ _ o n hc'.2.2.2.2.2.2 h q hq
+      · exact ih _ _ o n hc'.2.2.2.2.2.2 h q hq
 
-theorem kept_order : ∀ (qs : List Quad) (ob nb o n o' n' : Nat), Coherent ob nb qs →
-    Kept ob nb qs o n → Kept ob nb qs o' n' → (n < n' ↔ o < o')
-  | [], _, _, _, _, _, _, _, h, h' => by simp only [Kept] at h h'; omega
-  | (ro, rol, rn, rnl) :: rest, ob, nb, o, n, o', n', hc, h, h' => by
+theorem kept_order (qs : List Quad) : ∀ (ob nb o n o' n' : Nat), Coherent ob nb qs →
+    Kept ob nb qs o n → Kept ob nb qs o' n' → (n < n' ↔ o < o') := by
+  induction qs with
+  | nil => intro _ _ _ _ _ _ _ h h'; simp only [Kept] at h h'; omega
+  | cons head rest ih =>
+    obtain ⟨ ro, rol, rn, rnl ⟩ := head
+    intro ob nb o n o' n' hc h h'
     have hc' := hc
     simp only [Coherent] at hc'
     simp only [Kept] at h h'
@@ -822,7 +830,7 @@ theorem kept_order : ∀ (qs : List Quad) (ob nb o n o' n' : Nat), Coherent ob n
     · have := kept_old_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
       have := kept_new_ge rest _ _ _ _ hc'.2.2.2.2.2.2 h
       omega
-    · exact kept_order rest _ _ o n o' n' hc'.2.2.2.2.2.2 h h'
+    · exact ih _ _ o n o' n' hc'.2.2.2.2.2.2 h h'
 
 /-- Over a coherent region list a kept line is never a deleted or an added
 line, and the pairing keeps order on both sides. -/
