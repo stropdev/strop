@@ -460,6 +460,7 @@ impl Editor {
             tab: self.cur_indent().width.max(1),
         };
         let ticket = Ticket { request, key };
+        self.admissions.resolutions += 1;
         let cancel = Arc::new(AtomicBool::new(false));
         self.resolution.pending = Some(Pending {
             ticket: ticket.clone(),

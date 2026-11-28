@@ -4,8 +4,8 @@
 //! `Instant` timing, percentile report. No network, no bench framework.
 //! Most scenarios are measurement, not assertion — wall clock varies by
 //! machine; they are the surface any perf claim re-runs and diffs. The
-//! two find scenarios (`find`, `search`, 0093 §7), `symbols` (0099 §7)
-//! and `history` (0101 §5.1) carry budgets and fail past them; local
+//! two find scenarios (`find`, `search`, 0093 §7), `symbols` (0099 §7),
+//! `history` (0101 §5.1) and `indent` (#309) carry budgets and fail past them; local
 //! release qualification runs those.
 //!
 //! Two scenario families:
@@ -22,6 +22,7 @@ mod cmdline;
 mod completion;
 mod find;
 mod history;
+mod indent;
 mod symbols;
 
 use std::io;
@@ -661,6 +662,9 @@ pub fn run(which: &str) -> io::Result<()> {
     }
     if all || which == "symbols" {
         symbols::run()?;
+    }
+    if all || which == "indent" {
+        indent::run()?;
     }
     if all || which == "history" {
         history::run()?;
