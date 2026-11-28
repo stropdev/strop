@@ -222,6 +222,7 @@ impl Presentation {
             guides,
             search: None,
             layouts: Vec::new(),
+            tree: None,
         });
         *self.interim.borrow_mut() = Some((memo, frame.clone()));
         Some(frame)

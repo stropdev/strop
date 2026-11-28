@@ -44,7 +44,7 @@ pub(super) const ROWS: &[Binding] = &[
     },
     Binding {
         keys: "space g h",
-        desc: "file history (visual: selected lines)",
+        desc: "file history",
         sections: &["git"],
         live: true,
         id: "git-file-history",

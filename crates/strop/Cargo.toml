@@ -30,6 +30,8 @@ sha2 = "0.10"
 flate2 = "1"
 tar = "0.4"
 ureq = { version = "2.12", default-features = false, features = ["tls"] }
+# musl's allocator made every keystroke 2–3× slower (RFC 2026-11-28 D1)
+mimalloc = { version = "0.1", default-features = false }
 
 [[bin]]
 name = "strop"

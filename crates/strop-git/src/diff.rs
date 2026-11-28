@@ -2,6 +2,7 @@
 //! git surface renders from (0010).
 
 use std::path::PathBuf;
+use strop_kernel::lines::{self, Origin, Region};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum HunkKind {
@@ -46,21 +47,6 @@ impl DiffLine {
             b.push(b'\n');
         }
         b
-    }
-}
-
-/// The signs of one change run: the new-side lines `start..end` it
-/// added (empty for a pure deletion, whose sign goes on `end`, the line
-/// after the gap) and the number of lines it deleted.
-fn push_run(out: &mut Vec<(usize, Sign)>, start: usize, end: usize, deleted: usize) {
-    let sign = match (start == end, deleted == 0) {
-        (true, true) => return,
-        (true, false) => return out.push((end, Sign::DeleteAfter)),
-        (false, true) => Sign::Add,
-        (false, false) => Sign::Change,
-    };
-    for line in start..end {
-        out.push((line, sign));
     }
 }
 
@@ -121,67 +107,67 @@ pub enum Sign {
     Add,
     /// Buffer line replaces deleted lines (its run has both).
     Change,
-    /// Buffer line sits right below a deletion. Git's line number may
-    /// be `0` (everything deleted) or one past the last row (deletion
-    /// at the end) — the gutter clamps it onto a content row.
+    /// Buffer line sits right below a deletion. The line may be one past
+    /// the last row (deletion at the end) — the gutter clamps it onto a
+    /// content row.
     DeleteAfter,
 }
 
+impl Sign {
+    /// The signs one change region puts on 0-based new-side lines:
+    /// additions only → [`Sign::Add`] on each added line; deletions only →
+    /// one [`Sign::DeleteAfter`] on the line the gap sits before; both →
+    /// [`Sign::Change`] on each added line, no separate deletion sign.
+    pub fn of_region(region: &Region) -> impl Iterator<Item = (usize, Sign)> {
+        let sign = if region.old_len == 0 {
+            Sign::Add
+        } else {
+            Sign::Change
+        };
+        let deletion = (region.new_len == 0).then_some((region.new, Sign::DeleteAfter));
+        (region.new..region.new + region.new_len)
+            .map(move |line| (line, sign))
+            .chain(deletion)
+    }
+}
+
+/// The 0-based first line of one side of a hunk header: a side with lines
+/// starts at `start - 1`; an empty side names the line *before* the gap,
+/// so the gap's 0-based position is `start` itself (`@@ -0,0 +1,3 @@`
+/// inserts at position 0).
+fn first_line(start: usize, count: usize) -> usize {
+    if count == 0 {
+        start
+    } else {
+        start.saturating_sub(1)
+    }
+}
+
 impl Hunk {
-    /// Signs this hunk produces, per change run (a maximal stretch of
-    /// non-context lines): additions only → [`Sign::Add`] on each added
-    /// line; deletions only → one [`Sign::DeleteAfter`] on the line after
-    /// the gap; both → [`Sign::Change`] on each added line, no separate
-    /// deletion sign.
-    pub fn signs(&self) -> Vec<(usize, Sign)> {
-        let mut out = Vec::new();
-        let mut nl = self.new_start;
-        let mut run_start = nl;
-        let mut deleted = 0;
-        for line in &self.lines {
-            match line.origin {
-                LineOrigin::Addition => nl += 1,
-                LineOrigin::Deletion => deleted += 1,
-                LineOrigin::Context => {
-                    push_run(&mut out, run_start, nl, deleted);
-                    deleted = 0;
-                    nl += 1;
-                    run_start = nl;
-                }
-            }
-        }
-        push_run(&mut out, run_start, nl, deleted);
-        out
+    /// The 0-based new-side line the hunk's header starts at, context
+    /// included (an empty new side: the line the gap sits before).
+    pub fn new_first(&self) -> usize {
+        first_line(self.new_start, self.new_count)
     }
 
-    /// The actual changed region (from add/del lines, not the header,
-    /// which includes context): new-side `new_first`/`new_count`
-    /// (1-based) and old-side `old_first`/`old_count`. For pure
-    /// deletions `new_first` is the new line *following* the gap.
-    pub fn changed_region(&self) -> (usize, usize, usize, usize) {
-        let mut nl = self.new_start;
-        let mut ol = self.old_start;
-        let mut new_lines = Vec::new();
-        let mut old_lines = Vec::new();
-        for line in &self.lines {
-            match line.origin {
-                LineOrigin::Addition => {
-                    new_lines.push(nl);
-                    nl += 1;
-                }
-                LineOrigin::Deletion => {
-                    old_lines.push(ol);
-                    ol += 1;
-                }
-                LineOrigin::Context => {
-                    nl += 1;
-                    ol += 1;
-                }
-            }
-        }
-        let new_first = new_lines.first().copied().unwrap_or(nl);
-        let old_first = old_lines.first().copied().unwrap_or(ol);
-        (new_first, new_lines.len(), old_first, old_lines.len())
+    /// Append this hunk's change regions in 0-based lines, one per maximal
+    /// stretch of non-context lines (`strop_kernel::lines::runs`, proved).
+    pub fn regions(&self, out: &mut Vec<Region>) {
+        let body: Vec<Origin> = self
+            .lines
+            .iter()
+            .map(|line| match line.origin {
+                LineOrigin::Context => Origin::Context,
+                LineOrigin::Addition => Origin::Addition,
+                LineOrigin::Deletion => Origin::Deletion,
+            })
+            .collect();
+        lines::runs(
+            first_line(self.old_start, self.old_count),
+            self.new_first(),
+            &body,
+            out,
+        );
     }
 
     /// The `@@ -a,b +c,d @@` header row as the diff surface shows it.

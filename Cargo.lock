@@ -924,6 +924,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "libz-sys"
 version = "1.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1025,6 +1034,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1565,7 +1583,7 @@ checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strop-core"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "libc",
  "loom",
@@ -1584,12 +1602,13 @@ dependencies = [
 
 [[package]]
 name = "strop-editor"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "crossterm",
  "flate2",
  "indicatif",
  "libc",
+ "mimalloc",
  "ratatui",
  "ropey",
  "serde_json",
@@ -1615,7 +1634,7 @@ dependencies = [
 
 [[package]]
 name = "strop-engine"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "imbl",
  "loom",
@@ -1649,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "strop-fs"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "getrandom 0.4.3",
  "libc",
@@ -1667,12 +1686,13 @@ dependencies = [
 
 [[package]]
 name = "strop-git"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "git2",
  "serde",
  "serde_json",
  "strop-core",
+ "strop-kernel",
  "strop-remote",
  "strop-workspace",
  "tempfile",
@@ -1680,8 +1700,9 @@ dependencies = [
 
 [[package]]
 name = "strop-grammar"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
+ "memchr",
  "ropey",
  "serde",
  "strop-core",
@@ -1691,11 +1712,11 @@ dependencies = [
 
 [[package]]
 name = "strop-kernel"
-version = "0.77.0"
+version = "0.78.0"
 
 [[package]]
 name = "strop-lsp"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "async-lsp",
  "loom",
@@ -1715,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "strop-picker"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "base64",
  "flate2",
@@ -1742,7 +1763,7 @@ dependencies = [
 
 [[package]]
 name = "strop-remote"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "parking_lot",
  "rustix 1.1.4",
@@ -1756,7 +1777,7 @@ dependencies = [
 
 [[package]]
 name = "strop-syntax"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "cc",
  "imbl",
@@ -1793,7 +1814,7 @@ dependencies = [
 
 [[package]]
 name = "strop-terminal"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "cc",
  "flate2",
@@ -1814,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "strop-trace"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "parking_lot",
  "serde",
@@ -1826,7 +1847,7 @@ dependencies = [
 
 [[package]]
 name = "strop-workspace"
-version = "0.77.0"
+version = "0.78.0"
 dependencies = [
  "serde",
  "serde_json",

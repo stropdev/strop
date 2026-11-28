@@ -15,6 +15,11 @@ use std::process::ExitCode;
 use strop_core::Buffer;
 use strop_trace::{record_with, EventKind, TraceOptions};
 
+/// The binary's allocator: musl's own is 2–3× slower per keystroke
+/// (RFC 2026-11-28 D1). Libraries and tests keep the system allocator.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> ExitCode {
     match launch() {
         Ok(()) => ExitCode::SUCCESS,

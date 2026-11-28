@@ -431,3 +431,40 @@ fn equal_revision_and_reused_slot_cannot_accept_another_documents_prompt() {
         }
     }
 }
+
+#[test]
+fn lower_case_search_on_a_large_buffer_folds_crosses_scan_windows_and_wraps() {
+    // smartcase folds a lower-case pattern; the hits straddle the
+    // scanner's 64 KiB windows, and `n`/`N`/counts wrap as vim's do
+    let pad = |n: usize| "x".repeat(n);
+    let mut text = String::from("Needle start\n");
+    text.push_str(&pad(65_536 - text.len() - 3));
+    let second = text.len();
+    text.push_str("nEEdle needles\n");
+    text.push_str(&pad(70_000));
+    let fourth = text.len() + 1;
+    text.push_str(" NEEDLE\nend\n");
+    let third = second + 7;
+    let mut e = Editor::new(Buffer::from_text(&text));
+    e.feed_text("/needle<cr>");
+    assert_eq!(e.head(), second);
+    e.feed_text("n");
+    assert_eq!(e.head(), third);
+    e.feed_text("n");
+    assert_eq!(e.head(), fourth);
+    e.feed_text("n");
+    assert_eq!(e.head(), 0, "wraps to the top");
+    e.feed_text("N");
+    assert_eq!(e.head(), fourth, "wraps to the bottom");
+    e.feed_text("2n");
+    assert_eq!(e.head(), second);
+    e.feed_text("?needle<cr>");
+    assert_eq!(e.head(), 0);
+    // `*` takes the whole word: `xnEEdle` and `needles` are not `needle`
+    e.feed_text("*");
+    assert_eq!(e.head(), fourth);
+    e.feed_text("n");
+    assert_eq!(e.head(), 0);
+    e.feed_text("/Needle<cr>");
+    assert_eq!(e.head(), 0, "a capital is case-sensitive");
+}

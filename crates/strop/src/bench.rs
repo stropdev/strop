@@ -4,9 +4,11 @@
 //! `Instant` timing, percentile report. No network, no bench framework.
 //! Most scenarios are measurement, not assertion — wall clock varies by
 //! machine; they are the surface any perf claim re-runs and diffs. The
-//! two find scenarios (`find`, `search`, 0093 §7), `symbols` (0099 §7)
-//! and `history` (0101 §5.1) carry budgets and fail past them; local
-//! release qualification runs those.
+//! budgeted scenarios fail past their budgets: `find` and `search`
+//! (0093 §7), `symbols` (0099 §7), `history` (0101 §5.1), and from the
+//! measured-performance plan (2026-11-28) the in-buffer search of
+//! `nav_100k` and `search_500mb` (D4) and the open peak of `open_100mb`
+//! (D7), and `indent` (D2). Local release qualification runs those.
 //!
 //! Two scenario families:
 //! - Buffer scenarios drive `Editor::feed` + `headless::frame_string`
@@ -22,6 +24,9 @@ mod cmdline;
 mod completion;
 mod find;
 mod history;
+mod indent;
+mod open_file;
+mod search_500mb;
 mod symbols;
 
 use std::io;
@@ -301,9 +306,13 @@ fn bench_buffer(lines: usize, label: &str) {
     undo.report();
 }
 
+/// The worst-case `/needle` (only on the last line, lower case so
+/// smartcase folds) on 6.4 MB (plan 2026-11-28 D4).
+const NAV_SEARCH: Duration = Duration::from_millis(20);
+
 /// 100k-line navigation: G, gg, 500j, and a worst-case search (needle
-/// only on the last line).
-fn bench_nav_100k() {
+/// only on the last line). The search carries a budget.
+fn bench_nav_100k() -> io::Result<()> {
     let mut text = gen_source(100_000);
     text.push_str("needle_zzz\n");
     let mut e = Editor::new(Buffer::from_text(&text));
@@ -322,6 +331,7 @@ fn bench_nav_100k() {
     gg.report();
     j500.report();
     search.report();
+    find::within(&search, NAV_SEARCH)
 }
 
 /// 1k cursors: 999 stacked cursors, then one cascaded insert.
@@ -630,7 +640,13 @@ pub fn run(which: &str) -> io::Result<()> {
         }
     }
     if all || which == "nav_100k" {
-        bench_nav_100k();
+        bench_nav_100k()?;
+    }
+    if all || which == "open_100mb" {
+        open_file::run()?;
+    }
+    if all || which == "search_500mb" {
+        search_500mb::run()?;
     }
     if all || which == "cursors_1k" {
         bench_cursors_1k();
@@ -661,6 +677,9 @@ pub fn run(which: &str) -> io::Result<()> {
     }
     if all || which == "symbols" {
         symbols::run()?;
+    }
+    if all || which == "indent" {
+        indent::run()?;
     }
     if all || which == "history" {
         history::run()?;

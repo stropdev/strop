@@ -261,25 +261,22 @@ impl Walker {
     }
 
     /// One visual-mode key. Visual's own rows (the table's `visual`
-    /// section) come first; counts, registers, the leader and the text
-    /// lines are the ordinary walk; everything else is a motion or a
-    /// text object for the grammar.
+    /// section, its leader rows included) come first; counts, registers
+    /// and the text lines are the ordinary walk; everything else is a
+    /// motion or a text object for the grammar.
     pub fn feed_visual(&mut self, key: Key) -> Action {
         if key == Key::Esc {
             self.clear();
             return Action::Pending;
         }
-        // The ordinary table remains the authority for leader namespaces,
-        // and `"x` is the ordinary walker's selector.
-        if self.path.first().is_some_and(|token| token == "space")
-            || self.state.register == Some('\0')
-        {
+        // `"x` is the ordinary walker's selector.
+        if self.state.register == Some('\0') {
             return self.feed(key);
         }
         if self.motion.is_empty() {
             if self.path.is_empty() {
                 match key {
-                    Key::Char('"' | ' ' | ':' | '/' | '?') => return self.feed(key),
+                    Key::Char('"' | ':' | '/' | '?') => return self.feed(key),
                     Key::Char(c)
                         if c.is_ascii_digit() && (c != '0' || self.state.count1.is_some()) =>
                     {
@@ -293,7 +290,7 @@ impl Walker {
             if let Some(row) = keymap::find_visual_row(&path) {
                 let arg = path.last().and_then(|t| t.chars().last()).unwrap_or('\0');
                 match row.handler {
-                    Handler::Visual(_) | Handler::Leaf(_) => {
+                    Handler::Visual(_) | Handler::Selection(_) | Handler::Leaf(_) => {
                         let (count, register) = (self.state.count(), self.state.register);
                         self.clear();
                         return Action::Row {
@@ -308,12 +305,24 @@ impl Walker {
                         self.path = path;
                         return Action::Pending;
                     }
+                    // `space |`: the completing key is the prompt's sigil
+                    Handler::TextLine => {
+                        if let Key::Char(sigil) = key {
+                            return self.enter_text(sigil);
+                        }
+                    }
                     // `i<a>` / `a<a>`: the grammar's text objects
                     _ => {}
                 }
-            } else if keymap::any_visual_child(&path)
-                || (keymap::find_row(&path).is_none() && keymap::any_child(&path))
-            {
+            } else if keymap::any_visual_child(&path) {
+                self.path = path;
+                return Action::Pending;
+            } else if path[0] == "space" {
+                // the leader is Visual's own namespace: what Visual's
+                // which-key card does not list is not bound here
+                self.clear();
+                return Action::Unbound(path.join(" "));
+            } else if keymap::find_row(&path).is_none() && keymap::any_child(&path) {
                 self.path = path;
                 return Action::Pending;
             }
@@ -568,7 +577,8 @@ impl Walker {
                 Handler::AbsorbRegister
                 | Handler::Soon
                 | Handler::Contextual
-                | Handler::Visual(_) => self.invalid(),
+                | Handler::Visual(_)
+                | Handler::Selection(_) => self.invalid(),
             }
         } else if keymap::any_child(&self.path) {
             Action::Pending

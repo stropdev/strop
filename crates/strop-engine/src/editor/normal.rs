@@ -283,6 +283,7 @@ impl Editor {
             | Handler::TextLine
             | Handler::AbsorbRegister
             | Handler::Visual(_)
+            | Handler::Selection(_)
             | Handler::Soon
             | Handler::Contextual => {}
         }

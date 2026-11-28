@@ -3,7 +3,6 @@
 //! on jobs. One execution context per editor binds every prepared plan to
 //! this process; nothing here runs on input or render.
 use std::collections::HashMap;
-use std::io::Read as _;
 use std::sync::Arc;
 
 use strop_core::worker::CancelToken;
@@ -31,6 +30,25 @@ impl Default for LocalFs {
 
 fn io_failure(error: std::io::Error) -> FsFailure {
     FsFailure::new(FsFailureKind::Io, error.to_string())
+}
+
+/// Bytes read from the file per system call while a rope is built.
+const READ_BUFFER: usize = 1 << 20;
+
+/// A reader that stops at the owner's cancellation: a large file's load
+/// ends at the next read, not after the whole file.
+struct Cancellable<'a, R> {
+    inner: R,
+    token: &'a CancelToken,
+}
+
+impl<R: std::io::Read> std::io::Read for Cancellable<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.token.is_cancelled() {
+            return Err(std::io::Error::other("cancelled"));
+        }
+        self.inner.read(buf)
+    }
 }
 
 fn cancelled(token: &CancelToken) -> Result<(), FsFailure> {
@@ -80,12 +98,14 @@ impl LocalFs {
         Ok(strop_fs::list(&self.context, location, token)?.snapshot)
     }
 
-    /// The whole file's bytes. A directory is listed, never read.
-    pub(crate) fn read(
+    /// The whole file as text, built straight from the file: no second
+    /// copy of its bytes is held while the rope grows. Bytes that are not
+    /// UTF-8 refuse the read. A directory is listed, never read.
+    pub(crate) fn read_rope(
         &self,
         token: &CancelToken,
         location: &ResourceLocation,
-    ) -> Result<Vec<u8>, FsFailure> {
+    ) -> Result<ropey::Rope, FsFailure> {
         self.context.admit(location)?;
         cancelled(token)?;
         if !location.path.is_absolute() {
@@ -94,17 +114,26 @@ impl LocalFs {
                 "read scope must be absolute",
             ));
         }
-        let mut file = std::fs::File::open(&location.path).map_err(io_failure)?;
+        let file = std::fs::File::open(&location.path).map_err(io_failure)?;
         if file.metadata().map_err(io_failure)?.is_dir() {
             return Err(FsFailure::new(
                 FsFailureKind::Unsupported,
                 "a directory is listed, never read",
             ));
         }
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).map_err(io_failure)?;
+        let reader = Cancellable {
+            inner: std::io::BufReader::with_capacity(READ_BUFFER, file),
+            token,
+        };
+        let rope = ropey::Rope::from_reader(reader).map_err(|error| {
+            if token.is_cancelled() {
+                FsFailure::new(FsFailureKind::Cancelled, "cancelled")
+            } else {
+                io_failure(error)
+            }
+        })?;
         cancelled(token)?;
-        Ok(bytes)
+        Ok(rope)
     }
 
     /// Prepare one reviewed batch under `environment` (its trash roots).

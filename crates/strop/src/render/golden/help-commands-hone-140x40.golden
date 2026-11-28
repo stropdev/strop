@@ -37,7 +37,7 @@
     ctrl-d                     list the completions                                                                                         
     ctrl-f                     edit this line in the command-line window                                                                    
     ctrl-l                     repaint the screen                                                                                           
-  NORMAL    help [RO]  Commands                                                                                                 64%  435:1  
+  NORMAL    help [RO]  Commands                                                                                                 64%  440:1  
 
   0: 2:reset/#15171c 2:#4a5160/#15171c 8:#e8a848/#15171c+b 127:#4a5160/#15171c 1:reset/reset
   1: 139:reset/#15171c 1:reset/reset

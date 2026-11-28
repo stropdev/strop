@@ -12,7 +12,7 @@ use strop_git::{Hunk, Sign};
 use crate::files::FileTarget;
 
 use super::git_memory::{
-    git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, HunkSet, MutationKey,
+    self, git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, MutationKey,
     MutationOp,
 };
 use super::transact::ChangeSet;
@@ -165,12 +165,9 @@ impl Editor {
                         &host,
                         &cancel,
                     ) {
-                        Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
-                            rel,
-                            unstaged: HunkSet::new(unstaged, rows),
-                            staged: HunkSet::new(staged, rows),
-                            untracked,
-                        }),
+                        Ok((unstaged, staged, untracked)) => {
+                            Outcome::Success(HunkData::new(rel, unstaged, staged, rows, untracked))
+                        }
                         Err(error) => Outcome::Failed {
                             failure: strop_core::worker::Failure::new(
                                 strop_core::worker::FailureKind::Exit,
@@ -217,12 +214,13 @@ impl Editor {
                         }
                     }
                 };
-                Outcome::Success(HunkData {
-                    rel: gutter.rel,
-                    unstaged: HunkSet::new(gutter.unstaged, rows),
-                    staged: HunkSet::new(gutter.staged, rows),
-                    untracked: gutter.untracked,
-                })
+                Outcome::Success(HunkData::new(
+                    gutter.rel,
+                    gutter.unstaged,
+                    gutter.staged,
+                    rows,
+                    gutter.untracked,
+                ))
             },
         );
     }
@@ -264,11 +262,87 @@ impl Editor {
     }
 
     /// Staged sign (HEAD↔index edge, 0014 wave 4): the line sits inside
-    /// a staged hunk's new side. Line alignment between index and live
-    /// text is approximate when both sets exist — the gutter's rule:
-    /// unstaged wins, staged marks what's already in the index.
+    /// a staged hunk's new side, its index line mapped to this buffer row
+    /// through the unstaged regions (#293). The gutter's rule: unstaged
+    /// wins, staged marks what's already in the index.
     pub fn sign_at_staged(&self, line_1based: usize) -> bool {
         self.staged_hunks().addition(line_1based)
+    }
+
+    /// The current buffer's 1-based HEAD lines for 0-based buffer `rows`,
+    /// through the hunk snapshot of exactly this revision (#290): the
+    /// caller has scheduled it, so it is ready, failed, or in flight.
+    pub(crate) fn head_lines(&self, rows: (usize, usize)) -> git_memory::HeadLines {
+        use git_memory::HeadLines;
+        use strop_core::worker::Load;
+        let current = self.current();
+        let revision = self.buf().revision();
+        match (&self.hunk_load, &self.hunk_snapshot) {
+            (Load::Ready(key), Some(data))
+                if key.document == current && key.revision == revision =>
+            {
+                match git_memory::LineMaps::of(data).head_lines(rows.0, rows.1) {
+                    Ok(lines) => HeadLines::Ready(lines),
+                    Err(reason) => HeadLines::Refused(reason),
+                }
+            }
+            (Load::Running(ticket), _)
+                if ticket.key.document == current && ticket.key.revision == revision =>
+            {
+                HeadLines::Pending
+            }
+            (Load::Failed { failure, .. }, _) => {
+                HeadLines::Refused(format!("git diff failed: {}", failure.message))
+            }
+            _ => HeadLines::Refused("no diff for this buffer".into()),
+        }
+    }
+
+    /// Hold `request` until the hunk snapshot of this revision lands.
+    pub(crate) fn hold_lines(&mut self, request: git_memory::HeadRequest, rows: (usize, usize)) {
+        self.git_work.held = Some(git_memory::HeldLines {
+            request,
+            document: self.current(),
+            revision: self.buf().revision(),
+            rows,
+        });
+        self.message = "waiting for the diff…".into();
+    }
+
+    /// A hunk snapshot settled: finish the held request when it is for this
+    /// buffer revision, drop it with a message when the buffer moved on.
+    pub(crate) fn release_held_lines(&mut self) {
+        let Some(held) = self.git_work.held else {
+            return;
+        };
+        let what = match held.request {
+            git_memory::HeadRequest::Permalink(_) => "permalink",
+            git_memory::HeadRequest::LineHistory => "line history",
+        };
+        let same = !self.docs.is_empty()
+            && self.current() == held.document
+            && self.buf().revision() == held.revision;
+        if !same {
+            self.git_work.held = None;
+            self.message = format!("buffer changed — {what} dropped");
+            return;
+        }
+        let lines = match self.head_lines(held.rows) {
+            git_memory::HeadLines::Pending => return,
+            git_memory::HeadLines::Refused(reason) => {
+                self.git_work.held = None;
+                self.message = reason;
+                return;
+            }
+            git_memory::HeadLines::Ready(lines) => lines,
+        };
+        self.git_work.held = None;
+        match held.request {
+            git_memory::HeadRequest::Permalink(intent) => self.release_permalink(intent, lines),
+            git_memory::HeadRequest::LineHistory => {
+                git_memory::open_history_at(self, lines);
+            }
+        }
     }
 
     /// `]c` / `[c`: jump to the next/previous changed line. An explicit
@@ -310,7 +384,6 @@ impl Editor {
         if self.doc(idx).buf.path.is_none() || untracked {
             return false; // nothing in HEAD to restore from
         }
-        let new_first = hunk.changed_region().0;
         // byte-precise restore text (0020 §7): the hunk's own old-side
         // lines carry CRLF and missing-final-newline exactly — the
         // str::lines + LF join it replaces could not
@@ -337,11 +410,7 @@ impl Editor {
         let base = self.doc(idx).buf.revision();
         // Header extents include context; the restored old side includes the
         // same context. Mixing changed-only bounds with full text duplicates it.
-        let first = if hunk.new_count == 0 {
-            hunk.new_start
-        } else {
-            hunk.new_start.saturating_sub(1)
-        };
+        let first = hunk.new_first();
         let start = self
             .doc(idx)
             .buf
@@ -373,10 +442,14 @@ impl Editor {
             };
             return false;
         }
-        // cursor placement: the target's own pane moves to the
-        // restored region (Git's `+0,0` for an emptied file lands on
-        // row 1; `line_start` clamps past the end)
-        let land = self.doc(idx).buf.line_start(new_first.saturating_sub(1));
+        // cursor placement: the target's own pane moves to the first
+        // restored line — the first change region starts at the same row on
+        // both sides, a pure deletion's at the row its lines come back to
+        // (`line_start` clamps past the end)
+        let mut regions = Vec::new();
+        hunk.regions(&mut regions);
+        let land_line = regions.first().map_or(first, |region| region.new);
+        let land = self.doc(idx).buf.line_start(land_line);
         if self.current() == idx {
             self.set_head(land);
             self.clamp_cursor();
@@ -556,11 +629,13 @@ impl Editor {
         };
         let rel = data.rel.clone();
         let untracked = data.untracked;
+        let maps = super::git_memory::LineMaps::of(data);
         let origin = super::git_memory::HunkOrigin {
             rel,
             buffer: self.current(),
             revision: self.cur().buf.revision(),
             untracked,
+            maps,
         };
         let Some(context) = self.git_context() else {
             return;

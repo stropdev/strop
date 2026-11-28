@@ -54,6 +54,11 @@ pub enum Handler {
     AbsorbRegister,
     /// A Visual-mode verb: it acts on the selection (0095 §2.3).
     Visual(VisualVerb),
+    /// A command that reads the Visual selection (`Space g y` copies
+    /// a permalink to the selected lines). It runs while the selection
+    /// is live; the Visual dispatcher then returns to Normal, in one
+    /// place, so no row can forget to leave Visual.
+    Selection(fn(&mut crate::editor::Editor)),
     /// Implemented by a modal field or Ex host, not the document trie.
     Contextual,
     /// Planned slot: no dispatch yet (renders muted "(soon)").

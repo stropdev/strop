@@ -113,11 +113,11 @@ fn request(document: &Document, trigger: Trigger) -> Request {
                 | LanguageId::Css
         )
     });
-    let syntax_path = if supported {
-        Some(path.unwrap_or(std::path::Path::new("")).to_path_buf())
+    let language = if supported {
+        detected.as_ref().map(|spec| spec.id)
     } else if path.is_none() && detected.is_none() && document.directory_metadata_ref().is_none() {
         // A scratch indents like code; a folder's names never do.
-        Some(std::path::PathBuf::from("scratch.rs"))
+        Some(LanguageId::Rust)
     } else {
         None
     };
@@ -131,7 +131,7 @@ fn request(document: &Document, trigger: Trigger) -> Request {
     };
     Request {
         trigger,
-        syntax_path,
+        language,
         colons: detected
             .as_ref()
             .map_or(strop_syntax::ColonPolicy::None, |spec| {

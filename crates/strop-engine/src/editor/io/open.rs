@@ -182,15 +182,11 @@ fn open_local_file(
     match observation.kind {
         strop_workspace::EntryKind::File => {
             let location = ResourceLocation::local(path.clone());
-            let payload = match local.read(cancel, &location) {
-                Ok(payload) => payload,
+            let rope = match local.read_rope(cancel, &location) {
+                Ok(rope) => rope,
                 Err(error) if error.kind == FsFailureKind::Cancelled => {
                     return Outcome::Cancelled(CancelReason::OwnerClosed)
                 }
-                Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-            };
-            let rope = match ropey::Rope::from_reader(payload.as_slice()) {
-                Ok(rope) => rope,
                 Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
             };
             // Writability is the observation's evidence, never guessed

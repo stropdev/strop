@@ -19,7 +19,7 @@ pub use guides::{GuideFrame, IndentGuides};
 pub use languages::ColonPolicy;
 pub use window::LINE_BUDGET;
 mod indentation;
-pub use indentation::{DelimiterKind, IndentContext, OpeningDelimiter};
+pub use indentation::{DelimiterKind, IndentContext, OpeningDelimiter, SyntaxTree, INPUT_BUDGET};
 mod injections;
 mod sovel;
 mod spans;
@@ -32,6 +32,11 @@ use spans::LayeredSpan;
 use ropey::Rope;
 use strop_core::id::BufferRevision;
 use tree_sitter::{Parser, QueryCursor, TextProvider};
+
+/// The largest text the syntax owner parses. Past it a file is shown plain
+/// and indents from the previous line: a first parse there takes seconds of
+/// CPU and holds hundreds of megabytes of tree (#309).
+pub const PARSE_LIMIT: usize = 12 * 1024 * 1024;
 
 /// Semantic classes the renderer maps to palette colors. Kept small and
 /// stable; the query capture names map onto these.
@@ -316,6 +321,11 @@ impl Highlighter {
     ) -> Result<&[Span], HighlightError> {
         if cancelled() {
             return Err(HighlightError::Cancelled);
+        }
+        if rope.len_bytes() > PARSE_LIMIT {
+            self.tree = None;
+            self.source_hash = None;
+            return Ok(&[]);
         }
         self.ensure_tree(rope, revision, cancelled)?;
         if self.span_window != Some(window) {

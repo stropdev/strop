@@ -239,50 +239,51 @@ impl Editor {
                 count,
                 register,
                 arg,
-                ..
-            } if matches!(row.handler, Handler::Visual(_)) => {
-                if let Handler::Visual(verb) = row.handler {
-                    crate::editor::visual::verbs::visual_verb(
-                        self,
-                        verb,
-                        count,
-                        register,
-                        arg.unwrap_or('\0'),
-                    );
+                key,
+            } => match row.handler {
+                Handler::Visual(verb) => crate::editor::visual::verbs::visual_verb(
+                    self,
+                    verb,
+                    count,
+                    register,
+                    arg.unwrap_or('\0'),
+                ),
+                // the one place a selection command leaves Visual
+                Handler::Selection(act) => {
+                    act(self);
+                    self.mode = Mode::Normal;
+                    self.clamp_cursor();
                 }
-            }
-            Action::Row { row, .. } if row.id == "git-file-history" => {
-                // visual Space g h: history of the selected lines (0014 §4)
-                let (first, last) = crate::editor::visual::verbs::selected_lines(self);
-                self.open_line_history(first + 1, last + 1);
-            }
-            Action::Row { row, .. } if row.id == "clip-yank" => {
-                // visual Space y: yank the selection to the clipboard
-                if let Some(range) = self.visual_range() {
-                    let linewise = self.mode == Mode::VisualLine;
-                    let text = self.buf().slice_string(range);
-                    let mut register = if linewise {
-                        super::Register::linewise(text)
-                    } else {
-                        super::Register::characterwise(text)
-                    };
-                    register.file_provenance =
-                        self.capture_filename_register([(range, linewise)], false, false);
-                    self.yank_register(Some('+'), register);
-                    self.flash(range);
-                }
-                self.mode = Mode::Normal;
-                self.clamp_cursor();
-            }
-            // Visual-section Leaf rows (0049 §7: gb/gB occurrence
-            // adding, v/V switching) execute their handler.
-            Action::Row { row, key, .. } if row.sections.contains(&"visual") => {
-                if let Handler::Leaf(f) = row.handler {
-                    f(self, key);
-                }
-            }
-            Action::Row { .. } => self.message = "command unavailable in visual mode".into(),
+                // Visual-section Leaf rows (0049 §7: gb/gB occurrence
+                // adding, v/V switching) execute their handler.
+                Handler::Leaf(f) if row.sections.contains(&"visual") => f(self, key),
+                _ => self.message = "command unavailable in visual mode".into(),
+            },
         }
+    }
+
+    /// Visual `Space y`: the selection to the clipboard register.
+    pub(crate) fn clipboard_yank_selection(&mut self) {
+        let Some(range) = self.visual_range() else {
+            return;
+        };
+        let linewise = self.mode == Mode::VisualLine;
+        let text = self.buf().slice_string(range);
+        let mut register = if linewise {
+            super::Register::linewise(text)
+        } else {
+            super::Register::characterwise(text)
+        };
+        register.file_provenance =
+            self.capture_filename_register([(range, linewise)], false, false);
+        self.yank_register(Some('+'), register);
+        self.flash(range);
+    }
+
+    /// Visual `Space g h`: the history of the selected lines.
+    pub(crate) fn selected_line_history(&mut self) {
+        let (first, last) = verbs::selected_lines(self);
+        self.open_line_history(first + 1, last + 1);
     }
 
     /// `S<c>`: wrap the selection in a pair. False when it did not.

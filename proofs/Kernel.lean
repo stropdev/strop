@@ -8,3 +8,4 @@ import Kernel.Excerpt
 import Kernel.Generation
 import Kernel.Intervals
 import Kernel.Layout
+import Kernel.Lines

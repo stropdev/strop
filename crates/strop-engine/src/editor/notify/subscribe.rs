@@ -113,15 +113,11 @@ pub(super) fn reload_run(
     if observation.kind != strop_workspace::EntryKind::File {
         return Outcome::Success(None);
     }
-    let payload = match local.read(cancel, &location) {
-        Ok(payload) => payload,
+    let rope = match local.read_rope(cancel, &location) {
+        Ok(rope) => rope,
         Err(error) if error.kind == strop_workspace::operation::FsFailureKind::Cancelled => {
             return Outcome::Cancelled(CancelReason::OwnerClosed)
         }
-        Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
-    };
-    let rope = match ropey::Rope::from_reader(payload.as_slice()) {
-        Ok(rope) => rope,
         Err(error) => return Outcome::failed(FailureKind::Io, error.to_string()),
     };
     let writable = observation

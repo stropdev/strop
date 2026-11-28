@@ -252,6 +252,61 @@ MUTANTS = (
            "    if len >= u32::MAX as usize {",
            ("Strop.Kernel.index_for_len_spec",)),
     # T2: the next child starts after the divider, not on it
+    # a context line inside a run is absorbed instead of ending it
+    Mutant("lines-runs-merge-across-context", "lines.rs",
+           "                close(run, out);\n                run = Region {\n"
+           "                    old: run.old.saturating_add(run.old_len).saturating_add(1),\n"
+           "                    old_len: 0,\n"
+           "                    new: run.new.saturating_add(run.new_len).saturating_add(1),\n"
+           "                    new_len: 0,\n                };\n",
+           "                run.old_len = run.old_len.saturating_add(1);\n"
+           "                run.new_len = run.new_len.saturating_add(1);\n",
+           ("Strop.Kernel.runs_loop_spec", "Strop.Kernel.runs_spec")),
+    # a region's new start is the counter at the end of its run: a pure
+    # deletion lands after the hunk's trailing context (the v0.77 `changed_region`)
+    Mutant("lines-runs-deletion-at-hunk-end", "lines.rs",
+           "        out.push(run);",
+           "        out.push(Region {\n            new: run.new.saturating_add(run.new_len),\n            ..run\n        });",
+           ("Strop.Kernel.close_spec",)),
+    # a region shifted on one side only is accepted as a diff
+    Mutant("lines-coherent-accepts-skew", "lines.rs",
+           "        if r.old - old_base != r.new - new_base {\n            return false;\n        }\n",
+           "",
+           ("Strop.Kernel.coherent_loop_spec",)),
+    # a selection made upwards keeps its anchor first
+    Mutant("lines-span-keeps-direction", "lines.rs",
+           "        (head, anchor)\n", "        (anchor, head)\n",
+           ("Strop.Kernel.span_spec",)),
+    # a line a region added is mapped as if it were kept
+    Mutant("lines-old-line-admits-added", "lines.rs",
+           "        if line < r.new.saturating_add(r.new_len) {\n            return None;\n        }\n", "",
+           ("Strop.Kernel.old_line_loop_spec",)),
+    # the old base skips only the region's start, not the lines it deleted
+    Mutant("lines-old-line-forgets-deletions", "lines.rs",
+           "        if line < r.new.saturating_add(r.new_len) {\n            return None;\n        }\n        old_base = r.old.saturating_add(r.old_len);\n",
+           "        if line < r.new.saturating_add(r.new_len) {\n            return None;\n        }\n        old_base = r.old;\n",
+           ("Strop.Kernel.old_line_loop_spec",)),
+    # a line a region deleted is mapped as if it were kept
+    Mutant("lines-new-line-admits-deleted", "lines.rs",
+           "        if line < r.old.saturating_add(r.old_len) {\n            return None;\n        }\n", "",
+           ("Strop.Kernel.new_line_loop_spec",)),
+    # the new base skips only the region's start, not the lines it added
+    Mutant("lines-new-line-forgets-additions", "lines.rs",
+           "        if line < r.old.saturating_add(r.old_len) {\n            return None;\n        }\n        old_base = r.old.saturating_add(r.old_len);\n"
+           "        new_base = r.new.saturating_add(r.new_len);\n",
+           "        if line < r.old.saturating_add(r.old_len) {\n            return None;\n        }\n        old_base = r.old.saturating_add(r.old_len);\n"
+           "        new_base = r.new;\n",
+           ("Strop.Kernel.new_line_loop_spec",)),
+    # a range across a replaced block maps its two ends
+    Mutant("lines-old-span-straddles-region", "lines.rs",
+           "        if first < r.new.saturating_add(r.new_len) {\n",
+           "        if first >= r.new && first < r.new.saturating_add(r.new_len) {\n",
+           ("Strop.Kernel.old_span_loop_spec",)),
+    # an unchecked end of region: the line map fails on a region past usize
+    Mutant("lines-old-line-raw-add", "lines.rs",
+           "        if line < r.new.saturating_add(r.new_len) {\n",
+           "        if line < r.new + r.new_len {\n",
+           ("Strop.Kernel.old_line_loop_spec",)),
     Mutant("layout-gap-dropped", "layout.rs",
            "        at = least(at + len + gap, cells);\n",
            "        at = least(at + len, cells);\n",
@@ -434,6 +489,31 @@ PAIRED = (
            "        let high = least(span.1, last);",
            "        let high = span.1;",
            ("Strop.Kernel.clip_loop_spec", "Strop.Kernel.clip_spec")),
+    # a region's new start taken at the end of its run, with the model updated
+    # to match: the regions stop lining up on both sides, so a hunk is no diff
+    Mutant("lines-runs-new-start-at-run-end", "lines.rs",
+           "        out.push(run);",
+           "        out.push(Region {\n            new: run.new.saturating_add(run.new_len),\n            ..run\n        });",
+           # the push's own proof follows the old region, so the bridge breaks too
+           ("Strop.Kernel.close_spec", "Strop.Kernel.coherent_closeRun_append"),
+           lean=(Patch("Kernel/Lines.lean",
+                       "  if q.2.1 = 0 ∧ q.2.2.2 = 0 then [] else [q]",
+                       "  if q.2.1 = 0 ∧ q.2.2.2 = 0 then [] else [(q.1, q.2.1, q.2.2.1 + q.2.2.2, q.2.2.2)]"),)),
+    # coherence forgets the old-side order, with the model updated to match: a
+    # region may start inside an earlier deletion, so a kept line can be a
+    # deleted one and the pairing stops keeping order
+    Mutant("lines-coherent-forgets-old-order", "lines.rs",
+           "        if r.old < old_base || r.new < new_base {\n            return false;\n        }\n"
+           "        if r.old - old_base != r.new - new_base {\n",
+           "        if r.new < new_base {\n            return false;\n        }\n"
+           "        if r.old.saturating_sub(old_base) != r.new - new_base {\n",
+           # the bridge and the runs-are-coherent construction follow the old
+           # predicate, so they break too
+           ("Strop.Kernel.kept_old_ge", "Strop.Kernel.coherent_starts",
+            "Strop.Kernel.coherent_loop_spec", "Strop.Kernel.coherent_closeRun_append"),
+           lean=(Patch("Kernel/Lines.lean",
+                       "      ob ≤ ro ∧ nb ≤ rn ∧ ro - ob = rn - nb ∧ 0 < rol + rnl ∧",
+                       "      True ∧ nb ≤ rn ∧ ro - ob = rn - nb ∧ 0 < rol + rnl ∧"),)),
     # T1 with the model updated to match: an unclamped span passes the frame
     Mutant("layout-overrun-paired", "layout.rs",
            "            least(minimum(tracks[k], unit, gap) + extra, left)\n",

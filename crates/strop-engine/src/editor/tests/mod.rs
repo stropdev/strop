@@ -19,5 +19,6 @@ mod search_tests;
 mod smartindent_tests;
 mod surround_tests;
 mod transaction_tests;
+mod tree_indent_tests;
 mod undo_tests;
 mod visual_object_tests;

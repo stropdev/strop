@@ -103,14 +103,22 @@ impl<'a> Matcher<'a> {
     }
 
     fn word(c: char) -> bool {
-        c.is_alphanumeric() || c == '_'
+        super::parse::is_word(c)
     }
 
-    /// The editor's word model — same classifier as w/b/e and `*`.
+    /// No word char ends at `start` (the editor's word model — same
+    /// classifier as w/b/e and `*`).
+    pub(crate) fn word_before(&self, start: usize) -> bool {
+        start == 0 || !Self::word(self.prev_char(start).unwrap_or('\u{0}'))
+    }
+
+    /// No word char starts at `end`.
+    pub(crate) fn word_after(&self, end: usize) -> bool {
+        end >= self.len || !Self::word(self.char_at(end))
+    }
+
     fn word_flanked(&self, start: usize, end: usize) -> bool {
-        let before_ok = start == 0 || !Self::word(self.prev_char(start).unwrap_or('\u{0}'));
-        let after_ok = end >= self.len || !Self::word(self.char_at(end));
-        before_ok && after_ok
+        self.word_before(start) && self.word_after(end)
     }
 
     fn line_start_here(&self, pos: usize) -> bool {
@@ -417,17 +425,9 @@ fn chars_eq_fold(a: char, b: char) -> bool {
     }
 }
 
-/// All matches left to right, non-overlapping; empty matches advance
-/// one char (the `cpo+=c` walk the corpus pins).
-pub(crate) fn visit_matches(
-    m: &Matcher<'_>,
-    prog: &Program,
-    mut visit: impl FnMut(SearchMatch) -> std::ops::ControlFlow<()>,
-) -> Result<(), QueryError> {
-    visit_captures(m, prog, 0, |hit, _| visit(hit))
-}
-
-/// `visit_matches` from `from`, handing each match its capture groups:
+/// All matches from `from` left to right, non-overlapping; empty
+/// matches advance one char (the `cpo+=c` walk the corpus pins). Each
+/// match gets its capture groups:
 /// `groups[n - 1]` is `\n`, `None` when that group took no part in the
 /// match.
 pub(crate) fn visit_captures(
