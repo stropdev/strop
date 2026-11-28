@@ -144,7 +144,7 @@ struct Index {
     hints: Vec<HintSequence>,
 }
 
-/// Normal's keys: every row but Visual's own verbs.
+/// Normal's keys: every row but the ones that act on a selection.
 static INDEX: LazyLock<Index> = LazyLock::new(|| Index::compile(false));
 /// Visual's own keys: the rows of the `visual` section. A key that means
 /// something else in Normal (`u`, `p`, `J`) is a different row here.
@@ -157,17 +157,44 @@ impl Index {
             hints: Vec::new(),
         };
         for (row, binding) in BINDINGS.iter().enumerate() {
-            let member = if visual {
-                binding.sections.contains(&"visual")
-            } else {
-                !matches!(binding.handler, super::Handler::Visual(_))
-            };
             for tokens in expand(binding.keys) {
-                if member && binding.live && !matches!(binding.handler, super::Handler::Contextual)
+                index.hints.push(HintSequence::new(row, tokens));
+            }
+        }
+        // Among rows with the same keys the first terminal wins, and a
+        // row whose sections the mode reaches outranks one it does not:
+        // Visual's `space g` must not answer for Normal's.
+        let reaches = |binding: &Binding| {
+            let mode = if visual {
+                crate::editor::Mode::Visual
+            } else {
+                crate::editor::Mode::Normal
+            };
+            binding
+                .sections
+                .iter()
+                .any(|section| sections_for(mode).contains(section))
+        };
+        for reached in [true, false] {
+            for (row, binding) in BINDINGS.iter().enumerate() {
+                let member = if visual {
+                    binding.sections.contains(&"visual")
+                } else {
+                    !matches!(
+                        binding.handler,
+                        super::Handler::Visual(_) | super::Handler::Selection(_)
+                    )
+                };
+                if reaches(binding) != reached
+                    || !member
+                    || !binding.live
+                    || matches!(binding.handler, super::Handler::Contextual)
                 {
+                    continue;
+                }
+                for tokens in expand(binding.keys) {
                     index.insert(row, per_key(&tokens));
                 }
-                index.hints.push(HintSequence::new(row, tokens));
             }
         }
         // Stable sorting preserves row and alternative order for equal weights.
@@ -203,7 +230,7 @@ impl Index {
                 }
             };
         }
-        // Compilation follows table order, so the first terminal wins.
+        // Compilation order decides: the first terminal wins.
         if self.nodes[at.0].row.is_none() {
             self.nodes[at.0].row = Some(row);
         }

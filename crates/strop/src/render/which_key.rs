@@ -292,15 +292,16 @@ mod tests {
         assert!(frame.contains("set mark at cursor"), "{frame}");
     }
 
-    /// Prefix cards without table children render nothing (visual mode
-    /// has no leader verbs beyond `space y`).
+    /// The Visual leader card lists Visual's own rows: the clipboard
+    /// yank and the git prefix, never Normal's leader verbs.
     #[test]
-    fn visual_space_card_only_y() {
+    fn visual_space_card_lists_visual_rows() {
         let mut e = Editor::new(Buffer::from_text("x\n"));
         e.feed_text("v ");
         let frame = crate::headless::frame_string(&mut e, 80, 24).unwrap();
-        assert!(frame.contains("yank selection → clipboard"));
-        assert!(!frame.contains("file finder"));
+        assert!(frame.contains("yank selection → clipboard"), "{frame}");
+        assert!(frame.contains("git…"), "{frame}");
+        assert!(!frame.contains("file finder"), "{frame}");
     }
 
     /// U9: `space w` collapses the nine pane-focus digits into one row.
@@ -357,10 +358,7 @@ mod tests {
             wide.contains("commit (:wq commits, :q! aborts)"),
             "the full description fits: {wide}"
         );
-        assert!(
-            wide.contains("file history (visual: selected lines)"),
-            "{wide}"
-        );
+        assert!(wide.contains("file history"), "{wide}");
         let narrow = crate::headless::frame_string(&mut e, 36, 16).unwrap();
         assert!(narrow.contains('…'), "narrow card ellipsizes: {narrow}");
         // the core invariant: a description is either complete or
