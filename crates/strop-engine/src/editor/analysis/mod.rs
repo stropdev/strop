@@ -39,6 +39,11 @@ pub struct FrameAnalysis {
     pub guides: strop_syntax::GuideFrame,
     pub search: Option<Result<SearchSummary, String>>,
     pub layouts: Vec<strop_core::layout::PreparedLineLayout>,
+    /// The tree the spans came from, published for structural indent
+    /// (#309). Native state, never on the tape: lookups on it are recorded
+    /// as their results.
+    #[serde(skip)]
+    pub tree: Option<strop_syntax::SyntaxTree>,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchSummary {
@@ -86,6 +91,11 @@ pub(crate) struct AnalysisState {
     /// Edit-mapped syntax presentations (0066): the interim display a
     /// pane keeps while its fresh exact analysis is in flight.
     presentations: HashMap<AnalysisTarget, presentation::Presentation>,
+    /// Each document's last published syntax tree (#309), tagged with the
+    /// revision it describes.
+    trees: HashMap<DocumentId, strop_syntax::SyntaxTree>,
+    /// Documents already told they are too large to parse.
+    too_large: HashSet<DocumentId>,
     /// Matching-delimiter jobs/results (0051 §7 R09) — same worker,
     /// same lifecycle.
     pub(crate) pair: PairState,
@@ -106,6 +116,8 @@ impl Default for AnalysisState {
             pending: HashMap::new(),
             cache: HashMap::new(),
             presentations: HashMap::new(),
+            trees: HashMap::new(),
+            too_large: HashSet::new(),
             pair: PairState::default(),
             symbols: Default::default(),
             started: false,
@@ -158,6 +170,23 @@ impl AnalysisState {
     pub(crate) fn worker(&self) -> Option<&worker::Worker> {
         self.worker.as_ref()
     }
+
+    /// True the first time a document is found too large to parse: the
+    /// user is told once, not on every key.
+    pub(crate) fn large_notice(&mut self, document: DocumentId) -> bool {
+        self.too_large.insert(document)
+    }
+
+    /// The document's published tree, if it describes `revision`.
+    pub(crate) fn tree(
+        &self,
+        document: DocumentId,
+        revision: BufferRevision,
+    ) -> Option<&strop_syntax::SyntaxTree> {
+        self.trees
+            .get(&document)
+            .filter(|tree| tree.revision() == revision)
+    }
     pub fn edits(&mut self, document: DocumentId, changes: &[strop_core::Change]) {
         let target = AnalysisTarget::Document(document);
         // a queued match scan for text that just changed is unwanted
@@ -190,6 +219,8 @@ impl AnalysisState {
         self.pair.forget(&target);
         if let AnalysisTarget::Document(document) = &target {
             self.symbols.closed(*document);
+            self.trees.remove(document);
+            self.too_large.remove(document);
         }
         self.cache.remove(&target);
         self.presentations.remove(&target);
@@ -559,10 +590,20 @@ impl Editor {
             AnalysisTarget::Preview(path) => self.previews.contains_key(path),
         };
         if !current {
+            // superseded by an edit the view stamp already saw: the next
+            // preparation must admit the current revision's analysis,
+            // or the window (and its published tree) stays a revision
+            // behind until the next input
+            self.frame_stamp = None;
             return;
         }
         let value = match completion.outcome {
-            Outcome::Success(frame) => {
+            Outcome::Success(mut frame) => {
+                if let (AnalysisTarget::Document(document), Some(tree)) =
+                    (&key.target, frame.tree.take())
+                {
+                    self.analysis.trees.insert(*document, tree);
+                }
                 if let AnalysisTarget::Document(document) = key.target {
                     if let Some(document) = self.docs.get_mut(document) {
                         if !document
@@ -592,7 +633,10 @@ impl Editor {
                 }
                 None
             }
-            Outcome::Cancelled(_) => return,
+            Outcome::Cancelled(_) => {
+                self.frame_stamp = None;
+                return;
+            }
         };
         self.analysis.remember(key, value);
     }

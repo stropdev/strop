@@ -241,7 +241,6 @@ impl super::Editor {
             .collect();
         self.cmdline.ex.marked.map_edits(id, &marked, &document.buf);
         self.analysis.edits(id, document.buf.changes());
-        self.resolution.edits(id, document.buf.changes());
         if let Err(error) = self.completion.edits(
             &self.tape,
             id,

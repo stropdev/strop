@@ -132,7 +132,8 @@ package)
     # The find budgets (plans/0093 §7): finder paint and per-key list,
     # search first hit and completion; the symbols budgets (plans/0099
     # §7); the history budgets (plans/0101 §5.1, needs git); and the
-    # in-buffer search and large-file open budgets (2026-11-28 D4, D7).
+    # in-buffer search and large-file open budgets (2026-11-28 D4, D7), and the
+    # structural-indent budget (2026-11-28 D2).
     # Each exits non-zero past its budget.
     TMPDIR="$WORK" "$BINARY" bench find
     TMPDIR="$WORK" "$BINARY" bench search
@@ -141,6 +142,7 @@ package)
     TMPDIR="$WORK" "$BINARY" bench nav_100k
     TMPDIR="$WORK" "$BINARY" bench search_500mb
     TMPDIR="$WORK" "$BINARY" bench open_100mb
+    TMPDIR="$WORK" "$BINARY" bench indent
     python3 .github/scripts/release-catalog.py catalog \
         --tag "$TAG" --dist "$DIST" --out "$DIST/catalog.json"
     python3 .github/scripts/changelog-notes.py "$TAG" > "$DIST/release-notes.md"

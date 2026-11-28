@@ -8,7 +8,7 @@
 //! (0093 §7), `symbols` (0099 §7), `history` (0101 §5.1), and from the
 //! measured-performance plan (2026-11-28) the in-buffer search of
 //! `nav_100k` and `search_500mb` (D4) and the open peak of `open_100mb`
-//! (D7). Local release qualification runs those.
+//! (D7), and `indent` (D2). Local release qualification runs those.
 //!
 //! Two scenario families:
 //! - Buffer scenarios drive `Editor::feed` + `headless::frame_string`
@@ -24,6 +24,7 @@ mod cmdline;
 mod completion;
 mod find;
 mod history;
+mod indent;
 mod open_file;
 mod search_500mb;
 mod symbols;
@@ -676,6 +677,9 @@ pub fn run(which: &str) -> io::Result<()> {
     }
     if all || which == "symbols" {
         symbols::run()?;
+    }
+    if all || which == "indent" {
+        indent::run()?;
     }
     if all || which == "history" {
         history::run()?;

@@ -157,6 +157,14 @@ Decision:
 
 Budget: `Enter` and `o` at any cursor position of a 15 MB file, tree warm: under 2 ms to the frame. First `o` after opening: no second parse.
 
+As built (amended with the implementation):
+
+- **The bound.** Per node on the path, the children before the cursor that are examined are the first 32 (where a node's opening bracket is) and the 32 just before the cursor; the run between them (a file's items, a block's statements) is complete syntax whose brackets close inside it. Complete preceding subtrees are passed over; preceding subtrees with errors are read in full, as before. The lookup stops after 4,096 nodes (`INPUT_BUDGET`) and defers. Checked against the old root-to-cursor walk on 330 files in 11 languages (3.3 M positions): identical on every tree without errors. On trees with errors the new answer is local: a malformed literal or an unclosed bracket now affects its own neighbourhood (up to 32 siblings below), where the old walk let it change every position to the end of the file.
+- **Deferred keys run on the tree's owner.** A deferred indentation is a job on the analysis actor, which reparses incrementally from the edit journal; the resolution worker keeps no parser. A scratch buffer (shown plain, indented as Rust) keeps a second tree on the same actor, under the same journal.
+- **The size rule is 12 MiB (`PARSE_LIMIT`)**, the same for highlighting and indentation: past it a file is shown plain, indents from the previous line, and says so once. The 10 MB budget file is parsed; the 15 MB one is not.
+- **Replay.** The published tree is native state and never on the tape; each input-path lookup is recorded as its result (`indent.contexts`).
+- `strop bench indent` holds the budget (10 MB file, line 10, the middle and the end, `o` and `Enter`, p95 ≤ 2 ms; the first `o` after open admits no resolution job) and release qualification runs it.
+
 Alternative considered: copy the previous line's indent immediately and correct when the tree arrives. Rejected: the correction would move text the user is already typing after.
 
 ### D3. Paint rows straight into the cell buffer — [#312](https://github.com/stropdev/strop/issues/312)

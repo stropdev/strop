@@ -1,4 +1,5 @@
-//! One CPU owner for expensive pure grammar resolution. No thread per key and
+//! One CPU owner for expensive pure grammar resolution (indentation runs on
+//! the syntax tree's owner instead, see `indentation.rs`). No thread per key and
 //! no join on the editor thread; a frozen rope is the complete read input.
 use super::{Operation, ResolutionData, ResolutionEvent, ResolutionKey};
 use crate::editor::ex::substitute;
@@ -12,31 +13,19 @@ pub(super) struct Work {
     pub ticket: Ticket<ResolutionKey>,
     pub rope: ropey::Rope,
     pub cancel: Arc<AtomicBool>,
-    pub source_ropes: Vec<ropey::Rope>,
-}
-enum Message {
-    Resolve(Box<Work>),
-    Edits(strop_core::id::DocumentId, Vec<strop_core::Change>),
 }
 pub(super) struct ResolutionWorker {
-    sender: mpsc::Sender<Message>,
+    sender: mpsc::Sender<Box<Work>>,
 }
 impl ResolutionWorker {
     pub fn start(events: mpsc::Sender<ResolutionEvent>) -> std::io::Result<Self> {
-        let (sender, receiver) = mpsc::channel::<Message>();
+        let (sender, receiver) = mpsc::channel::<Box<Work>>();
         std::thread::Builder::new()
             .name("grammar-resolution".into())
             .spawn(move || {
                 let mut geometry = super::super::analysis::layouts::LayoutCache::default();
-                let mut indentation = super::indentation::Cache::default();
-                while let Ok(message) = receiver.recv() {
-                    let work = match message {
-                        Message::Edits(document, changes) => {
-                            indentation.edits(document, &changes);
-                            continue;
-                        }
-                        Message::Resolve(work) => *work,
-                    };
+                while let Ok(work) = receiver.recv() {
+                    let work = *work;
                     let outcome = if work.cancel.load(Ordering::Acquire) {
                         Outcome::Cancelled(CancelReason::Superseded)
                     } else {
@@ -53,19 +42,6 @@ impl ResolutionWorker {
                                     layouts: Vec::new(),
                                     indentation: None,
                                     substitution: Some(substitution),
-                                });
-                            }
-                            if let Operation::Indentation(request) = &work.ticket.key.operation {
-                                let edits =
-                                    indentation.resolve(request, &work.source_ropes, || {
-                                        work.cancel.load(Ordering::Acquire)
-                                    })?;
-                                return Ok(ResolutionData {
-                                    resolved: Vec::new(),
-                                    plan: None,
-                                    layouts: Vec::new(),
-                                    indentation: Some(edits),
-                                    substitution: None,
                                 });
                             }
                             let buffer = strop_core::Buffer::from_snapshot(work.rope);
@@ -154,15 +130,7 @@ impl ResolutionWorker {
         Ok(Self { sender })
     }
     pub fn resolve(&self, work: Work) -> Result<(), Box<Work>> {
-        self.sender
-            .send(Message::Resolve(Box::new(work)))
-            .map_err(|error| match error.0 {
-                Message::Resolve(work) => work,
-                Message::Edits(..) => unreachable!(),
-            })
-    }
-    pub fn edits(&self, document: strop_core::id::DocumentId, changes: &[strop_core::Change]) {
-        let _ = self.sender.send(Message::Edits(document, changes.to_vec()));
+        self.sender.send(Box::new(work)).map_err(|error| error.0)
     }
 }
 fn bind_cancellation(target: &mut strop_grammar::Target, flag: &Arc<AtomicBool>) {

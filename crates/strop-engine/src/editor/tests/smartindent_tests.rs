@@ -30,7 +30,7 @@ fn enter_then_closer_dedents_on_indent_only_line() {
     assert_eq!(e.buf().text().to_string(), "fn f() {\n}\n");
 }
 
-fn settle_indentation(editor: &mut Editor) {
+pub(super) fn settle_indentation(editor: &mut Editor) {
     while editor.resolution.pending() {
         if !editor.resolution.blocked() && !editor.resolution.queue.is_empty() {
             editor.resume_deferred_input();
@@ -47,7 +47,7 @@ fn settle_indentation(editor: &mut Editor) {
     }
 }
 
-fn code_editor(text: &str, filename: &str) -> Editor {
+pub(super) fn code_editor(text: &str, filename: &str) -> Editor {
     let mut buffer = Buffer::from_text(text);
     buffer.path = Some(filename.into());
     Editor::new(buffer)

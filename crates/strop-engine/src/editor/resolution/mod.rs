@@ -4,7 +4,7 @@
 mod indentation;
 mod worker;
 use super::ex::substitute::{self, SubstituteSpec, SubstitutionPlan};
-use super::structural_indent::{self, Batch as IndentRequest, Edit as IndentEdit, Trigger};
+use super::structural_indent::{Batch as IndentRequest, Edit as IndentEdit, Trigger};
 use super::Editor;
 use std::collections::VecDeque;
 use std::sync::{
@@ -144,11 +144,6 @@ impl Default for ResolutionState {
     }
 }
 impl ResolutionState {
-    pub(crate) fn edits(&self, document: DocumentId, changes: &[strop_core::Change]) {
-        if let Some(worker) = &self.worker {
-            worker.edits(document, changes);
-        }
-    }
     pub fn blocked(&self) -> bool {
         self.pending
             .as_ref()
@@ -181,69 +176,6 @@ impl ResolutionState {
 }
 
 impl Editor {
-    pub(crate) fn resolve_indentation(&mut self, trigger: Trigger) -> Option<Vec<IndentEdit>> {
-        let Some(request) = self.indentation_request(trigger) else {
-            self.message = "indentation requires an editable source position".into();
-            return None;
-        };
-        let cursors = self.all_cursors();
-        let operation = Operation::Indentation(request.clone());
-        if let Some((key, ready)) = &self.resolution.ready {
-            if self.resolution_matches(key, &operation, &cursors) {
-                return ready.as_ref().ok()?.indentation.clone();
-            }
-        }
-        let mut edits = Vec::new();
-        for source in &request.sources {
-            let buffer = &self.docs.get(source.document)?.buf;
-            let cursors = source.cursors();
-            let positions = structural_indent::probes(buffer, &cursors, trigger);
-            let contexts = if cursors
-                .iter()
-                .any(|&at| buffer.line_end(buffer.line_of(at)) > 4096)
-            {
-                None
-            } else {
-                structural_indent::inline_contexts(buffer, &source.request, &positions)
-            };
-            let Some(contexts) = contexts else {
-                self.defer_operation(
-                    operation,
-                    self.all_cursors(),
-                    ResolutionPurpose::Indentation,
-                );
-                return None;
-            };
-            match source.project(structural_indent::plan(
-                buffer,
-                &cursors,
-                &source.request,
-                &contexts,
-            )) {
-                Ok(projected) => edits.extend(projected),
-                Err(error) => {
-                    self.message = error;
-                    return None;
-                }
-            }
-        }
-        if let Err(error) = IndentRequest::order(&mut edits) {
-            self.message = error;
-            return None;
-        }
-        Some(edits)
-    }
-
-    fn finish_indentation(&mut self, trigger: Trigger) {
-        match trigger {
-            Trigger::Enter => self.feed_insert(Key::Enter),
-            Trigger::Closer(kind) => self.feed_insert(Key::Char(kind.closing_character())),
-            Trigger::Label => self.feed_insert(Key::Char(':')),
-            Trigger::Below => self.open_below(),
-            Trigger::Above => self.open_above(),
-        }
-    }
-
     /// Small pure reads have a fixed source bound. Larger scans and counts never
     /// run on input/render. This is a work bound, not a second grammar dialect.
     pub(crate) fn resolution_is_large(&self, command: &Command) -> bool {
@@ -429,7 +361,15 @@ impl Editor {
             }
         }
         self.resolution.cancel();
-        if !self.resolution.started {
+        let indentation = matches!(operation, Operation::Indentation(_));
+        if indentation {
+            // the tree's owner runs it (launch_indentation); started before
+            // the request, so a replay meets the same tape records
+            if let Err(error) = self.analysis.start(&self.tape) {
+                self.message = format!("analysis: {error}");
+                return true;
+            }
+        } else if !self.resolution.started {
             let started: Result<(), String> = match self.tape.call("grammar.start", &(), || {
                 worker::ResolutionWorker::start(self.resolution.tx.clone())
                     .map(|worker| self.resolution.worker = Some(worker))
@@ -460,6 +400,7 @@ impl Editor {
             tab: self.cur_indent().width.max(1),
         };
         let ticket = Ticket { request, key };
+        self.admissions.resolutions += 1;
         let cancel = Arc::new(AtomicBool::new(false));
         self.resolution.pending = Some(Pending {
             ticket: ticket.clone(),
@@ -479,19 +420,14 @@ impl Editor {
                 return true;
             }
         }
-        let source_ropes = match &ticket.key.operation {
-            Operation::Indentation(request) => request
-                .sources
-                .iter()
-                .filter_map(|source| self.docs.get(source.document).map(|doc| doc.buf.snapshot()))
-                .collect(),
-            Operation::Grammar(_) | Operation::Substitute(_) => Vec::new(),
-        };
+        if let Operation::Indentation(batch) = &ticket.key.operation {
+            self.launch_indentation(ticket.clone(), batch.clone(), cancel);
+            return true;
+        }
         let work = worker::Work {
             ticket,
             rope: self.buf().snapshot(),
             cancel,
-            source_ropes,
         };
         let failed = match &self.resolution.worker {
             Some(worker) => worker.resolve(work).err(),
@@ -690,9 +626,7 @@ impl Editor {
         }
         self.schedule_deferred_input();
     }
-}
 
-impl Editor {
     pub(crate) fn run_input_action(&mut self, action: impl FnOnce(&mut Editor)) {
         let nested = self.resolution.in_action;
         self.resolution.in_action = true;

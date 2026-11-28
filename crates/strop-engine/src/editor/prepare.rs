@@ -144,6 +144,8 @@ pub struct AdmissionProbe {
     pub previews: usize,
     /// Matching-delimiter scans.
     pub pairs: usize,
+    /// Grammar-resolution jobs: work too large for the input path.
+    pub resolutions: usize,
 }
 impl Editor {
     /// The current view epoch: the last accepted preparation's generation
@@ -160,8 +162,8 @@ impl Editor {
         &self.prepared
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    /// Worker-ticket admissions since startup (AR01 evidence).
+    /// Worker-ticket admissions since startup (AR01 evidence; the
+    /// `strop bench` budgets read it too).
     pub fn admission_probe(&self) -> AdmissionProbe {
         self.admissions
     }
