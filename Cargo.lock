@@ -1683,6 +1683,7 @@ dependencies = [
 name = "strop-grammar"
 version = "0.77.0"
 dependencies = [
+ "memchr",
  "ropey",
  "serde",
  "strop-core",
