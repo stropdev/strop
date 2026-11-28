@@ -319,7 +319,7 @@ pub struct Rect { pub x: usize, pub y: usize, pub width: usize, pub height: usiz
 pub fn covers(a: Rect, b: Rect) -> bool;
 ```
 
-Where they are today: `rows` is written twice, in `prepare.rs` (`admit_visible_work`) and in `render/buffer/rows/mod.rs`, and paint is only right while the two agree; `clamp_top` is in `prepare.rs` (`adjust_active_viewport`); `follow` is `Picker::scroll` in [`strop-picker/src/lib.rs`](../../crates/strop-picker/src/lib.rs) and a second expression in `render/picker/rows.rs`; `clip` is [`strop_core::layout::clip`](../../crates/strop-core/src/layout.rs), the one seam every glyph, overlay and caret projects through; `covers` is new.
+Where they are today: `rows` is written twice, in `prepare.rs` (`admit_visible_work`) and in `render/buffer/rows/mod.rs`, and paint is only right while the two agree; `clamp_top` is in `prepare.rs` (`adjust_active_viewport`); `follow` is `Picker::reveal_selected` in [`strop-picker/src/lib.rs`](../../crates/strop-picker/src/lib.rs) and a second expression in `render/picker/rows.rs`; `clip` is [`strop_core::layout::clip`](../../crates/strop-core/src/layout.rs), the one seam every glyph, overlay and caret projects through; `covers` is new.
 
 Theorems (`proofs/Kernel/Viewport.lean`, each added to `claims` in `proofs/Audit.lean`):
 
