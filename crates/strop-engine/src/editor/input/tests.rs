@@ -119,7 +119,10 @@ fn every_row_completes_and_grounds() {
             }
             let mut w = Walker::new();
             let mut last = Action::Pending;
-            let visual = matches!(b.handler, crate::keymap::Handler::Visual(_));
+            let visual = matches!(
+                b.handler,
+                crate::keymap::Handler::Visual(_) | crate::keymap::Handler::Selection(_)
+            );
             for key in &events {
                 last = if visual {
                     w.feed_visual(*key)

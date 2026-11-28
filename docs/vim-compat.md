@@ -142,7 +142,12 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ ctrl-c` — toggle comments on selected lines
 - `✓ S<c>` — wrap selection in pair
 - `✓ i<a> a<a>` — objects select (vi[ works)
+- `✓ space |` — pipe the selected lines through shell
 - `✓ space y` — yank selection → clipboard
+- `✓ space g` — git…
+- `✓ space g h` — history of the selected lines
+- `✓ space g y` — permalink to the selected lines: copy
+- `✓ space g o` — permalink to the selected lines: open
 
 ## Search
 
@@ -201,7 +206,7 @@ does not is listed at the end, under Missing and Reassigned.
 - `✓ space g c` — commit (:wq commits, :q! aborts)
 - `✓ space g b` — branches: switch / create
 - `✓ space g l` — log
-- `✓ space g h` — file history (visual: selected lines)
+- `✓ space g h` — file history
 - `✓ space g B` — blame gutter / card
 - `✓ space g s` — hunk: stage
 - `✓ space g u` — hunk: unstage

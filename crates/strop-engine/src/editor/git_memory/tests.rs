@@ -661,5 +661,6 @@ fn hunk_discard_undoes_byte_exact() {
 
 mod head_lines;
 mod history;
+mod line_selection;
 mod native_paths;
 mod ownership;

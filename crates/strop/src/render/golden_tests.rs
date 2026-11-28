@@ -452,6 +452,15 @@ fn which_key() {
     });
 }
 
+/// #289: the Visual `Space g` card lists exactly what Visual dispatches.
+#[test]
+fn which_key_visual_git() {
+    each("which-key-visual-git", |editor| {
+        editor.feed_text("Vj g");
+        settle_analysis()
+    });
+}
+
 #[test]
 fn completion() {
     each("completion", |editor| {

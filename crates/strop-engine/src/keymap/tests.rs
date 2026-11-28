@@ -117,9 +117,77 @@ fn which_key_children() {
     assert_eq!(children_of("g", Mode::Normal).len(), 40);
     // visual mode: only the visual table feeds the card
     let v = children_of(" ", Mode::Visual);
-    assert_eq!(v.len(), 1);
-    assert_eq!(v[0].key, "y");
-    assert!(v[0].desc.contains("selection"));
+    let keys: Vec<&str> = v.iter().map(|h| h.key.as_str()).collect();
+    assert_eq!(keys, ["|", "y", "g"]);
+    assert!(v[1].desc.contains("selection"));
+    let git: Vec<String> = children_of(" g", Mode::Visual)
+        .into_iter()
+        .map(|h| h.key)
+        .collect();
+    assert_eq!(git, ["h", "y", "o"]);
+}
+
+/// Rows sharing keys across modes resolve to the row each mode reaches.
+#[test]
+fn shared_keys_resolve_per_mode() {
+    let path = |keys: &[&str]| keys.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+    for (keys, normal, visual) in [
+        (&["space", "g"][..], "git-prefix", "visual-git-prefix"),
+        (&["space", "|"][..], "pipe-shell", "visual-pipe-shell"),
+        (
+            &["space", "g", "y"][..],
+            "git-permalink-yank",
+            "visual-permalink-yank",
+        ),
+        (&["space", "y"][..], "clip-yank", "visual-clip-yank"),
+    ] {
+        assert_eq!(find_row(&path(keys)).map(|b| b.id), Some(normal));
+        assert_eq!(find_visual_row(&path(keys)).map(|b| b.id), Some(visual));
+    }
+}
+
+/// #289: in Visual, a leader key is on the which-key card exactly when
+/// pressing it does something — the card and dispatch read one table.
+#[test]
+fn visual_which_key_matches_visual_dispatch() {
+    let refusals = [
+        "is not bound",
+        "not an editor command",
+        "command unavailable in visual mode",
+    ];
+    let mut seen = std::collections::HashSet::new();
+    for b in BINDINGS.iter().filter(|b| b.live) {
+        for seq in expand(b.keys) {
+            // plain-character leader sequences (named keys are events)
+            if seq.len() < 2 || seq[0] != "space" || seq[1..].iter().any(|t| t.chars().count() != 1)
+            {
+                continue;
+            }
+            let typed: String = seq
+                .iter()
+                .map(|t| if *t == "space" { " " } else { t })
+                .collect();
+            if !seen.insert(typed.clone()) {
+                continue;
+            }
+            let (prefix, last) = typed.split_at(typed.len() - seq[seq.len() - 1].len());
+            let listed = children_of(prefix, Mode::Visual)
+                .iter()
+                .any(|hint| hint.key == last);
+            let mut e = Editor::new(Buffer::from_text("fn a() {}\nfn b() {}\n"));
+            e.feed_text("Vj");
+            // a refusal may come at any key of the sequence
+            let refused = typed.chars().any(|key| {
+                e.feed_text(&key.to_string());
+                refusals.iter().any(|r| e.message.contains(r))
+            });
+            assert_eq!(
+                listed, !refused,
+                "{typed:?}: listed in Visual = {listed}, message {:?}",
+                e.message
+            );
+        }
+    }
 }
 
 /// Every dispatchable sequence, enumerated from the match arms in
@@ -320,7 +388,7 @@ fn live_rows_dispatch_through_the_table() {
             // never happen is the unknown-key marker
             let mut e = Editor::new(Buffer::from_text("fn f(x) {\n    let y = f(x);\n}\n"));
             e.set_head(14);
-            if matches!(b.handler, Handler::Visual(_)) {
+            if matches!(b.handler, Handler::Visual(_) | Handler::Selection(_)) {
                 // Visual's own rows dispatch on a selection
                 e.feed_text("v");
             }

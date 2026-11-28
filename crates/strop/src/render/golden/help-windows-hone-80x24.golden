@@ -21,7 +21,7 @@
     ctrl-l                     redraw: full repaint when the terminal desyncs   
                                                                                 
   ━ Git ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
-  NORMAL    help [RO]  Windows                                      31%  210:1  
+  NORMAL    help [RO]  Windows                                      31%  215:1  
 
   0: 2:reset/#15171c 2:#4a5160/#15171c 7:#e8a848/#15171c+b 68:#4a5160/#15171c 1:reset/reset
   1: 79:reset/#15171c 1:reset/reset

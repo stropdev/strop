@@ -27,7 +27,7 @@
     space g c                  commit (:wq commits, :q! aborts)                                                                             
     space g b                  branches: switch / create                                                                                    
     space g l                  log                                                                                                          
-    space g h                  file history (visual: selected lines)                                                                        
+    space g h                  file history                                                                                                 
     space g B                  blame gutter / card                                                                                          
     space g s                  hunk: stage                                                                                                  
     space g u                  hunk: unstage                                                                                                
@@ -37,7 +37,7 @@
     space g o                  permalink: open                                                                                              
     s u -                      status: stage / unstage / toggle the file, hunk                                                              
                                or section                                                                                                   
-  NORMAL    help [RO]  Windows                                                                                                  31%  210:1  
+  NORMAL    help [RO]  Windows                                                                                                  31%  215:1  
 
   0: 2:reset/#15171c 2:#4a5160/#15171c 7:#e8a848/#15171c+b 128:#4a5160/#15171c 1:reset/reset
   1: 139:reset/#15171c 1:reset/reset
@@ -68,7 +68,7 @@
  26: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 50:#e6e1d6/#15171c 76:reset/#15171c 1:reset/reset
  27: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 43:#e6e1d6/#15171c 83:reset/#15171c 1:reset/reset
  28: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 21:#e6e1d6/#15171c 105:reset/#15171c 1:reset/reset
- 29: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 55:#e6e1d6/#15171c 71:reset/#15171c 1:reset/reset
+ 29: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 30:#e6e1d6/#15171c 96:reset/#15171c 1:reset/reset
  30: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 37:#e6e1d6/#15171c 89:reset/#15171c 1:reset/reset
  31: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 29:#e6e1d6/#15171c 97:reset/#15171c 1:reset/reset
  32: 2:reset/#15171c 2:#e6e1d6/#15171c 5:#7fb2d4/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 1:#e6e1d6/#15171c 1:#e8a848/#15171c+b 31:#e6e1d6/#15171c 95:reset/#15171c 1:reset/reset
