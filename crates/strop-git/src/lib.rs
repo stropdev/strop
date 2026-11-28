@@ -38,6 +38,22 @@ pub use target::RepoTarget;
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+    use strop_kernel::lines::Region;
+
+    fn regions(hunk: &Hunk) -> Vec<Region> {
+        let mut out = Vec::new();
+        hunk.regions(&mut out);
+        out
+    }
+
+    fn region(old: usize, old_len: usize, new: usize, new_len: usize) -> Region {
+        Region {
+            old,
+            old_len,
+            new,
+            new_len,
+        }
+    }
     use std::process::Command;
 
     pub(crate) fn git(root: &std::path::Path, args: &[&str]) {
@@ -77,7 +93,7 @@ mod tests {
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Change);
         // one hunk, two runs: b -> b2 is a change, d is an addition
-        assert_eq!(hunks[0].signs(), [(2, Sign::Change), (4, Sign::Add)]);
+        assert_eq!(regions(&hunks[0]), [region(1, 1, 1, 1), region(3, 0, 3, 1)]);
         assert!(hunks[0]
             .lines
             .iter()
@@ -124,7 +140,8 @@ mod tests {
         let hunks = repo.hunks(&path, edited).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].kind, HunkKind::Delete);
-        assert_eq!(hunks[0].signs(), [(2, Sign::DeleteAfter)]); // the line after the gap
+        // the gap sits before 0-based new line 1, the line after it
+        assert_eq!(regions(&hunks[0]), [region(1, 1, 1, 0)]);
     }
 
     #[test]

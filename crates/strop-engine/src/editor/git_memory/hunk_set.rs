@@ -3,17 +3,21 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
-use strop_git::{Hunk, LineOrigin, Sign};
+use strop_git::{Hunk, Sign};
+use strop_kernel::lines::{self, Region};
 
 #[derive(Debug, Clone)]
 pub struct HunkSet(Arc<HunkIndex>);
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct HunkIndex {
     hunks: Vec<Arc<Hunk>>,
     rows: usize,
     /// 1-based row → (hunk index, sign); every key is in `1..=rows`.
     signs: BTreeMap<usize, (usize, Sign)>,
     additions: BTreeSet<usize>,
+    /// Every hunk's change regions in order, when together they describe a
+    /// diff (`strop_kernel::lines::coherent`); `None` maps no line.
+    regions: Option<Vec<Region>>,
 }
 impl Default for HunkSet {
     fn default() -> Self {
@@ -23,7 +27,7 @@ impl Default for HunkSet {
 impl HunkSet {
     pub(crate) fn empty() -> &'static Self {
         static EMPTY: std::sync::LazyLock<HunkSet> =
-            std::sync::LazyLock::new(|| HunkSet(Arc::new(HunkIndex::default())));
+            std::sync::LazyLock::new(|| HunkSet::new(Vec::new(), 1));
         &EMPTY
     }
 
@@ -34,32 +38,72 @@ impl HunkSet {
     }
 
     /// Index `hunks` over a buffer of `rows` reachable rows
-    /// (`last_content_line() + 1`: an empty buffer has one). Git's
-    /// coordinates may sit outside them — `0` for an emptied file, one
-    /// past the end for a deletion at the end — so every sign is clamped
-    /// onto a row the caret can reach: sign and action share one key.
+    /// (`last_content_line() + 1`: an empty buffer has one). A deletion at
+    /// the end sits one past the last row, so every sign is clamped onto a
+    /// row the caret can reach: sign and action share one key.
     pub(crate) fn new(hunks: Vec<Hunk>, rows: usize) -> Self {
+        Self::build(hunks, rows, Some)
+    }
+
+    /// Index the HEAD → index edge's `hunks` over the buffer's rows. Their
+    /// lines are index lines, so each sign and addition lands on the buffer
+    /// row the unstaged regions (index → buffer) map it to (#293,
+    /// `strop_kernel::lines::new_line`); a staged line an unstaged edit
+    /// replaced has no row and no mark.
+    pub(crate) fn staged(hunks: Vec<Hunk>, rows: usize, unstaged: &HunkSet) -> Self {
+        match unstaged.line_map() {
+            Some(map) => Self::build(hunks, rows, |line| lines::new_line(line, map)),
+            None => Self::build(hunks, rows, |_| None),
+        }
+    }
+
+    /// The same staged hunks re-indexed over `unstaged` (a deserialized
+    /// set comes back in index rows).
+    pub(crate) fn rebased(&self, unstaged: &HunkSet) -> Self {
+        let hunks = self.0.hunks.iter().map(|hunk| Hunk::clone(hunk)).collect();
+        Self::staged(hunks, self.0.rows, unstaged)
+    }
+
+    /// `row` places a 0-based new-side line of these hunks on a 0-based
+    /// buffer row, or nowhere.
+    fn build(hunks: Vec<Hunk>, rows: usize, row: impl Fn(usize) -> Option<usize>) -> Self {
         debug_assert!(rows >= 1, "a buffer always has a first row");
         let last = rows.max(1);
         let mut signs = BTreeMap::new();
         let mut additions = BTreeSet::new();
+        let mut regions = Vec::new();
         for (index, hunk) in hunks.iter().enumerate() {
-            for (line, sign) in hunk.signs() {
-                signs.entry(line.clamp(1, last)).or_insert((index, sign));
+            let first = regions.len();
+            hunk.regions(&mut regions);
+            for region in &regions[first..] {
+                for (line, sign) in Sign::of_region(region) {
+                    if let Some(at) = row(line) {
+                        signs
+                            .entry((at + 1).clamp(1, last))
+                            .or_insert((index, sign));
+                    }
+                }
+                additions.extend(
+                    (region.new..region.new + region.new_len)
+                        .filter_map(|line| Some(row(line)? + 1)),
+                );
             }
-            additions.extend(
-                hunk.lines
-                    .iter()
-                    .filter(|line| line.origin == LineOrigin::Addition)
-                    .filter_map(|line| line.new_lineno),
-            );
         }
+        let coherent = lines::coherent(&regions);
+        debug_assert!(coherent, "libgit2 hunks describe a diff: {regions:?}");
         Self(Arc::new(HunkIndex {
             hunks: hunks.into_iter().map(Arc::new).collect(),
             rows,
             signs,
             additions,
+            regions: coherent.then_some(regions),
         }))
+    }
+
+    /// The change regions from the old side of this diff to the new, when
+    /// they describe a diff: what the kernel's line maps walk.
+    pub(crate) fn line_map(&self) -> Option<&[Region]> {
+        self.0.regions.as_deref()
     }
     /// Allocation identity for frame-preparation stamps: every published set
     /// is a fresh allocation (the previous set is dropped only after the

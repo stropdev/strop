@@ -44,13 +44,58 @@ pub struct HunkKey {
 /// was absent entirely (the buffer is untracked — restore has nothing
 /// to go back to).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(from = "HunkDataWire")]
 #[cfg_attr(any(test, feature = "test-support"), derive(Default))]
 pub struct HunkData {
     #[serde(with = "strop_core::path_serde")]
     pub rel: PathBuf,
     pub unstaged: super::HunkSet,
+    /// HEAD → index, its marks on the buffer rows the unstaged regions
+    /// map them to.
     pub staged: super::HunkSet,
     pub untracked: bool,
+}
+
+impl HunkData {
+    /// Both edges of one buffer revision of `rows` reachable rows.
+    pub(crate) fn new(
+        rel: PathBuf,
+        unstaged: Vec<strop_git::Hunk>,
+        staged: Vec<strop_git::Hunk>,
+        rows: usize,
+        untracked: bool,
+    ) -> Self {
+        let unstaged = super::HunkSet::new(unstaged, rows);
+        let staged = super::HunkSet::staged(staged, rows, &unstaged);
+        Self {
+            rel,
+            unstaged,
+            staged,
+            untracked,
+        }
+    }
+}
+
+/// `HunkData` as serialized: the staged set comes back in index rows.
+#[derive(serde::Deserialize)]
+struct HunkDataWire {
+    #[serde(with = "strop_core::path_serde")]
+    rel: PathBuf,
+    unstaged: super::HunkSet,
+    staged: super::HunkSet,
+    untracked: bool,
+}
+
+impl From<HunkDataWire> for HunkData {
+    fn from(wire: HunkDataWire) -> Self {
+        let staged = wire.staged.rebased(&wire.unstaged);
+        Self {
+            rel: wire.rel,
+            unstaged: wire.unstaged,
+            staged,
+            untracked: wire.untracked,
+        }
+    }
 }
 
 /// One serialized mutation's edge. `rel` is repo-relative; `kind`

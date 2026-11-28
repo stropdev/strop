@@ -10,6 +10,7 @@ pub(crate) mod graph;
 mod history;
 pub mod hunk_set;
 mod jobs;
+mod line_maps;
 pub mod log_text;
 mod presentation;
 mod sidebar;
@@ -18,6 +19,8 @@ pub use file_list::{file_row_text, FilesRow, PreparedFiles};
 pub(crate) use history::publish_rows as publish_log_rows;
 pub(crate) use hunk_set::HunkSet;
 pub(crate) use jobs::{git_failure, repo_host, repo_or_unavailable};
+pub use line_maps::LineMaps;
+pub(crate) use line_maps::{HeadLines, HeadRequest, HeldLines};
 pub(crate) use presentation::line_emphasis;
 pub use presentation::PreparedDiff;
 pub use sidebar::{Sidebar, SidebarRow};
@@ -41,6 +44,11 @@ use strop_git::{Hunk, LineOrigin, RepoTarget};
 
 use super::document::Surface;
 use super::Editor;
+
+/// The history of 1-based HEAD `lines` of the current file.
+pub(crate) fn open_history_at(editor: &mut Editor, lines: (usize, usize)) {
+    history::open(editor, true, None, Some(lines));
+}
 use strop_core::frontend_input::Key;
 /// The commit a Diff surface's file belongs to, with the commit's full
 /// changed-file list — the sidebar's data (typed numstat rows, the same
@@ -69,6 +77,9 @@ pub struct HunkOrigin {
     /// The origin was untracked when captured: undo refuses (there is
     /// no HEAD content to restore from).
     pub untracked: bool,
+    /// The origin's line maps at that revision: a permalink from the
+    /// preview names HEAD lines (#290).
+    pub maps: LineMaps,
 }
 
 /// Per-buffer blame gutter state (0011 §3), keyed by canonical path —
@@ -170,8 +181,18 @@ impl Editor {
 
     /// `Space g h` in visual mode: the history of the selected lines
     /// (git log -L) — selection archaeology (0014 wave 4).
+    /// `git log -L` reads its range against HEAD, so the 1-based buffer
+    /// lines map to HEAD lines first (#291) — refused when the range holds
+    /// an uncommitted change, held while the hunk snapshot is in flight.
     pub(crate) fn open_line_history(&mut self, start: usize, end: usize) {
-        history::open(self, true, None, Some((start, end)));
+        self.hunk_load.retry_failed();
+        self.refresh_hunks();
+        let rows = (start.saturating_sub(1), end.saturating_sub(1));
+        match self.head_lines(rows) {
+            HeadLines::Ready(lines) => open_history_at(self, lines),
+            HeadLines::Refused(reason) => self.message = reason,
+            HeadLines::Pending => self.hold_lines(HeadRequest::LineHistory, rows),
+        }
     }
 
     // ---- surface interaction -------------------------------------------

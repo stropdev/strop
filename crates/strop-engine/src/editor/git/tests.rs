@@ -319,10 +319,10 @@ fn directory_alias_and_physical_path_stage_the_same_native_hunk() {
 
 const NOTE: &str = "one\ntwo\nthree\n";
 
-/// #240: `note` committed as [`NOTE`], then rewritten on disk as
+/// #240: `note` committed as `base`, then rewritten on disk as
 /// `worktree` before the editor opens it (a clean buffer, so staging
 /// needs no save).
-fn note_fixture(worktree: &str) -> (tempfile::TempDir, Editor, strop_git::Repo) {
+fn note_fixture(base: &str, worktree: &str) -> (tempfile::TempDir, Editor, strop_git::Repo) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let git = |args: &[&str]| {
@@ -339,7 +339,7 @@ fn note_fixture(worktree: &str) -> (tempfile::TempDir, Editor, strop_git::Repo) 
             String::from_utf8_lossy(&out.stderr)
         );
     };
-    std::fs::write(root.join("note"), NOTE).unwrap();
+    std::fs::write(root.join("note"), base).unwrap();
     git(&["init", "-q"]);
     git(&["add", "."]);
     git(&[
@@ -376,7 +376,7 @@ fn mutate(e: &mut Editor, keys: &str) -> String {
 
 #[test]
 fn emptied_file_is_marked_and_stageable_from_its_only_row() {
-    let (d, mut e, repo) = note_fixture("");
+    let (d, mut e, repo) = note_fixture(NOTE, "");
     assert_eq!(e.sign_lines().collect::<Vec<_>>(), [(1, Sign::DeleteAfter)]);
     assert_eq!(mutate(&mut e, " gs"), "hunk staged");
     assert_eq!(index_note(&repo), b"", "the index holds the empty file");
@@ -393,7 +393,7 @@ fn emptied_file_is_marked_and_stageable_from_its_only_row() {
 
 #[test]
 fn emptied_file_discards_and_bounds_hunk_jumps() {
-    let (_d, mut e, _repo) = note_fixture("");
+    let (_d, mut e, _repo) = note_fixture(NOTE, "");
     for keys in ["]c", "[c"] {
         e.feed_text(keys);
         assert_eq!(e.message, "no more hunks", "{keys}");
@@ -407,7 +407,7 @@ fn emptied_file_discards_and_bounds_hunk_jumps() {
 
 #[test]
 fn eof_deletion_marks_the_last_content_row() {
-    let (_d, mut e, repo) = note_fixture("one\ntwo\n");
+    let (_d, mut e, repo) = note_fixture(NOTE, "one\ntwo\n");
     assert_eq!(e.sign_lines().collect::<Vec<_>>(), [(2, Sign::DeleteAfter)]);
     e.feed_text("]c");
     assert_eq!(caret_row(&e), 2, "]c stops on the last content row");
@@ -425,7 +425,7 @@ fn eof_deletion_marks_the_last_content_row() {
 
 #[test]
 fn replacement_shows_change_and_stages() {
-    let (_d, mut e, repo) = note_fixture("one\nTWO\nthree\n");
+    let (_d, mut e, repo) = note_fixture(NOTE, "one\nTWO\nthree\n");
     assert_eq!(e.sign_lines().collect::<Vec<_>>(), [(2, Sign::Change)]);
     e.feed_text("]c");
     assert_eq!(caret_row(&e), 2);
@@ -433,4 +433,46 @@ fn replacement_shows_change_and_stages() {
     assert_eq!(caret_row(&e), 2, "nothing past the only hunk");
     assert_eq!(mutate(&mut e, " gs"), "hunk staged");
     assert_eq!(index_note(&repo), b"one\nTWO\nthree\n");
+}
+
+/// #287: discarding a pure deletion puts the caret on the first restored
+/// line, wherever the deletion sits.
+#[test]
+fn discard_of_a_deletion_lands_on_the_restored_lines() {
+    const FIVE: &str = "one\ntwo\nthree\nfour\nfive\n";
+    for (name, worktree, keys, restored) in [
+        ("top", "three\nfour\nfive\n", "gg", 1),
+        ("middle", "one\nfour\nfive\n", "2G", 2),
+        ("end", "one\ntwo\nthree\n", "G", 4),
+    ] {
+        let (_d, mut e, _repo) = note_fixture(FIVE, worktree);
+        e.feed_text(keys);
+        e.feed_text(" gX");
+        assert_eq!(e.buf().text().to_string(), FIVE, "{name}");
+        assert_eq!(caret_row(&e), restored, "{name}");
+    }
+}
+
+/// #293: staged hunks are in index lines. After three lines are inserted
+/// above a staged change, its mark and `Space g u` follow it to its buffer
+/// row, and the row it used to have unstages nothing.
+#[test]
+fn unstage_finds_the_staged_hunk_below_unstaged_inserts() {
+    const TEN: &str = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n";
+    let (_d, mut e, repo) = note_fixture(TEN, "1\n2\n3\n4\n5\n6\n7\nEIGHT\n9\n10\n");
+    e.feed_text("8G");
+    assert_eq!(mutate(&mut e, " gs"), "hunk staged");
+    pump_hunks(&mut e);
+    assert!(e.sign_at_staged(8));
+    e.feed_text("ggOa<esc>Ob<esc>Oc<esc>");
+    e.feed_text(":w\r");
+    settle(&mut e, |e| !e.buf().is_dirty());
+    pump_hunks(&mut e);
+    assert!(e.sign_at_staged(11), "the mark follows the staged line");
+    assert!(!e.sign_at_staged(8), "the row it had shows line 5");
+    e.feed_text("8G");
+    assert_eq!(mutate(&mut e, " gu"), "no staged hunk here");
+    e.feed_text("11G");
+    assert_eq!(mutate(&mut e, " gu"), "hunk unstaged");
+    assert_eq!(index_note(&repo), TEN.as_bytes());
 }

@@ -10,6 +10,7 @@ publish = false
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 strop-core = { path = "../strop-core" }
+strop-kernel = { path = "../strop-kernel" }
 strop-workspace = { path = "../strop-workspace" }
 strop-remote = { path = "../strop-remote" }
 

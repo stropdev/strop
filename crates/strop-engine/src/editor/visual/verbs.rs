@@ -116,11 +116,10 @@ fn perform(
 
 /// The selection's first and last line.
 pub(crate) fn selected_lines(editor: &Editor) -> (usize, usize) {
-    let (a, b) = (
+    strop_kernel::lines::span(
         editor.buf().line_of(editor.anchor()),
         editor.buf().line_of(editor.head()),
-    );
-    (a.min(b), a.max(b))
+    )
 }
 
 /// The ranges an operator covers: the selection, one range per row

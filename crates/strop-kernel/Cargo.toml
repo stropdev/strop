@@ -24,4 +24,5 @@ start_from = [
     "strop_kernel::generation",
     "strop_kernel::intervals",
     "strop_kernel::layout",
+    "strop_kernel::lines",
 ]

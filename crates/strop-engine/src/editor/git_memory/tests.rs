@@ -4,7 +4,7 @@ use crate::editor::io::native::{NativeResult, Operation};
 use crate::editor::io::IoEvent;
 use crate::editor::permalink::{PermalinkIntent, PermalinkOutcome};
 use crate::editor::test_support::git::{
-    fixture, git_out, multi_file_fixture, pump, pump_ready, settle,
+    fixture, git_out, multi_file_fixture, pump, pump_hunks, pump_ready, settle,
 };
 use crate::editor::{Editor, GitJob, Surface};
 use strop_core::frontend_input::Key;
@@ -154,7 +154,7 @@ fn permalink_needs_remote() {
 
 /// Configure a remote, then refresh the cached context so the pure
 /// builder sees it.
-fn set_remote(e: &mut Editor, root: &std::path::Path, name: &str, url: &str) {
+pub(super) fn set_remote(e: &mut Editor, root: &std::path::Path, name: &str, url: &str) {
     Command::new("git")
         .args([
             "-C",
@@ -173,6 +173,8 @@ fn set_remote(e: &mut Editor, root: &std::path::Path, name: &str, url: &str) {
             .as_ref()
             .is_some_and(|c| c.remotes.iter().any(|(n, _)| n == name))
     });
+    // a new context clears the hunk snapshot the HEAD lines come from
+    pump_hunks(e);
 }
 
 /// A fixture tape suppresses native launches (hermetic: no real ssh,
@@ -184,10 +186,11 @@ fn suppress_native(e: &mut Editor) {
     }));
 }
 
-fn ready_url(e: &Editor) -> String {
+pub(super) fn ready_url(e: &Editor) -> String {
     match e.build_permalink(PermalinkIntent::Yank) {
         Ok(PermalinkOutcome::Url(url)) => url,
         Ok(PermalinkOutcome::Alias(_)) => panic!("expected a ready URL, got an alias"),
+        Ok(PermalinkOutcome::Held(_)) => panic!("expected a ready URL, the diff is in flight"),
         Err(message) => panic!("expected a permalink: {message}"),
     }
 }
@@ -656,6 +659,7 @@ fn hunk_discard_undoes_byte_exact() {
     assert_eq!(e.buf().text().to_string(), "fn a() {}\nfn b() {}\n");
 }
 
+mod head_lines;
 mod history;
 mod native_paths;
 mod ownership;

@@ -2,7 +2,7 @@
 rfc: "2026-11-28-line-geometry-kernel"
 title: "Prove line geometry: selection spans, change regions and line maps across a diff"
 status: "accepted"
-implementation: "not-started"
+implementation: "in-progress"
 authors: ["Fable"]
 created: "2026-11-28"
 updated: "2026-11-28"
@@ -42,7 +42,7 @@ Non-goals: forge-specific URL shapes, the "HEAD is not pushed" notice, Visual li
 
 ## Proof and test obligations
 
-Stated before the design, per the registry rules. New module `crates/strop-kernel/src/lines.rs`: plain safe Rust, explicit loops over slices, no closures, no iterator adaptors. All arithmetic is compare-before-subtract or `saturating_add`, so every function is total in the Aeneas model: none of the theorems below needs an overflow hypothesis, and [#282](https://github.com/stropdev/strop/issues/282)'s classification lists all of them as total.
+Stated before the design, per the registry rules. New module `crates/strop-kernel/src/lines.rs`: plain safe Rust, explicit loops over slices, no closures, no iterator adaptors. All arithmetic is compare-before-subtract or `saturating_add`, so every function except `runs` is total in the Aeneas model and [#282](https://github.com/stropdev/strop/issues/282)'s classification lists it as total. `runs` appends to a `Vec`, which Aeneas models as failing at `usize::MAX` elements, so it is listed as conditional (as-built note below).
 
 ### The functions
 
@@ -129,11 +129,11 @@ All are added to `claims` in `proofs/Audit.lean`. Bridges end in `_spec`; the ot
 | `new_line_spec` | the mirror: `lines.new_line o rs ⦃ r => ∀ n : Nat, (∃ u, r = some u ∧ u.val = n) ↔ Kept 0 0 qs o.val n ⦄` | `lines-new-line-admits-deleted`, `lines-new-line-forgets-additions` |
 | `old_span_spec` | under `Coherent 0 0 qs`: `lines.old_span f l rs ⦃ r => (∀ a b, r = some (a, b) → b.val - a.val = l.val - f.val ∧ ∀ i, f.val ≤ i → i ≤ l.val → Kept 0 0 qs (a.val + (i - f.val)) i) ∧ (r = none → l.val < f.val ∨ ¬ ∃ a, ∀ i, f.val ≤ i → i ≤ l.val → Kept 0 0 qs (a + (i - f.val)) i) ⦄`: a range is answered exactly when every selected line is kept and they are consecutive on the old side | `lines-old-span-straddles-region`: drop the `first < r.new` refusal, so a range across a replaced block maps its two ends |
 | `kept_respects_regions` | under `Coherent ob nb qs`: `Kept ob nb qs o n → ∀ (ro, rol, rn, rnl) ∈ qs, ¬ (ro ≤ o ∧ o < ro + rol) ∧ ¬ (rn ≤ n ∧ n < rn + rnl)`, and `Kept ob nb qs o n → Kept ob nb qs o' n' → (n < n' ↔ o < o')`: a kept line is never a deleted or an added line, and the pairing preserves order | paired, see below |
-| `lines_total` | one theorem per function of the form `∀ args, f args ⦃ _ => True ⦄`: no input makes a line function fail | `lines-old-line-raw-add`: replace a `saturating_add` by `+` |
+| `lines_total` | folded into the bridges as built: `span_spec`, `coherent_spec`, `old_line_spec`, `new_line_spec` and `old_span_spec` have no hypothesis (the coherence premise sits inside the postcondition), so the audit prints each as `TOTAL` | `lines-old-line-raw-add`: replace a `saturating_add` by `+` (breaks `old_line_loop_spec`) |
 
 **Paired mutants** (Rust and model patched together, so the bridge still proves and the property must fail):
 
-- `lines-kept-forgets-deletions` — in `old_line`, `new_line` and `old_span` advance `old_base` to `r.old`, and patch `Kept` the same way. `old_line_spec` still proves against the patched model; `kept_respects_regions` fails (the first line after a deletion is paired with a deleted line).
+- ~~`lines-kept-forgets-deletions`~~ — not buildable: `new_line` stops on the old side, so no patch of `Kept` matches all three patched functions and `new_line_spec` breaks with it. Replaced as built by `lines-coherent-forgets-old-order` — `coherent` and `Coherent` both drop the old-side order test; a region may then start inside an earlier deletion, a kept line can be a deleted one, and `kept_respects_regions`' lemmas (`kept_old_ge`, `coherent_starts`) fail. The coherence bridge and the `runs_coherent` construction follow the old predicate and break with it.
 - `lines-runs-new-start-at-run-end` — `runs` takes a region's `new` from the counter at the end of the run, and `RunsOf` is patched alike. `runs_spec` still proves; `runs_coherent` fails, because the region now starts `new_len` lines further from the previous one on the new side than on the old side.
 
 ### Outside the proof
@@ -185,3 +185,11 @@ Later, not in this RFC's slice: the sign clamp and row lookups of `HunkSet` ([#3
 ## Decision log and as-built notes
 
 - 2026-11-28: drafted from the v0.77.0 git review. Awaiting the maintainer's decision; milestone assignment is not acceptance.
+- 2026-11-28 (as built, #287/#288, `proofs/Kernel/Lines.lean`): the Lean statements above were never compiled; the proved ones differ where the drafts were false or unprovable.
+  - `Coherent` also requires every region to end inside `usize` (`ro + rol ≤ Usize.max`, same for the new side) and `coherent` checks it: without it the saturating bases of the walks differ from the model.
+  - `RunsOf os ns body` is `runsFrom (os, 0, ns, 0) body`, a recursion over a pending run: a context line closes the run (`closeRun`, which drops an empty one) and opens an empty one on the next line of both sides.
+  - `runs_spec` appends to any `out` (`r.val.map quad = out.val.map quad ++ RunsOf …`) under `os + |body| ≤ Usize.max`, `ns + |body| ≤ Usize.max` and `out.len + |body| < Usize.max`; `runs_coherent` carries the first two. `runs` is listed `CONDITIONAL` in the audit.
+  - The line-map bridges put `Coherent 0 0 qs →` inside the postcondition and bound the answer by `Usize.max` (an answer past `usize` is refused): `old_line_spec` is `old_line n rs ⦃ r => Coherent 0 0 qs → ∀ o, (∃ u, r = some u ∧ u.val = o) ↔ Kept 0 0 qs o n.val ∧ o ≤ Usize.max ⦄`, `new_line_spec` its mirror, and `old_span_spec`'s refusal side reads `¬ ∃ a, a + (l - f) ≤ Usize.max ∧ ∀ i …`.
+  - `old_span` refuses at the first region the range reaches (`last ≥ r.new`) unless the range starts at or after that region's added lines (`first ≥ r.new + r.new_len`); `lines-old-span-straddles-region` narrows that refusal to `first ≥ r.new`.
+  - `lines-runs-deletion-at-hunk-end` breaks `close_spec`, the push bridge `runs_spec` rests on; the paired `lines-runs-new-start-at-run-end` breaks `coherent_closeRun_append` (behind `runs_coherent`) and `close_spec`.
+- 2026-11-28 (as built, #290/#291/#293): `editor/git_memory/line_maps.rs` maps 0-based buffer rows to 1-based HEAD lines (`old_span` through `unstaged`, then `staged`); the refusal reads "line N is not in HEAD (uncommitted change)" for one line and "lines A–B are not in HEAD (uncommitted changes in the selection)" for a range. The held request lives in `GitWork` (the `Editor` field ratchet), keyed by document and revision, and is released by the hunk completion. A hunk preview's `HunkOrigin` captures its origin's line maps at the preview's revision, so the preview needs no live snapshot. `open_line_history` maps its 1-based buffer lines before `git log -L`. The staged set is indexed on the worker over buffer rows (`HunkSet::staged`, `new_line` through the unstaged regions); its own regions stay in index lines for the HEAD map. Status `Enter` (#294) is not part of this slice.
