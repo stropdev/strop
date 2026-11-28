@@ -452,3 +452,27 @@ fn discard_of_a_deletion_lands_on_the_restored_lines() {
         assert_eq!(caret_row(&e), restored, "{name}");
     }
 }
+
+/// #293: staged hunks are in index lines. After three lines are inserted
+/// above a staged change, its mark and `Space g u` follow it to its buffer
+/// row, and the row it used to have unstages nothing.
+#[test]
+fn unstage_finds_the_staged_hunk_below_unstaged_inserts() {
+    const TEN: &str = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n";
+    let (_d, mut e, repo) = note_fixture(TEN, "1\n2\n3\n4\n5\n6\n7\nEIGHT\n9\n10\n");
+    e.feed_text("8G");
+    assert_eq!(mutate(&mut e, " gs"), "hunk staged");
+    pump_hunks(&mut e);
+    assert!(e.sign_at_staged(8));
+    e.feed_text("ggOa<esc>Ob<esc>Oc<esc>");
+    e.feed_text(":w\r");
+    settle(&mut e, |e| !e.buf().is_dirty());
+    pump_hunks(&mut e);
+    assert!(e.sign_at_staged(11), "the mark follows the staged line");
+    assert!(!e.sign_at_staged(8), "the row it had shows line 5");
+    e.feed_text("8G");
+    assert_eq!(mutate(&mut e, " gu"), "no staged hunk here");
+    e.feed_text("11G");
+    assert_eq!(mutate(&mut e, " gu"), "hunk unstaged");
+    assert_eq!(index_note(&repo), TEN.as_bytes());
+}

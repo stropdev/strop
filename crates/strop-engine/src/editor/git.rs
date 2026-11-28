@@ -12,8 +12,8 @@ use strop_git::{Hunk, Sign};
 use crate::files::FileTarget;
 
 use super::git_memory::{
-    self, git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, HunkSet,
-    MutationKey, MutationOp,
+    self, git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, MutationKey,
+    MutationOp,
 };
 use super::transact::ChangeSet;
 use super::Editor;
@@ -165,12 +165,9 @@ impl Editor {
                         &host,
                         &cancel,
                     ) {
-                        Ok((unstaged, staged, untracked)) => Outcome::Success(HunkData {
-                            rel,
-                            unstaged: HunkSet::new(unstaged, rows),
-                            staged: HunkSet::new(staged, rows),
-                            untracked,
-                        }),
+                        Ok((unstaged, staged, untracked)) => {
+                            Outcome::Success(HunkData::new(rel, unstaged, staged, rows, untracked))
+                        }
                         Err(error) => Outcome::Failed {
                             failure: strop_core::worker::Failure::new(
                                 strop_core::worker::FailureKind::Exit,
@@ -217,12 +214,13 @@ impl Editor {
                         }
                     }
                 };
-                Outcome::Success(HunkData {
-                    rel: gutter.rel,
-                    unstaged: HunkSet::new(gutter.unstaged, rows),
-                    staged: HunkSet::new(gutter.staged, rows),
-                    untracked: gutter.untracked,
-                })
+                Outcome::Success(HunkData::new(
+                    gutter.rel,
+                    gutter.unstaged,
+                    gutter.staged,
+                    rows,
+                    gutter.untracked,
+                ))
             },
         );
     }
@@ -264,9 +262,9 @@ impl Editor {
     }
 
     /// Staged sign (HEAD↔index edge, 0014 wave 4): the line sits inside
-    /// a staged hunk's new side. Line alignment between index and live
-    /// text is approximate when both sets exist — the gutter's rule:
-    /// unstaged wins, staged marks what's already in the index.
+    /// a staged hunk's new side, its index line mapped to this buffer row
+    /// through the unstaged regions (#293). The gutter's rule: unstaged
+    /// wins, staged marks what's already in the index.
     pub fn sign_at_staged(&self, line_1based: usize) -> bool {
         self.staged_hunks().addition(line_1based)
     }

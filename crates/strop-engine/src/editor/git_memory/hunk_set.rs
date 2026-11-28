@@ -42,6 +42,31 @@ impl HunkSet {
     /// the end sits one past the last row, so every sign is clamped onto a
     /// row the caret can reach: sign and action share one key.
     pub(crate) fn new(hunks: Vec<Hunk>, rows: usize) -> Self {
+        Self::build(hunks, rows, Some)
+    }
+
+    /// Index the HEAD → index edge's `hunks` over the buffer's rows. Their
+    /// lines are index lines, so each sign and addition lands on the buffer
+    /// row the unstaged regions (index → buffer) map it to (#293,
+    /// `strop_kernel::lines::new_line`); a staged line an unstaged edit
+    /// replaced has no row and no mark.
+    pub(crate) fn staged(hunks: Vec<Hunk>, rows: usize, unstaged: &HunkSet) -> Self {
+        match unstaged.line_map() {
+            Some(map) => Self::build(hunks, rows, |line| lines::new_line(line, map)),
+            None => Self::build(hunks, rows, |_| None),
+        }
+    }
+
+    /// The same staged hunks re-indexed over `unstaged` (a deserialized
+    /// set comes back in index rows).
+    pub(crate) fn rebased(&self, unstaged: &HunkSet) -> Self {
+        let hunks = self.0.hunks.iter().map(|hunk| Hunk::clone(hunk)).collect();
+        Self::staged(hunks, self.0.rows, unstaged)
+    }
+
+    /// `row` places a 0-based new-side line of these hunks on a 0-based
+    /// buffer row, or nowhere.
+    fn build(hunks: Vec<Hunk>, rows: usize, row: impl Fn(usize) -> Option<usize>) -> Self {
         debug_assert!(rows >= 1, "a buffer always has a first row");
         let last = rows.max(1);
         let mut signs = BTreeMap::new();
@@ -52,11 +77,16 @@ impl HunkSet {
             hunk.regions(&mut regions);
             for region in &regions[first..] {
                 for (line, sign) in Sign::of_region(region) {
-                    signs
-                        .entry((line + 1).clamp(1, last))
-                        .or_insert((index, sign));
+                    if let Some(at) = row(line) {
+                        signs
+                            .entry((at + 1).clamp(1, last))
+                            .or_insert((index, sign));
+                    }
                 }
-                additions.extend(region.new + 1..region.new + 1 + region.new_len);
+                additions.extend(
+                    (region.new..region.new + region.new_len)
+                        .filter_map(|line| Some(row(line)? + 1)),
+                );
             }
         }
         let coherent = lines::coherent(&regions);
