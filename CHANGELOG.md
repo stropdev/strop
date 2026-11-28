@@ -8,6 +8,8 @@ Earlier releases cite designs by number; find the original decision and its deli
 
 - **Typing:** the Linux binary now uses mimalloc as its memory allocator. A key shows in about 1 ms instead of 2–3 ms, the file finder lists the Linux kernel tree about three times faster, and most built-in speed tests run 1.25× faster or more. It uses 13–50 MB more memory.
 - **Search:** a lower-case `/` search no longer drops to the slow engine. The last line of a 500 MB file is found in about a tenth of a second instead of nearly a minute, and `*`, `#`, `\<word\>` and case-folded searches take the same fast path.
+- **New lines:** `o`, `O` and `Enter` respond at once in large files. The indent now comes from the syntax tree the editor already keeps, instead of a second parse: under 1 ms in a 10 MB file, where a 4.5 MB file used to take 3.5 s. After quick edits, highlighting catches up on the next frame instead of waiting for another key.
+- **Very large files:** files over 12 MiB are no longer parsed. They show without colours and indent from the previous line, and strop says so once.
 - **Large files:** opening a file no longer holds a second copy of it in memory. A 500 MB log peaks at about half the memory it did, and opens faster.
 
 ### Fixed
