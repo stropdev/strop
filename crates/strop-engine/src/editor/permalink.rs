@@ -143,7 +143,19 @@ impl Editor {
                     .ok_or("no source file for this diff")?;
                 self.permalink_rel_of(document, context)?
             }
-            _ => self.permalink_rel_of(self.cur(), context)?,
+            _ => {
+                let rel = self.permalink_rel_of(self.cur(), context)?;
+                // a file HEAD has never seen (untracked, or renamed in
+                // the worktree) would link a path that 404s
+                if self
+                    .hunk_snapshot
+                    .as_ref()
+                    .is_some_and(|data| data.untracked && data.rel == rel)
+                {
+                    return Err("file is not in HEAD".into());
+                }
+                rel
+            }
         };
         let head_row = self.buf().line_of(self.head());
         let anchor_row = if matches!(

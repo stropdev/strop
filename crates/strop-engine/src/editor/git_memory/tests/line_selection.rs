@@ -1,8 +1,9 @@
-//! Git commands on a Visual selection, through keys (#289).
+//! Git commands on a Visual selection, through keys (#289), and the
+//! permalink refusal for files HEAD has never seen (#292).
 
 use super::{set_remote, suppress_native};
 use crate::editor::io::native::Operation;
-use crate::editor::test_support::git::{fixture, git_out, pump, settle};
+use crate::editor::test_support::git::{fixture, git_out, pump, pump_hunks, settle};
 use crate::editor::{Editor, Mode, Surface};
 use strop_core::frontend_input::Key;
 
@@ -113,4 +114,38 @@ fn visual_line_history_lands_in_normal() {
         .as_deref()
         .is_some_and(|path| path.ends_with("f.rs")));
     assert_eq!(e.mode, Mode::Normal);
+}
+
+/// Open the file `name` and wait for its hunk snapshot.
+fn open_settled(e: &mut Editor, name: &str) {
+    let path = e.cwd.join(name);
+    e.feed_text(&format!(":e {}\r", path.display()));
+    pump_hunks(e);
+    assert!(e
+        .hunk_snapshot
+        .as_ref()
+        .is_some_and(|data| data.untracked && data.rel.ends_with(name)));
+}
+
+fn assert_refused(e: &mut Editor) {
+    e.feed_text(" gy");
+    assert_eq!(e.message, "file is not in HEAD");
+    assert!(e.register(None).text.is_empty(), "nothing copied");
+    assert!(e.osc52.is_none(), "no clipboard payload");
+}
+
+#[test]
+fn permalink_refuses_untracked() {
+    let (_dir, mut e, _) = with_remote();
+    std::fs::write(e.cwd.join("new.rs"), "fn n() {}\n").unwrap();
+    open_settled(&mut e, "new.rs");
+    assert_refused(&mut e);
+}
+
+#[test]
+fn permalink_refuses_worktree_rename() {
+    let (_dir, mut e, _) = with_remote();
+    std::fs::rename(e.cwd.join("f.rs"), e.cwd.join("renamed.rs")).unwrap();
+    open_settled(&mut e, "renamed.rs");
+    assert_refused(&mut e);
 }
