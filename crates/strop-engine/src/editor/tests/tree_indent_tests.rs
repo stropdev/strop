@@ -82,3 +82,30 @@ fn a_file_too_large_to_parse_indents_from_the_previous_line_and_says_so_once() {
     editor.feed_text("o<esc>");
     assert!(editor.message.is_empty(), "said once");
 }
+
+#[test]
+fn edits_during_analysis_still_leave_the_next_frame_a_current_tree() {
+    use crate::editor::prepare::ViewGeometry;
+    let geometry = ViewGeometry {
+        columns: 120,
+        rows: 40,
+    };
+    let text = source();
+    let mut editor = code_editor(&text, "big.rs");
+    editor.feed_text(":2005\r");
+    editor.prepare_view(geometry);
+    editor.wait_analysis();
+    // two edits while the first one's analysis is in flight: it lands
+    // superseded, and only the frame after it can ask again
+    editor.feed_text("ox<esc>");
+    editor.prepare_view(geometry);
+    editor.feed_text("u");
+    editor.prepare_view(geometry);
+    editor.wait_analysis();
+    editor.prepare_view(geometry);
+    editor.wait_analysis();
+    let admitted = editor.admission_probe().resolutions;
+    editor.feed_text("o");
+    assert!(!editor.resolution.blocked());
+    assert_eq!(editor.admission_probe().resolutions, admitted);
+}

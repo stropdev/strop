@@ -590,6 +590,11 @@ impl Editor {
             AnalysisTarget::Preview(path) => self.previews.contains_key(path),
         };
         if !current {
+            // superseded by an edit the view stamp already saw: the next
+            // preparation must admit the current revision's analysis,
+            // or the window (and its published tree) stays a revision
+            // behind until the next input
+            self.frame_stamp = None;
             return;
         }
         let value = match completion.outcome {
@@ -628,7 +633,10 @@ impl Editor {
                 }
                 None
             }
-            Outcome::Cancelled(_) => return,
+            Outcome::Cancelled(_) => {
+                self.frame_stamp = None;
+                return;
+            }
         };
         self.analysis.remember(key, value);
     }
