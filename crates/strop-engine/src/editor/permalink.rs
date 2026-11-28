@@ -54,6 +54,9 @@ pub struct PendingPermalink {
 pub(crate) enum PermalinkOutcome {
     Url(String),
     Alias(PendingPermalink),
+    /// The buffer's hunk snapshot for this revision is still in flight:
+    /// these 0-based buffer rows map to HEAD once it lands.
+    Held((usize, usize)),
 }
 
 impl Editor {
@@ -70,11 +73,39 @@ impl Editor {
     }
 
     fn permalink_action(&mut self, intent: PermalinkIntent) {
-        match self.build_permalink(intent) {
+        // the HEAD lines come from the hunk snapshot of this revision: an
+        // explicit command schedules (or retries) it, and never reads git
+        self.hunk_load.retry_failed();
+        self.refresh_hunks();
+        let outcome = self.build_permalink(intent);
+        self.act_on_permalink(intent, outcome);
+    }
+
+    fn act_on_permalink(
+        &mut self,
+        intent: PermalinkIntent,
+        outcome: Result<PermalinkOutcome, String>,
+    ) {
+        match outcome {
             Ok(PermalinkOutcome::Url(url)) => self.finish_permalink(intent, url),
             Ok(PermalinkOutcome::Alias(pending)) => self.request_ssh_host(pending),
+            Ok(PermalinkOutcome::Held(rows)) => {
+                self.hold_lines(super::git_memory::HeadRequest::Permalink(intent), rows)
+            }
             Err(e) => self.message = e,
         }
+    }
+
+    /// A held permalink's snapshot landed: its rows have HEAD lines now.
+    pub(crate) fn release_permalink(&mut self, intent: PermalinkIntent, lines: (usize, usize)) {
+        let outcome = self
+            .git_context()
+            .ok_or_else(|| "not a git repository".to_string());
+        let outcome = outcome.and_then(|context| {
+            let rel = self.permalink_rel_of(self.cur(), context)?;
+            self.permalink_at(intent, rel, lines)
+        });
+        self.act_on_permalink(intent, outcome);
     }
 
     /// Publish a finished URL — the resolution is over, so the
@@ -123,6 +154,8 @@ impl Editor {
         let Some(context) = self.git_context() else {
             return Err("not a git repository".into());
         };
+        // no remote is the first refusal: nothing else would make a link
+        web_remote(context)?;
         // the repo-relative file: a commit delta carries it directly;
         // a hunk preview names its origin buffer; otherwise the
         // current buffer. Every branch resolves through the context's
@@ -155,25 +188,49 @@ impl Editor {
             head_row
         };
         let (first, last) = strop_kernel::lines::span(anchor_row, head_row);
-        let (a, b) = if let Some(surface @ Surface::Diff { .. }) = self.surface() {
-            let source_line = |row| match surface.diff_row(row) {
-                Some(super::DiffRow::Line(line)) => line
-                    .new_lineno
-                    .ok_or("deleted lines do not exist in this revision"),
-                _ => Err("select source content, not a diff header"),
-            };
-            for row in first..=last {
-                source_line(row)?;
+        let lines = match self.surface() {
+            Some(surface @ Surface::Diff { origin, .. }) => {
+                let source_line = |row| match surface.diff_row(row) {
+                    Some(super::DiffRow::Line(line)) => line
+                        .new_lineno
+                        .ok_or("deleted lines do not exist in this revision"),
+                    _ => Err("select source content, not a diff header"),
+                };
+                for row in first..=last {
+                    source_line(row)?;
+                }
+                let (a, b) = (source_line(first)?, source_line(last)?);
+                match origin {
+                    // a hunk preview's new side is its origin buffer at the
+                    // captured revision: map it to HEAD like the buffer
+                    Some(origin) => origin.maps.head_lines(a - 1, b - 1)?,
+                    // a commit delta's new side is the linked commit itself
+                    None => (a, b),
+                }
             }
-            (source_line(first)?, source_line(last)?)
-        } else {
-            (first + 1, last + 1)
+            _ => match self.head_lines((first, last)) {
+                super::git_memory::HeadLines::Ready(lines) => lines,
+                super::git_memory::HeadLines::Refused(reason) => return Err(reason),
+                super::git_memory::HeadLines::Pending => {
+                    return Ok(PermalinkOutcome::Held((first, last)))
+                }
+            },
         };
-        if context.remotes.is_empty() {
-            return Err("no remote configured".into());
-        }
-        let selected = strop_git::permalink::pick_remote(&context.remotes)
-            .ok_or("no supported web remote configured")?;
+        self.permalink_at(intent, rel, lines)
+    }
+
+    /// The finished permalink for 1-based `lines` of `rel` in the pinned
+    /// revision: a ready URL, or an SSH alias to resolve first.
+    fn permalink_at(
+        &self,
+        intent: PermalinkIntent,
+        rel: PathBuf,
+        (a, b): (usize, usize),
+    ) -> Result<PermalinkOutcome, String> {
+        let Some(context) = self.git_context() else {
+            return Err("not a git repository".into());
+        };
+        let selected = web_remote(context)?;
         // the location is revision-pinned (0014): on a commit surface it
         // links THAT commit's file, on a working buffer it links HEAD;
         // index/worktree content is local state, HEAD pins it
@@ -240,4 +297,15 @@ impl Editor {
             _ => Err("buffer does not belong to this repository".into()),
         }
     }
+}
+
+/// The remote a permalink links to, or why there is none.
+fn web_remote(
+    context: &strop_git::GitContext,
+) -> Result<strop_git::permalink::SelectedRemote, String> {
+    if context.remotes.is_empty() {
+        return Err("no remote configured".into());
+    }
+    strop_git::permalink::pick_remote(&context.remotes)
+        .ok_or_else(|| "no supported web remote configured".into())
 }

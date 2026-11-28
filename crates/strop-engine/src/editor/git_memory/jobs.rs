@@ -263,6 +263,7 @@ impl Editor {
             && self.git_view == key.git_view;
         if !valid {
             trace::services::rejected("git", "hunk document, revision or repository changed");
+            self.release_held_lines();
             return;
         }
         match completion.outcome {
@@ -278,6 +279,7 @@ impl Editor {
                 self.hunk_load = Load::Cancelled { key, reason };
             }
         }
+        self.release_held_lines();
     }
 
     // ---- mutations --------------------------------------------------------------

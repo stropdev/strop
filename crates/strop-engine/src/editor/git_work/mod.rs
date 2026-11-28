@@ -72,6 +72,8 @@ pub(crate) struct GitWork {
     branches: Option<Ticket<BranchKey>>,
     /// strop's private commit-graph builds (0101 §2.1).
     pub(crate) graph: super::git_memory::graph::GraphState,
+    /// A permalink or line history waiting for its buffer's hunk snapshot.
+    pub(crate) held: Option<super::git_memory::HeldLines>,
 }
 
 impl GitWork {

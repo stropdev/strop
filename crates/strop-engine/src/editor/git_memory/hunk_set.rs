@@ -4,17 +4,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
 use strop_git::{Hunk, Sign};
-use strop_kernel::lines;
+use strop_kernel::lines::{self, Region};
 
 #[derive(Debug, Clone)]
 pub struct HunkSet(Arc<HunkIndex>);
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct HunkIndex {
     hunks: Vec<Arc<Hunk>>,
     rows: usize,
     /// 1-based row → (hunk index, sign); every key is in `1..=rows`.
     signs: BTreeMap<usize, (usize, Sign)>,
     additions: BTreeSet<usize>,
+    /// Every hunk's change regions in order, when together they describe a
+    /// diff (`strop_kernel::lines::coherent`); `None` maps no line.
+    regions: Option<Vec<Region>>,
 }
 impl Default for HunkSet {
     fn default() -> Self {
@@ -24,7 +27,7 @@ impl Default for HunkSet {
 impl HunkSet {
     pub(crate) fn empty() -> &'static Self {
         static EMPTY: std::sync::LazyLock<HunkSet> =
-            std::sync::LazyLock::new(|| HunkSet(Arc::new(HunkIndex::default())));
+            std::sync::LazyLock::new(|| HunkSet::new(Vec::new(), 1));
         &EMPTY
     }
 
@@ -56,16 +59,21 @@ impl HunkSet {
                 additions.extend(region.new + 1..region.new + 1 + region.new_len);
             }
         }
-        debug_assert!(
-            lines::coherent(&regions),
-            "libgit2 hunks describe a diff: {regions:?}"
-        );
+        let coherent = lines::coherent(&regions);
+        debug_assert!(coherent, "libgit2 hunks describe a diff: {regions:?}");
         Self(Arc::new(HunkIndex {
             hunks: hunks.into_iter().map(Arc::new).collect(),
             rows,
             signs,
             additions,
+            regions: coherent.then_some(regions),
         }))
+    }
+
+    /// The change regions from the old side of this diff to the new, when
+    /// they describe a diff: what the kernel's line maps walk.
+    pub(crate) fn line_map(&self) -> Option<&[Region]> {
+        self.0.regions.as_deref()
     }
     /// Allocation identity for frame-preparation stamps: every published set
     /// is a fresh allocation (the previous set is dropped only after the

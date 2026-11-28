@@ -12,8 +12,8 @@ use strop_git::{Hunk, Sign};
 use crate::files::FileTarget;
 
 use super::git_memory::{
-    git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, HunkSet, MutationKey,
-    MutationOp,
+    self, git_failure, repo_or_unavailable, GitJob, GitMutation, HunkData, HunkKey, HunkSet,
+    MutationKey, MutationOp,
 };
 use super::transact::ChangeSet;
 use super::Editor;
@@ -269,6 +269,82 @@ impl Editor {
     /// unstaged wins, staged marks what's already in the index.
     pub fn sign_at_staged(&self, line_1based: usize) -> bool {
         self.staged_hunks().addition(line_1based)
+    }
+
+    /// The current buffer's 1-based HEAD lines for 0-based buffer `rows`,
+    /// through the hunk snapshot of exactly this revision (#290): the
+    /// caller has scheduled it, so it is ready, failed, or in flight.
+    pub(crate) fn head_lines(&self, rows: (usize, usize)) -> git_memory::HeadLines {
+        use git_memory::HeadLines;
+        use strop_core::worker::Load;
+        let current = self.current();
+        let revision = self.buf().revision();
+        match (&self.hunk_load, &self.hunk_snapshot) {
+            (Load::Ready(key), Some(data))
+                if key.document == current && key.revision == revision =>
+            {
+                match git_memory::LineMaps::of(data).head_lines(rows.0, rows.1) {
+                    Ok(lines) => HeadLines::Ready(lines),
+                    Err(reason) => HeadLines::Refused(reason),
+                }
+            }
+            (Load::Running(ticket), _)
+                if ticket.key.document == current && ticket.key.revision == revision =>
+            {
+                HeadLines::Pending
+            }
+            (Load::Failed { failure, .. }, _) => {
+                HeadLines::Refused(format!("git diff failed: {}", failure.message))
+            }
+            _ => HeadLines::Refused("no diff for this buffer".into()),
+        }
+    }
+
+    /// Hold `request` until the hunk snapshot of this revision lands.
+    pub(crate) fn hold_lines(&mut self, request: git_memory::HeadRequest, rows: (usize, usize)) {
+        self.git_work.held = Some(git_memory::HeldLines {
+            request,
+            document: self.current(),
+            revision: self.buf().revision(),
+            rows,
+        });
+        self.message = "waiting for the diff…".into();
+    }
+
+    /// A hunk snapshot settled: finish the held request when it is for this
+    /// buffer revision, drop it with a message when the buffer moved on.
+    pub(crate) fn release_held_lines(&mut self) {
+        let Some(held) = self.git_work.held else {
+            return;
+        };
+        let what = match held.request {
+            git_memory::HeadRequest::Permalink(_) => "permalink",
+            git_memory::HeadRequest::LineHistory => "line history",
+        };
+        let same = !self.docs.is_empty()
+            && self.current() == held.document
+            && self.buf().revision() == held.revision;
+        if !same {
+            self.git_work.held = None;
+            self.message = format!("buffer changed — {what} dropped");
+            return;
+        }
+        let lines = match self.head_lines(held.rows) {
+            git_memory::HeadLines::Pending => return,
+            git_memory::HeadLines::Refused(reason) => {
+                self.git_work.held = None;
+                self.message = reason;
+                return;
+            }
+            git_memory::HeadLines::Ready(lines) => lines,
+        };
+        self.git_work.held = None;
+        match held.request {
+            git_memory::HeadRequest::Permalink(intent) => self.release_permalink(intent, lines),
+            git_memory::HeadRequest::LineHistory => {
+                git_memory::open_history_at(self, lines);
+            }
+        }
     }
 
     /// `]c` / `[c`: jump to the next/previous changed line. An explicit
@@ -555,11 +631,13 @@ impl Editor {
         };
         let rel = data.rel.clone();
         let untracked = data.untracked;
+        let maps = super::git_memory::LineMaps::of(data);
         let origin = super::git_memory::HunkOrigin {
             rel,
             buffer: self.current(),
             revision: self.cur().buf.revision(),
             untracked,
+            maps,
         };
         let Some(context) = self.git_context() else {
             return;
