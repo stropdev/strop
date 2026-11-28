@@ -1,7 +1,7 @@
 ---
 rfc: "2026-11-28-line-geometry-kernel"
 title: "Prove line geometry: selection spans, change regions and line maps across a diff"
-status: "draft"
+status: "accepted"
 implementation: "not-started"
 authors: ["Fable"]
 created: "2026-11-28"

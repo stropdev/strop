@@ -70,8 +70,8 @@ Old citations such as `plan 0104 §4` or `plans/0104` in code, fixtures and past
 |---|---|---|---|---|---|
 | <a id="legacy-0060"></a>0060 | [DAP debugger workflow and architecture](2026-09-13-debugger-workflow-and-architecture.md) | draft | not-started | — | [#155](https://github.com/stropdev/strop/issues/155) |
 | <a id="legacy-0084"></a>0084 | [Project policy for access-label indentation](2026-11-20-project-indentation-policy.md) | draft | not-started | — | [#180](https://github.com/stropdev/strop/issues/180) |
-| — | [Prove line geometry: selection spans, change regions and line maps across a diff](2026-11-28-line-geometry-kernel.md) | draft | not-started | — | [#286](https://github.com/stropdev/strop/issues/286) |
-| — | [Close the measured gaps to Helix and Neovim: allocator, structural indent, in-buffer search, finder, status, large files](2026-11-28-measured-performance.md) | draft | not-started | — | [#307](https://github.com/stropdev/strop/issues/307) |
+| — | [Prove line geometry: selection spans, change regions and line maps across a diff](2026-11-28-line-geometry-kernel.md) | accepted | in-progress | — | [#286](https://github.com/stropdev/strop/issues/286) |
+| — | [Close the measured gaps to Helix and Neovim: allocator, structural indent, in-buffer search, finder, status, large files](2026-11-28-measured-performance.md) | accepted | in-progress | — | [#307](https://github.com/stropdev/strop/issues/307) |
 
 ## Historical delivery
 

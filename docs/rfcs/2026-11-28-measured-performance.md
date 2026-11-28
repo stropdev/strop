@@ -1,7 +1,7 @@
 ---
 rfc: "2026-11-28-measured-performance"
 title: "Close the measured gaps to Helix and Neovim: allocator, structural indent, in-buffer search, finder, status, large files"
-status: "draft"
+status: "accepted"
 implementation: "not-started"
 authors: ["Fable"]
 created: "2026-11-28"
