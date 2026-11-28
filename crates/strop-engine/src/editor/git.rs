@@ -310,7 +310,6 @@ impl Editor {
         if self.doc(idx).buf.path.is_none() || untracked {
             return false; // nothing in HEAD to restore from
         }
-        let new_first = hunk.changed_region().0;
         // byte-precise restore text (0020 §7): the hunk's own old-side
         // lines carry CRLF and missing-final-newline exactly — the
         // str::lines + LF join it replaces could not
@@ -337,11 +336,7 @@ impl Editor {
         let base = self.doc(idx).buf.revision();
         // Header extents include context; the restored old side includes the
         // same context. Mixing changed-only bounds with full text duplicates it.
-        let first = if hunk.new_count == 0 {
-            hunk.new_start
-        } else {
-            hunk.new_start.saturating_sub(1)
-        };
+        let first = hunk.new_first();
         let start = self
             .doc(idx)
             .buf
@@ -373,10 +368,14 @@ impl Editor {
             };
             return false;
         }
-        // cursor placement: the target's own pane moves to the
-        // restored region (Git's `+0,0` for an emptied file lands on
-        // row 1; `line_start` clamps past the end)
-        let land = self.doc(idx).buf.line_start(new_first.saturating_sub(1));
+        // cursor placement: the target's own pane moves to the first
+        // restored line — the first change region starts at the same row on
+        // both sides, a pure deletion's at the row its lines come back to
+        // (`line_start` clamps past the end)
+        let mut regions = Vec::new();
+        hunk.regions(&mut regions);
+        let land_line = regions.first().map_or(first, |region| region.new);
+        let land = self.doc(idx).buf.line_start(land_line);
         if self.current() == idx {
             self.set_head(land);
             self.clamp_cursor();

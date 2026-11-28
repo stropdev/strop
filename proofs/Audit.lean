@@ -23,7 +23,7 @@ open Lean Elab Command Meta
 def allowedAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound]
 
 /-- The headline claims (plans/0086 §4, ring 0; plans/0094 §3.1; plans/0099 §3.1;
-plans/0104 §9; plans/0108 D4; plans/0111 D9). -/
+plans/0104 §9; plans/0108 D4; plans/0111 D9; line-geometry kernel RFC). -/
 def claims : List Name := [
   ``Strop.Kernel.admission_resource_exact,
   ``Strop.Kernel.admission_stamp_exact,
@@ -80,6 +80,9 @@ def claims : List Name := [
   ``Strop.Kernel.tile_minimum,
   ``Strop.Kernel.tile_fair,
   ``Strop.Kernel.tile_fair_leaves,
+  ``Strop.Kernel.runs_spec,
+  ``Strop.Kernel.runs_coherent,
+  ``Strop.Kernel.coherent_spec,
 ]
 
 /-- The public kernel functions no theorem proves total (plans/0108 #282):
@@ -110,6 +113,9 @@ def conditional : List (Name × String × String) := [
   (``strop_kernel.intervals.uncover,
     "uncover_spec: empty out, first ≤ last, sorted coverage, 2 * coverage.len() + 2 < usize::MAX",
     "strop-engine analysis/presentation.rs `uncover`: windows are first ≤ last by construction; coverage as for cover"),
+  (``strop_kernel.lines.runs,
+    "runs_spec: old_start + body.len() and new_start + body.len() ≤ usize::MAX, out.len() + body.len() < usize::MAX (Aeneas models Vec::push as failing at usize::MAX)",
+    "strop-git diff.rs `Hunk::regions`: starts and body are one libgit2 hunk of a file held in memory, so every line number and the region count are below the file's line count"),
   (``strop_kernel.layout.minimum,
     "minimum_spec: tracks * unit + (tracks - 1) * gap ≤ usize::MAX",
     "strop-engine panes/layout.rs `minimum` and `place_frame`: track counts are window counts and (unit, gap) is (1, 1) or (2, 0)"),

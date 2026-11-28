@@ -252,6 +252,27 @@ MUTANTS = (
            "    if len >= u32::MAX as usize {",
            ("Strop.Kernel.index_for_len_spec",)),
     # T2: the next child starts after the divider, not on it
+    # a context line inside a run is absorbed instead of ending it
+    Mutant("lines-runs-merge-across-context", "lines.rs",
+           "                close(run, out);\n                run = Region {\n"
+           "                    old: run.old.saturating_add(run.old_len).saturating_add(1),\n"
+           "                    old_len: 0,\n"
+           "                    new: run.new.saturating_add(run.new_len).saturating_add(1),\n"
+           "                    new_len: 0,\n                };\n",
+           "                run.old_len = run.old_len.saturating_add(1);\n"
+           "                run.new_len = run.new_len.saturating_add(1);\n",
+           ("Strop.Kernel.runs_loop_spec", "Strop.Kernel.runs_spec")),
+    # a region's new start is the counter at the end of its run: a pure
+    # deletion lands after the hunk's trailing context (the v0.77 `changed_region`)
+    Mutant("lines-runs-deletion-at-hunk-end", "lines.rs",
+           "        out.push(run);",
+           "        out.push(Region {\n            new: run.new.saturating_add(run.new_len),\n            ..run\n        });",
+           ("Strop.Kernel.close_spec",)),
+    # a region shifted on one side only is accepted as a diff
+    Mutant("lines-coherent-accepts-skew", "lines.rs",
+           "        if r.old - old_base != r.new - new_base {\n            return false;\n        }\n",
+           "",
+           ("Strop.Kernel.coherent_loop_spec",)),
     Mutant("layout-gap-dropped", "layout.rs",
            "        at = least(at + len + gap, cells);\n",
            "        at = least(at + len, cells);\n",
@@ -434,6 +455,16 @@ PAIRED = (
            "        let high = least(span.1, last);",
            "        let high = span.1;",
            ("Strop.Kernel.clip_loop_spec", "Strop.Kernel.clip_spec")),
+    # a region's new start taken at the end of its run, with the model updated
+    # to match: the regions stop lining up on both sides, so a hunk is no diff
+    Mutant("lines-runs-new-start-at-run-end", "lines.rs",
+           "        out.push(run);",
+           "        out.push(Region {\n            new: run.new.saturating_add(run.new_len),\n            ..run\n        });",
+           # the push's own proof follows the old region, so the bridge breaks too
+           ("Strop.Kernel.close_spec", "Strop.Kernel.coherent_closeRun_append"),
+           lean=(Patch("Kernel/Lines.lean",
+                       "  if q.2.1 = 0 ∧ q.2.2.2 = 0 then [] else [q]",
+                       "  if q.2.1 = 0 ∧ q.2.2.2 = 0 then [] else [(q.1, q.2.1, q.2.2.1 + q.2.2.2, q.2.2.2)]"),)),
     # T1 with the model updated to match: an unclamped span passes the frame
     Mutant("layout-overrun-paired", "layout.rs",
            "            least(minimum(tracks[k], unit, gap) + extra, left)\n",

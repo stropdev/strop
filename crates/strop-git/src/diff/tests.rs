@@ -9,7 +9,14 @@ fn signs(old: &str, new: &str) -> Vec<(usize, Sign)> {
     hunks_from_strings(old, new, Path::new("note"))
         .unwrap()
         .iter()
-        .flat_map(|hunk| hunk.signs())
+        .flat_map(|hunk| {
+            let mut regions = Vec::new();
+            hunk.regions(&mut regions);
+            regions
+        })
+        .flat_map(|region| Sign::of_region(&region).collect::<Vec<_>>())
+        // 1-based, as the gutter keys them
+        .map(|(line, sign)| (line + 1, sign))
         .collect()
 }
 
@@ -65,7 +72,7 @@ fn sign_table() {
             // `two` lost its newline: a change run, not a bare deletion
             &[(2, Change)],
         ),
-        ("delete everything", BASE, "", &[(0, DeleteAfter)]),
+        ("delete everything", BASE, "", &[(1, DeleteAfter)]),
         (
             "one-line replacement",
             BASE,

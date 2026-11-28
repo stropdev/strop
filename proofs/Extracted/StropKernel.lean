@@ -2230,4 +2230,340 @@ def layout.tile
   let room ← lift (core.num.Usize.saturating_sub cells need)
   layout.tile_loop cells unit gap tracks out weight room 0#usize 0#usize
 
+/-- [strop_kernel::lines::Region]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 26:0-31:1
+    Visibility: public -/
+structure lines.Region where
+  old : Std.Usize
+  old_len : Std.Usize
+  new : Std.Usize
+  new_len : Std.Usize
+
+/-- [strop_kernel::lines::{impl core::fmt::Debug for strop_kernel::lines::Region}::fmt]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:9-25:14
+    Visibility: public -/
+def lines.Region.Insts.CoreFmtDebug.fmt
+  (self : lines.Region) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  let dyn := Dyn.mk _ core.fmt.DebugUsize self.old
+  let dyn1 := Dyn.mk _ core.fmt.DebugUsize self.old_len
+  let dyn2 := Dyn.mk _ core.fmt.DebugUsize self.new
+  let dyn3 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugUsize) self.new_len
+  core.fmt.Formatter.debug_struct_field4_finish f (toStr "Region") (toStr
+    "old") dyn (toStr "old_len") dyn1 (toStr "new") dyn2 (toStr "new_len") dyn3
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::fmt::Debug for strop_kernel::lines::Region}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:9-25:14 -/
+@[reducible]
+def lines.Region.Insts.CoreFmtDebug : core.fmt.Debug lines.Region := {
+  fmt := lines.Region.Insts.CoreFmtDebug.fmt
+}
+
+/-- [strop_kernel::lines::{impl core::clone::Clone for strop_kernel::lines::Region}::clone]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:16-25:21
+    Visibility: public -/
+def lines.Region.Insts.CoreCloneClone.clone
+  (self : lines.Region) : Result lines.Region := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::clone::Clone for strop_kernel::lines::Region}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:16-25:21 -/
+@[reducible]
+def lines.Region.Insts.CoreCloneClone : core.clone.Clone lines.Region := {
+  clone := lines.Region.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::marker::Copy for strop_kernel::lines::Region}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:23-25:27 -/
+@[reducible]
+def lines.Region.Insts.CoreMarkerCopy : core.marker.Copy lines.Region := {
+  cloneInst := lines.Region.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::marker::StructuralPartialEq for strop_kernel::lines::Region}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:29-25:38 -/
+@[reducible]
+def lines.Region.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq lines.Region := {
+}
+
+/-- [strop_kernel::lines::{impl core::cmp::PartialEq<strop_kernel::lines::Region> for strop_kernel::lines::Region}::eq]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:29-25:38
+    Visibility: public -/
+def lines.Region.Insts.CoreCmpPartialEqRegion.eq
+  (self : lines.Region) (other : lines.Region) : Result Bool := do
+  if self.old = other.old
+  then
+    if self.old_len = other.old_len
+    then
+      if self.new = other.new
+      then ok (self.new_len = other.new_len)
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::cmp::PartialEq<strop_kernel::lines::Region> for strop_kernel::lines::Region}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:29-25:38 -/
+@[reducible]
+def lines.Region.Insts.CoreCmpPartialEqRegion : core.cmp.PartialEq lines.Region
+  lines.Region := {
+  eq := lines.Region.Insts.CoreCmpPartialEqRegion.eq
+}
+
+/-- [strop_kernel::lines::{impl core::cmp::Eq for strop_kernel::lines::Region}::assert_fields_are_eq]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:40-25:42
+    Visibility: public -/
+def lines.Region.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : lines.Region) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::cmp::Eq for strop_kernel::lines::Region}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 25:40-25:42 -/
+@[reducible]
+def lines.Region.Insts.CoreCmpEq : core.cmp.Eq lines.Region := {
+  partialEqInst := lines.Region.Insts.CoreCmpPartialEqRegion
+  assert_fields_are_eq := lines.Region.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [strop_kernel::lines::Origin]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 35:0-39:1
+    Visibility: public -/
+@[discriminant isize]
+inductive lines.Origin where
+| Context : lines.Origin
+| Addition : lines.Origin
+| Deletion : lines.Origin
+
+/-- [strop_kernel::lines::{impl core::fmt::Debug for strop_kernel::lines::Origin}::fmt]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:9-34:14
+    Visibility: public -/
+def lines.Origin.Insts.CoreFmtDebug.fmt
+  (self : lines.Origin) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | lines.Origin.Context => core.fmt.Formatter.write_str f (toStr "Context")
+  | lines.Origin.Addition => core.fmt.Formatter.write_str f (toStr "Addition")
+  | lines.Origin.Deletion => core.fmt.Formatter.write_str f (toStr "Deletion")
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::fmt::Debug for strop_kernel::lines::Origin}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:9-34:14 -/
+@[reducible]
+def lines.Origin.Insts.CoreFmtDebug : core.fmt.Debug lines.Origin := {
+  fmt := lines.Origin.Insts.CoreFmtDebug.fmt
+}
+
+/-- [strop_kernel::lines::{impl core::clone::Clone for strop_kernel::lines::Origin}::clone]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:16-34:21
+    Visibility: public -/
+def lines.Origin.Insts.CoreCloneClone.clone
+  (self : lines.Origin) : Result lines.Origin := do
+  ok self
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::clone::Clone for strop_kernel::lines::Origin}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:16-34:21 -/
+@[reducible]
+def lines.Origin.Insts.CoreCloneClone : core.clone.Clone lines.Origin := {
+  clone := lines.Origin.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::marker::Copy for strop_kernel::lines::Origin}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:23-34:27 -/
+@[reducible]
+def lines.Origin.Insts.CoreMarkerCopy : core.marker.Copy lines.Origin := {
+  cloneInst := lines.Origin.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::marker::StructuralPartialEq for strop_kernel::lines::Origin}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:29-34:38 -/
+@[reducible]
+def lines.Origin.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq lines.Origin := {
+}
+
+/-- [strop_kernel::lines::{impl core::cmp::PartialEq<strop_kernel::lines::Origin> for strop_kernel::lines::Origin}::eq]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:29-34:38
+    Visibility: public -/
+def lines.Origin.Insts.CoreCmpPartialEqOrigin.eq
+  (self : lines.Origin) (other : lines.Origin) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::cmp::PartialEq<strop_kernel::lines::Origin> for strop_kernel::lines::Origin}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:29-34:38 -/
+@[reducible]
+def lines.Origin.Insts.CoreCmpPartialEqOrigin : core.cmp.PartialEq lines.Origin
+  lines.Origin := {
+  eq := lines.Origin.Insts.CoreCmpPartialEqOrigin.eq
+}
+
+/-- Trait implementation: [strop_kernel::lines::{impl core::cmp::Eq for strop_kernel::lines::Origin}]
+    Source: 'crates/strop-kernel/src/lines.rs', lines 34:40-34:42 -/
+@[reducible]
+impl_def lines.Origin.Insts.CoreCmpEq : core.cmp.Eq lines.Origin := {
+  partialEqInst := lines.Origin.Insts.CoreCmpPartialEqOrigin
+  assert_fields_are_eq := core.cmp.Eq.assert_fields_are_eq.default
+    lines.Origin.Insts.CoreCmpEq
+}
+
+/-- [strop_kernel::lines::close]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 42:0-46:1 -/
+def lines.close
+  (run : lines.Region) (out : alloc.vec.Vec lines.Region) :
+  Result (alloc.vec.Vec lines.Region)
+  := do
+  if run.old_len != 0#usize
+  then alloc.vec.Vec.push out run
+  else if run.new_len != 0#usize
+       then alloc.vec.Vec.push out run
+       else ok out
+
+/-- [strop_kernel::lines::runs]: loop body 0:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 59:4-74:5
+    Visibility: public -/
+@[rust_loop_body]
+def lines.runs_loop.body
+  (body : Slice lines.Origin) (out : alloc.vec.Vec lines.Region)
+  (old_start : Std.Usize) (i : Std.Usize) (new_start : Std.Usize)
+  (i1 : Std.Usize) (k : Std.Usize) :
+  Result (ControlFlow ((alloc.vec.Vec lines.Region) × Std.Usize × Std.Usize
+    × Std.Usize × Std.Usize × Std.Usize) ((alloc.vec.Vec lines.Region) ×
+    Std.Usize × Std.Usize × Std.Usize × Std.Usize))
+  := do
+  let i2 := Slice.len body
+  if k < i2
+  then
+    let o ← Slice.index_usize body k
+    let (out1, i3, i4, i5, i6) ←
+      match o with
+      | lines.Origin.Context =>
+        do
+        let out2 ←
+          lines.close
+            { old := old_start, old_len := i, new := new_start, new_len := i1 }
+            out
+        let i7 ← lift (core.num.Usize.saturating_add old_start i)
+        let i8 ← lift (core.num.Usize.saturating_add i7 1#usize)
+        let i9 ← lift (core.num.Usize.saturating_add new_start i1)
+        let i10 ← lift (core.num.Usize.saturating_add i9 1#usize)
+        ok (out2, i8, 0#usize, i10, 0#usize)
+      | lines.Origin.Addition =>
+        do
+        let i7 ← lift (core.num.Usize.saturating_add i1 1#usize)
+        ok (out, old_start, i, new_start, i7)
+      | lines.Origin.Deletion =>
+        do
+        let i7 ← lift (core.num.Usize.saturating_add i 1#usize)
+        ok (out, old_start, i7, new_start, i1)
+    let k1 ← k + 1#usize
+    ok (cont (out1, i3, i4, i5, i6, k1))
+  else ok (done (out, old_start, i, new_start, i1))
+
+/-- [strop_kernel::lines::runs]: loop 0:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 59:4-74:5
+    Visibility: public -/
+@[rust_loop]
+def lines.runs_loop
+  (body : Slice lines.Origin) (out : alloc.vec.Vec lines.Region)
+  (old_start : Std.Usize) (i : Std.Usize) (new_start : Std.Usize)
+  (i1 : Std.Usize) (k : Std.Usize) :
+  Result ((alloc.vec.Vec lines.Region) × Std.Usize × Std.Usize × Std.Usize
+    × Std.Usize)
+  := do
+  loop
+    (fun (out1, old_start1, i2, new_start1, i3, k1) => lines.runs_loop.body
+      body out1 old_start1 i2 new_start1 i3 k1)
+    (out, old_start, i, new_start, i1, k)
+
+/-- [strop_kernel::lines::runs]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 51:0-76:1
+    Visibility: public -/
+def lines.runs
+  (old_start : Std.Usize) (new_start : Std.Usize) (body : Slice lines.Origin)
+  (out : alloc.vec.Vec lines.Region) :
+  Result (alloc.vec.Vec lines.Region)
+  := do
+  let (out1, i, i1, i2, i3) ←
+    lines.runs_loop body out old_start 0#usize new_start 0#usize 0#usize
+  lines.close { old := i, old_len := i1, new := i2, new_len := i3 } out1
+
+/-- [strop_kernel::lines::coherent]: loop body 0:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 85:4-104:1
+    Visibility: public -/
+@[rust_loop_body]
+def lines.coherent_loop.body
+  (regions : Slice lines.Region) (old_base : Std.Usize) (new_base : Std.Usize)
+  (k : Std.Usize) :
+  Result (ControlFlow (Std.Usize × Std.Usize × Std.Usize) Bool)
+  := do
+  let i := Slice.len regions
+  if k < i
+  then
+    let r ← Slice.index_usize regions k
+    if r.old < old_base
+    then ok (done false)
+    else
+      if r.new < new_base
+      then ok (done false)
+      else
+        let i1 ← r.old - old_base
+        let i2 ← r.new - new_base
+        if i1 != i2
+        then ok (done false)
+        else
+          if r.old_len = 0#usize
+          then
+            if r.new_len = 0#usize
+            then ok (done false)
+            else
+              let i3 ← core.num.Usize.MAX - r.old
+              if r.old_len > i3
+              then ok (done false)
+              else
+                let i4 ← core.num.Usize.MAX - r.new
+                if r.new_len > i4
+                then ok (done false)
+                else
+                  let old_base1 ← r.old + r.old_len
+                  let new_base1 ← r.new + r.new_len
+                  let k1 ← k + 1#usize
+                  ok (cont (old_base1, new_base1, k1))
+          else
+            let i3 ← core.num.Usize.MAX - r.old
+            if r.old_len > i3
+            then ok (done false)
+            else
+              let i4 ← core.num.Usize.MAX - r.new
+              if r.new_len > i4
+              then ok (done false)
+              else
+                let old_base1 ← r.old + r.old_len
+                let new_base1 ← r.new + r.new_len
+                let k1 ← k + 1#usize
+                ok (cont (old_base1, new_base1, k1))
+  else ok (done true)
+
+/-- [strop_kernel::lines::coherent]: loop 0:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 85:4-104:1
+    Visibility: public -/
+@[rust_loop]
+def lines.coherent_loop
+  (regions : Slice lines.Region) (old_base : Std.Usize) (new_base : Std.Usize)
+  (k : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun (old_base1, new_base1, k1) => lines.coherent_loop.body regions
+      old_base1 new_base1 k1)
+    (old_base, new_base, k)
+
+/-- [strop_kernel::lines::coherent]:
+    Source: 'crates/strop-kernel/src/lines.rs', lines 81:0-104:1
+    Visibility: public -/
+@[reducible]
+def lines.coherent (regions : Slice lines.Region) : Result Bool := do
+  lines.coherent_loop regions 0#usize 0#usize 0#usize
+
 end strop_kernel

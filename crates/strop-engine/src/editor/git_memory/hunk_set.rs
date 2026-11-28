@@ -3,7 +3,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::sync::Arc;
-use strop_git::{Hunk, LineOrigin, Sign};
+use strop_git::{Hunk, Sign};
+use strop_kernel::lines;
 
 #[derive(Debug, Clone)]
 pub struct HunkSet(Arc<HunkIndex>);
@@ -34,26 +35,31 @@ impl HunkSet {
     }
 
     /// Index `hunks` over a buffer of `rows` reachable rows
-    /// (`last_content_line() + 1`: an empty buffer has one). Git's
-    /// coordinates may sit outside them — `0` for an emptied file, one
-    /// past the end for a deletion at the end — so every sign is clamped
-    /// onto a row the caret can reach: sign and action share one key.
+    /// (`last_content_line() + 1`: an empty buffer has one). A deletion at
+    /// the end sits one past the last row, so every sign is clamped onto a
+    /// row the caret can reach: sign and action share one key.
     pub(crate) fn new(hunks: Vec<Hunk>, rows: usize) -> Self {
         debug_assert!(rows >= 1, "a buffer always has a first row");
         let last = rows.max(1);
         let mut signs = BTreeMap::new();
         let mut additions = BTreeSet::new();
+        let mut regions = Vec::new();
         for (index, hunk) in hunks.iter().enumerate() {
-            for (line, sign) in hunk.signs() {
-                signs.entry(line.clamp(1, last)).or_insert((index, sign));
+            let first = regions.len();
+            hunk.regions(&mut regions);
+            for region in &regions[first..] {
+                for (line, sign) in Sign::of_region(region) {
+                    signs
+                        .entry((line + 1).clamp(1, last))
+                        .or_insert((index, sign));
+                }
+                additions.extend(region.new + 1..region.new + 1 + region.new_len);
             }
-            additions.extend(
-                hunk.lines
-                    .iter()
-                    .filter(|line| line.origin == LineOrigin::Addition)
-                    .filter_map(|line| line.new_lineno),
-            );
         }
+        debug_assert!(
+            lines::coherent(&regions),
+            "libgit2 hunks describe a diff: {regions:?}"
+        );
         Self(Arc::new(HunkIndex {
             hunks: hunks.into_iter().map(Arc::new).collect(),
             rows,
