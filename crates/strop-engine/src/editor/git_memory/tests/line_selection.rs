@@ -94,6 +94,7 @@ fn visual_clipboard_yank_leaves_visual() {
 #[test]
 fn visual_line_history_lands_in_normal() {
     let (_dir, mut e) = fixture();
+    pump_hunks(&mut e);
     e.feed_text("GV gh");
     assert_eq!(e.mode, Mode::Normal, "the log opens in Normal");
     assert_eq!(e.buf().name.as_deref(), Some("git log · f.rs:2-2"));
@@ -120,6 +121,7 @@ fn visual_line_history_lands_in_normal() {
 fn open_settled(e: &mut Editor, name: &str) {
     let path = e.cwd.join(name);
     e.feed_text(&format!(":e {}\r", path.display()));
+    settle(e, |e| e.buf().path.as_deref() == Some(path.as_path()));
     pump_hunks(e);
     assert!(e
         .hunk_snapshot
